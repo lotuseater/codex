@@ -391,6 +391,8 @@ use self::interrupts::InterruptManager;
 mod keymap_picker;
 mod session_header;
 use self::session_header::SessionHeader;
+mod self_review;
+use self::self_review::SelfReviewTracker;
 mod skills;
 mod slash_dispatch;
 use self::skills::collect_tool_mentions;
@@ -1023,6 +1025,7 @@ pub(crate) struct ChatWidget {
     plan_item_active: bool,
     // Runtime metrics accumulated across delta snapshots for the active turn.
     turn_runtime_metrics: RuntimeMetricsSummary,
+    self_review_tracker: SelfReviewTracker,
     last_rendered_width: std::cell::Cell<Option<usize>>,
     // Feedback sink for /feedback
     feedback: codex_feedback::CodexFeedback,
@@ -2748,6 +2751,7 @@ impl ChatWidget {
         self.latest_proposed_plan_markdown = None;
         self.plan_delta_buffer.clear();
         self.plan_item_active = false;
+        self.self_review_tracker.reset_turn();
         self.adaptive_chunking.reset();
         self.plan_stream_controller = None;
         self.turn_runtime_metrics = RuntimeMetricsSummary::default();
@@ -2841,6 +2845,7 @@ impl ChatWidget {
                 ));
             }
             self.turn_runtime_metrics = RuntimeMetricsSummary::default();
+            self.maybe_add_self_review_reminder();
             self.needs_final_message_separator = false;
             self.had_work_activity = false;
             self.request_status_line_branch_refresh();
@@ -2929,6 +2934,15 @@ impl ChatWidget {
         self.notify(Notification::PlanModePrompt {
             title: PLAN_IMPLEMENTATION_TITLE.to_string(),
         });
+    }
+
+    fn maybe_add_self_review_reminder(&mut self) {
+        if !self.self_review_tracker.should_remind() {
+            return;
+        }
+        self.add_to_history(history_cell::new_self_review_reminder_line(
+            self.self_review_tracker.reminder_message(),
+        ));
     }
 
     /// Returns a context-used label for the plan implementation prompt.
@@ -3745,6 +3759,7 @@ impl ChatWidget {
             .count();
         self.last_plan_progress = (total > 0).then_some((completed, total));
         self.refresh_status_surfaces();
+        self.self_review_tracker.note_plan_update(&update);
         self.add_to_history(history_cell::new_plan_update(update));
     }
 
@@ -4966,6 +4981,7 @@ impl ChatWidget {
         }
         // Mark that actual work was done (command executed)
         self.had_work_activity = true;
+        self.self_review_tracker.note_command();
         if is_user_shell {
             self.maybe_send_next_queued_input();
         }
@@ -4982,6 +4998,9 @@ impl ChatWidget {
         }
         // Mark that actual work was done (patch applied)
         self.had_work_activity = true;
+        if event.success {
+            self.self_review_tracker.note_patch();
+        }
     }
 
     pub(crate) fn handle_exec_approval_now(&mut self, ev: ExecApprovalRequestEvent) {
@@ -5402,6 +5421,7 @@ impl ChatWidget {
             plan_delta_buffer: String::new(),
             plan_item_active: false,
             turn_runtime_metrics: RuntimeMetricsSummary::default(),
+            self_review_tracker: SelfReviewTracker::default(),
             last_rendered_width: std::cell::Cell::new(None),
             feedback,
             current_rollout_path: None,
@@ -7659,6 +7679,9 @@ impl ChatWidget {
     }
 
     fn enter_review_mode_with_hint(&mut self, hint: String, from_replay: bool) {
+        if !from_replay {
+            self.self_review_tracker.note_explicit_review();
+        }
         if self.pre_review_token_info.is_none() {
             self.pre_review_token_info = Some(self.token_info.clone());
         }

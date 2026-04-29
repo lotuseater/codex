@@ -1080,6 +1080,12 @@ pub(crate) fn new_review_status_line(message: String) -> PlainHistoryCell {
     }
 }
 
+pub(crate) fn new_self_review_reminder_line(message: String) -> PlainHistoryCell {
+    PlainHistoryCell {
+        lines: vec![Line::from(message.yellow())],
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct PatchHistoryCell {
     changes: HashMap<PathBuf, FileChange>,

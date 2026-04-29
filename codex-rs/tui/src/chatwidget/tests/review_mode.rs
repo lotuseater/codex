@@ -429,6 +429,97 @@ async fn review_restores_context_window_indicator() {
 }
 
 #[tokio::test]
+async fn self_review_reminder_is_shown_after_patch_without_review() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    let mut changes = HashMap::new();
+    changes.insert(
+        PathBuf::from("foo.txt"),
+        FileChange::Add {
+            content: "hello\n".to_string(),
+        },
+    );
+
+    chat.handle_patch_apply_end_now(PatchApplyEndEvent {
+        call_id: "patch-1".to_string(),
+        turn_id: "turn-1".to_string(),
+        stdout: String::new(),
+        stderr: String::new(),
+        success: true,
+        changes,
+        status: CorePatchApplyStatus::Completed,
+    });
+    assert!(drain_insert_history(&mut rx).is_empty());
+
+    chat.handle_codex_event(Event {
+        id: "turn-complete".into(),
+        msg: EventMsg::TurnComplete(TurnCompleteEvent {
+            turn_id: "turn-1".to_string(),
+            last_agent_message: None,
+            completed_at: None,
+            duration_ms: None,
+            time_to_first_token_ms: None,
+        }),
+    });
+
+    let inserted = drain_insert_history(&mut rx);
+    let rendered = inserted
+        .iter()
+        .map(|lines| lines_to_single_string(lines))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(rendered.contains("Self-review reminder"));
+}
+
+#[tokio::test]
+async fn explicit_review_suppresses_self_review_reminder() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    let mut changes = HashMap::new();
+    changes.insert(
+        PathBuf::from("foo.txt"),
+        FileChange::Add {
+            content: "hello\n".to_string(),
+        },
+    );
+
+    chat.handle_patch_apply_end_now(PatchApplyEndEvent {
+        call_id: "patch-1".to_string(),
+        turn_id: "turn-1".to_string(),
+        stdout: String::new(),
+        stderr: String::new(),
+        success: true,
+        changes,
+        status: CorePatchApplyStatus::Completed,
+    });
+    chat.handle_codex_event(Event {
+        id: "review-start".into(),
+        msg: EventMsg::EnteredReviewMode(ReviewRequest {
+            target: ReviewTarget::UncommittedChanges,
+            user_facing_hint: None,
+        }),
+    });
+    let _ = drain_insert_history(&mut rx);
+
+    chat.handle_codex_event(Event {
+        id: "turn-complete".into(),
+        msg: EventMsg::TurnComplete(TurnCompleteEvent {
+            turn_id: "turn-1".to_string(),
+            last_agent_message: None,
+            completed_at: None,
+            duration_ms: None,
+            time_to_first_token_ms: None,
+        }),
+    });
+
+    let inserted = drain_insert_history(&mut rx);
+    let rendered = inserted
+        .iter()
+        .map(|lines| lines_to_single_string(lines))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(!rendered.contains("Self-review reminder"));
+}
+
+#[tokio::test]
 async fn restore_thread_input_state_restores_pending_steers_without_downgrading_them() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     let mut pending_steers = VecDeque::new();

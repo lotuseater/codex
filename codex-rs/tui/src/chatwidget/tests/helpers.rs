@@ -295,6 +295,7 @@ pub(super) async fn make_chatwidget_manual(
         plan_delta_buffer: String::new(),
         plan_item_active: false,
         turn_runtime_metrics: RuntimeMetricsSummary::default(),
+        self_review_tracker: SelfReviewTracker::default(),
         last_rendered_width: std::cell::Cell::new(None),
         feedback: codex_feedback::CodexFeedback::new(),
         current_rollout_path: None,
