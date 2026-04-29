@@ -15,13 +15,19 @@ use serde_json::Value as JsonValue;
 
 pub struct PlanHandler;
 
-pub struct PlanToolOutput;
+pub struct PlanToolOutput {
+    message: String,
+}
 
 const PLAN_UPDATED_MESSAGE: &str = "Plan updated";
+const SELF_REVIEW_CHECKPOINT_MESSAGE: &str = "\
+Plan updated
+
+Self-review checkpoint before continuing: inspect task order, missing verification, risky assumptions, and user/remote overlap. Revise the plan first if any issue is found.";
 
 impl ToolOutput for PlanToolOutput {
     fn log_preview(&self) -> String {
-        PLAN_UPDATED_MESSAGE.to_string()
+        self.message.clone()
     }
 
     fn success_for_logging(&self) -> bool {
@@ -29,7 +35,7 @@ impl ToolOutput for PlanToolOutput {
     }
 
     fn to_response_item(&self, call_id: &str, _payload: &ToolPayload) -> ResponseInputItem {
-        let mut output = FunctionCallOutputPayload::from_text(PLAN_UPDATED_MESSAGE.to_string());
+        let mut output = FunctionCallOutputPayload::from_text(self.message.clone());
         output.success = Some(true);
 
         ResponseInputItem::FunctionCallOutput {
@@ -68,9 +74,10 @@ impl ToolHandler for PlanHandler {
             }
         };
 
-        handle_update_plan(session.as_ref(), turn.as_ref(), arguments, call_id).await?;
+        let message =
+            handle_update_plan(session.as_ref(), turn.as_ref(), arguments, call_id).await?;
 
-        Ok(PlanToolOutput)
+        Ok(PlanToolOutput { message })
     }
 }
 
@@ -89,14 +96,77 @@ pub(crate) async fn handle_update_plan(
         ));
     }
     let args = parse_update_plan_arguments(&arguments)?;
+    let response = plan_tool_response(&args);
     session
         .send_event(turn_context, EventMsg::PlanUpdate(args))
         .await;
-    Ok("Plan updated".to_string())
+    Ok(response)
 }
 
 fn parse_update_plan_arguments(arguments: &str) -> Result<UpdatePlanArgs, FunctionCallError> {
     serde_json::from_str::<UpdatePlanArgs>(arguments).map_err(|e| {
         FunctionCallError::RespondToModel(format!("failed to parse function arguments: {e}"))
     })
+}
+
+fn plan_tool_response(args: &UpdatePlanArgs) -> String {
+    if is_nontrivial_plan(args) {
+        SELF_REVIEW_CHECKPOINT_MESSAGE.to_string()
+    } else {
+        PLAN_UPDATED_MESSAGE.to_string()
+    }
+}
+
+fn is_nontrivial_plan(args: &UpdatePlanArgs) -> bool {
+    args.plan.len() >= 2
+        || args
+            .explanation
+            .as_deref()
+            .is_some_and(|explanation| !explanation.trim().is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use codex_protocol::plan_tool::PlanItemArg;
+    use codex_protocol::plan_tool::StepStatus;
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+
+    fn plan_item(step: &str) -> PlanItemArg {
+        PlanItemArg {
+            step: step.to_string(),
+            status: StepStatus::Pending,
+        }
+    }
+
+    #[test]
+    fn trivial_plan_keeps_compact_output() {
+        let args = UpdatePlanArgs {
+            explanation: None,
+            plan: vec![plan_item("inspect")],
+        };
+
+        assert_eq!(plan_tool_response(&args), PLAN_UPDATED_MESSAGE);
+    }
+
+    #[test]
+    fn nontrivial_plan_includes_self_review_checkpoint() {
+        let args = UpdatePlanArgs {
+            explanation: None,
+            plan: vec![plan_item("inspect"), plan_item("patch")],
+        };
+
+        assert_eq!(plan_tool_response(&args), SELF_REVIEW_CHECKPOINT_MESSAGE);
+    }
+
+    #[test]
+    fn explanation_makes_plan_nontrivial() {
+        let args = UpdatePlanArgs {
+            explanation: Some("Need to sequence work carefully.".to_string()),
+            plan: vec![plan_item("inspect")],
+        };
+
+        assert_eq!(plan_tool_response(&args), SELF_REVIEW_CHECKPOINT_MESSAGE);
+    }
 }
