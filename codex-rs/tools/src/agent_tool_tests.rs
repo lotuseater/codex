@@ -192,7 +192,7 @@ fn followup_task_tool_requires_message_and_has_no_output_schema() {
 }
 
 #[test]
-fn wait_agent_tool_v2_uses_timeout_only_summary_output() {
+fn wait_agent_tool_v2_accepts_optional_targets_and_summary_output() {
     let ToolSpec::Function(ResponsesApiTool {
         description,
         parameters,
@@ -214,11 +214,20 @@ fn wait_agent_tool_v2_uses_timeout_only_summary_output() {
         .properties
         .as_ref()
         .expect("wait_agent should use object params");
-    assert!(!properties.contains_key("targets"));
+    assert!(properties.contains_key("targets"));
     assert!(properties.contains_key("timeout_ms"));
-    assert!(description.contains(
-        "Does not return the content; returns either a summary of which agents have updates (if any)"
-    ));
+    assert!(
+        description
+            .contains("When targets are provided, wait for those agents to reach a final status")
+    );
+    assert_eq!(
+        properties
+            .get("targets")
+            .and_then(|schema| schema.description.as_deref()),
+        Some(
+            "Optional agent ids or canonical task names to wait on. Omit to wait for any mailbox update."
+        )
+    );
     assert_eq!(
         properties
             .get("timeout_ms")

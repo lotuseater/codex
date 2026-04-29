@@ -212,7 +212,7 @@ pub fn create_wait_agent_tool_v1(options: WaitAgentTimeoutOptions) -> ToolSpec {
 pub fn create_wait_agent_tool_v2(options: WaitAgentTimeoutOptions) -> ToolSpec {
     ToolSpec::Function(ResponsesApiTool {
         name: "wait_agent".to_string(),
-        description: "Wait for a mailbox update from any live agent, including queued messages and final-status notifications. Does not return the content; returns either a summary of which agents have updates (if any), or a timeout summary if no mailbox update arrives before the deadline."
+        description: "Wait for a mailbox update from any live agent, including queued messages and final-status notifications. When targets are provided, wait for those agents to reach a final status. Does not return final message content."
             .to_string(),
         strict: false,
         defer_loading: None,
@@ -445,9 +445,14 @@ fn wait_output_schema_v2() -> Value {
             "timed_out": {
                 "type": "boolean",
                 "description": "Whether the wait call returned because no mailbox update arrived before the timeout."
+            },
+            "status": {
+                "type": "object",
+                "description": "Final statuses keyed by agent target when targets were provided. Empty for mailbox-only waits.",
+                "additionalProperties": agent_status_output_schema()
             }
         },
-        "required": ["message", "timed_out"],
+        "required": ["message", "status", "timed_out"],
         "additionalProperties": false
     })
 }
@@ -747,13 +752,25 @@ fn wait_agent_tool_parameters_v1(options: WaitAgentTimeoutOptions) -> JsonSchema
 }
 
 fn wait_agent_tool_parameters_v2(options: WaitAgentTimeoutOptions) -> JsonSchema {
-    let properties = BTreeMap::from([(
-        "timeout_ms".to_string(),
-        JsonSchema::number(Some(format!(
-            "Optional timeout in milliseconds. Defaults to {}, min {}, max {}.",
-            options.default_timeout_ms, options.min_timeout_ms, options.max_timeout_ms,
-        ))),
-    )]);
+    let properties = BTreeMap::from([
+        (
+            "targets".to_string(),
+            JsonSchema::array(
+                JsonSchema::string(/*description*/ None),
+                Some(
+                    "Optional agent ids or canonical task names to wait on. Omit to wait for any mailbox update."
+                        .to_string(),
+                ),
+            ),
+        ),
+        (
+            "timeout_ms".to_string(),
+            JsonSchema::number(Some(format!(
+                "Optional timeout in milliseconds. Defaults to {}, min {}, max {}.",
+                options.default_timeout_ms, options.min_timeout_ms, options.max_timeout_ms,
+            ))),
+        ),
+    ]);
 
     JsonSchema::object(properties, /*required*/ None, Some(false.into()))
 }
