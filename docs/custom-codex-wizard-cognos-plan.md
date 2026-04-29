@@ -8,13 +8,15 @@ the first implementation slice read-only or status-oriented where possible.
 
 ## Phase 1: Safe Local Fork Operations
 
-- Add `scripts/clean-fast-release-build.ps1`.
+- Keep the system `codex` launcher on the official npm-installed Codex.
+- Use local fork binaries directly from this repo while developing and testing.
+- Add `scripts/clean-fast-release-local.ps1`.
 - Do not run it automatically.
-- The script protects the installed `codex` command by copying the current
-  binary to a fallback directory, pointing the wrapper at that fallback, cleaning
-  build folders, running a fast release build, then repointing the wrapper to
-  the rebuilt binary after direct verification.
-- Keep `scripts/install-local-codex-fork.ps1` as the installer/verifier.
+- The script cleans only repo-owned build folders under `codex-rs/target`,
+  runs a fast release build, and verifies `codex-rs/target/release/codex.exe`
+  directly.
+- The script must not change PATH, npm shims, `~/.codex/system-wrapper`, or any
+  other system-wide launcher state.
 
 ## Phase 2: Memory Status API
 
@@ -69,4 +71,3 @@ the first implementation slice read-only or status-oriented where possible.
 - Rollout:
   - commit and push logical slices
   - after successful Rust checks, rebuild/install only when explicitly requested
-
