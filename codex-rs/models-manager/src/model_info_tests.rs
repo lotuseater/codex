@@ -1,6 +1,110 @@
 use super::*;
 use crate::ModelsManagerConfig;
+use codex_protocol::openai_models::ModelInfo;
+use codex_protocol::openai_models::ModelVisibility;
+use codex_protocol::openai_models::TruncationPolicyConfig;
 use pretty_assertions::assert_eq;
+
+fn remote_style_model() -> ModelInfo {
+    ModelInfo {
+        slug: "remote-model".to_string(),
+        display_name: "Remote Model".to_string(),
+        description: None,
+        default_reasoning_level: None,
+        supported_reasoning_levels: Vec::new(),
+        shell_type: codex_protocol::openai_models::ConfigShellToolType::Default,
+        visibility: ModelVisibility::None,
+        supported_in_api: true,
+        priority: 0,
+        additional_speed_tiers: Vec::new(),
+        availability_nux: None,
+        upgrade: None,
+        base_instructions: "Remote base instructions.".to_string(),
+        model_messages: None,
+        supports_reasoning_summaries: false,
+        default_reasoning_summary: codex_protocol::config_types::ReasoningSummary::Auto,
+        support_verbosity: false,
+        default_verbosity: None,
+        apply_patch_tool_type: None,
+        web_search_tool_type: codex_protocol::openai_models::WebSearchToolType::Text,
+        truncation_policy: TruncationPolicyConfig::bytes(/*limit*/ 10_000),
+        supports_parallel_tool_calls: false,
+        supports_image_detail_original: false,
+        context_window: Some(272_000),
+        max_context_window: Some(272_000),
+        auto_compact_token_limit: None,
+        effective_context_window_percent: 95,
+        experimental_supported_tools: Vec::new(),
+        input_modalities: codex_protocol::openai_models::default_input_modalities(),
+        used_fallback_model_metadata: false,
+        supports_search_tool: false,
+    }
+}
+
+#[test]
+fn fallback_model_includes_self_review_instructions() {
+    let model = model_info_from_slug("unknown-model");
+
+    assert!(
+        model
+            .base_instructions
+            .contains("## Self-Review Discipline")
+    );
+    assert!(
+        model
+            .base_instructions
+            .contains("first version of a non-trivial plan")
+    );
+    assert!(
+        model
+            .base_instructions
+            .contains("substantial batch of edits")
+    );
+}
+
+#[test]
+fn config_overrides_append_self_review_to_remote_style_model() {
+    let model = remote_style_model();
+    let updated = with_config_overrides(model, &ModelsManagerConfig::default());
+
+    assert!(
+        updated
+            .base_instructions
+            .contains("Remote base instructions.")
+    );
+    assert!(
+        updated
+            .base_instructions
+            .contains("## Self-Review Discipline")
+    );
+}
+
+#[test]
+fn config_overrides_do_not_duplicate_self_review_instructions() {
+    let model = model_info_from_slug("unknown-model");
+    let updated = with_config_overrides(model, &ModelsManagerConfig::default());
+
+    assert_eq!(
+        updated
+            .base_instructions
+            .matches("## Self-Review Discipline")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn explicit_base_instructions_override_self_review_overlay() {
+    let model = remote_style_model();
+    let config = ModelsManagerConfig {
+        base_instructions: Some("Custom base instructions.".to_string()),
+        ..Default::default()
+    };
+
+    let updated = with_config_overrides(model, &config);
+
+    assert_eq!(updated.base_instructions, "Custom base instructions.");
+}
 
 #[test]
 fn reasoning_summaries_override_true_enables_support() {

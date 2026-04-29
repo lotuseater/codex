@@ -14,6 +14,7 @@ use codex_utils_output_truncation::approx_bytes_for_tokens;
 use tracing::warn;
 
 pub const BASE_INSTRUCTIONS: &str = include_str!("../prompt.md");
+pub const SELF_REVIEW_INSTRUCTIONS: &str = include_str!("../self_review_instructions.md");
 const DEFAULT_PERSONALITY_HEADER: &str = "You are Codex, a coding agent based on GPT-5. You and the user share the same workspace and collaborate to achieve the user's goals.";
 const LOCAL_FRIENDLY_TEMPLATE: &str =
     "You optimize for team morale and being a supportive teammate as much as code quality.";
@@ -55,16 +56,33 @@ pub fn with_config_overrides(mut model: ModelInfo, config: &ModelsManagerConfig)
     if let Some(base_instructions) = &config.base_instructions {
         model.base_instructions = base_instructions.clone();
         model.model_messages = None;
-    } else if !config.personality_enabled {
-        model.model_messages = None;
+    } else {
+        append_self_review_instructions(&mut model.base_instructions);
+        if !config.personality_enabled {
+            model.model_messages = None;
+        }
     }
 
     model
 }
 
+fn append_self_review_instructions(base_instructions: &mut String) {
+    if base_instructions.contains("## Self-Review Discipline") {
+        return;
+    }
+    if !base_instructions.ends_with('\n') {
+        base_instructions.push('\n');
+    }
+    base_instructions.push('\n');
+    base_instructions.push_str(SELF_REVIEW_INSTRUCTIONS.trim_end());
+    base_instructions.push('\n');
+}
+
 /// Build a minimal fallback model descriptor for missing/unknown slugs.
 pub fn model_info_from_slug(slug: &str) -> ModelInfo {
     warn!("Unknown model {slug} is used. This will use fallback model metadata.");
+    let mut base_instructions = BASE_INSTRUCTIONS.to_string();
+    append_self_review_instructions(&mut base_instructions);
     ModelInfo {
         slug: slug.to_string(),
         display_name: slug.to_string(),
@@ -78,7 +96,7 @@ pub fn model_info_from_slug(slug: &str) -> ModelInfo {
         additional_speed_tiers: Vec::new(),
         availability_nux: None,
         upgrade: None,
-        base_instructions: BASE_INSTRUCTIONS.to_string(),
+        base_instructions,
         model_messages: local_personality_messages_for_slug(slug),
         supports_reasoning_summaries: false,
         default_reasoning_summary: ReasoningSummary::Auto,
