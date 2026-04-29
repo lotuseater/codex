@@ -2617,6 +2617,35 @@ pub struct ListMcpServerStatusResponse {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
+pub struct McpCacheStatusResponse {
+    pub deferred_mcp_loading_enabled: bool,
+    pub codex_apps_tools: CodexAppsToolsCacheStatus,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct CodexAppsToolsCacheStatus {
+    pub path: String,
+    pub state: McpCacheEntryState,
+    pub schema_version: Option<u32>,
+    pub byte_size: Option<u64>,
+    pub modified_at: Option<i64>,
+    pub tool_count: Option<u64>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "v2/")]
+pub enum McpCacheEntryState {
+    Hit,
+    Missing,
+    Invalid,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
 pub struct McpResourceReadParams {
     #[ts(optional = nullable)]
     pub thread_id: Option<String>,
@@ -4042,6 +4071,32 @@ pub struct ThreadMemoryModeSetResponse {}
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct MemoryResetResponse {}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct MemoryStatusResponse {
+    pub feature_enabled: bool,
+    pub state_db_available: bool,
+    pub memory_root: String,
+    pub memory_root_exists: bool,
+    pub memory_index_exists: bool,
+    pub raw_memories_exists: bool,
+    pub stage1_output_count: Option<u64>,
+    pub selected_for_phase2_count: Option<u64>,
+    pub latest_source_updated_at: Option<i64>,
+    pub latest_generated_at: Option<i64>,
+    pub jobs: Option<Vec<MemoryJobStatus>>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct MemoryJobStatus {
+    pub kind: String,
+    pub status: String,
+    pub count: u64,
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]

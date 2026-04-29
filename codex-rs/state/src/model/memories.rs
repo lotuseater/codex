@@ -22,6 +22,50 @@ pub struct Stage1Output {
     pub generated_at: DateTime<Utc>,
 }
 
+/// Read-only aggregate counts for the local memory pipeline.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemoryStatusSnapshot {
+    pub stage1_output_count: u64,
+    pub selected_for_phase2_count: u64,
+    pub latest_source_updated_at: Option<i64>,
+    pub latest_generated_at: Option<i64>,
+    pub jobs: Vec<MemoryJobStatusCount>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemoryJobStatusCount {
+    pub kind: String,
+    pub status: String,
+    pub count: u64,
+}
+
+#[derive(Debug)]
+pub(crate) struct MemoryJobStatusCountRow {
+    kind: String,
+    status: String,
+    count: i64,
+}
+
+impl MemoryJobStatusCountRow {
+    pub(crate) fn try_from_row(row: &SqliteRow) -> Result<Self> {
+        Ok(Self {
+            kind: row.try_get("kind")?,
+            status: row.try_get("status")?,
+            count: row.try_get("count")?,
+        })
+    }
+}
+
+impl From<MemoryJobStatusCountRow> for MemoryJobStatusCount {
+    fn from(row: MemoryJobStatusCountRow) -> Self {
+        Self {
+            kind: row.kind,
+            status: row.status,
+            count: u64::try_from(row.count).unwrap_or(0),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct Stage1OutputRow {
     thread_id: String,

@@ -43,6 +43,7 @@ use codex_app_server_protocol::CancelLoginAccountResponse;
 use codex_app_server_protocol::CancelLoginAccountStatus;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::ClientResponsePayload;
+use codex_app_server_protocol::CodexAppsToolsCacheStatus as ApiCodexAppsToolsCacheStatus;
 use codex_app_server_protocol::CodexErrorInfo;
 use codex_app_server_protocol::CollaborationModeListParams;
 use codex_app_server_protocol::CollaborationModeListResponse;
@@ -91,6 +92,8 @@ use codex_app_server_protocol::MarketplaceRemoveResponse;
 use codex_app_server_protocol::MarketplaceUpgradeErrorInfo;
 use codex_app_server_protocol::MarketplaceUpgradeParams;
 use codex_app_server_protocol::MarketplaceUpgradeResponse;
+use codex_app_server_protocol::McpCacheEntryState;
+use codex_app_server_protocol::McpCacheStatusResponse;
 use codex_app_server_protocol::McpResourceReadParams;
 use codex_app_server_protocol::McpResourceReadResponse;
 use codex_app_server_protocol::McpServerOauthLoginCompletedNotification;
@@ -101,7 +104,9 @@ use codex_app_server_protocol::McpServerStatus;
 use codex_app_server_protocol::McpServerStatusDetail;
 use codex_app_server_protocol::McpServerToolCallParams;
 use codex_app_server_protocol::McpServerToolCallResponse;
+use codex_app_server_protocol::MemoryJobStatus;
 use codex_app_server_protocol::MemoryResetResponse;
+use codex_app_server_protocol::MemoryStatusResponse;
 use codex_app_server_protocol::MockExperimentalMethodParams;
 use codex_app_server_protocol::MockExperimentalMethodResponse;
 use codex_app_server_protocol::ModelListParams;
@@ -308,9 +313,12 @@ use codex_login::complete_device_code_login;
 use codex_login::login_with_api_key;
 use codex_login::request_device_code;
 use codex_login::run_login_server;
+use codex_mcp::CodexAppsToolsCacheState;
 use codex_mcp::McpRuntimeEnvironment;
 use codex_mcp::McpServerStatusSnapshot;
 use codex_mcp::McpSnapshotDetail;
+use codex_mcp::codex_apps_tools_cache_key;
+use codex_mcp::codex_apps_tools_cache_status;
 use codex_mcp::collect_mcp_server_status_snapshot_with_detail;
 use codex_mcp::discover_supported_scopes;
 use codex_mcp::effective_mcp_servers;
@@ -1036,6 +1044,10 @@ impl CodexMessageProcessor {
                 self.memory_reset(to_connection_request_id(request_id), params)
                     .await;
             }
+            ClientRequest::MemoryStatus { request_id, params } => {
+                self.memory_status(to_connection_request_id(request_id), params)
+                    .await;
+            }
             ClientRequest::ThreadUnarchive { request_id, params } => {
                 self.thread_unarchive(to_connection_request_id(request_id), params)
                     .await;
@@ -1208,6 +1220,10 @@ impl CodexMessageProcessor {
             }
             ClientRequest::McpServerStatusList { request_id, params } => {
                 self.list_mcp_server_status(to_connection_request_id(request_id), params)
+                    .await;
+            }
+            ClientRequest::McpCacheStatus { request_id, params } => {
+                self.mcp_cache_status(to_connection_request_id(request_id), params)
                     .await;
             }
             ClientRequest::McpResourceRead { request_id, params } => {
@@ -3237,6 +3253,64 @@ impl CodexMessageProcessor {
             })?;
 
         Ok(MemoryResetResponse {})
+    }
+
+    async fn memory_status(&self, request_id: ConnectionRequestId, _params: Option<()>) {
+        let memory_root = self.config.codex_home.join("memories");
+        let memory_index = memory_root.join("MEMORY.md");
+        let raw_memories = memory_root.join("raw_memories.md");
+
+        let memory_root_exists = tokio::fs::try_exists(&memory_root).await.unwrap_or(false);
+        let memory_index_exists = tokio::fs::try_exists(&memory_index).await.unwrap_or(false);
+        let raw_memories_exists = tokio::fs::try_exists(&raw_memories).await.unwrap_or(false);
+
+        let state_db = get_state_db(&self.config).await;
+        let mut response = MemoryStatusResponse {
+            feature_enabled: self.config.features.enabled(Feature::MemoryTool),
+            state_db_available: state_db.is_some(),
+            memory_root: memory_root.display().to_string(),
+            memory_root_exists,
+            memory_index_exists,
+            raw_memories_exists,
+            stage1_output_count: None,
+            selected_for_phase2_count: None,
+            latest_source_updated_at: None,
+            latest_generated_at: None,
+            jobs: None,
+        };
+
+        let Some(state_db) = state_db else {
+            self.outgoing.send_response(request_id, response).await;
+            return;
+        };
+
+        match state_db.memory_status_snapshot().await {
+            Ok(snapshot) => {
+                response.stage1_output_count = Some(snapshot.stage1_output_count);
+                response.selected_for_phase2_count = Some(snapshot.selected_for_phase2_count);
+                response.latest_source_updated_at = snapshot.latest_source_updated_at;
+                response.latest_generated_at = snapshot.latest_generated_at;
+                response.jobs = Some(
+                    snapshot
+                        .jobs
+                        .into_iter()
+                        .map(|job| MemoryJobStatus {
+                            kind: job.kind,
+                            status: job.status,
+                            count: job.count,
+                        })
+                        .collect(),
+                );
+                self.outgoing.send_response(request_id, response).await;
+            }
+            Err(err) => {
+                self.send_internal_error(
+                    request_id,
+                    format!("failed to read memory status from state db: {err}"),
+                )
+                .await;
+            }
+        }
     }
 
     async fn thread_metadata_update(
@@ -5670,6 +5744,45 @@ impl CodexMessageProcessor {
         };
 
         Ok(ListMcpServerStatusResponse { data, next_cursor })
+    }
+
+    async fn mcp_cache_status(&self, request_id: ConnectionRequestId, _params: Option<()>) {
+        let config = match self.load_latest_config(/*fallback_cwd*/ None).await {
+            Ok(config) => config,
+            Err(error) => {
+                self.outgoing.send_error(request_id, error).await;
+                return;
+            }
+        };
+        let auth = self.auth_manager.auth().await;
+        let status = codex_apps_tools_cache_status(
+            &config.codex_home,
+            codex_apps_tools_cache_key(auth.as_ref()),
+        );
+        let state = match status.state {
+            CodexAppsToolsCacheState::Hit => McpCacheEntryState::Hit,
+            CodexAppsToolsCacheState::Missing => McpCacheEntryState::Missing,
+            CodexAppsToolsCacheState::Invalid => McpCacheEntryState::Invalid,
+        };
+
+        self.outgoing
+            .send_response(
+                request_id,
+                McpCacheStatusResponse {
+                    deferred_mcp_loading_enabled: config
+                        .features
+                        .enabled(Feature::ToolSearchAlwaysDeferMcpTools),
+                    codex_apps_tools: ApiCodexAppsToolsCacheStatus {
+                        path: status.cache_path.display().to_string(),
+                        state,
+                        schema_version: status.schema_version.map(u32::from),
+                        byte_size: status.byte_size,
+                        modified_at: status.modified_at,
+                        tool_count: status.tool_count.map(|count| count as u64),
+                    },
+                },
+            )
+            .await;
     }
 
     async fn read_mcp_resource(

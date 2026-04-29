@@ -152,6 +152,7 @@ Example with notification opt-out:
 - `thread/metadata/update` — patch stored thread metadata in sqlite; currently supports updating persisted `gitInfo` fields and returns the refreshed `thread`.
 - `thread/memoryMode/set` — experimental; set a thread’s persisted memory eligibility to `"enabled"` or `"disabled"` for either a loaded thread or a stored rollout; returns `{}` on success.
 - `memory/reset` — experimental; clear the current `CODEX_HOME/memories` directory and reset persisted memory stage data in sqlite while preserving existing thread memory modes; returns `{}` on success.
+- `memory/status` — experimental; read local memory feature, file, sqlite stage, and job counts without mutating memory state.
 - `thread/goal/set` — create, replace, or update the single persisted goal for a materialized thread; returns the current goal and emits `thread/goal/updated`. Supplying a new `objective` replaces the goal and resets usage accounting. Supplying the current non-terminal objective or omitting `objective` updates the existing goal’s status and/or token budget while preserving usage.
 - `thread/goal/get` — fetch the current persisted goal for a materialized thread; returns `goal: null` when no goal exists.
 - `thread/goal/clear` — clear the current persisted goal for a materialized thread; returns whether a goal was removed and emits `thread/goal/cleared` when state changes.
@@ -214,6 +215,7 @@ Example with notification opt-out:
 - `tool/requestUserInput` — prompt the user with 1–3 short questions for a tool call and return their answers (experimental).
 - `config/mcpServer/reload` — reload MCP server config from disk and queue a refresh for loaded threads (applied on each thread's next active turn); returns `{}`. Use this after editing `config.toml` without restarting the server.
 - `mcpServerStatus/list` — enumerate configured MCP servers with their tools and auth status, plus resources/resource templates for `full` detail; supports cursor+limit pagination. If `detail` is omitted, the server defaults to `full`.
+- `mcp/cache/status` — experimental; inspect the user-scoped Codex Apps tools cache path, hit/miss/invalid state, schema version, file metadata, and deferred MCP loading flag.
 - `mcpServer/resource/read` — read a resource from a configured MCP server by optional `threadId`, `server`, and `uri`, returning text/blob resource `contents`. If `threadId` is omitted, the server reads from the latest MCP config directly.
 - `mcpServer/tool/call` — call a tool on a thread's configured MCP server by `threadId`, `server`, `tool`, optional `arguments`, and optional `_meta`, returning the MCP tool result.
 - `windowsSandbox/setupStart` — start Windows sandbox setup for the selected mode (`elevated` or `unelevated`); accepts an optional absolute `cwd` to target setup for a specific workspace, returns `{ started: true }` immediately, and later emits `windowsSandbox/setupCompleted`.
@@ -475,6 +477,44 @@ Experimental: use `memory/reset` to clear local memory artifacts and sqlite-back
 ```json
 { "method": "memory/reset", "id": 27 }
 { "id": 27, "result": {} }
+```
+
+Use `memory/status` to inspect local memory state without changing files or sqlite rows.
+
+```json
+{ "method": "memory/status", "id": 28 }
+{ "id": 28, "result": {
+  "featureEnabled": true,
+  "stateDbAvailable": true,
+  "memoryRoot": "/Users/me/.codex/memories",
+  "memoryRootExists": true,
+  "memoryIndexExists": true,
+  "rawMemoriesExists": true,
+  "stage1OutputCount": 12,
+  "selectedForPhase2Count": 3,
+  "latestSourceUpdatedAt": 1776272400,
+  "latestGeneratedAt": 1776272460,
+  "jobs": [
+    { "kind": "memory_stage1", "status": "succeeded", "count": 12 }
+  ]
+} }
+```
+
+Use `mcp/cache/status` to inspect the local Codex Apps tools cache used by deferred MCP loading.
+
+```json
+{ "method": "mcp/cache/status", "id": 29 }
+{ "id": 29, "result": {
+  "deferredMcpLoadingEnabled": true,
+  "codexAppsTools": {
+    "path": "/Users/me/.codex/cache/codex_apps_tools/abc.json",
+    "state": "hit",
+    "schemaVersion": 2,
+    "byteSize": 4096,
+    "modifiedAt": 1776272460,
+    "toolCount": 24
+  }
+} }
 ```
 
 ### Example: Set and update a thread goal

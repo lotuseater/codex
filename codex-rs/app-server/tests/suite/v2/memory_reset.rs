@@ -4,6 +4,7 @@ use app_test_support::to_response;
 use chrono::Utc;
 use codex_app_server_protocol::JSONRPCResponse;
 use codex_app_server_protocol::MemoryResetResponse;
+use codex_app_server_protocol::MemoryStatusResponse;
 use codex_app_server_protocol::RequestId;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::SessionSource;
@@ -60,6 +61,62 @@ async fn memory_reset_clears_memory_files_and_rows_preserves_threads() -> Result
     assert!(
         remaining_entries.next_entry().await?.is_none(),
         "memory root should be empty after reset"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn memory_status_reports_memory_files_and_state_counts() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    create_config_toml(codex_home.path())?;
+    let state_db = init_state_db(codex_home.path()).await?;
+
+    let memory_root = codex_home.path().join("memories");
+    tokio::fs::create_dir_all(&memory_root).await?;
+    tokio::fs::write(memory_root.join("MEMORY.md"), "global memory\n").await?;
+    tokio::fs::write(memory_root.join("raw_memories.md"), "raw memory\n").await?;
+
+    let _thread_id = seed_stage1_output(&state_db, codex_home.path()).await?;
+
+    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
+
+    let request_id = mcp
+        .send_raw_request("memory/status", /*params*/ None)
+        .await?;
+    let response: JSONRPCResponse = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
+    )
+    .await??;
+    let response: MemoryStatusResponse = to_response::<MemoryStatusResponse>(response)?;
+
+    assert!(response.feature_enabled);
+    assert!(response.state_db_available);
+    assert_eq!(response.memory_root, memory_root.display().to_string());
+    assert!(response.memory_root_exists);
+    assert!(response.memory_index_exists);
+    assert!(response.raw_memories_exists);
+    assert_eq!(response.stage1_output_count, Some(1));
+    assert_eq!(response.selected_for_phase2_count, Some(0));
+    assert!(response.latest_source_updated_at.is_some());
+    assert!(response.latest_generated_at.is_some());
+    assert_eq!(
+        response
+            .jobs
+            .expect("job status counts")
+            .into_iter()
+            .map(|job| (job.kind, job.status, job.count))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                "memory_consolidate_global".to_string(),
+                "pending".to_string(),
+                1
+            ),
+            ("memory_stage1".to_string(), "succeeded".to_string(), 1),
+        ]
     );
 
     Ok(())
@@ -133,6 +190,7 @@ suppress_unstable_features_warning = true
 
 [features]
 sqlite = true
+memories = true
 
 [model_providers.mock_provider]
 name = "Mock provider for test"

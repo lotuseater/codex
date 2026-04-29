@@ -3,6 +3,9 @@ use super::threads::push_thread_filters;
 use super::threads::push_thread_order_and_limit;
 use super::*;
 use crate::SortDirection;
+use crate::model::MemoryJobStatusCount;
+use crate::model::MemoryJobStatusCountRow;
+use crate::model::MemoryStatusSnapshot;
 use crate::model::Phase2JobClaimOutcome;
 use crate::model::Stage1JobClaim;
 use crate::model::Stage1JobClaimOutcome;
@@ -24,6 +27,52 @@ const PHASE2_SUCCESS_COOLDOWN_SECONDS: i64 = 6 * 60 * 60;
 const DEFAULT_RETRY_REMAINING: i64 = 3;
 
 impl StateRuntime {
+    /// Returns aggregate counts for the local memory pipeline without mutating it.
+    pub async fn memory_status_snapshot(&self) -> anyhow::Result<MemoryStatusSnapshot> {
+        let summary = sqlx::query(
+            r#"
+SELECT
+    COUNT(*) AS stage1_output_count,
+    COALESCE(SUM(CASE WHEN selected_for_phase2 != 0 THEN 1 ELSE 0 END), 0) AS selected_for_phase2_count,
+    MAX(source_updated_at) AS latest_source_updated_at,
+    MAX(generated_at) AS latest_generated_at
+FROM stage1_outputs
+            "#,
+        )
+        .fetch_one(self.pool.as_ref())
+        .await?;
+
+        let stage1_output_count: i64 = summary.try_get("stage1_output_count")?;
+        let selected_for_phase2_count: i64 = summary.try_get("selected_for_phase2_count")?;
+        let latest_source_updated_at: Option<i64> = summary.try_get("latest_source_updated_at")?;
+        let latest_generated_at: Option<i64> = summary.try_get("latest_generated_at")?;
+
+        let jobs = sqlx::query(
+            r#"
+SELECT kind, status, COUNT(*) AS count
+FROM jobs
+WHERE kind = ? OR kind = ?
+GROUP BY kind, status
+ORDER BY kind, status
+            "#,
+        )
+        .bind(JOB_KIND_MEMORY_STAGE1)
+        .bind(JOB_KIND_MEMORY_CONSOLIDATE_GLOBAL)
+        .fetch_all(self.pool.as_ref())
+        .await?
+        .into_iter()
+        .map(|row| MemoryJobStatusCountRow::try_from_row(&row).map(MemoryJobStatusCount::from))
+        .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(MemoryStatusSnapshot {
+            stage1_output_count: u64::try_from(stage1_output_count).unwrap_or(0),
+            selected_for_phase2_count: u64::try_from(selected_for_phase2_count).unwrap_or(0),
+            latest_source_updated_at,
+            latest_generated_at,
+            jobs,
+        })
+    }
+
     /// Deletes all persisted memory state in one transaction.
     ///
     /// This removes every `stage1_outputs` row and all `jobs` rows for the

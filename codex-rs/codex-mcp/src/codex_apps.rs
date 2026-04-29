@@ -6,8 +6,10 @@
 //! connector/tool metadata into model-visible MCP callable names.
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::path::PathBuf;
 use std::time::Instant;
+use std::time::SystemTime;
 
 use crate::mcp::CODEX_APPS_MCP_SERVER_NAME;
 use crate::runtime::emit_duration;
@@ -68,6 +70,97 @@ pub(crate) enum CachedCodexAppsToolsLoad {
     Hit(Vec<ToolInfo>),
     Missing,
     Invalid,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CodexAppsToolsCacheState {
+    Hit,
+    Missing,
+    Invalid,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CodexAppsToolsCacheStatus {
+    pub cache_path: PathBuf,
+    pub state: CodexAppsToolsCacheState,
+    pub schema_version: Option<u8>,
+    pub byte_size: Option<u64>,
+    pub modified_at: Option<i64>,
+    pub tool_count: Option<usize>,
+}
+
+pub fn codex_apps_tools_cache_status(
+    codex_home: &Path,
+    user_key: CodexAppsToolsCacheKey,
+) -> CodexAppsToolsCacheStatus {
+    let cache_context = CodexAppsToolsCacheContext {
+        codex_home: codex_home.to_path_buf(),
+        user_key,
+    };
+    let cache_path = cache_context.cache_path();
+    let metadata = std::fs::metadata(&cache_path).ok();
+    let byte_size = metadata.as_ref().map(std::fs::Metadata::len);
+    let modified_at = metadata
+        .and_then(|metadata| metadata.modified().ok())
+        .and_then(system_time_to_epoch_seconds);
+
+    let bytes = match std::fs::read(&cache_path) {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return CodexAppsToolsCacheStatus {
+                cache_path,
+                state: CodexAppsToolsCacheState::Missing,
+                schema_version: None,
+                byte_size,
+                modified_at,
+                tool_count: None,
+            };
+        }
+        Err(_) => {
+            return CodexAppsToolsCacheStatus {
+                cache_path,
+                state: CodexAppsToolsCacheState::Invalid,
+                schema_version: None,
+                byte_size,
+                modified_at,
+                tool_count: None,
+            };
+        }
+    };
+
+    let cache: CodexAppsToolsDiskCache = match serde_json::from_slice(&bytes) {
+        Ok(cache) => cache,
+        Err(_) => {
+            return CodexAppsToolsCacheStatus {
+                cache_path,
+                state: CodexAppsToolsCacheState::Invalid,
+                schema_version: None,
+                byte_size,
+                modified_at,
+                tool_count: None,
+            };
+        }
+    };
+    let schema_version = Some(cache.schema_version);
+    if cache.schema_version != CODEX_APPS_TOOLS_CACHE_SCHEMA_VERSION {
+        return CodexAppsToolsCacheStatus {
+            cache_path,
+            state: CodexAppsToolsCacheState::Invalid,
+            schema_version,
+            byte_size,
+            modified_at,
+            tool_count: None,
+        };
+    }
+
+    CodexAppsToolsCacheStatus {
+        cache_path,
+        state: CodexAppsToolsCacheState::Hit,
+        schema_version,
+        byte_size,
+        modified_at,
+        tool_count: Some(filter_disallowed_codex_apps_tools(cache.tools).len()),
+    }
 }
 
 pub(crate) fn normalize_codex_apps_tool_title(
@@ -255,4 +348,9 @@ fn sha1_hex(s: &str) -> String {
     hasher.update(s.as_bytes());
     let sha1 = hasher.finalize();
     format!("{sha1:x}")
+}
+
+fn system_time_to_epoch_seconds(time: SystemTime) -> Option<i64> {
+    let duration = time.duration_since(SystemTime::UNIX_EPOCH).ok()?;
+    i64::try_from(duration.as_secs()).ok()
 }
