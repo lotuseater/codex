@@ -39,6 +39,7 @@ use crate::tooltips;
 use crate::ui_consts::LIVE_PREFIX_COLS;
 use crate::update_action::UpdateAction;
 use crate::version::CODEX_CLI_VERSION;
+use crate::version::LOCAL_FORK_VERSION_LABEL;
 use crate::wrapping::RtOptions;
 use crate::wrapping::adaptive_wrap_line;
 use crate::wrapping::adaptive_wrap_lines;
@@ -1453,6 +1454,8 @@ impl HistoryCell for SessionHeaderHistoryCell {
             Span::from("OpenAI Codex").bold(),
             Span::from(" ").dim(),
             Span::from(format!("(v{})", self.version)).dim(),
+            Span::from(" ").dim(),
+            Span::from(LOCAL_FORK_VERSION_LABEL).magenta().bold(),
         ];
 
         const CHANGE_MODEL_HINT_COMMAND: &str = "/model";
@@ -4172,6 +4175,25 @@ mod tests {
 
         assert!(model_line.contains("gpt-4o high   fast"));
         assert!(model_line.contains("/model to change"));
+    }
+
+    #[test]
+    fn session_header_shows_local_fork_version_label() {
+        let cell = SessionHeaderHistoryCell::new(
+            "gpt-4o".to_string(),
+            /*reasoning_effort*/ None,
+            /*show_fast_status*/ false,
+            std::env::temp_dir(),
+            "test",
+        );
+
+        let lines = render_lines(&cell.display_lines(/*width*/ 80));
+        let title_line = lines
+            .iter()
+            .find(|line| line.contains("OpenAI Codex"))
+            .expect("title line");
+
+        assert!(title_line.contains("Wizard_Codex_April_29_2_49"));
     }
 
     #[test]

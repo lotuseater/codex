@@ -36,6 +36,7 @@ The installer builds `codex-rs\target\release\codex.exe`, creates a timestamped 
 - Install path: `Get-Command codex -All` shows `C:\Users\Oleh\.codex\system-wrapper` first.
 - Binary target: `system.codex-wrapper.env.json` points `WIZARD_CODEX_REAL_EXE` at this repo's `codex-rs\target\release\codex.exe`.
 - Startup: `codex --version` exits 0 through the wrapper.
+- Interactive session header: the first Codex header line includes `Wizard_Codex_April_29_2_49`.
 - Optional model smoke: `.\scripts\install-local-codex-fork.ps1 -Action Verify -RunSmoke`.
 - Rollback: `-Action Rollback` restores the prior wrapper env and then reruns the same verification.
 

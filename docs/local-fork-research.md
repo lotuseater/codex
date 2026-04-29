@@ -36,3 +36,5 @@ The local fork can safely substitute system-wide by:
 5. verifying `codex --version` and optional `codex exec` smoke behavior.
 
 Rollback is restoring the prior wrapper environment JSON from the manifest backup.
+
+The local fork is intentionally visible in the interactive TUI session header as `Wizard_Codex_April_29_2_49`, so a new session can be distinguished from stock Codex without inspecting the wrapper environment.
