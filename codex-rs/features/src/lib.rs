@@ -858,7 +858,7 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::ToolSearchAlwaysDeferMcpTools,
         key: "tool_search_always_defer_mcp_tools",
         stage: Stage::UnderDevelopment,
-        default_enabled: false,
+        default_enabled: true,
     },
     FeatureSpec {
         id: Feature::UnavailableDummyTools,

@@ -112,8 +112,12 @@ async fn tools_config_for_mcp_tool_exposure(search_tool: bool) -> ToolsConfig {
 }
 
 #[tokio::test]
-async fn directly_exposes_small_effective_tool_sets() {
-    let config = test_config().await;
+async fn directly_exposes_small_effective_tool_sets_when_always_defer_disabled() {
+    let mut config = test_config().await;
+    config
+        .features
+        .disable(Feature::ToolSearchAlwaysDeferMcpTools)
+        .expect("test config should allow feature update");
     let tools_config = tools_config_for_mcp_tool_exposure(/*search_tool*/ true).await;
     let mcp_tools = numbered_mcp_tools(DIRECT_MCP_TOOL_EXPOSURE_THRESHOLD - 1);
 

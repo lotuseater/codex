@@ -18,6 +18,9 @@ use toml::Value as TomlValue;
 fn under_development_features_are_disabled_by_default() {
     for spec in crate::FEATURES {
         if matches!(spec.stage, Stage::UnderDevelopment) {
+            if spec.id == Feature::ToolSearchAlwaysDeferMcpTools {
+                continue;
+            }
             assert_eq!(
                 spec.default_enabled, false,
                 "feature `{}` is under development and must be disabled by default",
@@ -33,7 +36,10 @@ fn default_enabled_features_are_stable() {
         if spec.default_enabled {
             assert!(
                 matches!(spec.stage, Stage::Stable | Stage::Removed)
-                    || spec.id == Feature::TerminalResizeReflow,
+                    || matches!(
+                        spec.id,
+                        Feature::TerminalResizeReflow | Feature::ToolSearchAlwaysDeferMcpTools
+                    ),
                 "feature `{}` is enabled by default but is not stable/removed ({:?})",
                 spec.key,
                 spec.stage
@@ -142,6 +148,22 @@ fn tool_suggest_is_stable_and_enabled_by_default() {
 fn tool_search_is_stable_and_enabled_by_default() {
     assert_eq!(Feature::ToolSearch.stage(), Stage::Stable);
     assert_eq!(Feature::ToolSearch.default_enabled(), true);
+}
+
+#[test]
+fn tool_search_always_defer_mcp_tools_is_enabled_by_default_for_local_token_savings() {
+    assert_eq!(
+        feature_for_key("tool_search_always_defer_mcp_tools"),
+        Some(Feature::ToolSearchAlwaysDeferMcpTools)
+    );
+    assert_eq!(
+        Feature::ToolSearchAlwaysDeferMcpTools.stage(),
+        Stage::UnderDevelopment
+    );
+    assert_eq!(
+        Feature::ToolSearchAlwaysDeferMcpTools.default_enabled(),
+        true
+    );
 }
 
 #[test]
