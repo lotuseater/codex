@@ -64,6 +64,36 @@ function Write-JsonObject {
     $Payload | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $Path -Encoding UTF8
 }
 
+function Find-VsDevCmd {
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+    if (Test-Path -LiteralPath $vswhere) {
+        $installPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+        if (-not [string]::IsNullOrWhiteSpace($installPath)) {
+            $candidate = Join-Path $installPath "Common7\Tools\VsDevCmd.bat"
+            if (Test-Path -LiteralPath $candidate) {
+                return $candidate
+            }
+        }
+    }
+
+    $roots = @(
+        (Join-Path $env:ProgramFiles "Microsoft Visual Studio"),
+        (Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio")
+    )
+    foreach ($root in $roots) {
+        if (-not (Test-Path -LiteralPath $root)) {
+            continue
+        }
+        $candidate = Get-ChildItem -LiteralPath $root -Recurse -Filter VsDevCmd.bat -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($candidate) {
+            return $candidate.FullName
+        }
+    }
+
+    return $null
+}
+
 function New-Backup {
     param(
         [string]$Dir,
@@ -104,9 +134,28 @@ function New-Backup {
 function Invoke-Build {
     param([string]$Root)
 
+    $cargoBin = Join-Path $HOME ".cargo\bin"
+    if ((Test-Path -LiteralPath $cargoBin) -and -not $env:Path.Contains($cargoBin)) {
+        $env:Path = "$cargoBin;$env:Path"
+    }
+
     Push-Location (Join-Path $Root "codex-rs")
     try {
-        cargo build --release --bin codex
+        $link = Get-Command link.exe -ErrorAction SilentlyContinue
+        if ($link) {
+            cargo build --release --bin codex
+            return
+        }
+
+        $vsDevCmd = Find-VsDevCmd
+        if ([string]::IsNullOrWhiteSpace($vsDevCmd)) {
+            throw "MSVC linker link.exe is not on PATH and VsDevCmd.bat was not found. Install Visual Studio Build Tools with the C++ workload."
+        }
+
+        & cmd.exe /d /s /c "call `"$vsDevCmd`" -arch=x64 -host_arch=x64 >nul && cargo build --release --bin codex"
+        if ($LASTEXITCODE -ne 0) {
+            throw "cargo build failed with exit code $LASTEXITCODE"
+        }
     }
     finally {
         Pop-Location
