@@ -9,6 +9,9 @@ param(
 
     [string]$BackupRoot = (Join-Path $HOME ".codex\binary-backups"),
 
+    [ValidateSet("FastRelease", "FullRelease")]
+    [string]$BuildMode = "FastRelease",
+
     [switch]$SkipBuild,
 
     [switch]$RunSmoke
@@ -132,11 +135,19 @@ function New-Backup {
 }
 
 function Invoke-Build {
-    param([string]$Root)
+    param(
+        [string]$Root,
+        [string]$Mode
+    )
 
     $cargoBin = Join-Path $HOME ".cargo\bin"
     if ((Test-Path -LiteralPath $cargoBin) -and -not $env:Path.Contains($cargoBin)) {
         $env:Path = "$cargoBin;$env:Path"
+    }
+
+    if ($Mode -eq "FastRelease") {
+        $env:CARGO_PROFILE_RELEASE_LTO = "off"
+        $env:CARGO_PROFILE_RELEASE_CODEGEN_UNITS = "16"
     }
 
     Push-Location (Join-Path $Root "codex-rs")
@@ -164,7 +175,7 @@ function Invoke-Build {
 
 function Invoke-Install {
     if (-not $SkipBuild) {
-        Invoke-Build -Root $RepoRoot
+        Invoke-Build -Root $RepoRoot -Mode $BuildMode
     }
 
     $binary = Resolve-LocalCodexBinary -Root $RepoRoot

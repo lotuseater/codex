@@ -24,6 +24,8 @@ Rollback:
 
 The installer builds `codex-rs\target\release\codex.exe`, creates a timestamped backup under `C:\Users\Oleh\.codex\binary-backups`, updates `WIZARD_CODEX_REAL_EXE`, and verifies that the user-facing `codex` command still enters through `C:\Users\Oleh\.codex\system-wrapper`.
 
+The default build mode is `FastRelease`: it still writes `codex-rs\target\release\codex.exe`, but disables the repo's fat LTO/single-codegen-unit release settings through Cargo profile environment overrides so local rollout rebuilds are practical on this PC. Use `-BuildMode FullRelease` only when intentionally testing the slow upstream release profile.
+
 ## Implementation Priorities
 
 1. Token-cost visibility: add lightweight reports around existing token usage, compaction, deferred tool loading, and output truncation. Keep the first slice read-only or reporting-focused.
