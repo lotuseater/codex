@@ -151,6 +151,43 @@ fn custom_tool_call_output(call_id: &str, output: &str) -> ResponseItem {
     }
 }
 
+fn function_call(call_id: &str) -> ResponseItem {
+    ResponseItem::FunctionCall {
+        id: None,
+        name: "exec".to_string(),
+        namespace: None,
+        arguments: "{}".to_string(),
+        call_id: call_id.to_string(),
+    }
+}
+
+fn custom_tool_call(call_id: &str) -> ResponseItem {
+    ResponseItem::CustomToolCall {
+        id: None,
+        status: None,
+        call_id: call_id.to_string(),
+        name: "custom".to_string(),
+        input: "{}".to_string(),
+    }
+}
+
+fn function_call_output(call_id: &str, output: &str) -> ResponseItem {
+    ResponseItem::FunctionCallOutput {
+        call_id: call_id.to_string(),
+        output: FunctionCallOutputPayload::from_text(output.to_string()),
+    }
+}
+
+fn tool_output_text(item: &ResponseItem) -> &str {
+    match item {
+        ResponseItem::FunctionCallOutput { output, .. }
+        | ResponseItem::CustomToolCallOutput { output, .. } => output
+            .text_content()
+            .expect("test output should be plain text"),
+        _ => panic!("expected tool output item"),
+    }
+}
+
 fn reasoning_msg(text: &str) -> ResponseItem {
     ResponseItem::Reasoning {
         id: String::new(),
@@ -1010,6 +1047,89 @@ fn normalization_retains_local_shell_outputs() {
     let history = create_history_with_items(items.clone());
     let normalized = history.for_prompt(&modalities);
     assert_eq!(normalized, items);
+}
+
+#[test]
+fn for_prompt_elides_repeated_large_function_tool_outputs() {
+    let body = "same output line\n".repeat(220);
+    let first_output = format!("Exit code: 0\nWall time: 0.1000 seconds\nOutput:\n{body}");
+    let second_output = format!("Exit code: 0\nWall time: 9.9999 seconds\nOutput:\n{body}");
+    let items = vec![
+        function_call("call-a"),
+        function_call_output("call-a", &first_output),
+        function_call("call-b"),
+        function_call_output("call-b", &second_output),
+    ];
+    let modalities = default_input_modalities();
+    let history = create_history_with_items(items.clone());
+
+    let prompt = history.clone().for_prompt(&modalities);
+
+    assert_eq!(history.raw_items(), items.as_slice());
+    assert_eq!(tool_output_text(&prompt[1]), first_output);
+    let elided = tool_output_text(&prompt[3]);
+    assert!(elided.starts_with("Repeated tool output omitted to save prompt tokens."));
+    assert!(elided.contains("`call-a`"));
+    assert!(elided.contains("sha1:"));
+    assert!(!elided.contains(&body));
+}
+
+#[test]
+fn for_prompt_keeps_small_repeated_function_tool_outputs() {
+    let output = "short repeated output";
+    let items = vec![
+        function_call("call-a"),
+        function_call_output("call-a", output),
+        function_call("call-b"),
+        function_call_output("call-b", output),
+    ];
+    let modalities = default_input_modalities();
+    let history = create_history_with_items(items.clone());
+
+    let prompt = history.for_prompt(&modalities);
+
+    assert_eq!(prompt, items);
+}
+
+#[test]
+fn for_prompt_keeps_running_process_outputs() {
+    let output = format!(
+        "Process running with session ID 123\n{}",
+        "streaming output\n".repeat(220)
+    );
+    let items = vec![
+        function_call("call-a"),
+        function_call_output("call-a", &output),
+        function_call("call-b"),
+        function_call_output("call-b", &output),
+    ];
+    let modalities = default_input_modalities();
+    let history = create_history_with_items(items.clone());
+
+    let prompt = history.for_prompt(&modalities);
+
+    assert_eq!(prompt, items);
+}
+
+#[test]
+fn for_prompt_elides_repeated_large_custom_tool_outputs() {
+    let output = "custom output line\n".repeat(220);
+    let items = vec![
+        custom_tool_call("call-a"),
+        custom_tool_call_output("call-a", &output),
+        custom_tool_call("call-b"),
+        custom_tool_call_output("call-b", &output),
+    ];
+    let modalities = default_input_modalities();
+    let history = create_history_with_items(items);
+
+    let prompt = history.for_prompt(&modalities);
+
+    assert_eq!(tool_output_text(&prompt[1]), output);
+    let elided = tool_output_text(&prompt[3]);
+    assert!(elided.starts_with("Repeated tool output omitted to save prompt tokens."));
+    assert!(elided.contains("`call-a`"));
+    assert!(!elided.contains(&output));
 }
 
 #[test]

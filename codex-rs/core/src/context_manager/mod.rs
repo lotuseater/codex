@@ -1,5 +1,6 @@
 mod history;
 mod normalize;
+mod prompt_elision;
 pub(crate) mod updates;
 
 pub(crate) use history::ContextManager;

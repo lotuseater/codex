@@ -118,6 +118,7 @@ impl ContextManager {
     /// outputs.
     pub(crate) fn for_prompt(mut self, input_modalities: &[InputModality]) -> Vec<ResponseItem> {
         self.normalize_history(input_modalities);
+        super::prompt_elision::elide_repeated_large_tool_outputs(&mut self.items);
         self.items
     }
 
