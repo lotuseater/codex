@@ -2,72 +2,85 @@
 
 ## Summary
 
-Build small native Codex control-plane improvements that make the local fork
-better for Wizard, Team App, memory/cache audits, and loop orchestration. Keep
-the first implementation slice read-only or status-oriented where possible.
+This branch keeps the system-wide `codex` launcher on the official web/npm
+install and develops the custom fork as a repo-local executable. The first
+implementation slice is token/cost reduction inside Codex itself, based on the
+recent Wizard/Cognos research and local Codex history: defer MCP schemas by
+default and avoid resending repeated large tool outputs in the prompt.
+
+The remote-overlap ideas from the earlier plan, `memory/status` and targeted
+multi-agent `wait_agent`, are parked in this branch. They are useful, but they
+touch API areas likely to move remotely, so the local fork should concentrate on
+custom behavior that directly improves this machine's automation cost.
 
 ## Phase 1: Safe Local Fork Operations
 
 - Keep the system `codex` launcher on the official npm-installed Codex.
 - Use local fork binaries directly from this repo while developing and testing.
-- Add `scripts/clean-fast-release-local.ps1`.
-- Do not run it automatically.
-- The script cleans only repo-owned build folders under `codex-rs/target`,
-  runs a fast release build, and verifies `codex-rs/target/release/codex.exe`
-  directly.
+- Keep `scripts/clean-fast-release-local.ps1` as a manual-only helper.
+- The script defaults to an incremental `dev-small` local build of
+  `codex-cli`, writes `codex-rs/target/dev-small/codex.exe`, and leaves all
+  build folders intact.
+- Use `-BuildMode FastRelease` only when a release-shaped binary is needed.
+- Use `-Clean` or `-CleanDebug` only when intentionally reclaiming build space.
 - The script must not change PATH, npm shims, `~/.codex/system-wrapper`, or any
   other system-wide launcher state.
 
-## Phase 2: Memory Status API
+## Phase 2: MCP Schema Token Saving
 
-- Add app-server v2 method `memory/status`.
-- Response fields:
-  - `memoryRoot`
-  - `exists`
-  - `memoryMdExists`
-  - `memoryMdBytes`
-  - `rawMemoriesExists`
-  - `rawMemoriesBytes`
-  - `rolloutSummaryCount`
-  - `extensionResourceCount`
-- Behavior:
-  - read-only
-  - no model calls
-  - no DB schema changes
-  - no memory pipeline triggering
-  - missing memory root returns counts and sizes as zero
-- Update app-server docs and generated schema.
+Implement the existing `tool_search_always_defer_mcp_tools` feature as a local
+default.
 
-## Phase 3: Targeted Multi-Agent Wait
+- Enable the feature by default in the custom fork.
+- Preserve explicit app tools as direct tools when an app is mentioned.
+- Keep small direct MCP exposure test coverage by explicitly disabling the
+  feature in that test.
+- Keep the config flag available so the behavior can be disabled locally if a
+  workflow needs direct MCP tool exposure.
 
-- Extend multi-agent v2 `wait_agent` arguments with optional `targets`.
-- Preserve current no-target behavior: wait for mailbox change.
-- When `targets` is non-empty:
-  - resolve agent ids using existing helper logic
-  - wait until any target reaches a final status or timeout expires
-  - return a status map keyed by canonical agent path where available
-  - emit collab waiting begin/end events with target refs/statuses
-- Use the older multi-agent wait implementation as the behavior template.
+Expected effect: large MCP schemas are not eagerly included in every prompt.
+The model receives `tool_search` and can discover MCP tools only when needed.
 
-## Phase 4: Cache And Team App Follow-Up
+## Phase 3: Prompt Output Reference Cache
 
-- Do not port Wizard's full tool-cache into Codex in this slice.
-- Next cache step should be `mcp/cache/status` over existing Codex Apps tool
-  cache and MCP manager state.
-- Next Team App step should be an app-server status endpoint or event stream
-  that removes the need for terminal focus/window scraping.
+Add prompt-time duplicate elision for repeated large plain-text tool outputs.
+
+- Apply only inside `ContextManager::for_prompt`, after history normalization.
+- Keep raw history, transcript rendering, logs, and stored items unchanged.
+- Hash normalized large text outputs and keep the first full occurrence.
+- Replace later identical large outputs with a compact reference containing the
+  earlier `call_id`, digest, and normalized byte count.
+- Skip small outputs, structured content items, image outputs, and active
+  running-process output.
+- Normalize volatile exec metadata such as `Wall time:` and `Chunk ID:` before
+  duplicate detection.
+
+Expected effect: repeated `Get-Content`, `rg`, and other large tool results no
+longer consume prompt tokens multiple times in long automation sessions.
+
+## Parked Work
+
+- `memory/status` app-server API: useful as a read-only status surface, but
+  parked because app-server API work may overlap remote changes.
+- Targeted multi-agent v2 `wait_agent`: useful for Team App and loop control,
+  but parked because multi-agent control is also likely to move remotely.
+- `mcp/cache/status`: keep as a follow-up observability idea after the prompt
+  savings are verified in real sessions.
 
 ## Verification
 
 - PowerShell script:
   - parse-only check with `System.Management.Automation.Language.Parser`
-  - no execution unless manually requested
+  - dry-run check with `-WhatIf`
+  - no real build execution unless manually requested
 - Rust:
-  - `cargo test -p codex-app-server-protocol`
-  - app-server v2 memory status integration test
-  - targeted multi-agent v2 wait tests
-  - `just write-app-server-schema`
+  - `cargo test -p codex-features tool_search`
+  - `cargo test -p codex-core mcp_tool_exposure`
+  - `cargo test -p codex-core context_manager`
   - `just fmt`
+  - scoped `just fix -p codex-features`
+  - scoped `just fix -p codex-core`
 - Rollout:
-  - commit and push logical slices
-  - after successful Rust checks, rebuild/install only when explicitly requested
+  - commit logical slices
+  - push `local-codex-customizations`
+  - rebuild local release binary only when manually requested

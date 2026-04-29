@@ -2,15 +2,17 @@
 
 ## Scope
 
-This note reviews what the local custom Codex fork can borrow from:
+This note reviews what the local custom Codex fork should borrow from:
 
 - `C:\Users\Oleh\Documents\GitHub\Wizard_Erasmus`
 - `C:\Users\Oleh\Documents\GitHub\Cognos`
 - the current Codex Rust workspace under `codex-rs`
+- local Codex/Wizard conversation and tool telemetry from the week ending
+  April 29, 2026
 
-The goal is not to merge either project into Codex. The useful direction is to
-add small native Codex APIs and agent-control behavior that make Wizard/Team App
-automation more reliable and reduce repeated work.
+The goal is not to merge Wizard_Erasmus or Cognos into Codex. The useful path is
+small native Codex changes that reduce repeated prompt cost and make future
+automation more structural.
 
 ## Sources Inspected
 
@@ -33,113 +35,91 @@ automation more reliable and reduce repeated work.
   - `Cognos/docs/cognos_hybrid_architecture_research.md`
   - `Cognos/docs/cognos_implementation_roadmap.md`
 - Codex implementation surfaces:
+  - `codex-rs/core/src/context_manager/*`
+  - `codex-rs/core/src/mcp_tool_exposure.rs`
+  - `codex-rs/features/src/lib.rs`
   - `codex-rs/memories/README.md`
   - `codex-rs/app-server/README.md`
-  - `codex-rs/app-server-protocol/src/protocol/v2.rs`
-  - `codex-rs/app-server/src/codex_message_processor.rs`
   - `codex-rs/core/src/tools/handlers/multi_agents*`
-  - `codex-rs/codex-mcp/src/*`
+
+## Local Signals
+
+Recent Wizard telemetry showed a low cache hit rate, about 0.1104, while still
+saving roughly 13,276,034 bytes. Misses were dominated by repeated read/search
+families, especially `Read`, `Grep`, and shell commands that render file
+contents. Bash-style commands were often not cacheable because freshness and
+side effects are ambiguous.
+
+Recent Codex history on this machine showed many continuation turns such as
+`go on` and `Implement the plan`, with repeated `Get-Content` and `rg -n`
+queries while studying the same repos. This points to prompt resend cost more
+than execution cost: even when a tool result is already known in the transcript,
+the full text can be carried into later model requests again.
 
 ## Findings
 
-### Memory
-
-Codex already has a real two-phase memory pipeline. Phase 1 extracts per-thread
-memory records into the state DB, and Phase 2 consolidates them into
-`CODEX_HOME/memories` with a serialized workspace diff. App-server already has
-`thread/memoryMode/set` and `memory/reset`, but it lacks a read-only status API
-for external controllers.
-
-Wizard's memory/cache audit notes repeatedly needed a single status surface for
-memory health, generated artifacts, and cache visibility. Cognos reinforces the
-same idea from another angle: it separates working, episodic, semantic, and
-procedural memory and makes retrieval/debug status visible through inspection
-commands.
-
-Best immediate Codex improvement: add `memory/status` as a small read-only
-app-server v2 method. It should report filesystem memory artifact counts and
-sizes without triggering consolidation or mutating DB state.
-
 ### Cache
 
-Wizard's cache work is mature and telemetry-driven: it tracks miss reasons,
-session scope, source agent, invalidations, and cache-hit hotspots. Its strongest
-lesson is that cache changes should follow observed miss families, not broad
-whitelist guesses.
+Wizard's cache work is useful because it is telemetry-driven and miss-reason
+oriented. The important lesson for Codex is not to port the whole cache layer,
+but to reduce the two largest obvious prompt costs first:
 
-Codex already has native cache-related pieces:
+- eager MCP schema exposure
+- repeated large tool outputs in prompt history
 
-- deferred tool loading and `tool_search`
-- Codex Apps tool disk cache under `codex-rs/codex-mcp`
-- app-server plugin/skill cache clearing
-- connector cache refresh paths
+Codex already has a native tool discovery surface: `tool_search`. The existing
+`tool_search_always_defer_mcp_tools` flag is therefore a low-risk way to avoid
+eagerly injecting MCP schemas. Making it a local default fits this fork's goal
+without changing the tool execution model.
 
-Best immediate Codex improvement is documentation and API planning, not a large
-cache rewrite. A later `mcp/cache/status` app-server method can expose Codex Apps
-tool-cache age, hit/miss labels, and refresh status. Tool-output caching like
-Wizard's `tool_cache.py` should stay outside the first slice because it crosses
-tool runtimes, invalidation, and token accounting.
+For tool outputs, a full external cache would have to solve invalidation,
+freshness, cross-tool semantics, and UI consistency. A smaller Codex-native
+improvement is safer: keep raw history full, but elide later identical large
+plain-text outputs only in the prompt clone.
+
+### Memory
+
+Codex already has a two-phase memory pipeline. Wizard and Cognos both reinforce
+the need for visible memory status and low-signal filtering. A read-only
+`memory/status` API remains a good idea, but it is not the best first local
+implementation slice because app-server APIs may be changed remotely.
+
+For this branch, memory work should stay in docs and later planning. The first
+implemented memory-adjacent win is lower prompt duplication, which also reduces
+the pressure to compact or summarize too early.
 
 ### Team App And Cross-Agent Control
 
-Wizard Team App carries strong process lessons: visible team runs need reliable
-status, targeted resume, review gates, and safe terminal/session recovery. The
-loop anti-patterns show that raw terminal/window automation is fragile and can
-damage unrelated sessions.
+Wizard Team App and loop docs show that terminal/window automation is fragile.
+The durable direction is structural APIs: status, targeted waits, app-server
+thread control, and resumable agent state.
 
-Codex already has native multi-agent control and app-server thread APIs. The
-useful bridge is to improve native cross-agent status and wait behavior so Team
-App can drive Codex through app-server/agent-control surfaces instead of
-guessing terminal state.
-
-Concrete immediate gap: multi-agent v2 `wait_agent` currently only waits for
-mailbox changes. The older multi-agent wait supports explicit targets and final
-status maps. Porting that behavior into v2 is low risk and directly helps
-supervisors, loops, and Team App controllers.
-
-### Loop
-
-Wizard loop failures came from terminal focus, coordinate clicks, dry-run flags
-accidentally used in production, too many windows, and delayed first nudges
-after resume. These should not be copied into Codex.
-
-Codex should instead expose structural primitives that make external loops
-boring:
-
-- read thread and loaded-thread status through app-server
-- wait for specific agent/thread statuses natively
-- resume/fork/start through app-server rather than terminal text injection
-- report memory/cache status without launching side effects
+Targeted `wait_agent` for multi-agent v2 is still a strong follow-up, but it
+overlaps with remote multi-agent development. It should not be mixed into this
+local token-saving branch.
 
 ### Cognos Patterns
 
-Cognos is useful as a design reference, not a subsystem to port wholesale.
+Cognos is most useful here as a design reference:
 
-Good borrow candidates:
+- explicit inspection commands
+- reviewer/planner discipline
+- evidence summaries
+- confidence and retrieval explainability
+- low-signal memory filtering
 
-- explicit status/inspection commands
-- planner/reviewer discipline for multi-agent workflows
-- evidence cards and blackboard-style summaries for future reviews
-- retrieval explainability and low-signal filtering
-- Beta-distribution confidence tracking for future memory/belief scoring
-
-Do not port now:
-
-- always-on C++ cognitive loop
-- Prolog/ProbLog default reasoning
-- native memory graph
-- broad automatic memory mutation
-
-Those would add high complexity before Codex has the small control-plane APIs
-that Wizard and Team App actually need.
+Do not port the always-on cognitive loop, native memory graph, Prolog/ProbLog
+reasoning, or broad automatic memory mutation into Codex before the small
+control-plane and token-saving primitives are proven.
 
 ## Ranked Recommendations
 
-1. Add safe clean fast rebuild script for local fork operations.
-2. Add `memory/status` app-server v2 API.
-3. Add explicit-target support to multi-agent v2 `wait_agent`.
-4. Document `mcp/cache/status` as the next cache observability API.
-5. Later: expose a compact agent/team status API for Team App control.
-6. Later: add memory retrieval/status scoring explanations only after telemetry
-   shows where current memory use fails.
-
+1. Keep official Codex installed system-wide and use the fork executable only
+   inside this repo while changing/testing it.
+2. Enable `tool_search_always_defer_mcp_tools` by default in the local fork.
+3. Add prompt-time duplicate elision for repeated large plain-text tool outputs.
+4. Keep docs explicit that raw transcript/history remains complete.
+5. Park `memory/status` and targeted `wait_agent` until remote-overlap risk is
+   lower.
+6. Later, add `mcp/cache/status` and compact Team App status APIs after real
+   sessions validate the first two token-saving changes.
