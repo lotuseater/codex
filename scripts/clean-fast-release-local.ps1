@@ -2,10 +2,18 @@
 param(
     [string]$RepoRoot,
 
-    [ValidateSet("FastRelease", "FullRelease")]
-    [string]$BuildMode = "FastRelease",
+    [ValidateSet("DevSmall", "FastRelease", "FullRelease")]
+    [string]$BuildMode = "DevSmall",
 
-    [switch]$SkipClean
+    [switch]$Clean,
+
+    [switch]$CleanDebug,
+
+    [switch]$SkipClean,
+
+    [switch]$SkipVerify,
+
+    [int]$Jobs = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -69,10 +77,63 @@ function Find-VsDevCmd {
     return $null
 }
 
-function Invoke-ReleaseBuild {
+function Get-BuildPlan {
+    param(
+        [string]$Mode,
+        [string]$TargetRoot
+    )
+
+    $envOverrides = [ordered]@{}
+    switch ($Mode) {
+        "DevSmall" {
+            $cargoArgs = @("build", "-p", "codex-cli", "--profile", "dev-small", "--bin", "codex")
+            $binary = Join-Path $TargetRoot "dev-small\codex.exe"
+            $description = "minimal local dev-small build"
+        }
+        "FastRelease" {
+            $cargoArgs = @("build", "-p", "codex-cli", "--release", "--bin", "codex")
+            $binary = Join-Path $TargetRoot "release\codex.exe"
+            $description = "fast release build with LTO disabled"
+            $envOverrides["CARGO_PROFILE_RELEASE_LTO"] = "off"
+            $envOverrides["CARGO_PROFILE_RELEASE_CODEGEN_UNITS"] = "16"
+        }
+        "FullRelease" {
+            $cargoArgs = @("build", "-p", "codex-cli", "--release", "--bin", "codex")
+            $binary = Join-Path $TargetRoot "release\codex.exe"
+            $description = "full release build using Cargo.toml release profile"
+        }
+    }
+
+    if ($Jobs -gt 0) {
+        $cargoArgs += @("--jobs", [string]$Jobs)
+    }
+
+    return [ordered]@{
+        cargo_args = $cargoArgs
+        binary = $binary
+        description = $description
+        env_overrides = $envOverrides
+    }
+}
+
+function Join-CommandLine {
+    param([string[]]$Args)
+
+    return ($Args | ForEach-Object {
+        if ($_ -match "\s") {
+            '"' + ($_ -replace '"', '\"') + '"'
+        }
+        else {
+            $_
+        }
+    }) -join " "
+}
+
+function Invoke-CargoBuild {
     param(
         [string]$Root,
-        [string]$Mode
+        [string[]]$CargoArgs,
+        [System.Collections.IDictionary]$EnvOverrides
     )
 
     $cargoBin = Join-Path $HOME ".cargo\bin"
@@ -80,83 +141,94 @@ function Invoke-ReleaseBuild {
         $env:Path = "$cargoBin;$env:Path"
     }
 
-    $previousLto = $env:CARGO_PROFILE_RELEASE_LTO
-    $previousCodegenUnits = $env:CARGO_PROFILE_RELEASE_CODEGEN_UNITS
+    $previousEnv = @{}
+    foreach ($key in $EnvOverrides.Keys) {
+        $previousEnv[$key] = [Environment]::GetEnvironmentVariable($key, "Process")
+        [Environment]::SetEnvironmentVariable($key, [string]$EnvOverrides[$key], "Process")
+    }
+
+    Push-Location (Join-Path $Root "codex-rs")
     try {
-        if ($Mode -eq "FastRelease") {
-            $env:CARGO_PROFILE_RELEASE_LTO = "off"
-            $env:CARGO_PROFILE_RELEASE_CODEGEN_UNITS = "16"
-        }
-
-        Push-Location (Join-Path $Root "codex-rs")
-        try {
-            $link = Get-Command link.exe -ErrorAction SilentlyContinue
-            if ($link) {
-                cargo build --release --bin codex
-                return
-            }
-
-            $vsDevCmd = Find-VsDevCmd
-            if ([string]::IsNullOrWhiteSpace($vsDevCmd)) {
-                throw "MSVC linker link.exe is not on PATH and VsDevCmd.bat was not found. Install Visual Studio Build Tools with the C++ workload."
-            }
-
-            & cmd.exe /d /s /c "call `"$vsDevCmd`" -arch=x64 -host_arch=x64 >nul && cargo build --release --bin codex"
+        $link = Get-Command link.exe -ErrorAction SilentlyContinue
+        if ($link) {
+            & cargo @CargoArgs
             if ($LASTEXITCODE -ne 0) {
                 throw "cargo build failed with exit code $LASTEXITCODE"
             }
+            return
         }
-        finally {
-            Pop-Location
+
+        $vsDevCmd = Find-VsDevCmd
+        if ([string]::IsNullOrWhiteSpace($vsDevCmd)) {
+            throw "MSVC linker link.exe is not on PATH and VsDevCmd.bat was not found. Install Visual Studio Build Tools with the C++ workload."
+        }
+
+        $cargoLine = "cargo " + (Join-CommandLine -Args $CargoArgs)
+        & cmd.exe /d /s /c "call `"$vsDevCmd`" -arch=x64 -host_arch=x64 >nul && $cargoLine"
+        if ($LASTEXITCODE -ne 0) {
+            throw "cargo build failed with exit code $LASTEXITCODE"
         }
     }
     finally {
-        $env:CARGO_PROFILE_RELEASE_LTO = $previousLto
-        $env:CARGO_PROFILE_RELEASE_CODEGEN_UNITS = $previousCodegenUnits
+        Pop-Location
+        foreach ($key in $EnvOverrides.Keys) {
+            [Environment]::SetEnvironmentVariable($key, $previousEnv[$key], "Process")
+        }
     }
 }
 
 $RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).Path
 $targetRoot = Assert-UnderRoot -Path (Join-Path $RepoRoot "codex-rs\target") -Root $RepoRoot -Label "target root"
-$releaseBinary = Assert-UnderRoot -Path (Join-Path $targetRoot "release\codex.exe") -Root $targetRoot -Label "release binary"
+$plan = Get-BuildPlan -Mode $BuildMode -TargetRoot $targetRoot
+$binary = Assert-UnderRoot -Path $plan.binary -Root $targetRoot -Label "local codex binary"
 
-$cleanupPaths = @(
-    (Join-Path $targetRoot "debug"),
-    (Join-Path $targetRoot "release"),
-    (Join-Path $targetRoot "tmp")
-) | ForEach-Object {
+$cleanupPaths = @()
+if ($Clean -and -not $SkipClean) {
+    $profileDir = if ($BuildMode -eq "DevSmall") { "dev-small" } else { "release" }
+    $cleanupPaths += (Join-Path $targetRoot $profileDir)
+    $cleanupPaths += (Join-Path $targetRoot "tmp")
+}
+if ($CleanDebug) {
+    $cleanupPaths += (Join-Path $targetRoot "debug")
+}
+$cleanupPaths = $cleanupPaths | Select-Object -Unique | ForEach-Object {
     Assert-UnderRoot -Path $_ -Root $targetRoot -Label "cleanup path"
 }
 
-if (-not $SkipClean) {
-    foreach ($path in $cleanupPaths) {
-        if (Test-Path -LiteralPath $path) {
-            if ($PSCmdlet.ShouldProcess($path, "delete local build folder")) {
-                Remove-Item -LiteralPath $path -Recurse -Force
-            }
+foreach ($path in $cleanupPaths) {
+    if (Test-Path -LiteralPath $path) {
+        if ($PSCmdlet.ShouldProcess($path, "delete local build folder")) {
+            Remove-Item -LiteralPath $path -Recurse -Force
         }
     }
 }
 
-if ($PSCmdlet.ShouldProcess($RepoRoot, "run $BuildMode cargo release build")) {
-    Invoke-ReleaseBuild -Root $RepoRoot -Mode $BuildMode
+$buildRan = $false
+if ($PSCmdlet.ShouldProcess($RepoRoot, "run $($plan.description)")) {
+    Invoke-CargoBuild -Root $RepoRoot -CargoArgs $plan.cargo_args -EnvOverrides $plan.env_overrides
+    $buildRan = $true
 }
 
-if (-not (Test-Path -LiteralPath $releaseBinary)) {
-    throw "Release build did not produce $releaseBinary"
+if ($buildRan -and -not (Test-Path -LiteralPath $binary)) {
+    throw "Build did not produce $binary"
 }
 
-if ($PSCmdlet.ShouldProcess($releaseBinary, "verify direct local codex binary")) {
-    & $releaseBinary --version | Out-Host
-    if ($LASTEXITCODE -ne 0) {
-        throw "Direct local codex --version failed with exit code $LASTEXITCODE"
+if ($buildRan -and -not $SkipVerify) {
+    if ($PSCmdlet.ShouldProcess($binary, "verify direct local codex binary")) {
+        & $binary --version | Out-Host
+        if ($LASTEXITCODE -ne 0) {
+            throw "Direct local codex --version failed with exit code $LASTEXITCODE"
+        }
     }
 }
 
 [ordered]@{
-    status = "ok"
+    status = if ($buildRan) { "ok" } else { "planned" }
     mode = $BuildMode
     repo_root = $RepoRoot
-    rebuilt_binary = $releaseBinary
+    cargo_args = $plan.cargo_args
+    rebuilt_binary = $binary
+    clean_requested = [bool]($Clean -or $CleanDebug)
+    cleanup_paths = $cleanupPaths
     system_launcher_unchanged = $true
 } | ConvertTo-Json -Depth 4

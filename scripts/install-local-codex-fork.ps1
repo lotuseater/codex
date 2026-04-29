@@ -145,6 +145,8 @@ function Invoke-Build {
         $env:Path = "$cargoBin;$env:Path"
     }
 
+    $previousLto = $env:CARGO_PROFILE_RELEASE_LTO
+    $previousCodegenUnits = $env:CARGO_PROFILE_RELEASE_CODEGEN_UNITS
     if ($Mode -eq "FastRelease") {
         $env:CARGO_PROFILE_RELEASE_LTO = "off"
         $env:CARGO_PROFILE_RELEASE_CODEGEN_UNITS = "16"
@@ -154,7 +156,7 @@ function Invoke-Build {
     try {
         $link = Get-Command link.exe -ErrorAction SilentlyContinue
         if ($link) {
-            cargo build --release --bin codex
+            cargo build -p codex-cli --release --bin codex
             return
         }
 
@@ -163,13 +165,15 @@ function Invoke-Build {
             throw "MSVC linker link.exe is not on PATH and VsDevCmd.bat was not found. Install Visual Studio Build Tools with the C++ workload."
         }
 
-        & cmd.exe /d /s /c "call `"$vsDevCmd`" -arch=x64 -host_arch=x64 >nul && cargo build --release --bin codex"
+        & cmd.exe /d /s /c "call `"$vsDevCmd`" -arch=x64 -host_arch=x64 >nul && cargo build -p codex-cli --release --bin codex"
         if ($LASTEXITCODE -ne 0) {
             throw "cargo build failed with exit code $LASTEXITCODE"
         }
     }
     finally {
         Pop-Location
+        $env:CARGO_PROFILE_RELEASE_LTO = $previousLto
+        $env:CARGO_PROFILE_RELEASE_CODEGEN_UNITS = $previousCodegenUnits
     }
 }
 

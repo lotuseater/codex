@@ -8,6 +8,8 @@ param(
 
     [switch]$KeepFallbackOnSuccess,
 
+    [switch]$Clean,
+
     [switch]$RunInstallVerify
 )
 
@@ -123,6 +125,8 @@ function Invoke-FastReleaseBuild {
         $env:Path = "$cargoBin;$env:Path"
     }
 
+    $previousLto = $env:CARGO_PROFILE_RELEASE_LTO
+    $previousCodegenUnits = $env:CARGO_PROFILE_RELEASE_CODEGEN_UNITS
     $env:CARGO_PROFILE_RELEASE_LTO = "off"
     $env:CARGO_PROFILE_RELEASE_CODEGEN_UNITS = "16"
 
@@ -130,7 +134,7 @@ function Invoke-FastReleaseBuild {
     try {
         $link = Get-Command link.exe -ErrorAction SilentlyContinue
         if ($link) {
-            cargo build --release --bin codex
+            cargo build -p codex-cli --release --bin codex
             return
         }
 
@@ -139,13 +143,15 @@ function Invoke-FastReleaseBuild {
             throw "MSVC linker link.exe is not on PATH and VsDevCmd.bat was not found. Install Visual Studio Build Tools with the C++ workload."
         }
 
-        & cmd.exe /d /s /c "call `"$vsDevCmd`" -arch=x64 -host_arch=x64 >nul && cargo build --release --bin codex"
+        & cmd.exe /d /s /c "call `"$vsDevCmd`" -arch=x64 -host_arch=x64 >nul && cargo build -p codex-cli --release --bin codex"
         if ($LASTEXITCODE -ne 0) {
             throw "cargo build failed with exit code $LASTEXITCODE"
         }
     }
     finally {
         Pop-Location
+        $env:CARGO_PROFILE_RELEASE_LTO = $previousLto
+        $env:CARGO_PROFILE_RELEASE_CODEGEN_UNITS = $previousCodegenUnits
     }
 }
 
@@ -183,6 +189,7 @@ $manifest = [ordered]@{
     previous_real_exe = $previousRealExe
     fallback_exe = $fallbackExe
     cleanup_paths = $cleanupPaths
+    clean_requested = [bool]$Clean
     target_release_binary = $releaseBinary
 }
 
@@ -197,10 +204,12 @@ try {
         Set-WrapperRealExe -EnvPath $envPath -RealExe $fallbackExe
     }
 
-    foreach ($path in $cleanupPaths) {
-        if (Test-Path -LiteralPath $path) {
-            if ($PSCmdlet.ShouldProcess($path, "delete build folder")) {
-                Remove-Item -LiteralPath $path -Recurse -Force
+    if ($Clean) {
+        foreach ($path in $cleanupPaths) {
+            if (Test-Path -LiteralPath $path) {
+                if ($PSCmdlet.ShouldProcess($path, "delete build folder")) {
+                    Remove-Item -LiteralPath $path -Recurse -Force
+                }
             }
         }
     }
