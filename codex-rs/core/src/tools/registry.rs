@@ -17,6 +17,7 @@ use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
 use crate::tools::hook_names::HookToolName;
+use crate::tools::operation_cache;
 use crate::tools::tool_dispatch_trace::ToolDispatchTrace;
 use codex_hooks::HookEvent;
 use codex_hooks::HookEventAfterToolUse;
@@ -354,7 +355,8 @@ impl ToolRegistry {
             return Err(err);
         }
 
-        if let Some(pre_tool_use_payload) = handler.pre_tool_use_payload(&invocation)
+        let pre_tool_use_payload = handler.pre_tool_use_payload(&invocation);
+        if let Some(pre_tool_use_payload) = &pre_tool_use_payload
             && let Some(message) = run_pre_tool_use_hooks(
                 &invocation.session,
                 &invocation.turn,
@@ -367,6 +369,48 @@ impl ToolRegistry {
             let err = FunctionCallError::RespondToModel(message);
             dispatch_trace.record_failed(&err);
             return Err(err);
+        }
+
+        if let Some(pre_tool_use_payload) = &pre_tool_use_payload
+            && let Some(cache_hit) =
+                operation_cache::lookup(pre_tool_use_payload, invocation.turn.cwd.as_path()).await
+        {
+            let result = AnyToolResult {
+                call_id: invocation.call_id.clone(),
+                payload: invocation.payload.clone(),
+                result: Box::new(FunctionToolOutput::from_text(cache_hit.text, Some(true))),
+                post_tool_use_payload: None,
+            };
+            let preview = result.result.log_preview();
+            otel.tool_result_with_tags(
+                &display_name,
+                &call_id_owned,
+                log_payload.as_ref(),
+                cache_hit.duration,
+                /*success*/ true,
+                &preview,
+                &metric_tags,
+                mcp_server_ref,
+                mcp_server_origin_ref,
+            );
+            emit_metric_for_tool_read(&invocation, /*success*/ true).await;
+            if let Err(err) = invocation
+                .session
+                .goal_runtime_apply(GoalRuntimeEvent::ToolCompleted {
+                    turn_context: invocation.turn.as_ref(),
+                    tool_name: tool_name.name.as_str(),
+                })
+                .await
+            {
+                warn!("failed to account thread goal progress after cached tool call: {err}");
+            }
+            dispatch_trace.record_completed(
+                &invocation,
+                &result.call_id,
+                &result.payload,
+                result.result.as_ref(),
+            );
+            return Ok(result);
         }
 
         let is_mutating = handler.is_mutating(&invocation).await;
@@ -419,6 +463,7 @@ impl ToolRegistry {
         } else {
             None
         };
+        let cache_store_payload = post_tool_use_payload.clone();
         let post_tool_use_outcome = if let Some(post_tool_use_payload) = post_tool_use_payload {
             Some(
                 run_post_tool_use_hooks(
@@ -451,6 +496,7 @@ impl ToolRegistry {
             return Err(err);
         }
 
+        let mut replaced_by_post_tool_use = false;
         if let Some(outcome) = &post_tool_use_outcome {
             record_additional_contexts(
                 &invocation.session,
@@ -471,6 +517,7 @@ impl ToolRegistry {
                 outcome.feedback_message.clone()
             };
             if let Some(replacement_text) = replacement_text {
+                replaced_by_post_tool_use = true;
                 let mut guard = response_cell.lock().await;
                 if let Some(result) = guard.as_mut() {
                     result.result = Box::new(FunctionToolOutput::from_text(
@@ -479,6 +526,10 @@ impl ToolRegistry {
                     ));
                 }
             }
+        }
+
+        if !replaced_by_post_tool_use && let Some(cache_store_payload) = &cache_store_payload {
+            operation_cache::store(cache_store_payload, invocation.turn.cwd.as_path()).await;
         }
 
         if let Err(err) = invocation

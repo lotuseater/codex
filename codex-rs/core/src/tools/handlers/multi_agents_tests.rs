@@ -2515,7 +2515,10 @@ async fn multi_agent_v2_wait_agent_accepts_targeted_waits() {
     let (mut session, mut turn) = make_session_and_context().await;
     let manager = thread_manager();
     let root = manager
-        .start_thread((*turn.config).clone())
+        .start_thread(
+            (*turn.config).clone(),
+            thread_store_from_config(turn.config.as_ref()),
+        )
         .await
         .expect("root thread should start");
     session.services.agent_control = manager.agent_control();
@@ -2644,6 +2647,7 @@ async fn multi_agent_v2_wait_agent_uses_configured_min_timeout() {
         result,
         crate::tools::handlers::multi_agents_v2::wait::WaitAgentResult {
             message: "Wait timed out.".to_string(),
+            status: HashMap::new(),
             timed_out: true,
         }
     );

@@ -420,3 +420,26 @@ fn exec_command_tool_output_formats_truncated_response() {
         other => panic!("expected FunctionCallOutput, got {other:?}"),
     }
 }
+
+#[test]
+fn exec_command_tool_output_success_for_logging_tracks_exit_code() {
+    let output = ExecCommandToolOutput {
+        event_call_id: "call-42".to_string(),
+        chunk_id: String::new(),
+        wall_time: std::time::Duration::from_millis(10),
+        raw_output: b"ok".to_vec(),
+        max_output_tokens: None,
+        process_id: None,
+        exit_code: Some(0),
+        original_token_count: None,
+        hook_command: Some("echo ok".to_string()),
+    };
+    assert!(output.success_for_logging());
+
+    let failed_output = ExecCommandToolOutput {
+        exit_code: Some(1),
+        raw_output: b"error".to_vec(),
+        ..output
+    };
+    assert!(!failed_output.success_for_logging());
+}

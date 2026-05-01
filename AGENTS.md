@@ -47,6 +47,7 @@ In the codex-rs folder where the rust code lives:
   - Avoid adding new standalone methods to `codex-rs/tui/src/chatwidget.rs` unless the change is
     trivial; prefer new modules/files and keep `chatwidget.rs` focused on orchestration.
 - When running Rust commands (e.g. `just fix` or `cargo test`) be patient with the command and never try to kill them using the PID. Rust lock can make the execution slow, this is expected.
+- For long-running builds, release builds, or any build expected to take more than a few minutes, capture stdout and stderr to a repo-local log file such as `logs/fast-release-build-YYYYMMDD-HHMMSS.log` while preserving the command exit code. Inspect the saved log before retrying or changing strategy.
 
 Run `just fmt` (in `codex-rs` directory) automatically after you have finished making Rust code changes; do not ask for approval to run it. Additionally, run the tests:
 
