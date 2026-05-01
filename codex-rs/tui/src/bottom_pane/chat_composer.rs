@@ -396,6 +396,7 @@ pub(crate) struct ChatComposer {
     is_zellij: bool,
     status_line_value: Option<Line<'static>>,
     status_line_enabled: bool,
+    session_limit_status_line: Option<Line<'static>>,
     side_conversation_context_label: Option<String>,
     // Agent label injected into the footer's contextual row when multi-agent mode is active.
     active_agent_label: Option<String>,
@@ -475,6 +476,22 @@ fn plan_mode_nudge_line() -> Line<'static> {
         key_hint::plain(KeyCode::Esc).into(),
         " dismiss".into(),
     ])
+}
+
+fn combine_right_context_lines(
+    primary: Option<Line<'static>>,
+    session_limits: Option<Line<'static>>,
+) -> Option<Line<'static>> {
+    match (primary, session_limits) {
+        (Some(mut primary), Some(session_limits)) => {
+            primary.spans.push(" · ".into());
+            primary.spans.extend(session_limits.spans);
+            Some(primary)
+        }
+        (Some(primary), None) => Some(primary),
+        (None, Some(session_limits)) => Some(session_limits),
+        (None, None) => None,
+    }
 }
 
 impl ChatComposer {
@@ -586,6 +603,7 @@ impl ChatComposer {
             ),
             status_line_value: None,
             status_line_enabled: false,
+            session_limit_status_line: None,
             side_conversation_context_label: None,
             active_agent_label: None,
             history_search: None,
@@ -3893,6 +3911,14 @@ impl ChatComposer {
         true
     }
 
+    pub(crate) fn set_session_limit_status_line(&mut self, line: Option<Line<'static>>) -> bool {
+        if self.session_limit_status_line == line {
+            return false;
+        }
+        self.session_limit_status_line = line;
+        true
+    }
+
     pub(crate) fn set_side_conversation_context_label(&mut self, label: Option<String>) -> bool {
         if self.side_conversation_context_label == label {
             return false;
@@ -4152,11 +4178,15 @@ impl ChatComposer {
                             show_queue_hint,
                         )
                     };
+                    let session_limits = self.session_limit_status_line.clone();
                     let right_line =
                         if let Some(label) = self.side_conversation_context_label.as_ref() {
-                            Some(side_conversation_context_line(label))
+                            combine_right_context_lines(
+                                Some(side_conversation_context_line(label)),
+                                session_limits,
+                            )
                         } else if let Some(line) = self.shell_mode_footer_line() {
-                            Some(line)
+                            combine_right_context_lines(Some(line), session_limits)
                         } else if status_line_active {
                             let full = status_line_right_indicator(
                                 self.collaboration_mode_indicator,
@@ -4170,15 +4200,17 @@ impl ChatComposer {
                             );
                             let full_width = full.as_ref().map(|l| l.width() as u16).unwrap_or(0);
                             if can_show_left_with_context(hint_rect, left_width, full_width) {
-                                full
+                                combine_right_context_lines(full, session_limits)
                             } else {
-                                compact
+                                combine_right_context_lines(compact, session_limits)
                             }
                         } else {
-                            Some(context_window_line(
-                                footer_props.context_window_percent,
-                                footer_props.context_window_used_tokens,
-                            ))
+                            session_limits.or_else(|| {
+                                Some(context_window_line(
+                                    footer_props.context_window_percent,
+                                    footer_props.context_window_used_tokens,
+                                ))
+                            })
                         };
                     let right_width = right_line.as_ref().map(|l| l.width() as u16).unwrap_or(0);
                     if status_line_active

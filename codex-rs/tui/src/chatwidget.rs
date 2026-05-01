@@ -393,6 +393,7 @@ mod session_header;
 use self::session_header::SessionHeader;
 mod self_review;
 use self::self_review::SelfReviewTracker;
+mod session_limit_footer;
 mod skills;
 mod slash_dispatch;
 use self::skills::collect_tool_mentions;
@@ -3159,6 +3160,7 @@ impl ChatWidget {
                 self.bottom_pane
                     .set_context_window(/*percent*/ None, /*used_tokens*/ None);
                 self.token_info = None;
+                self.sync_session_limit_footer();
             }
         }
     }
@@ -3190,6 +3192,7 @@ impl ChatWidget {
         let used_tokens = self.context_used_tokens(&info, percent.is_some());
         self.bottom_pane.set_context_window(percent, used_tokens);
         self.token_info = Some(info);
+        self.sync_session_limit_footer();
     }
 
     fn context_remaining_percent(&self, info: &TokenUsageInfo) -> Option<i64> {
@@ -3215,6 +3218,7 @@ impl ChatWidget {
                     self.bottom_pane
                         .set_context_window(/*percent*/ None, /*used_tokens*/ None);
                     self.token_info = None;
+                    self.sync_session_limit_footer();
                 }
             }
         }
@@ -3315,6 +3319,7 @@ impl ChatWidget {
             self.rate_limit_snapshots_by_limit_id.clear();
             self.codex_rate_limit_reached_type = None;
         }
+        self.sync_session_limit_footer();
         self.refresh_status_line();
     }
     /// Finalize any active exec as failed and stop/clear agent-turn UI state.
@@ -8154,6 +8159,16 @@ impl ChatWidget {
     fn status_line_context_used_percent(&self) -> Option<i64> {
         let remaining = self.status_line_context_remaining_percent().unwrap_or(100);
         Some((100 - remaining).clamp(0, 100))
+    }
+
+    fn sync_session_limit_footer(&mut self) {
+        self.bottom_pane
+            .set_session_limit_status_line(session_limit_footer::line(
+                self.token_info.as_ref(),
+                self.status_line_context_window_size(),
+                self.rate_limit_snapshots_by_limit_id.get("codex"),
+                Local::now(),
+            ));
     }
 
     fn status_line_total_usage(&self) -> TokenUsage {

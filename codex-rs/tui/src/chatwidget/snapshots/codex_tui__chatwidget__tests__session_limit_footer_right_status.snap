@@ -1,0 +1,8 @@
+---
+source: tui/src/chatwidget/tests/status_and_layout.rs
+assertion_line: 161
+expression: "render_bottom_popup(&chat, 80)"
+---
+› Ask Codex to do anything
+
+  gpt-5.5 default · C:\tmp\project                      70% tokens · 50% reset
