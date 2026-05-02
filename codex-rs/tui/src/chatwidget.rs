@@ -10755,6 +10755,7 @@ impl ChatWidget {
     fn refresh_model_dependent_surfaces(&mut self) {
         self.refresh_model_display();
         self.refresh_status_line();
+        self.sync_session_limit_footer();
     }
 
     fn model_display_name(&self) -> &str {
@@ -11990,6 +11991,9 @@ impl ChatWidget {
 
     pub(crate) fn clear_token_usage(&mut self) {
         self.token_info = None;
+        self.bottom_pane
+            .set_context_window(/*percent*/ None, /*used_tokens*/ None);
+        self.sync_session_limit_footer();
     }
 
     fn as_renderable(&self) -> RenderableItem<'_> {

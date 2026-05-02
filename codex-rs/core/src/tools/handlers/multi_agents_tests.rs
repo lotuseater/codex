@@ -57,6 +57,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+use std::time::Instant;
 use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
@@ -2595,6 +2596,104 @@ async fn multi_agent_v2_wait_agent_accepts_targeted_waits() {
             message: "Wait completed.".to_string(),
             status: HashMap::from([(worker_path, AgentStatus::Shutdown)]),
             timed_out: false,
+        }
+    );
+    assert_eq!(success, None);
+}
+
+#[tokio::test]
+async fn multi_agent_v2_wait_agent_waits_for_all_targeted_agents() {
+    let (mut session, mut turn) = make_session_and_context().await;
+    let manager = thread_manager();
+    let root = manager
+        .start_thread(
+            (*turn.config).clone(),
+            thread_store_from_config(turn.config.as_ref()),
+        )
+        .await
+        .expect("root thread should start");
+    session.services.agent_control = manager.agent_control();
+    session.conversation_id = root.thread_id;
+    let mut config = (*turn.config).clone();
+    config
+        .features
+        .enable(Feature::MultiAgentV2)
+        .expect("test config should allow feature update");
+    config.multi_agent_v2.min_wait_timeout_ms = 50;
+    turn.config = Arc::new(config);
+    let session = Arc::new(session);
+    let turn = Arc::new(turn);
+
+    for task_name in ["done-worker", "running-worker"] {
+        SpawnAgentHandlerV2
+            .handle(invocation(
+                session.clone(),
+                turn.clone(),
+                "spawn_agent",
+                function_payload(json!({
+                    "message": "boot worker",
+                    "task_name": task_name
+                })),
+            ))
+            .await
+            .expect("spawn worker");
+    }
+    let done_agent_id = session
+        .services
+        .agent_control
+        .resolve_agent_reference(session.conversation_id, &turn.session_source, "done-worker")
+        .await
+        .expect("done worker should resolve");
+    let done_worker_path = session
+        .services
+        .agent_control
+        .get_agent_metadata(done_agent_id)
+        .expect("done worker metadata")
+        .agent_path
+        .expect("done worker path")
+        .to_string();
+    let mut done_status_rx = session
+        .services
+        .agent_control
+        .subscribe_status(done_agent_id)
+        .await
+        .expect("subscribe should succeed");
+    session
+        .services
+        .agent_control
+        .close_agent(done_agent_id)
+        .await
+        .expect("close should succeed");
+    let _ = timeout(Duration::from_secs(1), done_status_rx.changed())
+        .await
+        .expect("shutdown status should arrive");
+
+    let started = Instant::now();
+    let output = WaitAgentHandlerV2
+        .handle(invocation(
+            session,
+            turn,
+            "wait_agent",
+            function_payload(json!({
+                "targets": ["done-worker", "running-worker"],
+                "timeout_ms": 50
+            })),
+        ))
+        .await
+        .expect("targeted wait_agent should succeed");
+    assert!(
+        started.elapsed() >= Duration::from_millis(50),
+        "wait_agent returned before waiting for every target"
+    );
+    let (content, success) = expect_text_output(output);
+    let result: crate::tools::handlers::multi_agents_v2::wait::WaitAgentResult =
+        serde_json::from_str(&content).expect("wait_agent result should be json");
+    assert_eq!(
+        result,
+        crate::tools::handlers::multi_agents_v2::wait::WaitAgentResult {
+            message: "Wait timed out.".to_string(),
+            status: HashMap::from([(done_worker_path, AgentStatus::Shutdown)]),
+            timed_out: true,
         }
     );
     assert_eq!(success, None);

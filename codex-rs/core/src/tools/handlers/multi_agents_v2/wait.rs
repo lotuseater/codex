@@ -5,7 +5,6 @@ use crate::session::turn_context::TurnContext;
 use codex_protocol::ThreadId;
 use codex_protocol::error::CodexErr;
 use codex_protocol::protocol::CollabAgentRef;
-use futures::FutureExt;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use std::collections::HashMap;
@@ -220,18 +219,19 @@ async fn wait_for_target_agents(
         .await;
 
     let mut status_rxs = Vec::with_capacity(receiver_thread_ids.len());
-    let mut initial_final_statuses = Vec::new();
+    let mut statuses = HashMap::new();
     for id in &receiver_thread_ids {
         match session.services.agent_control.subscribe_status(*id).await {
             Ok(rx) => {
                 let status = rx.borrow().clone();
                 if is_final(&status) {
-                    initial_final_statuses.push((*id, status));
+                    statuses.insert(*id, status);
+                } else {
+                    status_rxs.push((*id, rx));
                 }
-                status_rxs.push((*id, rx));
             }
             Err(CodexErr::ThreadNotFound(_)) => {
-                initial_final_statuses.push((*id, AgentStatus::NotFound));
+                statuses.insert(*id, AgentStatus::NotFound);
             }
             Err(err) => {
                 let mut statuses = HashMap::with_capacity(1);
@@ -253,39 +253,23 @@ async fn wait_for_target_agents(
         }
     }
 
-    let statuses = if !initial_final_statuses.is_empty() {
-        initial_final_statuses
-    } else {
-        let mut futures = FuturesUnordered::new();
-        for (id, rx) in status_rxs {
-            futures.push(wait_for_final_status(session.clone(), id, rx));
-        }
-        let mut results = Vec::new();
-        let deadline = Instant::now() + Duration::from_millis(timeout_ms as u64);
-        loop {
-            match timeout_at(deadline, futures.next()).await {
-                Ok(Some(Some(result))) => {
-                    results.push(result);
-                    break;
-                }
-                Ok(Some(None)) => continue,
-                Ok(None) | Err(_) => break,
+    let mut futures = FuturesUnordered::new();
+    for (id, rx) in status_rxs {
+        futures.push(wait_for_final_status(session.clone(), id, rx));
+    }
+    let deadline = Instant::now() + Duration::from_millis(timeout_ms as u64);
+    while statuses.len() < receiver_thread_ids.len() {
+        match timeout_at(deadline, futures.next()).await {
+            Ok(Some(Some((id, status)))) => {
+                statuses.insert(id, status);
             }
+            Ok(Some(None)) => continue,
+            Ok(None) | Err(_) => break,
         }
-        if !results.is_empty() {
-            loop {
-                match futures.next().now_or_never() {
-                    Some(Some(Some(result))) => results.push(result),
-                    Some(Some(None)) => continue,
-                    Some(None) | None => break,
-                }
-            }
-        }
-        results
-    };
+    }
 
-    let timed_out = statuses.is_empty();
-    let statuses_by_id = statuses.clone().into_iter().collect::<HashMap<_, _>>();
+    let timed_out = statuses.len() < receiver_thread_ids.len();
+    let statuses_by_id = statuses.clone();
     let agent_statuses = build_wait_agent_statuses(&statuses_by_id, &receiver_agents);
     let status = statuses
         .into_iter()

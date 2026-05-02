@@ -44,7 +44,7 @@ struct LookupResponse {
 pub(crate) async fn lookup(payload: &PreToolUsePayload, cwd: &Path) -> Option<OperationCacheHit> {
     let config = OperationCacheConfig::from_env()?;
     let input = serde_json::json!({
-        "event": cache_event(payload.tool_name.name(), &payload.tool_input),
+        "event": cache_event(payload.tool_name.name(), &payload.tool_input, cwd),
     });
     let started = Instant::now();
     let output = run_bridge(&config, "pre", input, cwd).await?;
@@ -64,17 +64,18 @@ pub(crate) async fn store(payload: &PostToolUsePayload, cwd: &Path) {
         return;
     };
     let input = serde_json::json!({
-        "event": cache_event(payload.tool_name.name(), &payload.tool_input),
+        "event": cache_event(payload.tool_name.name(), &payload.tool_input, cwd),
         "output": output_text(&payload.tool_response),
         "success": true,
     });
     let _ = run_bridge(&config, "post", input, cwd).await;
 }
 
-fn cache_event(tool_name: &str, tool_input: &Value) -> Value {
+fn cache_event(tool_name: &str, tool_input: &Value, cwd: &Path) -> Value {
     serde_json::json!({
         "tool_name": tool_name,
         "tool_input": tool_input,
+        "cwd": cwd.display().to_string(),
     })
 }
 
@@ -183,19 +184,40 @@ fn timeout_from_env() -> Duration {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use pretty_assertions::assert_eq;
     use serde_json::json;
 
-    use super::cache_event;
-    use super::output_text;
+    #[test]
+    fn cache_event_includes_resolved_cwd() {
+        let event = cache_event(
+            "bash",
+            &json!({ "command": "Get-ChildItem" }),
+            Path::new(r"C:\repo\subdir"),
+        );
+
+        assert_eq!(
+            event,
+            json!({
+                "tool_name": "bash",
+                "tool_input": { "command": "Get-ChildItem" },
+                "cwd": r"C:\repo\subdir",
+            })
+        );
+    }
 
     #[test]
     fn cache_event_uses_hook_facing_shape() {
         assert_eq!(
-            cache_event("Bash", &json!({"command": "Get-Content -Path src/lib.rs"})),
+            cache_event(
+                "Bash",
+                &json!({"command": "Get-Content -Path src/lib.rs"}),
+                Path::new(r"C:\repo"),
+            ),
             json!({
                 "tool_name": "Bash",
                 "tool_input": {"command": "Get-Content -Path src/lib.rs"},
+                "cwd": r"C:\repo",
             })
         );
     }

@@ -31,6 +31,7 @@ use codex_protocol::protocol::EventMsg;
 use codex_tools::ConfiguredToolSpec;
 use codex_tools::ToolName;
 use codex_tools::ToolSpec;
+use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_readiness::Readiness;
 use futures::future::BoxFuture;
 use serde_json::Value;
@@ -371,17 +372,24 @@ impl ToolRegistry {
             return Err(err);
         }
 
-        if let Some(pre_tool_use_payload) = &pre_tool_use_payload
+        let is_mutating = handler.is_mutating(&invocation).await;
+        let operation_cache_cwd = operation_cache_cwd(&invocation);
+        if !is_mutating
+            && let Some(pre_tool_use_payload) = &pre_tool_use_payload
             && let Some(cache_hit) =
-                operation_cache::lookup(pre_tool_use_payload, invocation.turn.cwd.as_path()).await
+                operation_cache::lookup(pre_tool_use_payload, operation_cache_cwd.as_path()).await
         {
-            let result = AnyToolResult {
+            let cache_text = cache_hit.text;
+            let mut result = AnyToolResult {
                 call_id: invocation.call_id.clone(),
                 payload: invocation.payload.clone(),
-                result: Box::new(FunctionToolOutput::from_text(cache_hit.text, Some(true))),
+                result: Box::new(FunctionToolOutput::from_text(
+                    cache_text.clone(),
+                    Some(true),
+                )),
                 post_tool_use_payload: None,
             };
-            let preview = result.result.log_preview();
+            let mut preview = result.result.log_preview();
             otel.tool_result_with_tags(
                 &display_name,
                 &call_id_owned,
@@ -394,6 +402,56 @@ impl ToolRegistry {
                 mcp_server_origin_ref,
             );
             emit_metric_for_tool_read(&invocation, /*success*/ true).await;
+            let post_tool_use_outcome = run_post_tool_use_hooks(
+                &invocation.session,
+                &invocation.turn,
+                invocation.call_id.clone(),
+                pre_tool_use_payload.tool_name.name().to_string(),
+                pre_tool_use_payload.tool_name.matcher_aliases().to_vec(),
+                pre_tool_use_payload.tool_input.clone(),
+                serde_json::Value::String(cache_text),
+            )
+            .await;
+            record_additional_contexts(
+                &invocation.session,
+                &invocation.turn,
+                post_tool_use_outcome.additional_contexts.clone(),
+            )
+            .await;
+            let replacement_text = if post_tool_use_outcome.should_stop {
+                Some(
+                    post_tool_use_outcome
+                        .feedback_message
+                        .clone()
+                        .or_else(|| post_tool_use_outcome.stop_reason.clone())
+                        .unwrap_or_else(|| "PostToolUse hook stopped execution".to_string()),
+                )
+            } else if let Some(feedback_message) = post_tool_use_outcome.feedback_message {
+                Some(feedback_message)
+            } else {
+                None
+            };
+            if let Some(replacement_text) = replacement_text {
+                result.result = Box::new(FunctionToolOutput::from_text(
+                    replacement_text,
+                    /*success*/ None,
+                ));
+                preview = result.result.log_preview();
+            }
+            let hook_abort_error = dispatch_after_tool_use_hook(AfterToolUseHookDispatch {
+                invocation: &invocation,
+                output_preview: preview,
+                success: true,
+                executed: false,
+                duration: cache_hit.duration,
+                mutating: is_mutating,
+            })
+            .await;
+
+            if let Some(err) = hook_abort_error {
+                dispatch_trace.record_failed(&err);
+                return Err(err);
+            }
             if let Err(err) = invocation
                 .session
                 .goal_runtime_apply(GoalRuntimeEvent::ToolCompleted {
@@ -413,7 +471,6 @@ impl ToolRegistry {
             return Ok(result);
         }
 
-        let is_mutating = handler.is_mutating(&invocation).await;
         let response_cell = tokio::sync::Mutex::new(None);
         let invocation_for_tool = invocation.clone();
 
@@ -529,7 +586,7 @@ impl ToolRegistry {
         }
 
         if !replaced_by_post_tool_use && let Some(cache_store_payload) = &cache_store_payload {
-            operation_cache::store(cache_store_payload, invocation.turn.cwd.as_path()).await;
+            operation_cache::store(cache_store_payload, operation_cache_cwd.as_path()).await;
         }
 
         if let Err(err) = invocation
@@ -632,6 +689,35 @@ fn unsupported_tool_call_message(payload: &ToolPayload, tool_name: &ToolName) ->
     match payload {
         ToolPayload::Custom { .. } => format!("unsupported custom tool call: {tool_name}"),
         _ => format!("unsupported call: {tool_name}"),
+    }
+}
+
+fn operation_cache_cwd(invocation: &ToolInvocation) -> AbsolutePathBuf {
+    match &invocation.payload {
+        ToolPayload::Function { arguments } => serde_json::from_str::<Value>(arguments)
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("workdir")
+                    .and_then(Value::as_str)
+                    .filter(|workdir| !workdir.is_empty())
+                    .map(str::to_string)
+            })
+            .map_or_else(
+                || invocation.turn.cwd.clone(),
+                |workdir| invocation.turn.resolve_path(Some(workdir)),
+            ),
+        ToolPayload::LocalShell { params } => params
+            .workdir
+            .clone()
+            .filter(|workdir| !workdir.is_empty())
+            .map_or_else(
+                || invocation.turn.cwd.clone(),
+                |workdir| invocation.turn.resolve_path(Some(workdir)),
+            ),
+        ToolPayload::ToolSearch { .. } | ToolPayload::Custom { .. } | ToolPayload::Mcp { .. } => {
+            invocation.turn.cwd.clone()
+        }
     }
 }
 
