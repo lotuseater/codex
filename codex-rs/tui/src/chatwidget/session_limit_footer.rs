@@ -65,10 +65,11 @@ fn reset_elapsed_percent(window: &RateLimitWindowDisplay, now: DateTime<Local>) 
         .signed_duration_since(starts_at)
         .num_seconds()
         .clamp(0, total_seconds);
-    let percent = ((elapsed_seconds as f64 / total_seconds as f64) * 100.0).round() as i64;
+    let reset_percent = ((elapsed_seconds as f64 / total_seconds as f64) * 100.0).round() as i64;
+    let used_percent = window.used_percent.clamp(0.0, 100.0).round() as i64;
+    let label = get_limits_duration(window_minutes);
     Some(format!(
-        "{} {percent}% reset",
-        get_limits_duration(window_minutes)
+        "{label} {used_percent}% used {reset_percent}% reset"
     ))
 }
 
@@ -116,7 +117,7 @@ mod tests {
             .map(|span| span.content.as_ref())
             .collect::<String>();
 
-        assert_eq!(rendered, "70% tokens · 5h 50% reset");
+        assert_eq!(rendered, "70% tokens · 5h 25% used 50% reset");
     }
 
     #[test]
@@ -153,7 +154,10 @@ mod tests {
             .map(|span| span.content.as_ref())
             .collect::<String>();
 
-        assert_eq!(rendered, "5h 50% reset · weekly 57% reset");
+        assert_eq!(
+            rendered,
+            "5h 25% used 50% reset · weekly 50% used 57% reset"
+        );
     }
 
     #[test]
@@ -190,6 +194,6 @@ mod tests {
             .map(|span| span.content.as_ref())
             .collect::<String>();
 
-        assert_eq!(rendered, "5h 50% reset");
+        assert_eq!(rendered, "5h 50% used 50% reset");
     }
 }
