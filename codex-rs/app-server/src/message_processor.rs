@@ -65,6 +65,7 @@ use codex_arg0::Arg0DispatchPaths;
 use codex_chatgpt::connectors;
 use codex_core::ThreadManager;
 use codex_core::config::Config;
+use codex_core::thread_store_from_config;
 use codex_exec_server::EnvironmentManager;
 use codex_features::Feature;
 use codex_feedback::CodexFeedback;
@@ -79,7 +80,6 @@ use codex_login::default_client::get_codex_user_agent;
 use codex_login::default_client::set_default_client_residency_requirement;
 use codex_login::default_client::set_default_originator;
 use codex_model_provider::create_model_provider;
-use codex_models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::W3cTraceContext;
@@ -286,17 +286,17 @@ impl MessageProcessor {
         auth_manager.set_external_auth(Arc::new(ExternalAuthRefreshBridge {
             outgoing: outgoing.clone(),
         }));
+        // The thread store is intentionally process-scoped. Config reloads can
+        // affect per-thread behavior, but they must not move newly started,
+        // resumed, or forked threads to a different persistence backend/root.
+        let thread_store = thread_store_from_config(config.as_ref());
         let thread_manager = Arc::new(ThreadManager::new(
             config.as_ref(),
             auth_manager.clone(),
             session_source,
-            CollaborationModesConfig {
-                default_mode_request_user_input: config
-                    .features
-                    .enabled(Feature::DefaultModeRequestUserInput),
-            },
             environment_manager,
             Some(analytics_events_client.clone()),
+            Arc::clone(&thread_store),
         ));
         thread_manager
             .plugins_manager()
@@ -310,6 +310,7 @@ impl MessageProcessor {
             arg0_paths,
             config: Arc::clone(&config),
             config_manager: config_manager.clone(),
+            thread_store,
             feedback,
             log_db,
         });
@@ -320,7 +321,7 @@ impl MessageProcessor {
             thread_manager
                 .plugins_manager()
                 .maybe_start_plugin_startup_tasks_for_config(
-                    &config,
+                    &config.plugins_config_input(),
                     auth_manager.clone(),
                     Some(on_effective_plugins_changed),
                 );
@@ -1218,6 +1219,7 @@ impl MessageProcessor {
         params: ExternalAgentConfigImportParams,
     ) -> Result<(), JSONRPCErrorError> {
         let needs_runtime_refresh = migration_items_need_runtime_refresh(&params.migration_items);
+        let has_migration_items = !params.migration_items.is_empty();
         let has_plugin_imports = params.migration_items.iter().any(|item| {
             matches!(
                 item.item_type,
@@ -1226,28 +1228,22 @@ impl MessageProcessor {
         });
         let pending_session_imports = self
             .external_agent_config_api
-            .prepare_pending_session_imports(&params)?;
+            .validate_pending_session_imports(&params)?;
         let pending_plugin_imports = self.external_agent_config_api.import(params).await?;
         if needs_runtime_refresh {
             self.handle_config_mutation().await;
-        }
-        for pending_session_import in pending_session_imports {
-            let imported_thread_id = self
-                .codex_message_processor
-                .import_external_agent_session(pending_session_import.session)
-                .await?;
-            self.external_agent_config_api
-                .record_imported_session(&pending_session_import.source_path, imported_thread_id);
         }
         self.outgoing
             .send_response(request_id, ExternalAgentConfigImportResponse {})
             .await;
 
-        if !has_plugin_imports {
+        if !has_migration_items {
             return Ok(());
         }
 
-        if pending_plugin_imports.is_empty() {
+        let has_background_imports =
+            !pending_plugin_imports.is_empty() || !pending_session_imports.is_empty();
+        if !has_background_imports {
             self.outgoing
                 .send_server_notification(ServerNotification::ExternalAgentConfigImportCompleted(
                     ExternalAgentConfigImportCompletedNotification {},
@@ -1257,25 +1253,64 @@ impl MessageProcessor {
         }
 
         let external_agent_config_api = self.external_agent_config_api.clone();
+        let session_import_permits = external_agent_config_api.session_import_permits();
+        let codex_message_processor = self.codex_message_processor.clone();
         let outgoing = Arc::clone(&self.outgoing);
         let thread_manager = Arc::clone(&self.thread_manager);
         tokio::spawn(async move {
-            for pending_plugin_import in pending_plugin_imports {
-                match external_agent_config_api
-                    .complete_pending_plugin_import(pending_plugin_import)
-                    .await
-                {
-                    Ok(()) => {}
-                    Err(error) => {
-                        tracing::warn!(
-                            error = %error.message,
-                            "external agent config plugin import failed"
-                        );
+            let session_external_agent_config_api = external_agent_config_api.clone();
+            let plugin_external_agent_config_api = external_agent_config_api;
+            let session_imports = async move {
+                if !pending_session_imports.is_empty() {
+                    let Ok(_session_import_permit) = session_import_permits.acquire_owned().await
+                    else {
+                        return;
+                    };
+                    let pending_session_imports = session_external_agent_config_api
+                        .prepare_validated_session_imports(pending_session_imports);
+                    for pending_session_import in pending_session_imports {
+                        match codex_message_processor
+                            .import_external_agent_session(pending_session_import.session)
+                            .await
+                        {
+                            Ok(imported_thread_id) => {
+                                session_external_agent_config_api.record_imported_session(
+                                    &pending_session_import.source_path,
+                                    imported_thread_id,
+                                );
+                            }
+                            Err(error) => {
+                                tracing::warn!(
+                                    error = %error.message,
+                                    path = %pending_session_import.source_path.display(),
+                                    "external agent session import failed"
+                                );
+                            }
+                        }
                     }
                 }
+            };
+            let plugin_imports = async move {
+                for pending_plugin_import in pending_plugin_imports {
+                    match plugin_external_agent_config_api
+                        .complete_pending_plugin_import(pending_plugin_import)
+                        .await
+                    {
+                        Ok(()) => {}
+                        Err(error) => {
+                            tracing::warn!(
+                                error = %error.message,
+                                "external agent config plugin import failed"
+                            );
+                        }
+                    }
+                }
+            };
+            tokio::join!(session_imports, plugin_imports);
+            if has_plugin_imports {
+                thread_manager.plugins_manager().clear_cache();
+                thread_manager.skills_manager().clear_cache();
             }
-            thread_manager.plugins_manager().clear_cache();
-            thread_manager.skills_manager().clear_cache();
             outgoing
                 .send_server_notification(ServerNotification::ExternalAgentConfigImportCompleted(
                     ExternalAgentConfigImportCompletedNotification {},

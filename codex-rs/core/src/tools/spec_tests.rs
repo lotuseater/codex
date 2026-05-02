@@ -21,11 +21,11 @@ use codex_tools::ConfiguredToolSpec;
 use codex_tools::DiscoverableTool;
 use codex_tools::JsonSchema;
 use codex_tools::LoadableToolSpec;
+use codex_tools::REQUEST_PLUGIN_INSTALL_TOOL_NAME;
 use codex_tools::ResponsesApiNamespaceTool;
 use codex_tools::ResponsesApiTool;
 use codex_tools::ShellCommandBackendConfig;
 use codex_tools::TOOL_SEARCH_TOOL_NAME;
-use codex_tools::TOOL_SUGGEST_TOOL_NAME;
 use codex_tools::ToolName;
 use codex_tools::ToolSpec;
 use codex_tools::ToolsConfig;
@@ -296,31 +296,6 @@ fn build_specs_with_unavailable_tools(
         /*discoverable_tools*/ None,
         dynamic_tools,
     )
-}
-
-#[tokio::test]
-async fn model_provided_unified_exec_is_blocked_for_windows_sandboxed_policies() {
-    let mut model_info = model_info_from_models_json("gpt-5.4").await;
-    model_info.shell_type = ConfigShellToolType::UnifiedExec;
-    let features = Features::with_defaults();
-    let available_models = Vec::new();
-    let config = ToolsConfig::new(&ToolsConfigParams {
-        model_info: &model_info,
-        available_models: &available_models,
-        features: &features,
-        image_generation_tool_auth_allowed: true,
-        web_search_mode: Some(WebSearchMode::Cached),
-        session_source: SessionSource::Cli,
-        permission_profile: &PermissionProfile::workspace_write(),
-        windows_sandbox_level: WindowsSandboxLevel::RestrictedToken,
-    });
-
-    let expected_shell_type = if cfg!(target_os = "windows") {
-        ConfigShellToolType::ShellCommand
-    } else {
-        ConfigShellToolType::UnifiedExec
-    };
-    assert_eq!(config.shell_type, expected_shell_type);
 }
 
 #[tokio::test]
@@ -816,7 +791,7 @@ async fn multi_agent_v2_wait_agent_schema_uses_configured_min_timeout() {
 }
 
 #[tokio::test]
-async fn tool_suggest_requires_apps_and_plugins_features() {
+async fn request_plugin_install_requires_apps_and_plugins_features() {
     let model_info = search_capable_model_info().await;
     let discoverable_tools = Some(vec![discoverable_connector(
         "connector_2128aebfecb84f64a069897515042a44",
@@ -856,7 +831,7 @@ async fn tool_suggest_requires_apps_and_plugins_features() {
         assert!(
             !tools
                 .iter()
-                .any(|tool| tool.name() == TOOL_SUGGEST_TOOL_NAME),
+                .any(|tool| tool.name() == REQUEST_PLUGIN_INSTALL_TOOL_NAME),
             "tool_suggest should be absent when {disabled_feature:?} is disabled"
         );
     }
