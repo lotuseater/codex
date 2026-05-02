@@ -372,10 +372,9 @@ async fn reasoning_selection_in_plan_mode_matching_plan_effort_but_different_glo
 
     let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
     assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            AppEvent::OpenPlanReasoningScopePrompt { .. }
-        )),
+        events
+            .iter()
+            .all(|event| !matches!(event, AppEvent::OpenPlanReasoningScopePrompt { .. })),
         "expected the synced Plan effort to skip the scope prompt; events: {events:?}"
     );
     assert!(

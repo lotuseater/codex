@@ -4367,7 +4367,7 @@ impl ChatWidget {
                                 .and_then(|metadata| metadata.agent_role.clone()),
                             prompt: prompt.unwrap_or_default(),
                             model: String::new(),
-                            reasoning_effort: ReasoningEffortConfig::Medium,
+                            reasoning_effort: reasoning_effort.unwrap_or_default(),
                             status: first_receiver
                                 .as_ref()
                                 .and_then(|thread_id| agents_states.get(&thread_id.to_string()))
