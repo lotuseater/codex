@@ -521,6 +521,7 @@ client_request_definitions! {
     #[experimental("memory/status")]
     MemoryStatus => "memory/status" {
         params: #[ts(type = "undefined")] #[serde(skip_serializing_if = "Option::is_none")] Option<()>,
+        serialization: global("memory"),
         response: v2::MemoryStatusResponse,
     },
     ThreadUnarchive => "thread/unarchive" {
@@ -801,6 +802,7 @@ client_request_definitions! {
     #[experimental("mcp/cache/status")]
     McpCacheStatus => "mcp/cache/status" {
         params: #[ts(type = "undefined")] #[serde(skip_serializing_if = "Option::is_none")] Option<()>,
+        serialization: global("mcp-registry"),
         response: v2::McpCacheStatusResponse,
     },
 

@@ -429,8 +429,8 @@ async fn review_restores_context_window_indicator() {
 }
 
 #[tokio::test]
-async fn self_review_reminder_is_shown_after_patch_without_review() {
-    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+async fn self_review_starts_after_patch_without_review() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     let mut changes = HashMap::new();
     changes.insert(
         PathBuf::from("foo.txt"),
@@ -467,7 +467,23 @@ async fn self_review_reminder_is_shown_after_patch_without_review() {
         .map(|lines| lines_to_single_string(lines))
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(rendered.contains("Self-review reminder"));
+    assert!(rendered.contains("Self-review required"));
+
+    loop {
+        match op_rx.try_recv() {
+            Ok(Op::Review { review_request }) => {
+                assert_eq!(review_request.target, ReviewTarget::UncommittedChanges);
+                assert_eq!(
+                    review_request.user_facing_hint,
+                    Some("automatic self-review of current changes".to_string())
+                );
+                break;
+            }
+            Ok(_) => continue,
+            Err(TryRecvError::Empty) => panic!("expected automatic self-review op"),
+            Err(TryRecvError::Disconnected) => panic!("expected self-review op but channel closed"),
+        }
+    }
 }
 
 #[tokio::test]
@@ -516,7 +532,7 @@ async fn explicit_review_suppresses_self_review_reminder() {
         .map(|lines| lines_to_single_string(lines))
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(!rendered.contains("Self-review reminder"));
+    assert!(!rendered.contains("Self-review required"));
 }
 
 #[tokio::test]

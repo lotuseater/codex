@@ -381,7 +381,7 @@ async fn reasoning_selection_in_plan_mode_matching_plan_effort_but_different_glo
 }
 
 #[tokio::test]
-async fn reasoning_shortcut_in_plan_mode_updates_plan_override_without_prompt_or_persist() {
+async fn reasoning_shortcut_in_plan_mode_updates_and_persists_plan_override_without_prompt() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
     chat.thread_id = Some(ThreadId::new());
     chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
@@ -408,10 +408,11 @@ async fn reasoning_shortcut_in_plan_mode_updates_plan_override_without_prompt_or
         "expected no Plan reasoning scope prompt event; events: {events:?}"
     );
     assert!(
-        events
-            .iter()
-            .all(|event| !matches!(event, AppEvent::PersistPlanModeReasoningEffort(_))),
-        "expected no Plan reasoning persistence event; events: {events:?}"
+        events.iter().any(|event| matches!(
+            event,
+            AppEvent::PersistPlanModeReasoningEffort(Some(ReasoningEffortConfig::High))
+        )),
+        "expected Plan reasoning persistence event; events: {events:?}"
     );
     assert!(
         events
@@ -1538,6 +1539,23 @@ async fn set_reasoning_effort_updates_active_collaboration_mask() {
     assert_eq!(
         chat.current_reasoning_effort(),
         Some(ReasoningEffortConfig::Medium)
+    );
+    assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
+}
+
+#[tokio::test]
+async fn plan_mode_inherits_global_reasoning_effort_without_plan_override() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.2")).await;
+    chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
+    chat.set_reasoning_effort(Some(ReasoningEffortConfig::XHigh));
+    let plan_mask = collaboration_modes::mask_for_kind(chat.model_catalog.as_ref(), ModeKind::Plan)
+        .expect("expected plan collaboration mask");
+
+    chat.set_collaboration_mask(plan_mask);
+
+    assert_eq!(
+        chat.current_reasoning_effort(),
+        Some(ReasoningEffortConfig::XHigh)
     );
     assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
 }

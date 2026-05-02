@@ -146,18 +146,21 @@ pub(super) fn apply_accepted_model_migration(
     target_model: String,
     target_default_effort: ReasoningEffortConfig,
 ) {
+    let selected_effort = config
+        .model_reasoning_effort
+        .unwrap_or(target_default_effort);
     app_event_tx.send(AppEvent::PersistModelMigrationPromptAcknowledged {
         from_model,
         to_model: target_model.clone(),
     });
 
     config.model = Some(target_model.clone());
-    config.model_reasoning_effort = Some(target_default_effort);
+    config.model_reasoning_effort = Some(selected_effort);
     app_event_tx.send(AppEvent::UpdateModel(target_model.clone()));
-    app_event_tx.send(AppEvent::UpdateReasoningEffort(Some(target_default_effort)));
+    app_event_tx.send(AppEvent::UpdateReasoningEffort(Some(selected_effort)));
     app_event_tx.send(AppEvent::PersistModelSelection {
         model: target_model,
-        effort: Some(target_default_effort),
+        effort: Some(selected_effort),
     });
 }
 

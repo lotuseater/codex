@@ -102,8 +102,10 @@ impl ChatWidget {
         if self.collaboration_modes_enabled() && self.active_mode_kind() == ModeKind::Plan {
             self.app_event_tx
                 .send(AppEvent::UpdatePlanModeReasoningEffort(Some(next_effort)));
+            self.app_event_tx
+                .send(AppEvent::PersistPlanModeReasoningEffort(Some(next_effort)));
         } else {
-            self.apply_model_and_effort_without_persist(current_model, Some(next_effort));
+            self.apply_model_and_effort(current_model, Some(next_effort));
         }
 
         true

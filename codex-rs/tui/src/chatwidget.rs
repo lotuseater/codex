@@ -2846,7 +2846,6 @@ impl ChatWidget {
                 ));
             }
             self.turn_runtime_metrics = RuntimeMetricsSummary::default();
-            self.maybe_add_self_review_reminder();
             self.needs_final_message_separator = false;
             self.had_work_activity = false;
             self.request_status_line_branch_refresh();
@@ -2868,7 +2867,13 @@ impl ChatWidget {
         let had_pending_steers = !self.pending_steers.is_empty();
         self.refresh_pending_input_preview();
 
-        if !from_replay && !self.has_queued_follow_up_messages() && !had_pending_steers {
+        let self_review_started = !from_replay && self.maybe_start_self_review();
+
+        if !from_replay
+            && !self_review_started
+            && !self.has_queued_follow_up_messages()
+            && !had_pending_steers
+        {
             self.maybe_prompt_plan_implementation();
         }
         // Keep this flag for replayed completion events so a subsequent live TurnComplete can
@@ -2877,7 +2882,11 @@ impl ChatWidget {
             self.saw_plan_item_this_turn = false;
         }
         // If there is a queued user message, send exactly one now to begin the next turn.
-        let follow_up_started = self.maybe_send_next_queued_input();
+        let follow_up_started = if self_review_started {
+            true
+        } else {
+            self.maybe_send_next_queued_input()
+        };
         let active_goal_continuing = self
             .current_goal_status
             .as_ref()
@@ -2937,13 +2946,17 @@ impl ChatWidget {
         });
     }
 
-    fn maybe_add_self_review_reminder(&mut self) {
+    fn maybe_start_self_review(&mut self) -> bool {
         if !self.self_review_tracker.should_remind() {
-            return;
+            return false;
         }
         self.add_to_history(history_cell::new_self_review_reminder_line(
             self.self_review_tracker.reminder_message(),
         ));
+        self.submit_op(AppCommand::review(ReviewRequest {
+            target: ReviewTarget::UncommittedChanges,
+            user_facing_hint: Some("automatic self-review of current changes".to_string()),
+        }))
     }
 
     /// Returns a context-used label for the plan implementation prompt.
@@ -10858,10 +10871,12 @@ impl ChatWidget {
         let previous_mode = self.active_mode_kind();
         let previous_model = self.current_model().to_string();
         let previous_effort = self.effective_reasoning_effort();
-        if mask.mode == Some(ModeKind::Plan)
-            && let Some(effort) = self.config.plan_mode_reasoning_effort
-        {
-            mask.reasoning_effort = Some(Some(effort));
+        if mask.mode == Some(ModeKind::Plan) {
+            if let Some(effort) = self.config.plan_mode_reasoning_effort {
+                mask.reasoning_effort = Some(Some(effort));
+            } else if let Some(effort) = self.current_collaboration_mode.reasoning_effort() {
+                mask.reasoning_effort = Some(Some(effort));
+            }
         }
         if mask.mode == Some(ModeKind::Plan) {
             self.dismissed_plan_mode_nudge_scopes

@@ -1,4 +1,6 @@
+use crate::chatwidget::get_limits_duration;
 use crate::status::RateLimitSnapshotDisplay;
+use crate::status::RateLimitWindowDisplay;
 use chrono::DateTime;
 use chrono::Duration as ChronoDuration;
 use chrono::Local;
@@ -16,8 +18,8 @@ pub(crate) fn line(
     if let Some(token_percent) = token_used_percent(token_info, context_window) {
         parts.push(format!("{token_percent}% tokens"));
     }
-    if let Some(reset_percent) = reset_elapsed_percent(codex_rate_limit, now) {
-        parts.push(format!("{reset_percent}% reset"));
+    if let Some(codex_rate_limit) = codex_rate_limit {
+        parts.extend(reset_elapsed_percentages(codex_rate_limit, now));
     }
     if parts.is_empty() {
         None
@@ -35,18 +37,21 @@ fn token_used_percent(
     Some((100 - usage.percent_of_context_window_remaining(context_window)).clamp(0, 100))
 }
 
-fn reset_elapsed_percent(
-    codex_rate_limit: Option<&RateLimitSnapshotDisplay>,
+fn reset_elapsed_percentages(
+    codex_rate_limit: &RateLimitSnapshotDisplay,
     now: DateTime<Local>,
-) -> Option<i64> {
-    let codex_rate_limit = codex_rate_limit?;
-    let window = [
+) -> Vec<String> {
+    [
         codex_rate_limit.primary.as_ref(),
         codex_rate_limit.secondary.as_ref(),
     ]
     .into_iter()
     .flatten()
-    .find(|window| window.resets_at_datetime.is_some() && window.window_minutes.is_some())?;
+    .filter_map(|window| reset_elapsed_percent(window, now))
+    .collect()
+}
+
+fn reset_elapsed_percent(window: &RateLimitWindowDisplay, now: DateTime<Local>) -> Option<String> {
     let reset_at = window.resets_at_datetime?;
     let window_minutes = window.window_minutes?;
     if window_minutes <= 0 {
@@ -60,7 +65,11 @@ fn reset_elapsed_percent(
         .signed_duration_since(starts_at)
         .num_seconds()
         .clamp(0, total_seconds);
-    Some(((elapsed_seconds as f64 / total_seconds as f64) * 100.0).round() as i64)
+    let percent = ((elapsed_seconds as f64 / total_seconds as f64) * 100.0).round() as i64;
+    Some(format!(
+        "{} {percent}% reset",
+        get_limits_duration(window_minutes)
+    ))
 }
 
 #[cfg(test)]
@@ -107,11 +116,11 @@ mod tests {
             .map(|span| span.content.as_ref())
             .collect::<String>();
 
-        assert_eq!(rendered, "70% tokens · 50% reset");
+        assert_eq!(rendered, "70% tokens · 5h 50% reset");
     }
 
     #[test]
-    fn renders_reset_percentage_without_token_usage() {
+    fn renders_reset_percentages_without_token_usage() {
         let now = Local::now();
         let codex_rate_limit = RateLimitSnapshotDisplay {
             limit_name: "codex".to_string(),
@@ -122,7 +131,12 @@ mod tests {
                 resets_at_datetime: Some(now + ChronoDuration::minutes(150)),
                 window_minutes: Some(300),
             }),
-            secondary: None,
+            secondary: Some(RateLimitWindowDisplay {
+                used_percent: 50.0,
+                resets_at: None,
+                resets_at_datetime: Some(now + ChronoDuration::days(3)),
+                window_minutes: Some(10_080),
+            }),
             credits: None,
         };
 
@@ -139,7 +153,7 @@ mod tests {
             .map(|span| span.content.as_ref())
             .collect::<String>();
 
-        assert_eq!(rendered, "50% reset");
+        assert_eq!(rendered, "5h 50% reset · weekly 57% reset");
     }
 
     #[test]
@@ -176,6 +190,6 @@ mod tests {
             .map(|span| span.content.as_ref())
             .collect::<String>();
 
-        assert_eq!(rendered, "50% reset");
+        assert_eq!(rendered, "5h 50% reset");
     }
 }

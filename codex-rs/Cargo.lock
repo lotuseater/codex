@@ -3230,6 +3230,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-reasoning-logic"
+version = "0.0.0"
+dependencies = [
+ "codex-execpolicy",
+ "codex-utils-absolute-path",
+ "multimap",
+ "pretty_assertions",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "codex-response-debug-context"
 version = "0.0.0"
 dependencies = [

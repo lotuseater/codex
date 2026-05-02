@@ -50,7 +50,7 @@ impl SelfReviewTracker {
         };
 
         format!(
-            "Self-review reminder: {work} completed without an explicit review. Inspect diff, tests, docs, and user intent before finalizing."
+            "Self-review required: {work} completed without an explicit review. Starting an automatic review of current changes before finalizing."
         )
     }
 }

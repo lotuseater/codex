@@ -2280,10 +2280,12 @@ async fn alt_period_raises_reasoning_effort() {
         "expected reasoning update event; events: {events:?}"
     );
     assert!(
-        events
-            .iter()
-            .all(|event| !matches!(event, AppEvent::PersistModelSelection { .. })),
-        "expected no model persistence event; events: {events:?}"
+        events.iter().any(|event| matches!(
+            event,
+            AppEvent::PersistModelSelection { model, effort: Some(ReasoningEffortConfig::High) }
+                if model == "gpt-5.4"
+        )),
+        "expected model persistence event; events: {events:?}"
     );
 }
 
@@ -2304,10 +2306,12 @@ async fn alt_comma_lowers_reasoning_effort() {
         "expected reasoning update event; events: {events:?}"
     );
     assert!(
-        events
-            .iter()
-            .all(|event| !matches!(event, AppEvent::PersistModelSelection { .. })),
-        "expected no model persistence event; events: {events:?}"
+        events.iter().any(|event| matches!(
+            event,
+            AppEvent::PersistModelSelection { model, effort: Some(ReasoningEffortConfig::Low) }
+                if model == "gpt-5.4"
+        )),
+        "expected model persistence event; events: {events:?}"
     );
 }
 

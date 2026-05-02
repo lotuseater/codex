@@ -5,4 +5,4 @@ expression: "render_bottom_popup(&chat, 110)"
 ---
 › Ask Codex to do anything
 
-  gpt-5.5 default · C:\tmp\project                            Side from main thread · 70% tokens · 50% reset
+  gpt-5.5 default · C:\tmp\project                         Side from main thread · 70% tokens · 5h 50% reset

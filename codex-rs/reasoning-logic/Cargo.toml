@@ -1,0 +1,29 @@
+[package]
+name = "codex-reasoning-logic"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Optional Prolog and ProbLog comparison engines for Codex reasoning decisions."
+
+[lib]
+name = "codex_reasoning_logic"
+path = "src/lib.rs"
+
+[features]
+default = []
+problog-cli = []
+swi-prolog = []
+
+[lints]
+workspace = true
+
+[dependencies]
+codex-execpolicy = { workspace = true }
+codex-utils-absolute-path = { workspace = true }
+multimap = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+tempfile = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
