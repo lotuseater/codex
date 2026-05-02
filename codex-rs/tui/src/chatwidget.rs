@@ -2947,16 +2947,21 @@ impl ChatWidget {
     }
 
     fn maybe_start_self_review(&mut self) -> bool {
-        if !self.self_review_tracker.should_remind() {
+        let now = Instant::now();
+        if !self.self_review_tracker.should_remind(now) {
             return false;
         }
         self.add_to_history(history_cell::new_self_review_reminder_line(
             self.self_review_tracker.reminder_message(),
         ));
-        self.submit_op(AppCommand::review(ReviewRequest {
+        let started = self.submit_op(AppCommand::review(ReviewRequest {
             target: ReviewTarget::UncommittedChanges,
             user_facing_hint: Some("automatic self-review of current changes".to_string()),
-        }))
+        }));
+        if started {
+            self.self_review_tracker.note_automatic_review_started(now);
+        }
+        started
     }
 
     /// Returns a context-used label for the plan implementation prompt.
