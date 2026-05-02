@@ -10394,6 +10394,16 @@ impl ChatWidget {
             // Generic "global default" updates should not mutate the active Plan mask.
             // Plan reasoning is controlled by the Plan preset and Plan-only override updates.
             mask.reasoning_effort = Some(effort);
+        } else if self.collaboration_modes_enabled()
+            && let Some(mask) = self.active_collaboration_mask.as_mut()
+            && mask.mode == Some(ModeKind::Plan)
+            && self.config.plan_mode_reasoning_effort.is_none()
+            && let Some(effort) = effort
+        {
+            // When Plan mode is inheriting the global default, keep the active Plan mask aligned
+            // with that new global effort so the UI and submissions do not drift back to the
+            // older Plan preset default.
+            mask.reasoning_effort = Some(Some(effort));
         }
         self.refresh_model_dependent_surfaces();
     }

@@ -361,22 +361,29 @@ async fn reasoning_selection_in_plan_mode_matching_plan_effort_but_different_glo
     let _ = drain_insert_history(&mut rx);
     set_chatgpt_auth(&mut chat);
 
-    // Reproduce: Plan effective reasoning remains the preset (medium), but the
-    // global default differs (high). Pressing Enter on the current Plan choice
-    // should open the scope prompt rather than silently rewriting the global default.
+    // Reproduce: Plan effective reasoning now follows the global default when
+    // there is no explicit Plan override. Pressing Enter on the current Plan
+    // choice should update directly instead of opening the scope prompt.
     chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
 
     let preset = get_available_model(&chat, "gpt-5.4");
     chat.open_reasoning_popup(preset);
     chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
 
-    let event = rx.try_recv().expect("expected AppEvent");
-    assert_matches!(
-        event,
-        AppEvent::OpenPlanReasoningScopePrompt {
-            model,
-            effort: Some(ReasoningEffortConfig::Medium)
-        } if model == "gpt-5.4"
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(
+        events.iter().all(|event| !matches!(
+            event,
+            AppEvent::OpenPlanReasoningScopePrompt { .. }
+        )),
+        "expected the synced Plan effort to skip the scope prompt; events: {events:?}"
+    );
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            AppEvent::UpdateReasoningEffort(Some(ReasoningEffortConfig::High))
+        )),
+        "expected the selected global effort to be applied directly; events: {events:?}"
     );
 }
 
@@ -397,7 +404,7 @@ async fn reasoning_shortcut_in_plan_mode_updates_and_persists_plan_override_with
     assert!(
         events.iter().any(|event| matches!(
             event,
-            AppEvent::UpdatePlanModeReasoningEffort(Some(ReasoningEffortConfig::High))
+            AppEvent::UpdatePlanModeReasoningEffort(Some(ReasoningEffortConfig::XHigh))
         )),
         "expected plan reasoning override update event; events: {events:?}"
     );
@@ -410,7 +417,7 @@ async fn reasoning_shortcut_in_plan_mode_updates_and_persists_plan_override_with
     assert!(
         events.iter().any(|event| matches!(
             event,
-            AppEvent::PersistPlanModeReasoningEffort(Some(ReasoningEffortConfig::High))
+            AppEvent::PersistPlanModeReasoningEffort(Some(ReasoningEffortConfig::XHigh))
         )),
         "expected Plan reasoning persistence event; events: {events:?}"
     );
@@ -1347,8 +1354,8 @@ async fn mode_switch_surfaces_reasoning_change_notification_when_model_stays_sam
         .collect::<Vec<_>>()
         .join("\n");
     assert!(
-        plan_messages.contains("Model changed to gpt-5.3-codex medium for Plan mode."),
-        "expected reasoning-change notice in Plan mode, got: {plan_messages:?}"
+        plan_messages.is_empty(),
+        "expected no reasoning-change notice once Plan mode inherits the global effort, got: {plan_messages:?}"
     );
 }
 
@@ -1574,6 +1581,23 @@ async fn set_reasoning_effort_does_not_override_active_plan_override() {
     assert_eq!(
         chat.current_reasoning_effort(),
         Some(ReasoningEffortConfig::High)
+    );
+    assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
+}
+
+#[tokio::test]
+async fn set_reasoning_effort_updates_inherited_active_plan_mode() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.2")).await;
+    chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
+    let plan_mask = collaboration_modes::mask_for_kind(chat.model_catalog.as_ref(), ModeKind::Plan)
+        .expect("expected plan collaboration mask");
+    chat.set_collaboration_mask(plan_mask);
+
+    chat.set_reasoning_effort(Some(ReasoningEffortConfig::XHigh));
+
+    assert_eq!(
+        chat.current_reasoning_effort(),
+        Some(ReasoningEffortConfig::XHigh)
     );
     assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
 }
