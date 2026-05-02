@@ -10,7 +10,7 @@ fn preset_names_use_mode_display_names() {
     );
     assert_eq!(
         plan_preset().reasoning_effort,
-        Some(Some(ReasoningEffort::Medium))
+        Some(Some(ReasoningEffort::XHigh))
     );
 }
 

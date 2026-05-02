@@ -665,7 +665,10 @@ async fn plan_reasoning_scope_popup_mentions_built_in_plan_default_when_no_overr
     );
 
     let popup = render_bottom_popup(&chat, /*width*/ 100);
-    assert!(popup.contains("built-in Plan default (medium)"));
+    assert!(
+        popup.contains("built-in Plan default (extra high)"),
+        "popup was:\n{popup}"
+    );
 }
 
 #[tokio::test]
@@ -1316,7 +1319,7 @@ async fn mode_switch_surfaces_model_change_notification_when_effective_model_cha
         .collect::<Vec<_>>()
         .join("\n");
     assert!(
-        plan_messages.contains("Model changed to gpt-5.4-mini medium for Plan mode."),
+        plan_messages.contains("Model changed to gpt-5.4-mini xhigh for Plan mode."),
         "expected Plan-mode model switch notice, got: {plan_messages:?}"
     );
 
@@ -1544,7 +1547,7 @@ async fn set_reasoning_effort_updates_active_collaboration_mask() {
 
     assert_eq!(
         chat.current_reasoning_effort(),
-        Some(ReasoningEffortConfig::Medium)
+        Some(ReasoningEffortConfig::XHigh)
     );
     assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
 }
