@@ -2609,14 +2609,9 @@ impl ChatWidget {
         self.add_to_history(history_cell::new_self_review_reminder_line(
             self.self_review_tracker.reminder_message(),
         ));
-        let started = self.submit_op(AppCommand::review(ReviewRequest {
-            target: ReviewTarget::UncommittedChanges,
-            user_facing_hint: Some("automatic self-review of current changes".to_string()),
-        }));
-        if started {
-            self.self_review_tracker.note_automatic_review_started(now);
-        }
-        started
+        self.app_event_tx.review(ReviewTarget::UncommittedChanges);
+        self.self_review_tracker.note_automatic_review_started(now);
+        true
     }
 
     /// Returns a context-used label for the plan implementation prompt.
@@ -4495,7 +4490,10 @@ impl ChatWidget {
         }
         // Mark that actual work was done (patch applied)
         self.had_work_activity = true;
-        if event.success {
+        if matches!(
+            &status,
+            codex_app_server_protocol::PatchApplyStatus::Completed
+        ) {
             self.self_review_tracker.note_patch();
         }
     }

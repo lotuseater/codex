@@ -1,10 +1,10 @@
 use crate::chatwidget::get_limits_duration;
 use crate::status::RateLimitSnapshotDisplay;
 use crate::status::RateLimitWindowDisplay;
+use crate::token_usage::TokenUsageInfo;
 use chrono::DateTime;
 use chrono::Duration as ChronoDuration;
 use chrono::Local;
-use codex_protocol::protocol::TokenUsageInfo;
 use ratatui::prelude::Stylize;
 use ratatui::text::Line;
 
@@ -82,7 +82,7 @@ mod tests {
     #[test]
     fn combines_token_and_reset_percentages() {
         let now = Local::now();
-        let token_usage = codex_protocol::protocol::TokenUsage {
+        let token_usage = crate::token_usage::TokenUsage {
             total_tokens: 73_600,
             ..Default::default()
         };
