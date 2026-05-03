@@ -1,6 +1,6 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [ValidateSet("Status", "FastRelease", "FullRelease", "DeployOnly", "Rollback")]
+    [ValidateSet("Status", "FastRelease", "LowMemRelease", "DevRelease", "FullRelease", "DeployOnly", "Rollback")]
     [string]$Mode = "Status",
 
     [string]$RepoRoot,
@@ -17,7 +17,9 @@ param(
 
     [switch]$SkipVerify,
 
-    [switch]$Timings
+    [switch]$Timings,
+
+    [int]$Jobs = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -183,20 +185,87 @@ function Get-RepoBuildProcesses {
         }
 }
 
+function Get-RecommendedJobs {
+    param(
+        [int]$PerJobMemoryMB = 1800,
+        [int]$Floor = 1,
+        [int]$Ceiling = 0
+    )
+
+    $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
+    $cpuCount = 0
+    try {
+        $cpuCount = [int]((Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue |
+            Measure-Object -Property NumberOfLogicalProcessors -Sum).Sum)
+    } catch {}
+    if ($cpuCount -le 0) { $cpuCount = [Environment]::ProcessorCount }
+    if ($Ceiling -le 0) { $Ceiling = $cpuCount }
+
+    if (-not $os) { return [math]::Max($Floor, [math]::Min($Ceiling, 2)) }
+    $freeMB = [int]($os.FreePhysicalMemory / 1KB)
+    $headroomMB = 1500
+    $usable = [math]::Max(0, $freeMB - $headroomMB)
+    $byMem = [math]::Floor($usable / $PerJobMemoryMB)
+    if ($byMem -lt $Floor) { $byMem = $Floor }
+    return [int][math]::Max($Floor, [math]::Min($Ceiling, $byMem))
+}
+
 function Get-BuildPlan {
     param(
         [string]$BuildMode,
-        [string]$TargetRoot
+        [string]$TargetRoot,
+        [int]$JobsOverride = 0
     )
 
     $envOverrides = [ordered]@{}
     $cargoArgs = @("build", "-p", "codex-cli", "--release", "--bin", "codex")
     $description = "full release build using Cargo.toml release profile"
+    $binary = Join-Path $TargetRoot "release\codex.exe"
 
-    if ($BuildMode -eq "FastRelease") {
-        $description = "fast release build with fat LTO disabled"
-        $envOverrides["CARGO_PROFILE_RELEASE_LTO"] = "off"
-        $envOverrides["CARGO_PROFILE_RELEASE_CODEGEN_UNITS"] = "16"
+    switch ($BuildMode) {
+        "FastRelease" {
+            $description = "fast release build (LTO off, cu=16, opt=2, incremental on)"
+            $envOverrides["CARGO_PROFILE_RELEASE_LTO"] = "off"
+            $envOverrides["CARGO_PROFILE_RELEASE_CODEGEN_UNITS"] = "16"
+            $envOverrides["CARGO_PROFILE_RELEASE_OPT_LEVEL"] = "2"
+            $envOverrides["CARGO_INCREMENTAL"] = "1"
+            $envOverrides["RUST_MIN_STACK"] = "33554432"
+            if ($JobsOverride -le 0) {
+                $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 1800
+            }
+        }
+        "LowMemRelease" {
+            $description = "low-memory release build (LTO off, cu=256, opt=1, incremental on, RAM-aware jobs)"
+            $envOverrides["CARGO_PROFILE_RELEASE_LTO"] = "off"
+            $envOverrides["CARGO_PROFILE_RELEASE_CODEGEN_UNITS"] = "256"
+            $envOverrides["CARGO_PROFILE_RELEASE_OPT_LEVEL"] = "1"
+            $envOverrides["CARGO_PROFILE_RELEASE_DEBUG"] = "0"
+            $envOverrides["CARGO_PROFILE_RELEASE_STRIP"] = "symbols"
+            $envOverrides["CARGO_INCREMENTAL"] = "1"
+            $envOverrides["RUST_MIN_STACK"] = "67108864"
+            if ($JobsOverride -le 0) {
+                $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 1100 -Ceiling 4
+            }
+        }
+        "DevRelease" {
+            $description = "dev-small build (no opt, fastest iteration, smallest memory peak)"
+            $cargoArgs = @("build", "-p", "codex-cli", "--profile", "dev-small", "--bin", "codex")
+            $binary = Join-Path $TargetRoot "dev-small\codex.exe"
+            $envOverrides["CARGO_INCREMENTAL"] = "1"
+            $envOverrides["RUST_MIN_STACK"] = "33554432"
+            if ($JobsOverride -le 0) {
+                $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 800
+            }
+        }
+        "FullRelease" {
+            if ($JobsOverride -le 0) {
+                $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 2400 -Ceiling 4
+            }
+        }
+    }
+
+    if ($JobsOverride -gt 0) {
+        $cargoArgs += @("--jobs", "$JobsOverride")
     }
 
     if ($Timings) {
@@ -206,7 +275,7 @@ function Get-BuildPlan {
     return [ordered]@{
         cargo_args = $cargoArgs
         env_overrides = $envOverrides
-        binary = Join-Path $TargetRoot "release\codex.exe"
+        binary = $binary
         description = $description
     }
 }
@@ -428,7 +497,8 @@ if ($activeBuilds.Count -gt 0) {
     throw "Repo-local cargo/rustc build process already active ($ids). Run Status to inspect it; this script will not start a competing build."
 }
 
-$plan = Get-BuildPlan -BuildMode $Mode -TargetRoot $targetRoot
+$plan = Get-BuildPlan -BuildMode $Mode -TargetRoot $targetRoot -JobsOverride $Jobs
+$releaseBinary = $plan.binary
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $logPath = Assert-UnderRoot -Path (Join-Path $RepoRoot "logs\local-codex-build-$($Mode.ToLowerInvariant())-$stamp.log") -Root $RepoRoot -Label "build log"
 
