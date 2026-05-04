@@ -1,6 +1,6 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [ValidateSet("Status", "FastRelease", "LowMemRelease", "DevRelease", "FullRelease", "DeployOnly", "Rollback")]
+    [ValidateSet("Status", "Progress", "FastRelease", "LowMemRelease", "DevRelease", "FullRelease", "DeployOnly", "Rollback")]
     [string]$Mode = "Status",
 
     [string]$RepoRoot,
@@ -669,6 +669,58 @@ if ($Mode -eq "Status") {
         wrapper_env_path = $envPath
         wrapper_real_exe = [string]$wrapperPayload["WIZARD_CODEX_REAL_EXE"]
         free_c_drive_bytes = (Get-PSDrive C).Free
+    } | ConvertTo-Json -Depth 8
+    return
+}
+
+if ($Mode -eq "Progress") {
+    # One-shot build progress probe. Designed for callers (Claude sessions,
+    # status dashboards, CI watchers) that want a compact JSON snapshot
+    # instead of tailing the log themselves.
+    $logRoot = Join-Path $RepoRoot "logs"
+    $log = if (Test-Path -LiteralPath $logRoot) {
+        Get-ChildItem -LiteralPath $logRoot -Filter "local-codex-build-*.log" -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    } else { $null }
+    $rustcInfo = $null
+    $rustcProc = Get-CimInstance Win32_Process -Filter "Name='rustc.exe'" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($rustcProc) {
+        $crate = "?"
+        if ($rustcProc.CommandLine -match '--crate-name (\S+)') { $crate = $matches[1] }
+        $rustcInfo = [ordered]@{
+            pid = [int]$rustcProc.ProcessId
+            crate = $crate
+            working_set_mb = [math]::Round($rustcProc.WorkingSetSize / 1MB, 1)
+            elapsed_min = [math]::Round((New-TimeSpan -Start $rustcProc.CreationDate -End (Get-Date)).TotalMinutes, 1)
+        }
+    }
+    $logSummary = $null
+    if ($log) {
+        $compileCount = (Select-String -Path $log.FullName -Pattern '^\s*Compiling ' -ErrorAction SilentlyContinue).Count
+        $codexCrates = Select-String -Path $log.FullName -Pattern '^\s*Compiling codex-' -ErrorAction SilentlyContinue |
+            ForEach-Object { (($_.Line -split '\s+Compiling\s+', 2)[1] -split ' ', 2)[0] }
+        $finished = (Select-String -Path $log.FullName -Pattern '^\s*Finished ' -ErrorAction SilentlyContinue) | Select-Object -Last 1
+        $errors = Select-String -Path $log.FullName -Pattern 'error\[|^error: |LLVM ERROR|fatal error|STATUS_|cargo build failed|LINK : fatal|out of memory' -ErrorAction SilentlyContinue
+        $logSummary = [ordered]@{
+            log_path = $log.FullName
+            log_size_kb = [math]::Round($log.Length / 1KB, 1)
+            log_last_write = $log.LastWriteTime.ToString("o")
+            compile_count = $compileCount
+            codex_crates_compiled = @($codexCrates).Count
+            last_codex_crate = if ($codexCrates) { @($codexCrates)[-1] } else { $null }
+            finished_line = if ($finished) { $finished.Line.Trim() } else { $null }
+            error_count = @($errors).Count
+            first_error = if ($errors) { @($errors)[0].Line.Trim() } else { $null }
+        }
+    }
+    [ordered]@{
+        status = "ok"
+        repo_root = $RepoRoot
+        active_build_processes = $activeBuilds.Count
+        rustc = $rustcInfo
+        log = $logSummary
+        free_c_drive_gb = [math]::Round((Get-PSDrive C).Free / 1GB, 1)
+        free_ram_gb = [math]::Round((Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue).FreePhysicalMemory / 1MB, 1)
     } | ConvertTo-Json -Depth 8
     return
 }
