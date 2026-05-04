@@ -240,34 +240,49 @@ function Get-BuildPlan {
     $description = "full release build using Cargo.toml release profile"
     $binary = Join-Path $TargetRoot "release\codex.exe"
 
+    # Shared defaults applied to ALL release modes (FastRelease,
+    # LowMemRelease, FullRelease):
+    #   - debug=0, strip=symbols → no .pdb files (each can be 100-700 MB
+    #     on Windows for this workspace) and no symbols in the final
+    #     codex.exe. Saves both disk-during-build and disk-after-build.
+    #   - incremental=0 → release builds don't use incremental but cargo
+    #     still creates target/release/incremental and fills it with
+    #     multi-GB scratch each run. Forcing off saves ~4 GB across runs.
+    # These are overridable per-mode below if a specific mode needs more.
+    $releaseSharedDefaults = @{
+        "CARGO_PROFILE_RELEASE_DEBUG"  = "0"
+        "CARGO_PROFILE_RELEASE_STRIP"  = "symbols"
+        "CARGO_INCREMENTAL"            = "0"
+    }
+
     switch ($BuildMode) {
         "FastRelease" {
-            $description = "fast release build (LTO off, cu=16, opt=2, no incremental)"
+            $description = "fast release build (LTO off, cu=64, opt=2, debug=0, strip, no incremental)"
+            foreach ($k in $releaseSharedDefaults.Keys) { $envOverrides[$k] = $releaseSharedDefaults[$k] }
             $envOverrides["CARGO_PROFILE_RELEASE_LTO"] = "off"
-            $envOverrides["CARGO_PROFILE_RELEASE_CODEGEN_UNITS"] = "16"
+            # cu=64 (was 16) raises codegen parallelism, reducing peak per-unit
+            # rustc memory and per-unit object-file size at a small whole-program
+            # optimization cost. Trade favors RAM+disk over binary speed for
+            # local rebuilds.
+            $envOverrides["CARGO_PROFILE_RELEASE_CODEGEN_UNITS"] = "64"
             $envOverrides["CARGO_PROFILE_RELEASE_OPT_LEVEL"] = "2"
-            # CARGO_INCREMENTAL=0: release builds don't benefit from
-            # incremental compilation (Cargo treats it as a debug-mode feature)
-            # but cargo still creates target/release/incremental and fills it
-            # with multi-GB intermediates. Forcing it off saves ~4 GB on
-            # subsequent runs without affecting build speed.
-            $envOverrides["CARGO_INCREMENTAL"] = "0"
-            $envOverrides["RUST_MIN_STACK"] = "33554432"
+            $envOverrides["RUST_MIN_STACK"] = "16777216"
             if ($JobsOverride -le 0) {
-                $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 1800 -PerJobDiskMB 2200
+                # Tightened from PerJobMemoryMB=1800 / disk=2200 / no ceiling.
+                $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 1300 -PerJobDiskMB 1600 -Ceiling 3
             }
         }
         "LowMemRelease" {
-            $description = "low-memory release build (LTO off, cu=256, opt=1, no incremental, RAM/disk-aware jobs)"
+            $description = "low-memory release build (LTO off, cu=256, opt=1, debug=0, strip, no incremental)"
+            foreach ($k in $releaseSharedDefaults.Keys) { $envOverrides[$k] = $releaseSharedDefaults[$k] }
             $envOverrides["CARGO_PROFILE_RELEASE_LTO"] = "off"
             $envOverrides["CARGO_PROFILE_RELEASE_CODEGEN_UNITS"] = "256"
             $envOverrides["CARGO_PROFILE_RELEASE_OPT_LEVEL"] = "1"
-            $envOverrides["CARGO_PROFILE_RELEASE_DEBUG"] = "0"
-            $envOverrides["CARGO_PROFILE_RELEASE_STRIP"] = "symbols"
-            $envOverrides["CARGO_INCREMENTAL"] = "0"
-            $envOverrides["RUST_MIN_STACK"] = "67108864"
+            # 32 MB stack (down from 64 MB). High codegen-units rarely needs
+            # the larger stack the upstream defaults reserve.
+            $envOverrides["RUST_MIN_STACK"] = "33554432"
             if ($JobsOverride -le 0) {
-                $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 1100 -PerJobDiskMB 1500 -Ceiling 4
+                $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 900 -PerJobDiskMB 1200 -Ceiling 2
             }
         }
         "DevRelease" {
@@ -275,17 +290,24 @@ function Get-BuildPlan {
             $cargoArgs = @("build", "-p", "codex-cli", "--profile", "dev-small", "--bin", "codex")
             $binary = Join-Path $TargetRoot "dev-small\codex.exe"
             # dev-small profile DOES benefit from incremental — keep it on.
+            # No release-shared defaults here (this is a dev profile).
             $envOverrides["CARGO_INCREMENTAL"] = "1"
-            $envOverrides["RUST_MIN_STACK"] = "33554432"
+            $envOverrides["RUST_MIN_STACK"] = "16777216"
             if ($JobsOverride -le 0) {
-                $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 800 -PerJobDiskMB 1200
+                $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 700 -PerJobDiskMB 900 -Ceiling 3
             }
         }
         "FullRelease" {
-            $description = "full release build (default LTO, no incremental)"
-            $envOverrides["CARGO_INCREMENTAL"] = "0"
+            $description = "full release build (default LTO + opt=3, debug=0, strip, no incremental)"
+            foreach ($k in $releaseSharedDefaults.Keys) { $envOverrides[$k] = $releaseSharedDefaults[$k] }
+            # FullRelease keeps cargo's default LTO + opt=3 + cu=1, but still
+            # forces debug=0 + strip + incremental=0 from the shared defaults
+            # so the .pdb / incremental dirs don't blow the disk.
+            $envOverrides["RUST_MIN_STACK"] = "33554432"
             if ($JobsOverride -le 0) {
-                $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 2400 -PerJobDiskMB 3000 -Ceiling 4
+                # FullRelease's LTO link step needs more RAM than incremental
+                # codegen does — keep the per-job-mem high and the ceiling low.
+                $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 2000 -PerJobDiskMB 2500 -Ceiling 2
             }
         }
     }
