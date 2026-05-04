@@ -51,9 +51,18 @@ Wizard bridge CLI:
   compact JSON hit/miss response to Rust.
 - Action `post`: calls `codex_cache_bridge.posttool_store(event, output,
   success)` after a successful real tool call.
-- The CLI wrapper intentionally returns misses for `mcp__...` tool names. The
-  current Rust integration injects cached hits as function-tool output, which is
-  correct for shell/read/grep style calls but not for MCP response items.
+- The CLI wrapper returns misses for `mcp__...` tool names on the `pre`
+  (lookup) action — the current Rust integration injects cached hits as
+  function-tool output, which is correct for shell/read/grep style calls but
+  not for MCP response items.
+- **Updated 2026-05-04 (D3):** the CLI's `post` (store) action now stores
+  whitelisted MCP rows, gated by `cache_config._MCP_CACHEABLE` (16 deterministic
+  tools: `recall_memories`, `project_detect`, `smart_context`, `query-docs`,
+  etc.). Stored rows are served by Claude's `pretool_cache_hook` with the
+  correct envelope shape. Cross-agent collision: Codex stores → Claude hits.
+  Earlier blanket exclusion meant the cache saw zero of Codex's MCP workload
+  (the dominant traffic) — see
+  `Wizard_Erasmus/docs/research/token_reduction_audit_2026_05_04.md §8`.
 
 Wrapper helpers:
 
