@@ -17,14 +17,19 @@ custom behavior that directly improves this machine's automation cost.
 
 - Keep the system `codex` launcher on the official npm-installed Codex.
 - Use local fork binaries directly from this repo while developing and testing.
-- Keep `scripts/clean-fast-release-local.ps1` as a manual-only helper.
-- The script defaults to an incremental `dev-small` local build of
+- Use `scripts/build-local-codex.ps1 -Mode DevRelease -SkipDeploy` as the
+  manual-only local-build helper. Legacy `clean-fast-release-local.ps1`,
+  `clean-fast-release-build.ps1`, and `install-local-codex-fork.ps1` were
+  removed 2026-05-04 — superseded by build-local-codex's mode-and-action
+  matrix and disk-space defenses.
+- That mode defaults to an incremental `dev-small` local build of
   `codex-cli`, writes `codex-rs/target/dev-small/codex.exe`, and leaves all
   build folders intact.
-- Use `-BuildMode FastRelease` only when a release-shaped binary is needed.
-- Use `-Clean` or `-CleanDebug` only when intentionally reclaiming build space.
-- The script must not change PATH, npm shims, `~/.codex/system-wrapper`, or any
-  other system-wide launcher state.
+- Use `-Mode FastRelease -SkipDeploy` only when a release-shaped binary is
+  needed without touching the system wrapper.
+- The script writes to `codex-rs/target` and `~/.codex/local-builds`; it does
+  not change PATH, npm shims, or `~/.codex/system-wrapper` until you run it
+  WITHOUT `-SkipDeploy` (or with `-Mode DeployOnly`).
 
 ## Phase 2: MCP Schema Token Saving
 

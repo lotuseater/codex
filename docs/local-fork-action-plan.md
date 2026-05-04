@@ -2,29 +2,62 @@
 
 ## Rollout
 
-Use `scripts/install-local-codex-fork.ps1` as the only system-wide installer for this repo.
+Use `scripts/build-local-codex.ps1` as the canonical build + deploy entrypoint
+for this repo. (The legacy `clean-fast-release-build.ps1`,
+`clean-fast-release-local.ps1`, and `install-local-codex-fork.ps1` were
+removed 2026-05-04 — superseded by build-local-codex's mode-and-action
+matrix and disk-space defenses.)
 
-Default install:
+Default install (build + deploy at FastRelease):
 
 ```powershell
-.\scripts\install-local-codex-fork.ps1
+.\scripts\build-local-codex.ps1 -Mode FastRelease
 ```
 
-Verify current install:
+Verify current install (no build, no deploy):
 
 ```powershell
-.\scripts\install-local-codex-fork.ps1 -Action Verify
+.\scripts\build-local-codex.ps1 -Mode Status
+```
+
+Re-deploy from an existing release exe (skip build):
+
+```powershell
+.\scripts\build-local-codex.ps1 -Mode DeployOnly
 ```
 
 Rollback:
 
 ```powershell
-.\scripts\install-local-codex-fork.ps1 -Action Rollback
+.\scripts\build-local-codex.ps1 -Mode Rollback
 ```
 
-The installer builds `codex-rs\target\release\codex.exe`, creates a timestamped backup under `C:\Users\Oleh\.codex\binary-backups`, updates `WIZARD_CODEX_REAL_EXE`, and verifies that the user-facing `codex` command still enters through `C:\Users\Oleh\.codex\system-wrapper`.
+Build only, no deploy (e.g. when testing the binary directly):
 
-The default build mode is `FastRelease`: it still writes `codex-rs\target\release\codex.exe`, but disables the repo's fat LTO/single-codegen-unit release settings through Cargo profile environment overrides so local rollout rebuilds are practical on this PC. Use `-BuildMode FullRelease` only when intentionally testing the slow upstream release profile.
+```powershell
+.\scripts\build-local-codex.ps1 -Mode FastRelease -SkipDeploy
+```
+
+The script builds `codex-rs\target\release\codex.exe`, creates a timestamped
+backup under `C:\Users\Oleh\.codex\binary-backups`, updates
+`WIZARD_CODEX_REAL_EXE`, and verifies that the user-facing `codex` command
+still enters through `C:\Users\Oleh\.codex\system-wrapper`.
+
+Available build modes (smaller → larger memory + time):
+
+| Mode | When to use |
+|---|---|
+| `DevRelease` | dev-small profile; fastest iteration; smallest disk + RAM peak |
+| `LowMemRelease` | release profile but cu=256, opt=1, RAM/disk-aware -j |
+| `FastRelease` | release profile, LTO off, cu=16, opt=2 — default |
+| `FullRelease` | full upstream release profile (slow LTO single-cu) — only for testing |
+
+All release modes set `CARGO_INCREMENTAL=0` (release builds don't benefit
+from incremental compilation but cargo still creates the dir, eating
+multi-GB scratch). The script also runs a disk-space pre-check, evicts
+known-regeneratable artifacts when below 8 GB free, and aborts before
+starting if still below 5 GB so we don't lose 30+ minutes to a doomed
+disk-out condition mid-link.
 
 ## Implementation Priorities
 
@@ -39,8 +72,8 @@ The default build mode is `FastRelease`: it still writes `codex-rs\target\releas
 - Binary target: `system.codex-wrapper.env.json` points `WIZARD_CODEX_REAL_EXE` at this repo's `codex-rs\target\release\codex.exe`.
 - Startup: `codex --version` exits 0 through the wrapper.
 - Interactive session header: the first Codex header line includes `Wizard_Codex_April_29_2_49`.
-- Optional model smoke: `.\scripts\install-local-codex-fork.ps1 -Action Verify -RunSmoke`.
-- Rollback: `-Action Rollback` restores the prior wrapper env and then reruns the same verification.
+- Optional model smoke: build the binary then run `& $env:USERPROFILE\.codex\local-builds\codex-custom-*\codex.exe --version`.
+- Rollback: `.\scripts\build-local-codex.ps1 -Mode Rollback` restores the prior wrapper env and reruns the same verification.
 
 ## Guardrails
 

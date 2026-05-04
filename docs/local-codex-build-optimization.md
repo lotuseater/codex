@@ -5,9 +5,10 @@ Date: 2026-04-30
 ## Current Observations
 
 - The local build target is already scoped to the binary with `cargo build -p codex-cli --bin codex`.
-- `scripts/clean-fast-release-local.ps1 -BuildMode FastRelease` sets:
+- `scripts/build-local-codex.ps1 -Mode FastRelease` sets:
   - `CARGO_PROFILE_RELEASE_LTO=off`
   - `CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16`
+  - `CARGO_INCREMENTAL=0` (release builds don't use incremental; setting this avoids cargo creating a multi-GB `target/release/incremental` dir of pure scratch)
 - That still leaves the release profile at `opt-level=3`. During the current build, long-running rustc children were observed compiling crates such as `codex_app_server_protocol`, `codex_config`, `aws_sdk_sts`, `tokio`, and `rustls` at release optimization.
 - `--jobs 1` reduces peak memory but also serializes the whole dependency graph. It is appropriate when rustc is failing with memory allocation errors, but it makes a cold or partly cold release build very long.
 - The high-cost mistake was mixing build lanes. For this workflow, keep the release cache hot and avoid actions that force debug/test rebuilds unless debug artifacts are explicitly needed.
@@ -107,7 +108,7 @@ Use Cargo again only when Rust sources changed after that executable was built.
 Use this only when release-profile verification is not required and a quick local smoke binary is enough:
 
 ```powershell
-.\scripts\clean-fast-release-local.ps1 -BuildMode DevSmall -SkipClean -Jobs 1
+.\scripts\build-local-codex.ps1 -Mode DevRelease -SkipDeploy -Jobs 1
 ```
 
 Why:
@@ -122,7 +123,7 @@ Why:
 Use this only when a release-profile binary is specifically needed:
 
 ```powershell
-.\scripts\clean-fast-release-local.ps1 -BuildMode FastRelease -SkipClean -Jobs 1
+.\scripts\build-local-codex.ps1 -Mode FastRelease -SkipDeploy -Jobs 1
 ```
 
 Notes:

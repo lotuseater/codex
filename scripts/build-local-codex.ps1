@@ -188,10 +188,17 @@ function Get-RepoBuildProcesses {
 function Get-RecommendedJobs {
     param(
         [int]$PerJobMemoryMB = 1800,
+        [int]$PerJobDiskMB = 2200,
         [int]$Floor = 1,
         [int]$Ceiling = 0
     )
 
+    # Picks `cargo --jobs` so that:
+    #   1. RAM doesn't go below 1.5 GB headroom under peak parallelism
+    #   2. Free C: stays > (jobs × PerJobDiskMB) so the build can't write
+    #      itself into a disk-full state mid-link (observed 2026-05-04)
+    # PerJobDiskMB defaults to 2200 — the empirical peak for parallel rustc
+    # codegen + .rmeta + intermediate object files in this workspace.
     $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
     $cpuCount = 0
     try {
@@ -201,13 +208,24 @@ function Get-RecommendedJobs {
     if ($cpuCount -le 0) { $cpuCount = [Environment]::ProcessorCount }
     if ($Ceiling -le 0) { $Ceiling = $cpuCount }
 
-    if (-not $os) { return [math]::Max($Floor, [math]::Min($Ceiling, 2)) }
-    $freeMB = [int]($os.FreePhysicalMemory / 1KB)
-    $headroomMB = 1500
-    $usable = [math]::Max(0, $freeMB - $headroomMB)
-    $byMem = [math]::Floor($usable / $PerJobMemoryMB)
-    if ($byMem -lt $Floor) { $byMem = $Floor }
-    return [int][math]::Max($Floor, [math]::Min($Ceiling, $byMem))
+    $byMem = if ($os) {
+        $freeMB = [int]($os.FreePhysicalMemory / 1KB)
+        $headroomMB = 1500
+        $usable = [math]::Max(0, $freeMB - $headroomMB)
+        [math]::Floor($usable / $PerJobMemoryMB)
+    } else { 2 }
+
+    $byDisk = $cpuCount
+    if ($PerJobDiskMB -gt 0) {
+        $freeDiskMB = [math]::Floor((Get-PSDrive C).Free / 1MB)
+        $diskHeadroomMB = 1024
+        $usableDisk = [math]::Max(0, $freeDiskMB - $diskHeadroomMB)
+        $byDisk = [math]::Floor($usableDisk / $PerJobDiskMB)
+    }
+
+    $picked = [math]::Min($byMem, $byDisk)
+    if ($picked -lt $Floor) { $picked = $Floor }
+    return [int][math]::Max($Floor, [math]::Min($Ceiling, $picked))
 }
 
 function Get-BuildPlan {
@@ -224,42 +242,50 @@ function Get-BuildPlan {
 
     switch ($BuildMode) {
         "FastRelease" {
-            $description = "fast release build (LTO off, cu=16, opt=2, incremental on)"
+            $description = "fast release build (LTO off, cu=16, opt=2, no incremental)"
             $envOverrides["CARGO_PROFILE_RELEASE_LTO"] = "off"
             $envOverrides["CARGO_PROFILE_RELEASE_CODEGEN_UNITS"] = "16"
             $envOverrides["CARGO_PROFILE_RELEASE_OPT_LEVEL"] = "2"
-            $envOverrides["CARGO_INCREMENTAL"] = "1"
+            # CARGO_INCREMENTAL=0: release builds don't benefit from
+            # incremental compilation (Cargo treats it as a debug-mode feature)
+            # but cargo still creates target/release/incremental and fills it
+            # with multi-GB intermediates. Forcing it off saves ~4 GB on
+            # subsequent runs without affecting build speed.
+            $envOverrides["CARGO_INCREMENTAL"] = "0"
             $envOverrides["RUST_MIN_STACK"] = "33554432"
             if ($JobsOverride -le 0) {
-                $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 1800
+                $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 1800 -PerJobDiskMB 2200
             }
         }
         "LowMemRelease" {
-            $description = "low-memory release build (LTO off, cu=256, opt=1, incremental on, RAM-aware jobs)"
+            $description = "low-memory release build (LTO off, cu=256, opt=1, no incremental, RAM/disk-aware jobs)"
             $envOverrides["CARGO_PROFILE_RELEASE_LTO"] = "off"
             $envOverrides["CARGO_PROFILE_RELEASE_CODEGEN_UNITS"] = "256"
             $envOverrides["CARGO_PROFILE_RELEASE_OPT_LEVEL"] = "1"
             $envOverrides["CARGO_PROFILE_RELEASE_DEBUG"] = "0"
             $envOverrides["CARGO_PROFILE_RELEASE_STRIP"] = "symbols"
-            $envOverrides["CARGO_INCREMENTAL"] = "1"
+            $envOverrides["CARGO_INCREMENTAL"] = "0"
             $envOverrides["RUST_MIN_STACK"] = "67108864"
             if ($JobsOverride -le 0) {
-                $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 1100 -Ceiling 4
+                $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 1100 -PerJobDiskMB 1500 -Ceiling 4
             }
         }
         "DevRelease" {
             $description = "dev-small build (no opt, fastest iteration, smallest memory peak)"
             $cargoArgs = @("build", "-p", "codex-cli", "--profile", "dev-small", "--bin", "codex")
             $binary = Join-Path $TargetRoot "dev-small\codex.exe"
+            # dev-small profile DOES benefit from incremental — keep it on.
             $envOverrides["CARGO_INCREMENTAL"] = "1"
             $envOverrides["RUST_MIN_STACK"] = "33554432"
             if ($JobsOverride -le 0) {
-                $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 800
+                $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 800 -PerJobDiskMB 1200
             }
         }
         "FullRelease" {
+            $description = "full release build (default LTO, no incremental)"
+            $envOverrides["CARGO_INCREMENTAL"] = "0"
             if ($JobsOverride -le 0) {
-                $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 2400 -Ceiling 4
+                $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 2400 -PerJobDiskMB 3000 -Ceiling 4
             }
         }
     }
@@ -343,7 +369,10 @@ function Test-AndFreeDiskSpace {
 }
 
 function Invoke-PostBuildDiskCleanup {
-    param([string]$RepoRoot)
+    param(
+        [string]$RepoRoot,
+        [string]$BuildMode = ""
+    )
 
     # Release builds don't use incremental; cargo creates the dir anyway when
     # CARGO_INCREMENTAL is not '0'. Sweep it after success so the next build
@@ -357,6 +386,69 @@ function Invoke-PostBuildDiskCleanup {
         } catch {
             # Non-fatal: build already succeeded.
         }
+    }
+}
+
+# Memory reuse between modes: artifacts in target/dev-small are useless for a
+# release build (and vice versa), but cargo keeps them around and they each
+# claim 2-4 GB of disk. Before kicking off a release build, evict the
+# dev-small profile dir; before dev-small, evict release/incremental (the
+# release ARTIFACTS we keep — they're needed when the user later rebuilds
+# release). This makes back-to-back mode switches cheap on disk without
+# forcing a full rebuild within the same mode.
+function Invoke-CrossModeCleanup {
+    param(
+        [string]$RepoRoot,
+        [string]$ActiveMode
+    )
+
+    $tgt = Join-Path $RepoRoot "codex-rs\target"
+    $dropTargets = @()
+
+    if ($ActiveMode -in @("FastRelease", "LowMemRelease", "FullRelease")) {
+        $dropTargets += @{ Path = (Join-Path $tgt "dev-small"); Reason = "target/dev-small (other-profile artifacts)" }
+    }
+    elseif ($ActiveMode -eq "DevRelease") {
+        $dropTargets += @{ Path = (Join-Path $tgt "release\incremental"); Reason = "release/incremental (DevRelease doesn't need it)" }
+    }
+
+    foreach ($entry in $dropTargets) {
+        if (-not (Test-Path -LiteralPath $entry.Path)) { continue }
+        try {
+            $sizeMB = [math]::Round((Get-ChildItem -LiteralPath $entry.Path -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum / 1MB, 1)
+            Remove-Item -LiteralPath $entry.Path -Recurse -Force -ErrorAction Stop
+            Write-Host ("Cross-mode cleanup: reclaimed {0:N1} MB from {1}" -f $sizeMB, $entry.Reason)
+        } catch {
+            Write-Host ("Cross-mode cleanup skip (in use): {0}" -f $entry.Path)
+        }
+    }
+}
+
+# Catch obvious wrapper-env breakage BEFORE spending 30 minutes on a build:
+# WIZARD_CODEX_OPERATION_CACHE=1 with a missing bridge script means every
+# tool call will quietly fail to cache. Other env-var inconsistencies surface
+# the same way — broken silently mid-session. We only warn (not fail) so a
+# user temporarily testing without the bridge can still build.
+function Test-WrapperEnvSanity {
+    param([string]$WrapperEnvPath)
+
+    if (-not (Test-Path -LiteralPath $WrapperEnvPath)) { return }
+    try {
+        $env = Read-JsonObject -Path $WrapperEnvPath
+    } catch {
+        Write-Host "Warning: wrapper env JSON failed to parse: $($_.Exception.Message)"
+        return
+    }
+
+    $cacheOn = ([string]$env["WIZARD_CODEX_OPERATION_CACHE"]).Trim().ToLowerInvariant() -in @("1", "true", "yes", "on")
+    $bridge = [string]$env["WIZARD_CODEX_CACHE_BRIDGE_PY"]
+    if ($cacheOn -and (-not $bridge -or -not (Test-Path -LiteralPath $bridge))) {
+        Write-Host "Warning: WIZARD_CODEX_OPERATION_CACHE=1 but WIZARD_CODEX_CACHE_BRIDGE_PY is missing or unset ($bridge). Built binary will not cache MCP/shell tool calls until this is fixed."
+    }
+
+    $cacheDir = [string]$env["WIZARD_TOOL_CACHE_DIR"]
+    if ($cacheDir -and -not (Test-Path -LiteralPath $cacheDir)) {
+        Write-Host "Warning: WIZARD_TOOL_CACHE_DIR points at a missing directory ($cacheDir). Cache writes will fail at runtime."
     }
 }
 
@@ -582,11 +674,17 @@ $releaseBinary = $plan.binary
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $logPath = Assert-UnderRoot -Path (Join-Path $RepoRoot "logs\local-codex-build-$($Mode.ToLowerInvariant())-$stamp.log") -Root $RepoRoot -Label "build log"
 
-# Disk-space defense added 2026-05-04 after a build silently failed mid-link
-# with "There is not enough space on the disk. (os error 112)". Reclaims
-# regeneratable artifacts when below WarnGB; aborts before starting if still
-# below RequiredGB so we don't waste 30+ minutes on a doomed build.
+# Pre-build planning, in this order:
+#   1. Cross-mode cleanup: drop other-profile artifacts that just claim disk.
+#   2. Disk-space defense: reclaim regeneratables, abort if still too low.
+#   3. Wrapper-env sanity: surface obvious config breakage before the long
+#      build, so the user catches "WIZARD_CODEX_CACHE_BRIDGE_PY missing"
+#      style problems in 1 second instead of 30 minutes from now.
+Invoke-CrossModeCleanup -RepoRoot $RepoRoot -ActiveMode $Mode
 Test-AndFreeDiskSpace -RepoRoot $RepoRoot -RequiredGB 5 -WarnGB 8
+if ($envPath) {
+    Test-WrapperEnvSanity -WrapperEnvPath $envPath
+}
 
 $buildRan = $false
 if ($PSCmdlet.ShouldProcess($RepoRoot, "run $($plan.description)")) {
@@ -598,7 +696,7 @@ if ($PSCmdlet.ShouldProcess($RepoRoot, "run $($plan.description)")) {
     }
     # Post-build housekeeping: free release/incremental (unused for release
     # builds) so the next build starts with maximum headroom.
-    Invoke-PostBuildDiskCleanup -RepoRoot $RepoRoot
+    Invoke-PostBuildDiskCleanup -RepoRoot $RepoRoot -BuildMode $Mode
 }
 else {
     [ordered]@{
