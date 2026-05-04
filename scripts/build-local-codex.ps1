@@ -280,6 +280,86 @@ function Get-BuildPlan {
     }
 }
 
+# Disk-space defenses: full release builds of this workspace need ~5 GB of
+# headroom (target/release/deps libraries + intermediate .rmeta + final link
+# scratch). Without a pre-check, the build silently fails mid-link with
+# "There is not enough space on the disk. (os error 112)" — observed
+# 2026-05-04 when stacked builds + a packed `incremental/` dir squeezed C:
+# below 1 GB. This guard reclaims known-regeneratable dirs before the build
+# starts, errors out if still below the safety floor, and (after success)
+# evicts the incremental cache that release builds don't need anyway.
+function Test-AndFreeDiskSpace {
+    param(
+        [string]$RepoRoot,
+        [int]$RequiredGB = 5,
+        [int]$WarnGB = 8
+    )
+
+    $codexRs = Join-Path $RepoRoot "codex-rs"
+    $tgtRelease = Join-Path $codexRs "target\release"
+    $reclaimable = @(
+        # 'incremental/' is created on every build but useless for `--release`
+        # builds; cargo treats incremental compilation as a debug-mode feature.
+        @{ Path = (Join-Path $tgtRelease "incremental"); Reason = "release/incremental (release builds don't use incremental)" },
+        # build-script outputs are regenerated on demand from the build.rs
+        # invocations stored in target/release/.fingerprint.
+        @{ Path = (Join-Path $tgtRelease "build"); Reason = "release/build (build script outputs, regenerated)" },
+        # gn_out is GN's intermediate dir for v8/skia; rebuilt from build.rs.
+        @{ Path = (Join-Path $tgtRelease "gn_out"); Reason = "release/gn_out (GN intermediate, regenerated)" },
+        # .fingerprint is small but tied to the artifacts above; cleaning it
+        # together avoids stale-fingerprint mismatches on the next build.
+        @{ Path = (Join-Path $tgtRelease ".fingerprint"); Reason = "release/.fingerprint (regenerated together with build/)" },
+        # Cargo's extracted source dir; cargo re-extracts from registry/cache
+        # on demand when a crate is needed.
+        @{ Path = (Join-Path $HOME ".cargo\registry\src"); Reason = "~/.cargo/registry/src (re-extracted from registry/cache)" }
+    )
+
+    $freeGB = [math]::Round((Get-PSDrive C).Free / 1GB, 2)
+    if ($freeGB -ge $WarnGB) {
+        Write-Host "Disk OK ($freeGB GB free, threshold $WarnGB GB)."
+        return
+    }
+
+    Write-Host "Disk pre-check: $freeGB GB free (below warn threshold $WarnGB GB). Reclaiming..."
+    foreach ($entry in $reclaimable) {
+        if (-not (Test-Path -LiteralPath $entry.Path)) { continue }
+        $sizeMB = 0
+        try {
+            $sizeMB = [math]::Round((Get-ChildItem -LiteralPath $entry.Path -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum / 1MB, 1)
+        } catch {}
+        try {
+            Remove-Item -LiteralPath $entry.Path -Recurse -Force -ErrorAction Stop
+            Write-Host ("  - reclaimed {0,7:N1} MB from {1}" -f $sizeMB, $entry.Reason)
+        } catch {
+            Write-Host ("  - skip (in use): {0}" -f $entry.Path)
+        }
+    }
+
+    $freeAfterGB = [math]::Round((Get-PSDrive C).Free / 1GB, 2)
+    Write-Host "Disk after reclaim: $freeAfterGB GB free."
+    if ($freeAfterGB -lt $RequiredGB) {
+        throw "Disk space too low for safe build: $freeAfterGB GB free (need >= $RequiredGB GB after auto-clean). Free more space manually before retrying — candidate dirs to inspect: ~/.codex/sessions, ~/.codex/logs_2.sqlite, AppData/Local/Temp."
+    }
+}
+
+function Invoke-PostBuildDiskCleanup {
+    param([string]$RepoRoot)
+
+    # Release builds don't use incremental; cargo creates the dir anyway when
+    # CARGO_INCREMENTAL is not '0'. Sweep it after success so the next build
+    # starts with maximum headroom. Safe — the dir is rebuilt on demand.
+    $inc = Join-Path $RepoRoot "codex-rs\target\release\incremental"
+    if (Test-Path -LiteralPath $inc) {
+        try {
+            $sizeMB = [math]::Round((Get-ChildItem -LiteralPath $inc -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum / 1MB, 1)
+            Remove-Item -LiteralPath $inc -Recurse -Force -ErrorAction Stop
+            Write-Host ("Post-build cleanup: reclaimed {0:N1} MB from release/incremental." -f $sizeMB)
+        } catch {
+            # Non-fatal: build already succeeded.
+        }
+    }
+}
+
 function Show-FailureLines {
     param([string]$Path)
 
@@ -502,6 +582,12 @@ $releaseBinary = $plan.binary
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $logPath = Assert-UnderRoot -Path (Join-Path $RepoRoot "logs\local-codex-build-$($Mode.ToLowerInvariant())-$stamp.log") -Root $RepoRoot -Label "build log"
 
+# Disk-space defense added 2026-05-04 after a build silently failed mid-link
+# with "There is not enough space on the disk. (os error 112)". Reclaims
+# regeneratable artifacts when below WarnGB; aborts before starting if still
+# below RequiredGB so we don't waste 30+ minutes on a doomed build.
+Test-AndFreeDiskSpace -RepoRoot $RepoRoot -RequiredGB 5 -WarnGB 8
+
 $buildRan = $false
 if ($PSCmdlet.ShouldProcess($RepoRoot, "run $($plan.description)")) {
     $exitCode = Invoke-CodexBuild -Root $RepoRoot -CargoArgs $plan.cargo_args -EnvOverrides $plan.env_overrides -LogPath $logPath
@@ -510,6 +596,9 @@ if ($PSCmdlet.ShouldProcess($RepoRoot, "run $($plan.description)")) {
         Show-FailureLines -Path $logPath
         throw "cargo build failed with exit code $exitCode. Log: $logPath"
     }
+    # Post-build housekeeping: free release/incremental (unused for release
+    # builds) so the next build starts with maximum headroom.
+    Invoke-PostBuildDiskCleanup -RepoRoot $RepoRoot
 }
 else {
     [ordered]@{
