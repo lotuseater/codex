@@ -9,10 +9,12 @@ use crate::hook_runtime::record_additional_contexts;
 use crate::hook_runtime::run_post_tool_use_hooks;
 use crate::hook_runtime::run_pre_tool_use_hooks;
 use crate::memory_usage::emit_metric_for_tool_read;
+use crate::original_image_detail::can_request_original_image_detail;
 use crate::sandbox_tags::permission_profile_policy_tag;
 use crate::sandbox_tags::permission_profile_sandbox_tag;
 use crate::session::turn_context::TurnContext;
 use crate::tools::context::FunctionToolOutput;
+use crate::tools::context::McpToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
@@ -26,6 +28,7 @@ use codex_hooks::HookResult;
 use codex_hooks::HookToolInput;
 use codex_hooks::HookToolInputLocalShell;
 use codex_hooks::HookToolKind;
+use codex_protocol::mcp::CallToolResult;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::protocol::EventMsg;
 use codex_tools::ConfiguredToolSpec;
@@ -380,13 +383,45 @@ impl ToolRegistry {
                 operation_cache::lookup(pre_tool_use_payload, operation_cache_cwd.as_path()).await
         {
             let cache_text = cache_hit.text;
-            let mut result = AnyToolResult {
-                call_id: invocation.call_id.clone(),
-                payload: invocation.payload.clone(),
-                result: Box::new(FunctionToolOutput::from_text(
+            // D4 (token_reduction_audit_2026_05_04.md §8): MCP tools store
+            // their `tool_response` as the JSON of CallToolResult. To serve
+            // a cached MCP hit safely we must reconstruct that envelope —
+            // returning plain function-tool text would corrupt the model's
+            // view of the response. We also pass the parsed Value (not a
+            // string-wrapped form) to the post-tool-use hook so hook
+            // matchers see the same shape they would for a live MCP call.
+            // Falls back to function-text shape if the cached payload is
+            // not parseable as CallToolResult.
+            let is_mcp = pre_tool_use_payload.tool_name.name().starts_with("mcp__");
+            let mcp_call_result: Option<CallToolResult> = if is_mcp {
+                serde_json::from_str::<CallToolResult>(&cache_text).ok()
+            } else {
+                None
+            };
+            let result_box: Box<dyn ToolOutput> = match (&mcp_call_result,) {
+                (Some(call_result),) => Box::new(McpToolOutput {
+                    result: call_result.clone(),
+                    tool_input: pre_tool_use_payload.tool_input.clone(),
+                    wall_time: cache_hit.duration,
+                    original_image_detail_supported: can_request_original_image_detail(
+                        &invocation.turn.model_info,
+                    ),
+                    truncation_policy: invocation.turn.truncation_policy,
+                }),
+                _ => Box::new(FunctionToolOutput::from_text(
                     cache_text.clone(),
                     Some(true),
                 )),
+            };
+            let hook_tool_response = match mcp_call_result {
+                Some(call_result) => serde_json::to_value(&call_result)
+                    .unwrap_or_else(|_| serde_json::Value::String(cache_text.clone())),
+                None => serde_json::Value::String(cache_text.clone()),
+            };
+            let mut result = AnyToolResult {
+                call_id: invocation.call_id.clone(),
+                payload: invocation.payload.clone(),
+                result: result_box,
                 post_tool_use_payload: None,
             };
             let mut preview = result.result.log_preview();
@@ -409,7 +444,7 @@ impl ToolRegistry {
                 pre_tool_use_payload.tool_name.name().to_string(),
                 pre_tool_use_payload.tool_name.matcher_aliases().to_vec(),
                 pre_tool_use_payload.tool_input.clone(),
-                serde_json::Value::String(cache_text),
+                hook_tool_response,
             )
             .await;
             record_additional_contexts(
