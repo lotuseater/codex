@@ -565,12 +565,15 @@ impl Session {
         let mut token_usage_at_turn_start = None;
         let mut turn_had_memory_citation = false;
         let mut turn_tool_calls = 0_u64;
+        let mut turn_token_usage_for_semantic_compact = TokenUsage::default();
         let mut records_turn_token_usage_on_span = false;
+        let mut finished_task_kind = None;
         let turn_state = {
             let mut active = self.active_turn.lock().await;
             if let Some(at) = active.as_mut()
                 && let Some(removed_task) = at.remove_task(&turn_context.sub_id)
             {
+                finished_task_kind = Some(removed_task.kind);
                 records_turn_token_usage_on_span = removed_task.records_turn_token_usage_on_span;
                 if removed_task.active_turn_is_empty {
                     should_clear_active_turn = true;
@@ -657,6 +660,7 @@ impl Session {
                     - token_usage_at_turn_start.total_tokens)
                     .max(0),
             };
+            turn_token_usage_for_semantic_compact = turn_token_usage.clone();
             if records_turn_token_usage_on_span {
                 let current_span = Span::current();
                 current_span.record(
@@ -739,6 +743,20 @@ impl Session {
             .await
         {
             warn!("failed to apply goal runtime turn-finished event: {err}");
+        }
+        if should_clear_active_turn {
+            match finished_task_kind {
+                Some(TaskKind::Regular) => {
+                    self.record_regular_turn_finished_for_semantic_compact(
+                        &turn_token_usage_for_semantic_compact,
+                    )
+                    .await;
+                }
+                Some(TaskKind::Compact) => {
+                    self.record_compaction_finished_for_semantic_compact().await;
+                }
+                Some(TaskKind::Review) | None => {}
+            }
         }
         let event = EventMsg::TurnComplete(TurnCompleteEvent {
             turn_id: turn_context.sub_id.clone(),

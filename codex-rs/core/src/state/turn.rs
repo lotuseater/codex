@@ -80,6 +80,7 @@ pub(crate) struct RunningTask {
 }
 
 pub(crate) struct RemovedTask {
+    pub(crate) kind: TaskKind,
     pub(crate) records_turn_token_usage_on_span: bool,
     pub(crate) active_turn_is_empty: bool,
 }
@@ -92,9 +93,11 @@ impl ActiveTurn {
 
     pub(crate) fn remove_task(&mut self, sub_id: &str) -> Option<RemovedTask> {
         let task = self.tasks.swap_remove(sub_id)?;
+        let kind = task.kind;
         let records_turn_token_usage_on_span = task.task.records_turn_token_usage_on_span();
         task.handle.detach();
         Some(RemovedTask {
+            kind,
             records_turn_token_usage_on_span,
             active_turn_is_empty: self.tasks.is_empty(),
         })

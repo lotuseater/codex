@@ -345,6 +345,36 @@ mod tests {
     }
 
     #[test]
+    fn first_moves_predict_is_discoverable_from_wizard_codex_query() {
+        let mut tool = tool_info(
+            "wizard-codex",
+            "first_moves_predict",
+            "Predict the best opening file reads and searches",
+        );
+        tool.callable_namespace = "mcp__wizard_codex__".to_string();
+        let tools = std::collections::HashMap::from([(
+            "mcp__wizard_codex__first_moves_predict".to_string(),
+            tool,
+        )]);
+        let handler = handler_from_tools(Some(&tools), &[]);
+
+        let results = handler.search_result_entries(
+            "first_moves_predict wizard-codex",
+            TOOL_SEARCH_DEFAULT_LIMIT,
+            /*use_default_limit*/ true,
+        );
+
+        assert_eq!(results.len(), 1);
+        let LoadableToolSpec::Namespace(namespace) = &results[0].output else {
+            panic!("MCP tools should be returned as namespace specs");
+        };
+        assert_eq!(namespace.name, "mcp__wizard_codex__");
+        assert_eq!(namespace.tools.len(), 1);
+        let ResponsesApiNamespaceTool::Function(tool) = &namespace.tools[0];
+        assert_eq!(tool.name, "first_moves_predict");
+    }
+
+    #[test]
     fn expanded_search_keeps_non_computer_use_servers_at_default_limit() {
         let mut tools = numbered_tools(
             COMPUTER_USE_MCP_SERVER_NAME,

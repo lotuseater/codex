@@ -1,0 +1,10 @@
+[profile.release]
+lto = "off"
+codegen-units = 64
+opt-level = 2
+debug = 0
+strip = "symbols"
+incremental = false
+
+[env]
+RUST_MIN_STACK = "16777216"

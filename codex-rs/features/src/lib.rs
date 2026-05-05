@@ -128,6 +128,10 @@ pub enum Feature {
     ShellSnapshot,
     /// Enable git commit attribution guidance via model instructions.
     CodexGitCommit,
+    /// Enable semantic pre-turn auto-compaction at logical continuation checkpoints.
+    SemanticAutoCompact,
+    /// Enable git commit and push at semantic compaction checkpoints.
+    SemanticCheckpointGitSync,
     /// Enable runtime metrics snapshots via a manual reader.
     RuntimeMetrics,
     /// Persist rollout metadata to a local SQLite database.
@@ -764,6 +768,18 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::CodexGitCommit,
         key: "codex_git_commit",
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::SemanticAutoCompact,
+        key: "semantic_auto_compact",
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::SemanticCheckpointGitSync,
+        key: "semantic_checkpoint_git_sync",
         stage: Stage::UnderDevelopment,
         default_enabled: false,
     },

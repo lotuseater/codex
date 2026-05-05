@@ -908,6 +908,7 @@ impl Session {
                 let mut guard = network_policy_decider_session.write().await;
                 *guard = Arc::downgrade(&sess);
             }
+            sess.refresh_git_checkpoint_baseline(config.cwd.as_ref()).await;
             // Dispatch the SessionConfiguredEvent first and then report any errors.
             // If resuming, include converted initial messages in the payload so UIs can render them immediately.
             let initial_messages = initial_history.get_event_msgs();

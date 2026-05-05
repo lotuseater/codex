@@ -1,0 +1,28 @@
+#!/usr/bin/env sh
+set -eu
+
+case "${PROFILE:-}" in
+  [Dd][Ee][Bb][Uu][Gg])
+    echo "Build only release!" >&2
+    exit 1
+    ;;
+esac
+
+if [ "$#" -lt 1 ]; then
+  echo "Build only release! rustc wrapper received no rustc path." >&2
+  exit 1
+fi
+
+rustc="$1"
+shift
+
+for arg in "$@"; do
+  case "$arg" in
+    *target/debug*|*target\\debug*)
+      echo "Build only release!" >&2
+      exit 1
+      ;;
+  esac
+done
+
+exec "$rustc" "$@"

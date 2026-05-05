@@ -54,6 +54,12 @@ In the codex-rs folder where the rust code lives:
     trivial; prefer new modules/files and keep `chatwidget.rs` focused on orchestration.
 - When running Rust commands (e.g. `just fix` or `cargo test`) be patient with the command and never try to kill them using the PID. Rust lock can make the execution slow, this is expected.
 - For long-running builds, release builds, or any build expected to take more than a few minutes, capture stdout and stderr to a repo-local log file such as `logs/fast-release-build-YYYYMMDD-HHMMSS.log` while preserving the command exit code. Inspect the saved log before retrying or changing strategy.
+- On this Windows checkout, do not use debug-profile Cargo builds/tests. This fork is release-only locally; debug builds can exhaust C: disk and memory. Use release-profile checks and `scripts/build-local-codex.ps1` for Codex binary verification; local release wrappers and blocked script modes should fail with `Build only release!`.
+- All local Cargo release builds/tests/checks must reuse the repo-local low-memory release profile from `.cargo/config.toml` (`lto=off`, `codegen-units=64`, `opt-level=2`, `debug=0`, `strip=symbols`, `incremental=false`). Do not override these profile settings ad hoc from scripts, env vars, or one-off commands; changing them creates a different `target/release` artifact shape and forces expensive rebuilds.
+- Prefer the memory-efficient release script modes for local Codex builds:
+  - Start with `powershell -ExecutionPolicy Bypass -File scripts\build-local-codex.ps1 -Mode FastRelease`.
+  - Use `-Mode LowMemRelease` only to lower Cargo job count; it uses the same release profile/cache as `FastRelease`.
+  - Do not run `cargo test -p codex-cli`, `cargo test -p codex-exec`, or similarly broad debug lanes. Use `cargo test --release ...` when Rust tests are needed.
 
 Run `just fmt` (in `codex-rs` directory) automatically after you have finished making Rust code changes; do not ask for approval to run it. Additionally, run the tests:
 

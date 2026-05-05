@@ -50,6 +50,8 @@ fn make_mcp_tool(
             .map(sanitize_name)
             .map(|connector_name| format!("mcp__{server_name}__{connector_name}"))
             .unwrap_or_else(|| server_name.to_string())
+    } else if server_name == "wizard-codex" {
+        "mcp__wizard_codex__".to_string()
     } else {
         format!("mcp__{server_name}__")
     };
@@ -258,4 +260,103 @@ async fn always_defer_feature_preserves_explicit_apps() {
         .expect("MCP tools should be discoverable through tool_search");
     assert!(deferred_tools.contains_key("mcp__rmcp__tool"));
     assert!(!deferred_tools.contains_key("mcp__codex_apps__calendar_create_event"));
+}
+
+#[tokio::test]
+async fn always_defer_feature_preserves_bootstrap_mcp_tools() {
+    let mut config = test_config().await;
+    config
+        .features
+        .enable(Feature::ToolSearchAlwaysDeferMcpTools)
+        .expect("test config should allow feature update");
+    let tools_config = tools_config_for_mcp_tool_exposure(/*search_tool*/ true).await;
+    let mcp_tools = HashMap::from([
+        (
+            "mcp__wizard_codex__first_moves_predict".to_string(),
+            make_mcp_tool(
+                "wizard-codex",
+                "first_moves_predict",
+                /*connector_id*/ None,
+                /*connector_name*/ None,
+            ),
+        ),
+        (
+            "mcp__wizard_codex__first_moves_stats".to_string(),
+            make_mcp_tool(
+                "wizard-codex",
+                "first_moves_stats",
+                /*connector_id*/ None,
+                /*connector_name*/ None,
+            ),
+        ),
+        (
+            "mcp__wizard_codex__cache_stats".to_string(),
+            make_mcp_tool(
+                "wizard-codex",
+                "cache_stats",
+                /*connector_id*/ None,
+                /*connector_name*/ None,
+            ),
+        ),
+    ]);
+
+    let exposure = build_mcp_tool_exposure(
+        &mcp_tools,
+        /*connectors*/ None,
+        &[],
+        &config,
+        &tools_config,
+    );
+
+    let mut direct_tool_names: Vec<String> = exposure.direct_tools.into_keys().collect();
+    direct_tool_names.sort();
+    assert_eq!(
+        direct_tool_names,
+        vec![
+            "mcp__wizard_codex__first_moves_predict".to_string(),
+            "mcp__wizard_codex__first_moves_stats".to_string(),
+        ]
+    );
+    let deferred_tools = exposure
+        .deferred_tools
+        .as_ref()
+        .expect("non-bootstrap MCP tools should remain discoverable through tool_search");
+    assert_eq!(
+        deferred_tools.keys().cloned().collect::<Vec<_>>(),
+        vec!["mcp__wizard_codex__cache_stats".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn always_defer_feature_does_not_directly_expose_non_wizard_bootstrap_names() {
+    let mut config = test_config().await;
+    config
+        .features
+        .enable(Feature::ToolSearchAlwaysDeferMcpTools)
+        .expect("test config should allow feature update");
+    let tools_config = tools_config_for_mcp_tool_exposure(/*search_tool*/ true).await;
+    let mcp_tools = HashMap::from([(
+        "mcp__other_server__first_moves_predict".to_string(),
+        make_mcp_tool(
+            "other_server",
+            "first_moves_predict",
+            /*connector_id*/ None,
+            /*connector_name*/ None,
+        ),
+    )]);
+
+    let exposure = build_mcp_tool_exposure(
+        &mcp_tools,
+        /*connectors*/ None,
+        &[],
+        &config,
+        &tools_config,
+    );
+
+    assert!(exposure.direct_tools.is_empty());
+    let deferred_tools = exposure
+        .deferred_tools
+        .as_ref()
+        .expect("same-named non-wizard tools should remain discoverable through tool_search");
+    assert!(deferred_tools.contains_key("mcp__other_server__first_moves_predict"));
 }

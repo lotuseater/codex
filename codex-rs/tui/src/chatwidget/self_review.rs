@@ -2,14 +2,12 @@ use codex_protocol::plan_tool::UpdatePlanArgs;
 use std::time::Duration;
 use std::time::Instant;
 
-const COMMAND_REMINDER_THRESHOLD: usize = 3;
 const SELF_REVIEW_COOLDOWN: Duration = Duration::from_secs(10 * 60);
 
 #[derive(Debug, Default, Clone)]
 pub(super) struct SelfReviewTracker {
     command_count: usize,
     patch_count: usize,
-    plan_update_count: usize,
     saw_review_this_turn: bool,
     suppress_current_turn: bool,
     suppress_next_turn: bool,
@@ -27,10 +25,9 @@ impl SelfReviewTracker {
         };
     }
 
-    pub(super) fn note_plan_update(&mut self, update: &UpdatePlanArgs) {
-        if !update.plan.is_empty() {
-            self.plan_update_count += 1;
-        }
+    pub(super) fn note_plan_update(&mut self, _update: &UpdatePlanArgs) {
+        // Plan self-review is handled by model instructions so planning does not
+        // start an explicit uncommitted-changes review task.
     }
 
     pub(super) fn note_command(&mut self) {
@@ -59,9 +56,7 @@ impl SelfReviewTracker {
         !self.saw_review_this_turn
             && !self.suppress_current_turn
             && !in_cooldown
-            && (self.patch_count > 0
-                || self.command_count >= COMMAND_REMINDER_THRESHOLD
-                || (self.command_count > 0 && self.plan_update_count > 0))
+            && self.patch_count > 0
     }
 
     pub(super) fn reminder_message(&self) -> String {
@@ -116,13 +111,13 @@ mod tests {
     }
 
     #[test]
-    fn command_with_plan_update_triggers_reminder() {
+    fn command_with_plan_update_does_not_trigger_review_task() {
         let mut tracker = SelfReviewTracker::default();
         let now = Instant::now();
         tracker.note_plan_update(&plan_update());
         tracker.note_command();
 
-        assert!(tracker.should_remind(now));
+        assert!(!tracker.should_remind(now));
     }
 
     #[test]

@@ -86,6 +86,8 @@ yarn.lock
 package.json-e
 session.ts-e
 CHANGELOG.ignore.md
+scripts/cargo-release-only-rustc-wrapper.exe
+scripts/cargo-release-only-rustc-wrapper.pdb
 
 # nix related
 .direnv

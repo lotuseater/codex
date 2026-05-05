@@ -24,6 +24,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+if ($Mode -eq "DevRelease") {
+    throw "Build only release!"
+}
+
 if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
     $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 }
@@ -237,52 +241,20 @@ function Get-BuildPlan {
 
     $envOverrides = [ordered]@{}
     $cargoArgs = @("build", "-p", "codex-cli", "--release", "--bin", "codex")
-    $description = "full release build using Cargo.toml release profile"
+    $description = "local low-memory release build using .cargo/config.toml release profile"
     $binary = Join-Path $TargetRoot "release\codex.exe"
-
-    # Shared defaults applied to ALL release modes (FastRelease,
-    # LowMemRelease, FullRelease):
-    #   - debug=0, strip=symbols → no .pdb files (each can be 100-700 MB
-    #     on Windows for this workspace) and no symbols in the final
-    #     codex.exe. Saves both disk-during-build and disk-after-build.
-    #   - incremental=0 → release builds don't use incremental but cargo
-    #     still creates target/release/incremental and fills it with
-    #     multi-GB scratch each run. Forcing off saves ~4 GB across runs.
-    # These are overridable per-mode below if a specific mode needs more.
-    $releaseSharedDefaults = @{
-        "CARGO_PROFILE_RELEASE_DEBUG"  = "0"
-        "CARGO_PROFILE_RELEASE_STRIP"  = "symbols"
-        "CARGO_INCREMENTAL"            = "0"
-    }
 
     switch ($BuildMode) {
         "FastRelease" {
-            $description = "fast release build (LTO off, cu=64, opt=2, debug=0, strip, no incremental)"
-            foreach ($k in $releaseSharedDefaults.Keys) { $envOverrides[$k] = $releaseSharedDefaults[$k] }
-            $envOverrides["CARGO_PROFILE_RELEASE_LTO"] = "off"
-            # cu=64 (was 16) raises codegen parallelism, reducing peak per-unit
-            # rustc memory and per-unit object-file size at a small whole-program
-            # optimization cost. Trade favors RAM+disk over binary speed for
-            # local rebuilds.
-            $envOverrides["CARGO_PROFILE_RELEASE_CODEGEN_UNITS"] = "64"
-            $envOverrides["CARGO_PROFILE_RELEASE_OPT_LEVEL"] = "2"
-            $envOverrides["RUST_MIN_STACK"] = "16777216"
+            $description = "local low-memory release build (single shared release profile)"
             if ($JobsOverride -le 0) {
-                # Tightened from PerJobMemoryMB=1800 / disk=2200 / no ceiling.
                 $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 1300 -PerJobDiskMB 1600 -Ceiling 3
             }
         }
         "LowMemRelease" {
-            $description = "low-memory release build (LTO off, cu=256, opt=1, debug=0, strip, no incremental)"
-            foreach ($k in $releaseSharedDefaults.Keys) { $envOverrides[$k] = $releaseSharedDefaults[$k] }
-            $envOverrides["CARGO_PROFILE_RELEASE_LTO"] = "off"
-            $envOverrides["CARGO_PROFILE_RELEASE_CODEGEN_UNITS"] = "256"
-            $envOverrides["CARGO_PROFILE_RELEASE_OPT_LEVEL"] = "1"
-            # 32 MB stack (down from 64 MB). High codegen-units rarely needs
-            # the larger stack the upstream defaults reserve.
-            $envOverrides["RUST_MIN_STACK"] = "33554432"
+            $description = "local low-memory release build (same shared release profile, lower job count)"
             if ($JobsOverride -le 0) {
-                $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 900 -PerJobDiskMB 1200 -Ceiling 2
+                $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 1300 -PerJobDiskMB 1600 -Ceiling 2
             }
         }
         "DevRelease" {
@@ -298,16 +270,9 @@ function Get-BuildPlan {
             }
         }
         "FullRelease" {
-            $description = "full release build (default LTO + opt=3, debug=0, strip, no incremental)"
-            foreach ($k in $releaseSharedDefaults.Keys) { $envOverrides[$k] = $releaseSharedDefaults[$k] }
-            # FullRelease keeps cargo's default LTO + opt=3 + cu=1, but still
-            # forces debug=0 + strip + incremental=0 from the shared defaults
-            # so the .pdb / incremental dirs don't blow the disk.
-            $envOverrides["RUST_MIN_STACK"] = "33554432"
+            $description = "local low-memory release build (FullRelease alias, same shared release profile)"
             if ($JobsOverride -le 0) {
-                # FullRelease's LTO link step needs more RAM than incremental
-                # codegen does — keep the per-job-mem high and the ceiling low.
-                $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 2000 -PerJobDiskMB 2500 -Ceiling 2
+                $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 1300 -PerJobDiskMB 1600 -Ceiling 2
             }
         }
     }
@@ -328,14 +293,12 @@ function Get-BuildPlan {
     }
 }
 
-# Disk-space defenses: full release builds of this workspace need ~5 GB of
-# headroom (target/release/deps libraries + intermediate .rmeta + final link
-# scratch). Without a pre-check, the build silently fails mid-link with
-# "There is not enough space on the disk. (os error 112)" — observed
-# 2026-05-04 when stacked builds + a packed `incremental/` dir squeezed C:
-# below 1 GB. This guard reclaims known-regeneratable dirs before the build
-# starts, errors out if still below the safety floor, and (after success)
-# evicts the incremental cache that release builds don't need anyway.
+# Disk-space defenses: full release builds of this workspace need headroom for
+# target/release/deps libraries, intermediate .rmeta files, and final link
+# scratch. Under pressure, reclaim only artifacts that do not preserve useful
+# release progress. Do not auto-delete target/release/build, gn_out, or
+# .fingerprint: they are technically regeneratable, but losing them can force
+# expensive build-script/native rebuild work on this machine.
 function Test-AndFreeDiskSpace {
     param(
         [string]$RepoRoot,
@@ -344,22 +307,14 @@ function Test-AndFreeDiskSpace {
     )
 
     $codexRs = Join-Path $RepoRoot "codex-rs"
+    $tgt = Join-Path $codexRs "target"
     $tgtRelease = Join-Path $codexRs "target\release"
     $reclaimable = @(
         # 'incremental/' is created on every build but useless for `--release`
         # builds; cargo treats incremental compilation as a debug-mode feature.
         @{ Path = (Join-Path $tgtRelease "incremental"); Reason = "release/incremental (release builds don't use incremental)" },
-        # build-script outputs are regenerated on demand from the build.rs
-        # invocations stored in target/release/.fingerprint.
-        @{ Path = (Join-Path $tgtRelease "build"); Reason = "release/build (build script outputs, regenerated)" },
-        # gn_out is GN's intermediate dir for v8/skia; rebuilt from build.rs.
-        @{ Path = (Join-Path $tgtRelease "gn_out"); Reason = "release/gn_out (GN intermediate, regenerated)" },
-        # .fingerprint is small but tied to the artifacts above; cleaning it
-        # together avoids stale-fingerprint mismatches on the next build.
-        @{ Path = (Join-Path $tgtRelease ".fingerprint"); Reason = "release/.fingerprint (regenerated together with build/)" },
-        # Cargo's extracted source dir; cargo re-extracts from registry/cache
-        # on demand when a crate is needed.
-        @{ Path = (Join-Path $HOME ".cargo\registry\src"); Reason = "~/.cargo/registry/src (re-extracted from registry/cache)" }
+        @{ Path = (Join-Path $tgt "debug"); Reason = "target/debug (debug builds are disabled for this checkout)" },
+        @{ Path = (Join-Path $tgt "dev-small"); Reason = "target/dev-small (non-release profile artifacts)" }
     )
 
     $freeGB = [math]::Round((Get-PSDrive C).Free / 1GB, 2)
@@ -386,7 +341,7 @@ function Test-AndFreeDiskSpace {
     $freeAfterGB = [math]::Round((Get-PSDrive C).Free / 1GB, 2)
     Write-Host "Disk after reclaim: $freeAfterGB GB free."
     if ($freeAfterGB -lt $RequiredGB) {
-        throw "Disk space too low for safe build: $freeAfterGB GB free (need >= $RequiredGB GB after auto-clean). Free more space manually before retrying — candidate dirs to inspect: ~/.codex/sessions, ~/.codex/logs_2.sqlite, AppData/Local/Temp."
+        throw "Disk space too low for safe release build: $freeAfterGB GB free (need >= $RequiredGB GB after safe auto-clean). Build only release! Keep target/release cache when possible. Free space manually before retrying; candidates to inspect: ~/.codex/sessions, ~/.codex/logs_2.sqlite, AppData/Local/Temp. Only delete target/release/build, target/release/gn_out, target/release/.fingerprint, or ~/.cargo/registry/src when you accept a slower rebuild."
     }
 }
 
@@ -487,6 +442,34 @@ function Show-FailureLines {
     Get-Content -LiteralPath $Path -Tail 80 | Out-Host
 }
 
+function Ensure-ReleaseOnlyRustcWrapper {
+    param([string]$Root)
+
+    if ([System.IO.Path]::DirectorySeparatorChar -ne "\") {
+        return
+    }
+
+    $source = Join-Path $Root "scripts\cargo-release-only-rustc-wrapper.rs"
+    $exe = Join-Path $Root "scripts\cargo-release-only-rustc-wrapper.exe"
+    if (-not (Test-Path -LiteralPath $source)) {
+        throw "Build only release! rustc wrapper source not found: $source"
+    }
+
+    $needsBuild = -not (Test-Path -LiteralPath $exe)
+    if (-not $needsBuild) {
+        $needsBuild = (Get-Item -LiteralPath $source).LastWriteTimeUtc -gt
+            (Get-Item -LiteralPath $exe).LastWriteTimeUtc
+    }
+    if (-not $needsBuild) {
+        return
+    }
+
+    & rustc $source -O -o $exe
+    if ($LASTEXITCODE -ne 0) {
+        throw "Build only release! failed to compile rustc wrapper."
+    }
+}
+
 function Invoke-CodexBuild {
     param(
         [string]$Root,
@@ -508,6 +491,14 @@ function Invoke-CodexBuild {
 
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $LogPath) | Out-Null
     Push-Location (Join-Path $Root "codex-rs")
+    $nativeCommandPreference = Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue
+    $oldNativeCommandPreference = $null
+    $oldErrorActionPreference = $ErrorActionPreference
+    if ($nativeCommandPreference) {
+        $oldNativeCommandPreference = $PSNativeCommandUseErrorActionPreference
+        $PSNativeCommandUseErrorActionPreference = $false
+    }
+    $ErrorActionPreference = "Continue"
     try {
         $link = Get-Command link.exe -ErrorAction SilentlyContinue
         if ($link) {
@@ -527,6 +518,10 @@ function Invoke-CodexBuild {
     }
     finally {
         Pop-Location
+        $ErrorActionPreference = $oldErrorActionPreference
+        if ($nativeCommandPreference) {
+            $PSNativeCommandUseErrorActionPreference = $oldNativeCommandPreference
+        }
         foreach ($key in $EnvOverrides.Keys) {
             [Environment]::SetEnvironmentVariable($key, $previousEnv[$key], "Process")
         }
@@ -536,7 +531,8 @@ function Invoke-CodexBuild {
 function Invoke-Deploy {
     param(
         [string]$ExePath,
-        [string]$ModeName
+        [string]$ModeName,
+        [string]$BuildStamp = ""
     )
 
     $source = (Resolve-Path -LiteralPath $ExePath).Path
@@ -561,6 +557,7 @@ function Invoke-Deploy {
             created_at = (Get-Date).ToString("o")
             action = "build-local-codex"
             mode = $ModeName
+            local_build_stamp = $BuildStamp
             source_exe = $source
             active_exe = $activeExe
             wrapper_env_path = $envPath
@@ -571,13 +568,20 @@ function Invoke-Deploy {
         $payload["WIZARD_CODEX_REAL_EXE"] = $activeExe
         $payload["WIZARD_CODEX_LOCAL_FORK_MANIFEST"] = $manifestPath
         $payload["WIZARD_CODEX_LOCAL_FORK_INSTALLED_AT"] = (Get-Date).ToString("o")
+        if (-not [string]::IsNullOrWhiteSpace($BuildStamp)) {
+            $payload["WIZARD_CODEX_LOCAL_BUILD_STAMP"] = $BuildStamp
+        }
         Write-JsonObject -Path $envPath -Payload $payload
     }
 
     if (-not $SkipVerify -and (Test-Path -LiteralPath $activeExe)) {
-        & $activeExe --version | Out-Host
+        $versionOutput = & $activeExe --version
+        $versionOutput | Out-Host
         if ($LASTEXITCODE -ne 0) {
             throw "Copied Codex exe failed --version with exit code $LASTEXITCODE"
+        }
+        if (-not [string]::IsNullOrWhiteSpace($BuildStamp) -and $versionOutput -notmatch [regex]::Escape($BuildStamp)) {
+            throw "Copied Codex exe --version did not include local build stamp $BuildStamp"
         }
     }
 
@@ -746,7 +750,17 @@ if ($activeBuilds.Count -gt 0) {
 $plan = Get-BuildPlan -BuildMode $Mode -TargetRoot $targetRoot -JobsOverride $Jobs
 $releaseBinary = $plan.binary
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+$buildStartedAt = Get-Date
+$localBuildStamp = $buildStartedAt.ToString("yyyy-MM-ddTHH:mm:sszzz")
+$plan.env_overrides["CODEX_LOCAL_BUILD_STAMP"] = $localBuildStamp
 $logPath = Assert-UnderRoot -Path (Join-Path $RepoRoot "logs\local-codex-build-$($Mode.ToLowerInvariant())-$stamp.log") -Root $RepoRoot -Label "build log"
+Ensure-ReleaseOnlyRustcWrapper -Root $RepoRoot
+if ([System.IO.Path]::DirectorySeparatorChar -eq "\") {
+    $plan.env_overrides["CARGO_BUILD_RUSTC_WRAPPER"] = Join-Path $RepoRoot "scripts\cargo-release-only-rustc-wrapper.exe"
+}
+else {
+    $plan.env_overrides["CARGO_BUILD_RUSTC_WRAPPER"] = Join-Path $RepoRoot "scripts/cargo-release-only-rustc-wrapper"
+}
 
 # Pre-build planning, in this order:
 #   1. Cross-mode cleanup: drop other-profile artifacts that just claim disk.
@@ -790,15 +804,19 @@ if ($buildRan -and -not (Test-Path -LiteralPath $releaseBinary)) {
 }
 
 if ($buildRan -and -not $SkipVerify) {
-    & $releaseBinary --version | Out-Host
+    $versionOutput = & $releaseBinary --version
+    $versionOutput | Out-Host
     if ($LASTEXITCODE -ne 0) {
         throw "Built Codex exe failed --version with exit code $LASTEXITCODE"
+    }
+    if ($versionOutput -notmatch [regex]::Escape($localBuildStamp)) {
+        throw "Built Codex exe --version did not include local build stamp $localBuildStamp"
     }
 }
 
 $deployResult = $null
 if (-not $SkipDeploy) {
-    $deployResult = Invoke-Deploy -ExePath $releaseBinary -ModeName $Mode
+    $deployResult = Invoke-Deploy -ExePath $releaseBinary -ModeName $Mode -BuildStamp $localBuildStamp
 }
 
 [ordered]@{
@@ -806,6 +824,7 @@ if (-not $SkipDeploy) {
     mode = $Mode
     cargo_args = $plan.cargo_args
     env_overrides = $plan.env_overrides
+    local_build_stamp = $localBuildStamp
     log_path = $logPath
     release_binary = $releaseBinary
     deploy = $deployResult

@@ -8,6 +8,9 @@ use std::collections::HashSet;
 
 use crate::context_manager::ContextManager;
 use crate::session::PreviousTurnSettings;
+use crate::session::checkpoint_policy::SemanticCompactDecision;
+use crate::session::checkpoint_policy::SemanticCompactInput;
+use crate::session::checkpoint_policy::SemanticCompactState;
 use crate::session::session::SessionConfiguration;
 use crate::session_startup_prewarm::SessionStartupPrewarmHandle;
 use codex_protocol::protocol::RateLimitSnapshot;
@@ -32,6 +35,8 @@ pub(crate) struct SessionState {
     pub(crate) startup_prewarm: Option<SessionStartupPrewarmHandle>,
     pub(crate) active_connector_selection: HashSet<String>,
     pub(crate) pending_session_start_source: Option<codex_hooks::SessionStartSource>,
+    semantic_compact_state: SemanticCompactState,
+    git_checkpoint_baseline_dirty_paths_by_worktree: HashMap<String, HashSet<String>>,
     granted_permissions: Option<AdditionalPermissionProfile>,
     next_turn_is_first: bool,
 }
@@ -51,6 +56,8 @@ impl SessionState {
             startup_prewarm: None,
             active_connector_selection: HashSet::new(),
             pending_session_start_source: None,
+            semantic_compact_state: SemanticCompactState::default(),
+            git_checkpoint_baseline_dirty_paths_by_worktree: HashMap::new(),
             granted_permissions: None,
             next_turn_is_first: true,
         }
@@ -216,6 +223,43 @@ impl SessionState {
         &mut self,
     ) -> Option<codex_hooks::SessionStartSource> {
         self.pending_session_start_source.take()
+    }
+
+    pub(crate) fn record_regular_turn_finished_for_semantic_compact(
+        &mut self,
+        turn_token_usage: &TokenUsage,
+    ) {
+        self.semantic_compact_state
+            .record_regular_turn_finished(turn_token_usage);
+    }
+
+    pub(crate) fn record_compaction_finished_for_semantic_compact(&mut self) {
+        self.semantic_compact_state.record_compaction_finished();
+    }
+
+    pub(crate) fn semantic_compact_decision(
+        &self,
+        input: SemanticCompactInput,
+    ) -> SemanticCompactDecision {
+        self.semantic_compact_state.decide(input)
+    }
+
+    pub(crate) fn git_checkpoint_baseline_dirty_paths(
+        &self,
+        worktree: &str,
+    ) -> Option<HashSet<String>> {
+        self.git_checkpoint_baseline_dirty_paths_by_worktree
+            .get(worktree)
+            .cloned()
+    }
+
+    pub(crate) fn set_git_checkpoint_baseline_dirty_paths(
+        &mut self,
+        worktree: String,
+        paths: HashSet<String>,
+    ) {
+        self.git_checkpoint_baseline_dirty_paths_by_worktree
+            .insert(worktree, paths);
     }
 
     pub(crate) fn record_granted_permissions(&mut self, permissions: AdditionalPermissionProfile) {

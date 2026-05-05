@@ -40,6 +40,8 @@ use crate::parse_turn_item;
 use crate::plugins::build_plugin_injections;
 use crate::resolve_skill_dependencies_for_turn;
 use crate::session::PreviousTurnSettings;
+use crate::session::checkpoint_policy::SemanticCompactDecision;
+use crate::session::checkpoint_policy::SemanticCompactInput;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use crate::stream_events_utils::HandleOutputCtx;
@@ -718,11 +720,52 @@ async fn run_pre_sampling_compact(
         total_usage_tokens_before_compaction,
     )
     .await?;
-    let total_usage_tokens = sess.get_total_token_usage().await;
+    let mut total_usage_tokens = sess.get_total_token_usage().await;
     let auto_compact_limit = turn_context
         .model_info
         .auto_compact_token_limit()
         .unwrap_or(i64::MAX);
+    if !pre_sampling_compacted {
+        match sess
+            .semantic_compact_decision(SemanticCompactInput {
+                feature_enabled: turn_context.features.enabled(Feature::SemanticAutoCompact),
+                total_usage_tokens,
+                auto_compact_limit,
+            })
+            .await
+        {
+            SemanticCompactDecision::Compact { reason } => {
+                let git_outcome = sess
+                    .semantic_checkpoint_git_sync(turn_context, reason)
+                    .await;
+                if git_outcome.should_warn() {
+                    sess.send_event(
+                        turn_context.as_ref(),
+                        EventMsg::Warning(WarningEvent {
+                            message: git_outcome.summary(),
+                        }),
+                    )
+                    .await;
+                }
+                let scratchpad = sess
+                    .write_semantic_compact_scratchpad(turn_context, reason, &git_outcome.summary())
+                    .await;
+                let compact_result = run_auto_compact(
+                    sess,
+                    turn_context,
+                    InitialContextInjection::DoNotInject,
+                    reason,
+                    CompactionPhase::PreTurn,
+                )
+                .await;
+                sess.cleanup_semantic_compact_scratchpad(scratchpad);
+                compact_result?;
+                pre_sampling_compacted = true;
+                total_usage_tokens = sess.get_total_token_usage().await;
+            }
+            SemanticCompactDecision::Skip => {}
+        }
+    }
     // Compact if the total usage tokens are greater than the auto compact limit
     if total_usage_tokens >= auto_compact_limit {
         run_auto_compact(
@@ -811,6 +854,7 @@ async fn run_auto_compact(
         )
         .await?;
     }
+    sess.record_compaction_finished_for_semantic_compact().await;
     Ok(())
 }
 

@@ -2442,10 +2442,7 @@ async fn multi_agent_v2_wait_agent_accepts_targeted_waits() {
     let (mut session, mut turn) = make_session_and_context().await;
     let manager = thread_manager();
     let root = manager
-        .start_thread(
-            (*turn.config).clone(),
-            thread_store_from_config(turn.config.as_ref()),
-        )
+        .start_thread((*turn.config).clone())
         .await
         .expect("root thread should start");
     session.services.agent_control = manager.agent_control();
@@ -2532,10 +2529,7 @@ async fn multi_agent_v2_wait_agent_waits_for_all_targeted_agents() {
     let (mut session, mut turn) = make_session_and_context().await;
     let manager = thread_manager();
     let root = manager
-        .start_thread(
-            (*turn.config).clone(),
-            thread_store_from_config(turn.config.as_ref()),
-        )
+        .start_thread((*turn.config).clone())
         .await
         .expect("root thread should start");
     session.services.agent_control = manager.agent_control();

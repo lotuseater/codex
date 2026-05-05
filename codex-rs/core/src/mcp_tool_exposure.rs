@@ -12,6 +12,14 @@ use crate::connectors;
 
 pub(crate) const DIRECT_MCP_TOOL_EXPOSURE_THRESHOLD: usize = 100;
 
+const BOOTSTRAP_MCP_TOOL_NAMES: &[&str] = &[
+    "first_moves_logic_advice",
+    "first_moves_predict",
+    "first_moves_stats",
+];
+const WIZARD_CODEX_MCP_SERVER_NAME: &str = "wizard-codex";
+const WIZARD_CODEX_MCP_TOOL_NAMESPACE: &str = "mcp__wizard_codex__";
+
 pub(crate) struct McpToolExposure {
     pub(crate) direct_tools: HashMap<String, McpToolInfo>,
     pub(crate) deferred_tools: Option<HashMap<String, McpToolInfo>>,
@@ -46,8 +54,9 @@ pub(crate) fn build_mcp_tool_exposure(
         };
     }
 
-    let direct_tools =
+    let mut direct_tools =
         filter_codex_apps_mcp_tools(all_mcp_tools, explicitly_enabled_connectors, config);
+    direct_tools.extend(filter_bootstrap_mcp_tools(&deferred_tools));
     for direct_tool_name in direct_tools.keys() {
         deferred_tools.remove(direct_tool_name);
     }
@@ -56,6 +65,20 @@ pub(crate) fn build_mcp_tool_exposure(
         direct_tools,
         deferred_tools: (!deferred_tools.is_empty()).then_some(deferred_tools),
     }
+}
+
+fn filter_bootstrap_mcp_tools(
+    mcp_tools: &HashMap<String, McpToolInfo>,
+) -> HashMap<String, McpToolInfo> {
+    mcp_tools
+        .iter()
+        .filter(|(_, tool)| {
+            tool.server_name == WIZARD_CODEX_MCP_SERVER_NAME
+                && tool.callable_namespace == WIZARD_CODEX_MCP_TOOL_NAMESPACE
+                && BOOTSTRAP_MCP_TOOL_NAMES.contains(&tool.callable_name.as_str())
+        })
+        .map(|(name, tool)| (name.clone(), tool.clone()))
+        .collect()
 }
 
 fn filter_codex_apps_mcp_tools(

@@ -10,11 +10,11 @@ help:
 # `codex`
 alias c := codex
 codex *args:
-    cargo run --bin codex -- "$@"
+    cargo run --release --bin codex -- "$@"
 
 # `codex exec`
 exec *args:
-    cargo run --bin codex -- exec "$@"
+    cargo run --release --bin codex -- exec "$@"
 
 # Start `codex exec-server` and run codex-tui.
 [no-cd]
@@ -27,18 +27,18 @@ file-search *args:
 
 # Build the CLI and run the app-server test client
 app-server-test-client *args:
-    cargo build -p codex-cli
-    cargo run -p codex-app-server-test-client -- --codex-bin ./target/debug/codex "$@"
+    cargo build -p codex-cli --release
+    cargo run --release -p codex-app-server-test-client -- --codex-bin ./target/release/codex "$@"
 
 # format code
 fmt:
     cargo fmt -- --config imports_granularity=Item 2>/dev/null
 
 fix *args:
-    cargo clippy --fix --tests --allow-dirty "$@"
+    cargo clippy --release --fix --tests --allow-dirty "$@"
 
 clippy *args:
-    cargo clippy --tests "$@"
+    cargo clippy --release --tests "$@"
 
 install:
     rustup show active-toolchain
@@ -51,7 +51,7 @@ install:
 # Prefer this for routine local runs. Workspace crate features are banned, so
 # there should be no need to add `--all-features`.
 test:
-    RUST_MIN_STACK={{ rust_min_stack }} cargo nextest run --no-fail-fast
+    RUST_MIN_STACK={{ rust_min_stack }} cargo nextest run --release --no-fail-fast
 
 # Build and run Codex from source using Bazel.
 # Note we have to use the combination of `[no-cd]` and `--run_under="cd $PWD &&"`

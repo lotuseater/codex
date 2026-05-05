@@ -1,5 +1,6 @@
 use clap::Args;
 use clap::CommandFactory;
+use clap::FromArgMatches;
 use clap::Parser;
 use clap_complete::Shell;
 use clap_complete::generate;
@@ -741,7 +742,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         remote,
         mut interactive,
         subcommand,
-    } = MultitoolCli::parse();
+    } = parse_multitool_cli()?;
 
     // Fold --enable/--disable into config overrides so they flow to all subcommands.
     let toggle_overrides = feature_toggles.to_overrides()?;
@@ -1251,6 +1252,23 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn parse_multitool_cli() -> anyhow::Result<MultitoolCli> {
+    let mut command = MultitoolCli::command();
+    command = command.version(display_version_for_clap());
+    let matches = command.get_matches();
+    Ok(MultitoolCli::from_arg_matches(&matches)?)
+}
+
+fn display_version_for_clap() -> &'static str {
+    Box::leak(
+        codex_utils_cli::display_version(
+            env!("CARGO_PKG_VERSION"),
+            option_env!("CODEX_LOCAL_BUILD_STAMP"),
+        )
+        .into_boxed_str(),
+    )
 }
 
 async fn run_exec_server_command(

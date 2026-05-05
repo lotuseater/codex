@@ -46,6 +46,7 @@ use async_channel::Sender;
 use chrono::Local;
 use chrono::Utc;
 use codex_analytics::AnalyticsEventsClient;
+use codex_analytics::CompactionReason;
 use codex_analytics::SubAgentThreadStartedInput;
 use codex_app_server_protocol::McpServerElicitationRequest;
 use codex_app_server_protocol::McpServerElicitationRequestParams;
@@ -183,6 +184,9 @@ use codex_protocol::error::Result as CodexResult;
 #[cfg(test)]
 use codex_protocol::exec_output::StreamOutput;
 
+mod checkpoint_git;
+pub(crate) mod checkpoint_policy;
+mod checkpoint_scratchpad;
 mod config_lock;
 mod handlers;
 mod mcp;
@@ -1082,6 +1086,125 @@ impl Session {
     pub(crate) async fn get_total_token_usage(&self) -> i64 {
         let state = self.state.lock().await;
         state.get_total_token_usage(state.server_reasoning_included())
+    }
+
+    pub(crate) async fn semantic_compact_decision(
+        &self,
+        input: checkpoint_policy::SemanticCompactInput,
+    ) -> checkpoint_policy::SemanticCompactDecision {
+        let state = self.state.lock().await;
+        state.semantic_compact_decision(input)
+    }
+
+    pub(crate) async fn refresh_git_checkpoint_baseline(&self, cwd: &Path) {
+        if !self.enabled(Feature::SemanticCheckpointGitSync) {
+            return;
+        }
+        let worktree = match checkpoint_git::worktree_key(cwd) {
+            Ok(Some(worktree)) => worktree,
+            Ok(None) => return,
+            Err(err) => {
+                warn!("failed to resolve git checkpoint worktree: {err}");
+                return;
+            }
+        };
+        match checkpoint_git::dirty_paths(cwd) {
+            Ok(paths) => {
+                let mut state = self.state.lock().await;
+                state.set_git_checkpoint_baseline_dirty_paths(worktree, paths);
+            }
+            Err(err) => {
+                warn!("failed to initialize git checkpoint baseline: {err}");
+            }
+        }
+    }
+
+    pub(crate) async fn semantic_checkpoint_git_sync(
+        &self,
+        turn_context: &TurnContext,
+        reason: CompactionReason,
+    ) -> checkpoint_git::GitCheckpointOutcome {
+        if !turn_context
+            .features
+            .enabled(Feature::SemanticCheckpointGitSync)
+        {
+            return checkpoint_git::GitCheckpointOutcome::Disabled;
+        }
+        let worktree = match checkpoint_git::worktree_key(turn_context.cwd.as_ref()) {
+            Ok(Some(worktree)) => worktree,
+            Ok(None) => return checkpoint_git::GitCheckpointOutcome::NotRepository,
+            Err(err) => return checkpoint_git::GitCheckpointOutcome::Failed(err),
+        };
+        let baseline_dirty_paths = {
+            let state = self.state.lock().await;
+            state.git_checkpoint_baseline_dirty_paths(&worktree)
+        };
+        let Some(baseline_dirty_paths) = baseline_dirty_paths else {
+            return match checkpoint_git::dirty_paths(turn_context.cwd.as_ref()) {
+                Ok(paths) => {
+                    let mut state = self.state.lock().await;
+                    state.set_git_checkpoint_baseline_dirty_paths(worktree, paths);
+                    checkpoint_git::GitCheckpointOutcome::NoChanges
+                }
+                Err(err) => checkpoint_git::GitCheckpointOutcome::Failed(err),
+            };
+        };
+        let title = "checkpoint: semantic compact";
+        let body = format!(
+            "Automatic checkpoint before semantic compaction.\n\nReason: {reason:?}\nTurn: {}",
+            turn_context.sub_id
+        );
+        let (outcome, next_baseline) = checkpoint_git::commit_and_push_checkpoint(
+            turn_context.cwd.as_ref(),
+            &baseline_dirty_paths,
+            title,
+            &body,
+        );
+        let mut state = self.state.lock().await;
+        state.set_git_checkpoint_baseline_dirty_paths(worktree, next_baseline);
+        outcome
+    }
+
+    pub(crate) async fn write_semantic_compact_scratchpad(
+        &self,
+        turn_context: &TurnContext,
+        reason: CompactionReason,
+        git_summary: &str,
+    ) -> Option<PathBuf> {
+        let codex_home = {
+            let state = self.state.lock().await;
+            state.session_configuration.codex_home.clone()
+        };
+        match checkpoint_scratchpad::write_scratchpad(
+            codex_home.as_ref(),
+            self.conversation_id,
+            &turn_context.sub_id,
+            reason,
+            git_summary,
+        ) {
+            Ok(path) => Some(path),
+            Err(err) => {
+                warn!("failed to write semantic compaction scratchpad: {err}");
+                None
+            }
+        }
+    }
+
+    pub(crate) fn cleanup_semantic_compact_scratchpad(&self, path: Option<PathBuf>) {
+        checkpoint_scratchpad::cleanup_scratchpad(path);
+    }
+
+    pub(crate) async fn record_regular_turn_finished_for_semantic_compact(
+        &self,
+        turn_token_usage: &TokenUsage,
+    ) {
+        let mut state = self.state.lock().await;
+        state.record_regular_turn_finished_for_semantic_compact(turn_token_usage);
+    }
+
+    pub(crate) async fn record_compaction_finished_for_semantic_compact(&self) {
+        let mut state = self.state.lock().await;
+        state.record_compaction_finished_for_semantic_compact();
     }
 
     pub(crate) async fn get_total_token_usage_breakdown(&self) -> TotalTokenUsageBreakdown {

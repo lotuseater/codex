@@ -209,12 +209,13 @@ pub enum CompactionTrigger {
     Auto,
 }
 
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CompactionReason {
     UserRequested,
     ContextLimit,
     ModelDownshift,
+    SemanticCheckpoint,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
