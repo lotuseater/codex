@@ -50,15 +50,21 @@ fn fallback_model_includes_self_review_instructions() {
             .base_instructions
             .contains("## Self-Review Discipline")
     );
+    assert!(model.base_instructions.contains("once every 10 minutes"));
     assert!(
         model
             .base_instructions
-            .contains("first version of a non-trivial plan")
+            .contains("including after drafting plans")
     );
     assert!(
         model
             .base_instructions
-            .contains("substantial batch of edits")
+            .contains("brief and token-efficient")
+    );
+    assert!(
+        model
+            .base_instructions
+            .contains("Report self-review details only")
     );
 }
 
