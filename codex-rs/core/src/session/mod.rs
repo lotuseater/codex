@@ -1197,9 +1197,15 @@ impl Session {
     pub(crate) async fn record_regular_turn_finished_for_semantic_compact(
         &self,
         turn_token_usage: &TokenUsage,
+        tool_calls: u64,
     ) {
         let mut state = self.state.lock().await;
-        state.record_regular_turn_finished_for_semantic_compact(turn_token_usage);
+        state.record_regular_turn_finished_for_semantic_compact(
+            checkpoint_policy::SemanticCompactTurnInput {
+                token_usage: turn_token_usage,
+                tool_calls,
+            },
+        );
     }
 
     pub(crate) async fn record_compaction_finished_for_semantic_compact(&self) {

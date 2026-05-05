@@ -11,6 +11,7 @@ use crate::session::PreviousTurnSettings;
 use crate::session::checkpoint_policy::SemanticCompactDecision;
 use crate::session::checkpoint_policy::SemanticCompactInput;
 use crate::session::checkpoint_policy::SemanticCompactState;
+use crate::session::checkpoint_policy::SemanticCompactTurnInput;
 use crate::session::session::SessionConfiguration;
 use crate::session_startup_prewarm::SessionStartupPrewarmHandle;
 use codex_protocol::protocol::RateLimitSnapshot;
@@ -227,10 +228,10 @@ impl SessionState {
 
     pub(crate) fn record_regular_turn_finished_for_semantic_compact(
         &mut self,
-        turn_token_usage: &TokenUsage,
+        input: SemanticCompactTurnInput<'_>,
     ) {
         self.semantic_compact_state
-            .record_regular_turn_finished(turn_token_usage);
+            .record_regular_turn_finished(input);
     }
 
     pub(crate) fn record_compaction_finished_for_semantic_compact(&mut self) {

@@ -749,6 +749,7 @@ impl Session {
                 Some(TaskKind::Regular) => {
                     self.record_regular_turn_finished_for_semantic_compact(
                         &turn_token_usage_for_semantic_compact,
+                        turn_tool_calls,
                     )
                     .await;
                 }
