@@ -14,6 +14,7 @@ use crate::session::checkpoint_policy::SemanticCompactState;
 use crate::session::checkpoint_policy::SemanticCompactTurnInput;
 use crate::session::session::SessionConfiguration;
 use crate::session_startup_prewarm::SessionStartupPrewarmHandle;
+use crate::task_memory::TaskMemoryThrottleState;
 use codex_protocol::protocol::RateLimitSnapshot;
 use codex_protocol::protocol::TokenUsage;
 use codex_protocol::protocol::TokenUsageInfo;
@@ -37,6 +38,7 @@ pub(crate) struct SessionState {
     pub(crate) active_connector_selection: HashSet<String>,
     pub(crate) pending_session_start_source: Option<codex_hooks::SessionStartSource>,
     semantic_compact_state: SemanticCompactState,
+    pub(crate) task_memory_throttle_state: TaskMemoryThrottleState,
     git_checkpoint_baseline_dirty_paths_by_worktree: HashMap<String, HashSet<String>>,
     granted_permissions: Option<AdditionalPermissionProfile>,
     next_turn_is_first: bool,
@@ -58,6 +60,7 @@ impl SessionState {
             active_connector_selection: HashSet::new(),
             pending_session_start_source: None,
             semantic_compact_state: SemanticCompactState::default(),
+            task_memory_throttle_state: TaskMemoryThrottleState::default(),
             git_checkpoint_baseline_dirty_paths_by_worktree: HashMap::new(),
             granted_permissions: None,
             next_turn_is_first: true,

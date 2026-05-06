@@ -27,7 +27,9 @@ use crate::create_close_agent_tool_v1;
 use crate::create_close_agent_tool_v2;
 use crate::create_code_mode_tool;
 use crate::create_create_goal_tool;
+use crate::create_desktop_automation_tools;
 use crate::create_exec_command_tool;
+use crate::create_first_moves_tools;
 use crate::create_followup_task_tool;
 use crate::create_get_goal_tool;
 use crate::create_image_generation_tool;
@@ -394,6 +396,30 @@ pub fn build_tool_registry_plan(
     }
 
     if config.has_environment {
+        if config.first_moves_enabled {
+            for tool in create_first_moves_tools() {
+                let name = tool.name().to_string();
+                plan.push_spec(
+                    tool,
+                    /*supports_parallel_tool_calls*/ true,
+                    config.code_mode_enabled,
+                );
+                plan.register_handler(name, ToolHandlerKind::FirstMoves);
+            }
+        }
+
+        if config.desktop_automation_enabled {
+            for tool in create_desktop_automation_tools(config.desktop_automation_allow_input) {
+                let name = tool.name().to_string();
+                plan.push_spec(
+                    tool,
+                    /*supports_parallel_tool_calls*/ false,
+                    config.code_mode_enabled,
+                );
+                plan.register_handler(name, ToolHandlerKind::DesktopAutomation);
+            }
+        }
+
         plan.push_spec(
             create_view_image_tool(ViewImageToolOptions {
                 can_request_original_image_detail: config.can_request_original_image_detail,

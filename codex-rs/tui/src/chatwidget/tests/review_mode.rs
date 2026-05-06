@@ -339,16 +339,14 @@ async fn self_review_starts_after_patch_without_review() {
         },
     );
 
-    chat.handle_patch_apply_end_now(PatchApplyEndEvent {
-        call_id: "patch-1".to_string(),
-        turn_id: "turn-1".to_string(),
-        stdout: String::new(),
-        stderr: String::new(),
-        success: true,
+    handle_patch_apply_end(
+        &mut chat,
+        "patch-1",
+        "turn-1",
         changes,
-        status: CorePatchApplyStatus::Completed,
-    });
-    assert!(drain_insert_history(&mut rx).is_empty());
+        AppServerPatchApplyStatus::Completed,
+    );
+    let _ = drain_insert_history(&mut rx);
 
     chat.handle_codex_event(Event {
         id: "turn-complete".into(),
@@ -371,12 +369,13 @@ async fn self_review_starts_after_patch_without_review() {
 
     loop {
         match op_rx.try_recv() {
-            Ok(Op::Review { review_request }) => {
-                assert_eq!(review_request.target, ReviewTarget::UncommittedChanges);
-                assert_eq!(
-                    review_request.user_facing_hint,
-                    Some("automatic self-review of current changes".to_string())
-                );
+            Ok(Op::Review { target }) => {
+                let ReviewTarget::Custom { instructions } = target else {
+                    panic!("expected automatic self-review custom prompt, got {target:?}");
+                };
+                assert!(instructions.contains("Automatic self-review"));
+                assert!(instructions.contains("git status --short"));
+                assert!(instructions.contains("foo.txt"));
                 break;
             }
             Ok(_) => continue,
@@ -384,6 +383,84 @@ async fn self_review_starts_after_patch_without_review() {
             Err(TryRecvError::Disconnected) => panic!("expected self-review op but channel closed"),
         }
     }
+}
+
+#[tokio::test]
+async fn automatic_self_review_requests_auto_loop_after_review_complete() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    let mut changes = HashMap::new();
+    changes.insert(
+        PathBuf::from("foo.txt"),
+        FileChange::Add {
+            content: "hello\n".to_string(),
+        },
+    );
+
+    handle_patch_apply_end(
+        &mut chat,
+        "patch-1",
+        "turn-1",
+        changes,
+        AppServerPatchApplyStatus::Completed,
+    );
+    complete_turn(&mut chat, "turn-1");
+    assert_automatic_review_requested(&mut op_rx);
+
+    handle_turn_started(&mut chat, "review-turn");
+    handle_entered_review_mode(&mut chat, "automatic self-review of current changes");
+    handle_exited_review_mode(&mut chat);
+    assert!(!take_auto_loop_after_self_review_event(&mut rx));
+
+    handle_turn_completed(&mut chat, "review-turn", /*duration_ms*/ None);
+
+    assert!(take_auto_loop_after_self_review_event(&mut rx));
+    assert_matches!(chat.pending_notification, None);
+}
+
+#[tokio::test]
+async fn manual_review_does_not_request_auto_loop_after_review_complete() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+
+    handle_turn_started(&mut chat, "review-turn");
+    handle_entered_review_mode(&mut chat, "manual review");
+    handle_exited_review_mode(&mut chat);
+    handle_turn_completed(&mut chat, "review-turn", /*duration_ms*/ None);
+
+    assert!(!take_auto_loop_after_self_review_event(&mut rx));
+}
+
+#[tokio::test]
+async fn automatic_self_review_does_not_queue_auto_loop_when_blocked() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    let mut changes = HashMap::new();
+    changes.insert(
+        PathBuf::from("foo.txt"),
+        FileChange::Add {
+            content: "hello\n".to_string(),
+        },
+    );
+
+    handle_patch_apply_end(
+        &mut chat,
+        "patch-1",
+        "turn-1",
+        changes,
+        AppServerPatchApplyStatus::Completed,
+    );
+    complete_turn(&mut chat, "turn-1");
+    assert_automatic_review_requested(&mut op_rx);
+
+    handle_turn_started(&mut chat, "review-turn");
+    handle_entered_review_mode(&mut chat, "automatic self-review of current changes");
+    handle_exited_review_mode(&mut chat);
+    chat.bottom_pane
+        .set_composer_text("draft blocks loop".to_string(), Vec::new(), Vec::new());
+    handle_turn_completed(&mut chat, "review-turn", /*duration_ms*/ None);
+
+    assert!(!take_auto_loop_after_self_review_event(&mut rx));
 }
 
 #[tokio::test]
@@ -397,15 +474,13 @@ async fn explicit_review_suppresses_self_review_reminder() {
         },
     );
 
-    chat.handle_patch_apply_end_now(PatchApplyEndEvent {
-        call_id: "patch-1".to_string(),
-        turn_id: "turn-1".to_string(),
-        stdout: String::new(),
-        stderr: String::new(),
-        success: true,
+    handle_patch_apply_end(
+        &mut chat,
+        "patch-1",
+        "turn-1",
         changes,
-        status: CorePatchApplyStatus::Completed,
-    });
+        AppServerPatchApplyStatus::Completed,
+    );
     chat.handle_codex_event(Event {
         id: "review-start".into(),
         msg: EventMsg::EnteredReviewMode(ReviewRequest {
@@ -1513,4 +1588,48 @@ async fn review_queues_user_messages_snapshot() {
         "review_queues_user_messages_snapshot",
         normalize_snapshot_paths(term.backend().vt100().screen().contents())
     );
+}
+
+fn complete_turn(chat: &mut ChatWidget, turn_id: &str) {
+    chat.handle_codex_event(Event {
+        id: format!("{turn_id}-complete"),
+        msg: EventMsg::TurnComplete(TurnCompleteEvent {
+            turn_id: turn_id.to_string(),
+            last_agent_message: None,
+            completed_at: None,
+            duration_ms: None,
+            time_to_first_token_ms: None,
+        }),
+    });
+}
+
+fn assert_automatic_review_requested(op_rx: &mut tokio::sync::mpsc::UnboundedReceiver<Op>) {
+    loop {
+        match op_rx.try_recv() {
+            Ok(Op::Review { target }) => {
+                let ReviewTarget::Custom { instructions } = target else {
+                    panic!("expected automatic self-review custom prompt, got {target:?}");
+                };
+                assert!(instructions.contains("Automatic self-review"));
+                assert!(instructions.contains("git status --short"));
+                assert!(instructions.contains("foo.txt"));
+                break;
+            }
+            Ok(_) => continue,
+            Err(TryRecvError::Empty) => panic!("expected automatic self-review op"),
+            Err(TryRecvError::Disconnected) => panic!("expected self-review op but channel closed"),
+        }
+    }
+}
+
+fn take_auto_loop_after_self_review_event(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
+) -> bool {
+    let mut found = false;
+    while let Ok(event) = rx.try_recv() {
+        if matches!(event, AppEvent::SubmitAutoLoopAfterSelfReview) {
+            found = true;
+        }
+    }
+    found
 }

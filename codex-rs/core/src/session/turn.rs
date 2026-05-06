@@ -42,6 +42,8 @@ use crate::resolve_skill_dependencies_for_turn;
 use crate::session::PreviousTurnSettings;
 use crate::session::checkpoint_policy::SemanticCompactDecision;
 use crate::session::checkpoint_policy::SemanticCompactInput;
+use crate::session::first_moves::first_moves_context_for_fresh_turn;
+use crate::session::first_moves::merge_first_moves_context;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use crate::stream_events_utils::HandleOutputCtx;
@@ -307,24 +309,22 @@ pub(crate) async fn run_turn(
     } else {
         let initial_input_for_turn: ResponseInputItem = ResponseInputItem::from(input.clone());
         let response_item: ResponseItem = initial_input_for_turn.clone().into();
-        let user_prompt_submit_outcome = run_user_prompt_submit_hooks(
-            &sess,
-            &turn_context,
-            UserMessageItem::new(&input).message(),
-        )
-        .await;
+        let prompt = UserMessageItem::new(&input).message();
+        let first_moves_context =
+            first_moves_context_for_fresh_turn(&sess, &turn_context, prompt.as_str()).await;
+        let user_prompt_submit_outcome =
+            run_user_prompt_submit_hooks(&sess, &turn_context, prompt).await;
+        let additional_contexts = merge_first_moves_context(
+            first_moves_context,
+            user_prompt_submit_outcome.additional_contexts,
+        );
         if user_prompt_submit_outcome.should_stop {
-            record_additional_contexts(
-                &sess,
-                &turn_context,
-                user_prompt_submit_outcome.additional_contexts,
-            )
-            .await;
+            record_additional_contexts(&sess, &turn_context, additional_contexts).await;
             return None;
         }
         sess.record_user_prompt_and_emit_turn_item(turn_context.as_ref(), &input, response_item)
             .await;
-        user_prompt_submit_outcome.additional_contexts
+        additional_contexts
     };
     sess.services
         .analytics_events_client
@@ -431,9 +431,13 @@ pub(crate) async fn run_turn(
 
         // Construct the input that we will send to the model.
         let sampling_request_input: Vec<ResponseItem> = {
-            sess.clone_history()
+            let mut input = sess
+                .clone_history()
                 .await
-                .for_prompt(&turn_context.model_info.input_modalities)
+                .for_prompt(&turn_context.model_info.input_modalities);
+            sess.maybe_inject_task_memory_for_sampling(&mut input, auto_compact_limit)
+                .await;
+            input
         };
 
         let sampling_request_input_messages = sampling_request_input

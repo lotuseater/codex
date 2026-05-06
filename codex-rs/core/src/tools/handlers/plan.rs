@@ -23,7 +23,7 @@ const PLAN_UPDATED_MESSAGE: &str = "Plan updated";
 const SELF_REVIEW_CHECKPOINT_MESSAGE: &str = "\
 Plan updated
 
-Self-review checkpoint before continuing: inspect task order, missing verification, risky assumptions, and user/remote overlap. Revise the plan first if any issue is found.";
+Self-review checkpoint before continuing: actively review the plan as if the user had asked \"review and improve the plan\". Check task order, missing verification, risky assumptions, stale context, user constraints, and user/remote overlap. Revise the plan first if any issue is found.";
 
 impl ToolOutput for PlanToolOutput {
     fn log_preview(&self) -> String {

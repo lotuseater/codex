@@ -2421,10 +2421,12 @@ dependencies = [
  "codex-connectors",
  "codex-core-plugins",
  "codex-core-skills",
+ "codex-desktop-automation",
  "codex-exec-server",
  "codex-execpolicy",
  "codex-features",
  "codex-feedback",
+ "codex-first-moves",
  "codex-git-utils",
  "codex-hooks",
  "codex-login",
@@ -2613,6 +2615,20 @@ dependencies = [
  "pretty_assertions",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "codex-desktop-automation"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -2832,6 +2848,23 @@ dependencies = [
  "codex-protocol",
  "codex-utils-absolute-path",
  "serde",
+]
+
+[[package]]
+name = "codex-first-moves"
+version = "0.0.0"
+dependencies = [
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sha2",
+ "sqlx",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "walkdir",
 ]
 
 [[package]]

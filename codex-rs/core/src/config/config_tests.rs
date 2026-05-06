@@ -11,6 +11,8 @@ use codex_config::config_toml::AgentRoleToml;
 use codex_config::config_toml::AgentsToml;
 use codex_config::config_toml::AutoReviewToml;
 use codex_config::config_toml::ConfigToml;
+use codex_config::config_toml::FirstMovesModeToml;
+use codex_config::config_toml::FirstMovesPrewarmToml;
 use codex_config::config_toml::ProjectConfig;
 use codex_config::config_toml::RealtimeAudioConfig;
 use codex_config::config_toml::RealtimeConfig;
@@ -391,6 +393,62 @@ web_search = false
             view_image: None,
         })
     );
+}
+
+#[test]
+fn desktop_automation_config_deserializes() {
+    let cfg: ConfigToml = toml::from_str(
+        r#"
+[desktop_automation]
+enabled = false
+proactive = false
+allow_input = false
+prefer_app_harness = true
+"#,
+    )
+    .expect("TOML deserialization should succeed");
+
+    let config = cfg.desktop_automation.expect("desktop automation config");
+    assert_eq!(config.enabled, Some(false));
+    assert_eq!(config.proactive, Some(false));
+    assert_eq!(config.allow_input, Some(false));
+    assert_eq!(config.prefer_app_harness, Some(true));
+}
+
+#[test]
+fn first_moves_config_deserializes() {
+    let cfg: ConfigToml = toml::from_str(
+        r#"
+[first_moves]
+enabled = true
+mode = "suggest_only"
+inject_context = false
+prewarm = "off"
+max_candidates = 9
+max_context_moves = 4
+max_prewarm_files = 1
+min_context_score = 0.6
+min_prewarm_score = 0.9
+max_scan_files = 120
+max_scan_depth = 3
+max_read_bytes = 2048
+"#,
+    )
+    .expect("TOML deserialization should succeed");
+
+    let config = cfg.first_moves.expect("first moves config");
+    assert_eq!(config.enabled, Some(true));
+    assert_eq!(config.mode, Some(FirstMovesModeToml::SuggestOnly));
+    assert_eq!(config.inject_context, Some(false));
+    assert_eq!(config.prewarm, Some(FirstMovesPrewarmToml::Off));
+    assert_eq!(config.max_candidates, Some(9));
+    assert_eq!(config.max_context_moves, Some(4));
+    assert_eq!(config.max_prewarm_files, Some(1));
+    assert_eq!(config.min_context_score, Some(0.6));
+    assert_eq!(config.min_prewarm_score, Some(0.9));
+    assert_eq!(config.max_scan_files, Some(120));
+    assert_eq!(config.max_scan_depth, Some(3));
+    assert_eq!(config.max_read_bytes, Some(2048));
 }
 
 #[test]
@@ -6438,6 +6496,8 @@ async fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             background_terminal_max_timeout: DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS,
             ghost_snapshot: GhostSnapshotConfig::default(),
             multi_agent_v2: MultiAgentV2Config::default(),
+            desktop_automation: DesktopAutomationConfig::default(),
+            first_moves: FirstMovesConfig::default(),
             features: Features::with_defaults().into(),
             suppress_unstable_features_warning: false,
             active_profile: Some("o3".to_string()),
@@ -6640,6 +6700,8 @@ async fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         background_terminal_max_timeout: DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS,
         ghost_snapshot: GhostSnapshotConfig::default(),
         multi_agent_v2: MultiAgentV2Config::default(),
+        desktop_automation: DesktopAutomationConfig::default(),
+        first_moves: FirstMovesConfig::default(),
         features: Features::with_defaults().into(),
         suppress_unstable_features_warning: false,
         active_profile: Some("gpt3".to_string()),
@@ -6796,6 +6858,8 @@ async fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         background_terminal_max_timeout: DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS,
         ghost_snapshot: GhostSnapshotConfig::default(),
         multi_agent_v2: MultiAgentV2Config::default(),
+        desktop_automation: DesktopAutomationConfig::default(),
+        first_moves: FirstMovesConfig::default(),
         features: Features::with_defaults().into(),
         suppress_unstable_features_warning: false,
         active_profile: Some("zdr".to_string()),
@@ -6937,6 +7001,8 @@ async fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         background_terminal_max_timeout: DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS,
         ghost_snapshot: GhostSnapshotConfig::default(),
         multi_agent_v2: MultiAgentV2Config::default(),
+        desktop_automation: DesktopAutomationConfig::default(),
+        first_moves: FirstMovesConfig::default(),
         features: Features::with_defaults().into(),
         suppress_unstable_features_warning: false,
         active_profile: Some("gpt5".to_string()),

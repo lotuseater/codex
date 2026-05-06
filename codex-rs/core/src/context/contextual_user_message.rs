@@ -7,6 +7,7 @@ use super::FragmentRegistration;
 use super::FragmentRegistrationProxy;
 use super::SkillInstructions;
 use super::SubagentNotification;
+use super::TaskMemory;
 use super::TurnAborted;
 use super::UserInstructions;
 use super::UserShellCommand;
@@ -23,6 +24,8 @@ static TURN_ABORTED_REGISTRATION: FragmentRegistrationProxy<TurnAborted> =
     FragmentRegistrationProxy::new();
 static SUBAGENT_NOTIFICATION_REGISTRATION: FragmentRegistrationProxy<SubagentNotification> =
     FragmentRegistrationProxy::new();
+static TASK_MEMORY_REGISTRATION: FragmentRegistrationProxy<TaskMemory> =
+    FragmentRegistrationProxy::new();
 
 static CONTEXTUAL_USER_FRAGMENTS: &[&dyn FragmentRegistration] = &[
     &USER_INSTRUCTIONS_REGISTRATION,
@@ -31,6 +34,7 @@ static CONTEXTUAL_USER_FRAGMENTS: &[&dyn FragmentRegistration] = &[
     &USER_SHELL_COMMAND_REGISTRATION,
     &TURN_ABORTED_REGISTRATION,
     &SUBAGENT_NOTIFICATION_REGISTRATION,
+    &TASK_MEMORY_REGISTRATION,
 ];
 
 fn is_standard_contextual_user_text(text: &str) -> bool {

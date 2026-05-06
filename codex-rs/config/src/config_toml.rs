@@ -360,6 +360,14 @@ pub struct ConfigToml {
     /// Nested tools section for feature toggles
     pub tools: Option<ToolsToml>,
 
+    /// Built-in Windows desktop automation and harness detection settings.
+    #[serde(default)]
+    pub desktop_automation: Option<DesktopAutomationToml>,
+
+    /// Native first-turn repo navigation predictor settings.
+    #[serde(default)]
+    pub first_moves: Option<FirstMovesToml>,
+
     /// Additional discoverable tools that can be suggested for installation.
     pub tool_suggest: Option<ToolSuggestConfig>,
 
@@ -606,6 +614,80 @@ pub struct ToolsToml {
     /// Enable the `view_image` tool that lets the agent attach local images.
     #[serde(default)]
     pub view_image: Option<bool>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct DesktopAutomationToml {
+    /// Enables the built-in native DAB tool family. Defaults to true on Windows.
+    pub enabled: Option<bool>,
+
+    /// Enables proactive visual automation guidance and context. Defaults to true.
+    pub proactive: Option<bool>,
+
+    /// Enables tools that send clicks or keys. Defaults to true.
+    pub allow_input: Option<bool>,
+
+    /// Prefer app-native harnesses before generic DAB. Defaults to true.
+    pub prefer_app_harness: Option<bool>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct FirstMovesToml {
+    /// Enable native first-moves prediction. Defaults to true.
+    pub enabled: Option<bool>,
+
+    /// Run mode: auto, suggest_only, prewarm, or off. Defaults to auto.
+    pub mode: Option<FirstMovesModeToml>,
+
+    /// Inject ranked opening reads/searches into the first model turn. Defaults to true.
+    pub inject_context: Option<bool>,
+
+    /// Prewarm strategy for high-confidence file reads. Defaults to high_confidence_only.
+    pub prewarm: Option<FirstMovesPrewarmToml>,
+
+    /// Maximum candidates returned by the predictor and tool. Defaults to 14.
+    pub max_candidates: Option<usize>,
+
+    /// Maximum candidates included in first-turn context. Defaults to 8.
+    pub max_context_moves: Option<usize>,
+
+    /// Maximum files whose excerpts are embedded in first-turn context. Defaults to 2.
+    pub max_prewarm_files: Option<usize>,
+
+    /// Minimum score for first-turn context inclusion. Defaults to 0.55.
+    pub min_context_score: Option<f64>,
+
+    /// Minimum score for excerpt prewarm. Defaults to 0.82.
+    pub min_prewarm_score: Option<f64>,
+
+    /// Maximum repo files scanned during prediction. Defaults to 2000.
+    pub max_scan_files: Option<usize>,
+
+    /// Maximum directory depth scanned during prediction. Defaults to 6.
+    pub max_scan_depth: Option<usize>,
+
+    /// Maximum bytes read from a prewarmed file excerpt. Defaults to 8192.
+    pub max_read_bytes: Option<usize>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FirstMovesModeToml {
+    #[default]
+    Auto,
+    SuggestOnly,
+    Prewarm,
+    Off,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FirstMovesPrewarmToml {
+    Off,
+    #[default]
+    HighConfidenceOnly,
 }
 
 #[derive(Deserialize)]

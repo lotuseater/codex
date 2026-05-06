@@ -1067,12 +1067,26 @@ fn approvals_reviewer_override_from_config(
 fn config_request_overrides_from_config(
     config: &Config,
 ) -> Option<HashMap<String, serde_json::Value>> {
-    config.active_profile.as_ref().map(|profile| {
-        HashMap::from([(
+    let mut overrides = HashMap::new();
+    if let Some(profile) = config.active_profile.as_ref() {
+        overrides.insert(
             "profile".to_string(),
             serde_json::Value::String(profile.clone()),
-        )])
-    })
+        );
+    }
+    if let Some(effort) = config.model_reasoning_effort {
+        overrides.insert(
+            "model_reasoning_effort".to_string(),
+            serde_json::Value::String(effort.to_string()),
+        );
+    }
+    if let Some(summary) = config.model_reasoning_summary {
+        overrides.insert(
+            "model_reasoning_summary".to_string(),
+            serde_json::Value::String(summary.to_string()),
+        );
+    }
+    (!overrides.is_empty()).then_some(overrides)
 }
 
 fn sandbox_mode_from_permission_profile(
@@ -1565,6 +1579,42 @@ mod tests {
         );
 
         assert_eq!(params.session_start_source, Some(ThreadStartSource::Clear));
+    }
+
+    #[tokio::test]
+    async fn thread_lifecycle_params_forward_current_reasoning_effort_override() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let mut config = build_config(&temp_dir).await;
+        config.model_reasoning_effort = Some(codex_protocol::openai_models::ReasoningEffort::XHigh);
+        let thread_id = ThreadId::new();
+
+        let start = thread_start_params_from_config(
+            &config,
+            ThreadParamsMode::Embedded,
+            /*remote_cwd_override*/ None,
+            /*session_start_source*/ None,
+        );
+        let resume = thread_resume_params_from_config(
+            config.clone(),
+            thread_id,
+            ThreadParamsMode::Embedded,
+            /*remote_cwd_override*/ None,
+        );
+        let fork = thread_fork_params_from_config(
+            config,
+            thread_id,
+            ThreadParamsMode::Embedded,
+            /*remote_cwd_override*/ None,
+        );
+
+        for overrides in [start.config, resume.config, fork.config] {
+            assert_eq!(
+                overrides
+                    .expect("expected config overrides")
+                    .get("model_reasoning_effort"),
+                Some(&serde_json::Value::String("xhigh".to_string()))
+            );
+        }
     }
 
     #[test]

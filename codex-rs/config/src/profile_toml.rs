@@ -3,6 +3,8 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 
+use crate::config_toml::DesktopAutomationToml;
+use crate::config_toml::FirstMovesToml;
 use crate::config_toml::ToolsToml;
 use crate::types::AnalyticsConfigToml;
 use crate::types::ApprovalsReviewer;
@@ -61,6 +63,8 @@ pub struct ConfigProfile {
     pub experimental_use_freeform_apply_patch: Option<bool>,
     pub tools_view_image: Option<bool>,
     pub tools: Option<ToolsToml>,
+    pub desktop_automation: Option<DesktopAutomationToml>,
+    pub first_moves: Option<FirstMovesToml>,
     pub web_search: Option<WebSearchMode>,
     pub analytics: Option<AnalyticsConfigToml>,
     #[serde(default)]

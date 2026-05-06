@@ -2,11 +2,14 @@
 
 Date: 2026-05-01
 
+Update: 2026-05-06
+
 ## Current Result
 
 The working tree now contains a Codex-side operation-cache interceptor plus a
-thin Wizard bridge CLI. The system-wide wrapper is currently pointed at a
-copied custom binary and has `WIZARD_CODEX_OPERATION_CACHE=1` enabled.
+thin Wizard bridge CLI. As of 2026-05-06, Codex treats explicit off values in
+`WIZARD_CODEX_OPERATION_CACHE` as disabled, but otherwise auto-discovers
+Wizard's bridge at the standard `Wizard_Erasmus` checkout path when present.
 
 Evidence from `scripts/check-operation-cache.ps1`:
 
@@ -21,7 +24,8 @@ Evidence from `scripts/check-operation-cache.ps1`:
 - The legacy Wizard/Claude operation cache DB exists at `~\.claude\cache\tool_cache.sqlite`.
 - That shared DB has Codex-tagged rows and current-project rows for this repo.
 - That shared DB has no `project_cache_state` row for this repo.
-- This repo has no `.first_moves.db`.
+- This repo now has a `.first_moves.db`, and Codex also has native
+  system-wide first-moves storage under `~\.codex\cache\first-moves`.
 
 ## What Is Working
 
@@ -39,10 +43,19 @@ Codex-side interceptor:
 
 - Code: `codex-rs/core/src/tools/operation_cache.rs`
 - Integration: `codex-rs/core/src/tools/registry.rs`
-- Gate: `WIZARD_CODEX_OPERATION_CACHE=1`
-- Bridge path: `WIZARD_CODEX_CACHE_BRIDGE_PY`
+- Gate: explicit off values in `WIZARD_CODEX_OPERATION_CACHE` disable the
+  bridge; unset now allows auto-discovery.
+- Bridge path: `WIZARD_CODEX_CACHE_BRIDGE_PY`, or the standard
+  `Documents\GitHub\Wizard_Erasmus\src\mcp\hooks\codex_cache_bridge_cli.py`
+  path when it exists.
 - Cache DB selection: delegated to Wizard's existing `WIZARD_TOOL_CACHE_DIR`
   resolver.
+- Scope metadata: Codex sends `repo_root`, `repo_name`, and
+  `system_cache_namespace` in the JSON event and exports
+  `CODEX_PROJECT_ROOT`, `CODEX_PROJECT_NAME`, and
+  `CODEX_PROJECT_CACHE_NAMESPACE` to the bridge subprocess. The namespace is
+  `<safe-repo-folder-name>-<stable-root-hash>` to avoid collisions when Codex is
+  launched from common leaf folders such as `src`.
 
 Wizard bridge CLI:
 

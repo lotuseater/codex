@@ -57,6 +57,11 @@ pub(super) async fn spawn_review_thread(
     .with_spawn_agent_usage_hint_text(config.multi_agent_v2.usage_hint_text.clone())
     .with_hide_spawn_agent_metadata(config.multi_agent_v2.hide_spawn_agent_metadata)
     .with_goal_tools_allowed(goal_tools_supported)
+    .with_desktop_automation_config(
+        config.desktop_automation.enabled,
+        config.desktop_automation.allow_input,
+    )
+    .with_first_moves_config(config.first_moves.enabled())
     .with_max_concurrent_threads_per_session(config.agent_max_threads)
     .with_wait_agent_min_timeout_ms(
         review_features

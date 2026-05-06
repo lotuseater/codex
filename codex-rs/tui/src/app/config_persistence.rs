@@ -124,6 +124,65 @@ impl App {
         true
     }
 
+    pub(super) fn scoped_config_segments(&self, key: &str) -> Vec<String> {
+        if let Some(profile) = self.active_profile.as_deref() {
+            vec!["profiles".to_string(), profile.to_string(), key.to_string()]
+        } else {
+            vec![key.to_string()]
+        }
+    }
+
+    pub(super) async fn persist_approval_policy_selection(&mut self, policy: AskForApproval) {
+        let edit = ConfigEdit::SetPath {
+            segments: self.scoped_config_segments("approval_policy"),
+            value: policy.to_core().to_string().into(),
+        };
+        if let Err(err) = ConfigEditsBuilder::new(&self.config.codex_home)
+            .with_edits([edit])
+            .apply()
+            .await
+        {
+            tracing::error!(error = %err, "failed to persist approval policy update");
+            self.chat_widget
+                .add_error_message(format!("Failed to save approval policy: {err}"));
+        }
+    }
+
+    pub(super) async fn persist_permission_profile_selection(
+        &mut self,
+        permission_profile: &PermissionProfile,
+    ) {
+        let Some(sandbox_mode) = sandbox_mode_config_value_for_permission_profile(
+            permission_profile,
+            self.config.cwd.as_path(),
+        ) else {
+            self.chat_widget.add_error_message(
+                "Cannot save this permission profile because it has no legacy config representation."
+                    .to_string(),
+            );
+            return;
+        };
+
+        let mut edits = vec![ConfigEdit::SetPath {
+            segments: self.scoped_config_segments("sandbox_mode"),
+            value: sandbox_mode.into(),
+        }];
+        if self.active_profile.is_none() {
+            edits.push(ConfigEdit::ClearPath {
+                segments: vec!["default_permissions".to_string()],
+            });
+        }
+        if let Err(err) = ConfigEditsBuilder::new(&self.config.codex_home)
+            .with_edits(edits)
+            .apply()
+            .await
+        {
+            tracing::error!(error = %err, "failed to persist permission profile update");
+            self.chat_widget
+                .add_error_message(format!("Failed to save permission profile: {err}"));
+        }
+    }
+
     pub(super) async fn update_feature_flags(&mut self, updates: Vec<(Feature, bool)>) {
         if updates.is_empty() {
             return;
@@ -542,6 +601,30 @@ impl App {
     }
 }
 
+fn sandbox_mode_config_value_for_permission_profile(
+    permission_profile: &PermissionProfile,
+    cwd: &Path,
+) -> Option<&'static str> {
+    match permission_profile {
+        PermissionProfile::Disabled => Some("danger-full-access"),
+        PermissionProfile::External { .. } => None,
+        PermissionProfile::Managed { .. } => {
+            let file_system_policy = permission_profile.file_system_sandbox_policy();
+            if file_system_policy.has_full_disk_write_access() {
+                return permission_profile
+                    .network_sandbox_policy()
+                    .is_enabled()
+                    .then_some("danger-full-access");
+            }
+            if file_system_policy.can_write_path_with_cwd(cwd, cwd) {
+                Some("workspace-write")
+            } else {
+                Some("read-only")
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -606,6 +689,29 @@ mod tests {
             app_enabled_in_effective_config(&app.config, &app_id),
             Some(false)
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn permission_selection_persistence_saves_full_access_choice() -> Result<()> {
+        let mut app = make_test_app().await;
+        let codex_home = tempdir()?;
+        app.config.codex_home = codex_home.path().to_path_buf().abs();
+        std::fs::write(
+            codex_home.path().join(codex_config::CONFIG_TOML_FILE),
+            "default_permissions = \":workspace\"\n",
+        )?;
+
+        app.persist_approval_policy_selection(AskForApproval::Never)
+            .await;
+        app.persist_permission_profile_selection(&PermissionProfile::Disabled)
+            .await;
+
+        let updated =
+            std::fs::read_to_string(codex_home.path().join(codex_config::CONFIG_TOML_FILE))?;
+        assert!(updated.contains("approval_policy = \"never\""));
+        assert!(updated.contains("sandbox_mode = \"danger-full-access\""));
+        assert!(!updated.contains("default_permissions"));
         Ok(())
     }
 

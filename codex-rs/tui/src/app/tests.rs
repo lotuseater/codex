@@ -3836,6 +3836,11 @@ async fn make_test_app_with_channels() -> (
             pending_app_server_requests: PendingAppServerRequests::default(),
             pending_plugin_enabled_writes: HashMap::new(),
             pending_hook_enabled_writes: HashMap::new(),
+            auto_loop: AutoLoopState::new(AutoLoopSettings::new(
+                /*enabled*/ false,
+                Duration::from_secs(300),
+                "go on".to_string(),
+            )),
         },
         rx,
         op_rx,
@@ -4216,6 +4221,29 @@ async fn feedback_submission_for_inactive_thread_replays_into_origin_thread() {
         cell.contains("• Feedback uploaded. Please open an issue using the following URL:")
             && cell.contains("uploaded-thread")
     }));
+}
+
+#[tokio::test]
+async fn auto_loop_after_self_review_submits_configured_message() {
+    let (mut app, _app_event_rx, mut op_rx) = make_test_app_with_channels().await;
+    app.auto_loop.settings.enabled = true;
+    app.auto_loop.settings.message = "resume after review".to_string();
+    app.chat_widget.thread_id = Some(ThreadId::new());
+
+    assert!(app.handle_auto_loop_after_self_review());
+
+    match next_user_turn_op(&mut op_rx) {
+        Op::UserTurn { items, .. } => {
+            assert_eq!(
+                items,
+                vec![UserInput::Text {
+                    text: "resume after review".to_string(),
+                    text_elements: Vec::new(),
+                }]
+            );
+        }
+        other => panic!("expected UserTurn op, got {other:?}"),
+    }
 }
 
 fn next_user_turn_op(op_rx: &mut tokio::sync::mpsc::UnboundedReceiver<Op>) -> Op {

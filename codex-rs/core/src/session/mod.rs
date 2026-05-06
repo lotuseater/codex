@@ -188,6 +188,7 @@ mod checkpoint_git;
 pub(crate) mod checkpoint_policy;
 mod checkpoint_scratchpad;
 mod config_lock;
+mod first_moves;
 mod handlers;
 mod mcp;
 mod multi_agents;
@@ -2879,6 +2880,59 @@ impl Session {
     pub(crate) async fn clone_history(&self) -> ContextManager {
         let state = self.state.lock().await;
         state.clone_history()
+    }
+
+    pub(crate) async fn maybe_inject_task_memory_for_sampling(
+        &self,
+        input: &mut Vec<ResponseItem>,
+        auto_compact_limit: i64,
+    ) {
+        let current_memory = crate::task_memory::build_task_memory(input);
+        let contains_existing_task_memory = crate::task_memory::contains_task_memory_item(input);
+        let existing_digest = crate::task_memory::find_task_memory_digest(input);
+        if contains_existing_task_memory
+            && existing_digest.as_deref() == current_memory.as_ref().map(|memory| memory.digest())
+            && existing_digest.is_some()
+        {
+            return;
+        }
+
+        if contains_existing_task_memory {
+            crate::task_memory::remove_task_memory_items(input);
+        }
+        let Some(task_memory) = current_memory else {
+            return;
+        };
+
+        let estimated_tokens = crate::task_memory::estimated_prompt_tokens(input);
+        if !crate::task_memory::should_inject_under_pressure(estimated_tokens, auto_compact_limit) {
+            return;
+        }
+
+        let real_user_message_count = crate::task_memory::real_user_message_count(input);
+        {
+            let mut state = self.state.lock().await;
+            if !state.task_memory_throttle_state.should_inject(
+                task_memory.digest(),
+                real_user_message_count,
+                std::time::Instant::now(),
+            ) {
+                return;
+            }
+        }
+
+        let memory_item = task_memory.into_response_item();
+        *input = compact::insert_initial_context_before_last_real_user_or_summary(
+            std::mem::take(input),
+            vec![memory_item],
+        );
+    }
+
+    pub(crate) async fn reset_task_memory_throttle_after_compaction(&self, digest: Option<&str>) {
+        let mut state = self.state.lock().await;
+        state
+            .task_memory_throttle_state
+            .reset_after_compaction(digest);
     }
 
     pub(crate) async fn reference_context_item(&self) -> Option<TurnContextItem> {

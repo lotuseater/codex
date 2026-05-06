@@ -203,6 +203,11 @@ impl TurnContext {
         .with_spawn_agent_usage_hint_text(config.multi_agent_v2.usage_hint_text.clone())
         .with_hide_spawn_agent_metadata(config.multi_agent_v2.hide_spawn_agent_metadata)
         .with_goal_tools_allowed(self.tools_config.goal_tools)
+        .with_desktop_automation_config(
+            config.desktop_automation.enabled,
+            config.desktop_automation.allow_input,
+        )
+        .with_first_moves_config(config.first_moves.enabled())
         .with_max_concurrent_threads_per_session(
             config
                 .features
@@ -481,6 +486,11 @@ impl Session {
         .with_spawn_agent_usage_hint_text(per_turn_config.multi_agent_v2.usage_hint_text.clone())
         .with_hide_spawn_agent_metadata(per_turn_config.multi_agent_v2.hide_spawn_agent_metadata)
         .with_goal_tools_allowed(goal_tools_supported)
+        .with_desktop_automation_config(
+            per_turn_config.desktop_automation.enabled,
+            per_turn_config.desktop_automation.allow_input,
+        )
+        .with_first_moves_config(per_turn_config.first_moves.enabled())
         .with_max_concurrent_threads_per_session(
             per_turn_config
                 .features

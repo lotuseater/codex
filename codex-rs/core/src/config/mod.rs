@@ -26,6 +26,10 @@ use codex_config::ThreadConfigLoader;
 use codex_config::config_toml::ConfigLockfileToml;
 use codex_config::config_toml::ConfigToml;
 use codex_config::config_toml::DEFAULT_PROJECT_DOC_MAX_BYTES;
+use codex_config::config_toml::DesktopAutomationToml;
+use codex_config::config_toml::FirstMovesModeToml;
+use codex_config::config_toml::FirstMovesPrewarmToml;
+use codex_config::config_toml::FirstMovesToml;
 use codex_config::config_toml::ProjectConfig;
 use codex_config::config_toml::RealtimeAudioConfig;
 use codex_config::config_toml::RealtimeConfig;
@@ -67,6 +71,9 @@ use codex_features::FeatureToml;
 use codex_features::Features;
 use codex_features::FeaturesToml;
 use codex_features::MultiAgentV2ConfigToml;
+use codex_first_moves::FirstMovesConfig;
+use codex_first_moves::FirstMovesMode;
+use codex_first_moves::FirstMovesPrewarm;
 use codex_git_utils::resolve_root_git_project_for_trust;
 use codex_login::AuthManagerConfig;
 use codex_mcp::McpConfig;
@@ -768,6 +775,12 @@ pub struct Config {
     /// Settings specific to the task-path-based multi-agent tool surface.
     pub multi_agent_v2: MultiAgentV2Config,
 
+    /// Built-in Windows desktop automation and harness detection settings.
+    pub desktop_automation: DesktopAutomationConfig,
+
+    /// Native first-turn repo navigation predictor settings.
+    pub first_moves: FirstMovesConfig,
+
     /// Centralized feature flags; source of truth for feature gating.
     pub features: ManagedFeatures,
 
@@ -834,6 +847,25 @@ impl Default for MultiAgentV2Config {
             root_agent_usage_hint_text: None,
             subagent_usage_hint_text: None,
             hide_spawn_agent_metadata: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct DesktopAutomationConfig {
+    pub enabled: bool,
+    pub proactive: bool,
+    pub allow_input: bool,
+    pub prefer_app_harness: bool,
+}
+
+impl Default for DesktopAutomationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            proactive: true,
+            allow_input: true,
+            prefer_app_harness: true,
         }
     }
 }
@@ -1945,6 +1977,110 @@ fn multi_agent_v2_toml_config(features: Option<&FeaturesToml>) -> Option<&MultiA
     }
 }
 
+fn resolve_desktop_automation_config(
+    base: Option<&DesktopAutomationToml>,
+    profile: Option<&DesktopAutomationToml>,
+) -> DesktopAutomationConfig {
+    DesktopAutomationConfig {
+        enabled: profile
+            .and_then(|config| config.enabled)
+            .or_else(|| base.and_then(|config| config.enabled))
+            .unwrap_or(true),
+        proactive: profile
+            .and_then(|config| config.proactive)
+            .or_else(|| base.and_then(|config| config.proactive))
+            .unwrap_or(true),
+        allow_input: profile
+            .and_then(|config| config.allow_input)
+            .or_else(|| base.and_then(|config| config.allow_input))
+            .unwrap_or(true),
+        prefer_app_harness: profile
+            .and_then(|config| config.prefer_app_harness)
+            .or_else(|| base.and_then(|config| config.prefer_app_harness))
+            .unwrap_or(true),
+    }
+}
+
+fn resolve_first_moves_config(
+    base: Option<&FirstMovesToml>,
+    profile: Option<&FirstMovesToml>,
+) -> FirstMovesConfig {
+    let defaults = FirstMovesConfig::default();
+    let enabled = profile
+        .and_then(|config| config.enabled)
+        .or_else(|| base.and_then(|config| config.enabled))
+        .unwrap_or(true);
+    let mut mode = profile
+        .and_then(|config| config.mode)
+        .or_else(|| base.and_then(|config| config.mode))
+        .map(first_moves_mode_from_toml)
+        .unwrap_or(defaults.mode);
+    if !enabled {
+        mode = FirstMovesMode::Off;
+    }
+
+    FirstMovesConfig {
+        mode,
+        inject_context: profile
+            .and_then(|config| config.inject_context)
+            .or_else(|| base.and_then(|config| config.inject_context))
+            .unwrap_or(defaults.inject_context),
+        prewarm: profile
+            .and_then(|config| config.prewarm)
+            .or_else(|| base.and_then(|config| config.prewarm))
+            .map(first_moves_prewarm_from_toml)
+            .unwrap_or(defaults.prewarm),
+        max_candidates: profile
+            .and_then(|config| config.max_candidates)
+            .or_else(|| base.and_then(|config| config.max_candidates))
+            .unwrap_or(defaults.max_candidates),
+        max_context_moves: profile
+            .and_then(|config| config.max_context_moves)
+            .or_else(|| base.and_then(|config| config.max_context_moves))
+            .unwrap_or(defaults.max_context_moves),
+        max_prewarm_files: profile
+            .and_then(|config| config.max_prewarm_files)
+            .or_else(|| base.and_then(|config| config.max_prewarm_files))
+            .unwrap_or(defaults.max_prewarm_files),
+        min_context_score: profile
+            .and_then(|config| config.min_context_score)
+            .or_else(|| base.and_then(|config| config.min_context_score))
+            .unwrap_or(defaults.min_context_score),
+        min_prewarm_score: profile
+            .and_then(|config| config.min_prewarm_score)
+            .or_else(|| base.and_then(|config| config.min_prewarm_score))
+            .unwrap_or(defaults.min_prewarm_score),
+        max_scan_files: profile
+            .and_then(|config| config.max_scan_files)
+            .or_else(|| base.and_then(|config| config.max_scan_files))
+            .unwrap_or(defaults.max_scan_files),
+        max_scan_depth: profile
+            .and_then(|config| config.max_scan_depth)
+            .or_else(|| base.and_then(|config| config.max_scan_depth))
+            .unwrap_or(defaults.max_scan_depth),
+        max_read_bytes: profile
+            .and_then(|config| config.max_read_bytes)
+            .or_else(|| base.and_then(|config| config.max_read_bytes))
+            .unwrap_or(defaults.max_read_bytes),
+    }
+}
+
+fn first_moves_mode_from_toml(mode: FirstMovesModeToml) -> FirstMovesMode {
+    match mode {
+        FirstMovesModeToml::Auto => FirstMovesMode::Auto,
+        FirstMovesModeToml::SuggestOnly => FirstMovesMode::SuggestOnly,
+        FirstMovesModeToml::Prewarm => FirstMovesMode::Prewarm,
+        FirstMovesModeToml::Off => FirstMovesMode::Off,
+    }
+}
+
+fn first_moves_prewarm_from_toml(prewarm: FirstMovesPrewarmToml) -> FirstMovesPrewarm {
+    match prewarm {
+        FirstMovesPrewarmToml::Off => FirstMovesPrewarm::Off,
+        FirstMovesPrewarmToml::HighConfidenceOnly => FirstMovesPrewarm::HighConfidenceOnly,
+    }
+}
+
 fn apps_mcp_path_override_toml_config(
     features: Option<&FeaturesToml>,
 ) -> Option<&AppsMcpPathOverrideConfigToml> {
@@ -2645,6 +2781,10 @@ impl Config {
             });
 
         let forced_login_method = cfg.forced_login_method;
+        let desktop_automation =
+            resolve_desktop_automation_config(cfg.desktop_automation.as_ref(), config_profile.desktop_automation.as_ref());
+        let first_moves =
+            resolve_first_moves_config(cfg.first_moves.as_ref(), config_profile.first_moves.as_ref());
 
         let model = model.or(config_profile.model).or(cfg.model);
         let mut notices = cfg.notice.unwrap_or_default();
@@ -3051,6 +3191,8 @@ impl Config {
             background_terminal_max_timeout,
             ghost_snapshot,
             multi_agent_v2,
+            desktop_automation,
+            first_moves,
             features,
             suppress_unstable_features_warning: cfg
                 .suppress_unstable_features_warning

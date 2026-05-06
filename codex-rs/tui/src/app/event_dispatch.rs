@@ -105,6 +105,10 @@ impl App {
                 self.handle_auto_loop_update(update);
                 tui.frame_requester().schedule_frame();
             }
+            AppEvent::SubmitAutoLoopAfterSelfReview => {
+                self.handle_auto_loop_after_self_review();
+                tui.frame_requester().schedule_frame();
+            }
             AppEvent::ResumeSessionByIdOrName(id_or_name) => {
                 match crate::lookup_session_target_with_app_server(app_server, &id_or_name).await? {
                     Some(target_session) => {
@@ -1363,12 +1367,15 @@ impl App {
                 self.chat_widget.set_approval_policy(approval_policy);
                 self.sync_active_thread_permission_settings_to_cached_session()
                     .await;
+                self.persist_approval_policy_selection(approval_policy)
+                    .await;
             }
             AppEvent::UpdatePermissionProfile(permission_profile) => {
                 #[cfg(target_os = "windows")]
                 let permission_profile_is_managed_restricted =
                     managed_filesystem_sandbox_is_restricted(&permission_profile);
                 let permission_profile_for_chat = permission_profile.clone();
+                let permission_profile_for_persist = permission_profile.clone();
 
                 let mut config = self.config.clone();
                 if !self.try_set_permission_profile_on_config(
@@ -1392,6 +1399,8 @@ impl App {
                 self.runtime_permission_profile_override =
                     Some(self.config.permissions.permission_profile());
                 self.sync_active_thread_permission_settings_to_cached_session()
+                    .await;
+                self.persist_permission_profile_selection(&permission_profile_for_persist)
                     .await;
 
                 // If a managed filesystem sandbox is active, run the Windows

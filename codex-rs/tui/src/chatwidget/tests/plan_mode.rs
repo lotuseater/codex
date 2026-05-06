@@ -961,7 +961,7 @@ async fn plan_implementation_popup_skips_without_proposed_plan() {
 
 #[tokio::test]
 async fn plan_implementation_popup_shows_after_proposed_plan_output() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
     chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
     let plan_mask = collaboration_modes::mask_for_kind(chat.model_catalog.as_ref(), ModeKind::Plan)
         .expect("expected plan collaboration mask");
@@ -976,8 +976,133 @@ async fn plan_implementation_popup_shows_after_proposed_plan_output() {
 
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
+        !popup.contains(PLAN_IMPLEMENTATION_TITLE),
+        "expected plan self-review before implementation prompt, got {popup:?}"
+    );
+    match next_submit_op(&mut op_rx) {
+        Op::UserTurn { items, .. } => {
+            let [UserInput::Text { text, .. }] = items.as_slice() else {
+                panic!("expected one text item, got {items:?}");
+            };
+            assert!(text.contains("Self-review the plan below before implementation."));
+            assert!(text.contains("- Step 1\n- Step 2"));
+            assert!(text.contains("Return the revised plan as the next proposed plan."));
+        }
+        other => panic!("expected plan self-review user turn, got {other:?}"),
+    }
+
+    chat.on_task_started();
+    chat.on_plan_item_completed("- Step 1\n- Step 2\n- Verify\n".to_string());
+    chat.on_task_complete(
+        /*last_agent_message*/ None, /*duration_ms*/ None, /*from_replay*/ false,
+    );
+
+    let popup = render_bottom_popup(&chat, /*width*/ 80);
+    assert!(
         popup.contains(PLAN_IMPLEMENTATION_TITLE),
-        "expected plan popup after proposed plan output, got {popup:?}"
+        "expected plan popup after proposed plan self-review, got {popup:?}"
+    );
+}
+
+#[tokio::test]
+async fn plan_self_review_preempts_regular_self_review_after_plan_work() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
+    chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
+    let plan_mask = collaboration_modes::mask_for_kind(chat.model_catalog.as_ref(), ModeKind::Plan)
+        .expect("expected plan collaboration mask");
+    chat.set_collaboration_mask(plan_mask);
+    let mut changes = HashMap::new();
+    changes.insert(
+        PathBuf::from("notes.md"),
+        FileChange::Add {
+            content: "plan notes\n".to_string(),
+        },
+    );
+
+    chat.on_task_started();
+    handle_patch_apply_end(
+        &mut chat,
+        "patch-1",
+        "turn-1",
+        changes,
+        AppServerPatchApplyStatus::Completed,
+    );
+    chat.on_plan_item_completed("- Step 1\n- Verify\n".to_string());
+    chat.on_task_complete(
+        /*last_agent_message*/ None, /*duration_ms*/ None, /*from_replay*/ false,
+    );
+
+    let inserted = drain_insert_history(&mut rx);
+    let rendered = inserted
+        .iter()
+        .map(|lines| lines_to_single_string(lines))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(!rendered.contains("Self-review required"));
+    match next_submit_op(&mut op_rx) {
+        Op::UserTurn { items, .. } => {
+            let [UserInput::Text { text, .. }] = items.as_slice() else {
+                panic!("expected one text item, got {items:?}");
+            };
+            assert!(text.contains("Self-review the plan below before implementation."));
+            assert!(text.contains("- Step 1\n- Verify"));
+        }
+        other => panic!("expected plan self-review user turn, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn plan_self_review_revision_without_plan_item_does_not_start_regular_self_review() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
+    chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
+    let plan_mask = collaboration_modes::mask_for_kind(chat.model_catalog.as_ref(), ModeKind::Plan)
+        .expect("expected plan collaboration mask");
+    chat.set_collaboration_mask(plan_mask);
+
+    chat.on_task_started();
+    chat.on_plan_item_completed("- Step 1\n- Verify\n".to_string());
+    chat.on_task_complete(
+        /*last_agent_message*/ None, /*duration_ms*/ None, /*from_replay*/ false,
+    );
+    match next_submit_op(&mut op_rx) {
+        Op::UserTurn { items, .. } => {
+            let [UserInput::Text { text, .. }] = items.as_slice() else {
+                panic!("expected one text item, got {items:?}");
+            };
+            assert!(text.contains("Self-review the plan below before implementation."));
+        }
+        other => panic!("expected plan self-review user turn, got {other:?}"),
+    }
+
+    let mut changes = HashMap::new();
+    changes.insert(
+        PathBuf::from("notes.md"),
+        FileChange::Add {
+            content: "plan review notes\n".to_string(),
+        },
+    );
+    chat.on_task_started();
+    handle_patch_apply_end(
+        &mut chat,
+        "patch-1",
+        "turn-1",
+        changes,
+        AppServerPatchApplyStatus::Completed,
+    );
+    chat.on_task_complete(
+        /*last_agent_message*/ None, /*duration_ms*/ None, /*from_replay*/ false,
+    );
+
+    let inserted = drain_insert_history(&mut rx);
+    let rendered = inserted
+        .iter()
+        .map(|lines| lines_to_single_string(lines))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(!rendered.contains("Self-review required"));
+    assert!(
+        op_rx.try_recv().is_err(),
+        "expected no self-review or second plan-review op after a plan-review turn"
     );
 }
 

@@ -79,7 +79,9 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::ApplyPatchHandler;
     use crate::tools::handlers::CodeModeExecuteHandler;
     use crate::tools::handlers::CodeModeWaitHandler;
+    use crate::tools::handlers::DesktopAutomationHandler;
     use crate::tools::handlers::DynamicToolHandler;
+    use crate::tools::handlers::FirstMovesHandler;
     use crate::tools::handlers::GoalHandler;
     use crate::tools::handlers::ListDirHandler;
     use crate::tools::handlers::McpHandler;
@@ -158,6 +160,8 @@ pub(crate) fn build_specs_with_discoverable_tools(
     let unified_exec_handler = Arc::new(UnifiedExecHandler);
     let plan_handler = Arc::new(PlanHandler);
     let apply_patch_handler = Arc::new(ApplyPatchHandler);
+    let desktop_automation_handler = Arc::new(DesktopAutomationHandler);
+    let first_moves_handler = Arc::new(FirstMovesHandler);
     let dynamic_tool_handler = Arc::new(DynamicToolHandler);
     let goal_handler = Arc::new(GoalHandler);
     let view_image_handler = Arc::new(ViewImageHandler);
@@ -216,6 +220,12 @@ pub(crate) fn build_specs_with_discoverable_tools(
             }
             ToolHandlerKind::DynamicTool => {
                 builder.register_handler(handler.name, dynamic_tool_handler.clone());
+            }
+            ToolHandlerKind::DesktopAutomation => {
+                builder.register_handler(handler.name, desktop_automation_handler.clone());
+            }
+            ToolHandlerKind::FirstMoves => {
+                builder.register_handler(handler.name, first_moves_handler.clone());
             }
             ToolHandlerKind::FollowupTaskV2 => {
                 builder.register_handler(handler.name, Arc::new(FollowupTaskHandlerV2));

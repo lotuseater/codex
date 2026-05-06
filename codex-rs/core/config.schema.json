@@ -344,6 +344,9 @@
         "chatgpt_base_url": {
           "type": "string"
         },
+        "desktop_automation": {
+          "$ref": "#/definitions/DesktopAutomationToml"
+        },
         "experimental_compact_prompt_file": {
           "$ref": "#/definitions/AbsolutePathBuf"
         },
@@ -526,6 +529,12 @@
             "search_tool": {
               "type": "boolean"
             },
+            "semantic_auto_compact": {
+              "type": "boolean"
+            },
+            "semantic_checkpoint_git_sync": {
+              "type": "boolean"
+            },
             "shell_snapshot": {
               "type": "boolean"
             },
@@ -600,6 +609,9 @@
             }
           },
           "type": "object"
+        },
+        "first_moves": {
+          "$ref": "#/definitions/FirstMovesToml"
         },
         "include_apply_patch_tool": {
           "type": "boolean"
@@ -732,6 +744,28 @@
       },
       "type": "object"
     },
+    "DesktopAutomationToml": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_input": {
+          "description": "Enables tools that send clicks or keys. Defaults to true.",
+          "type": "boolean"
+        },
+        "enabled": {
+          "description": "Enables the built-in native DAB tool family. Defaults to true on Windows.",
+          "type": "boolean"
+        },
+        "prefer_app_harness": {
+          "description": "Prefer app-native harnesses before generic DAB. Defaults to true.",
+          "type": "boolean"
+        },
+        "proactive": {
+          "description": "Enables proactive visual automation guidance and context. Defaults to true.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
     "ExternalConfigMigrationPrompts": {
       "additionalProperties": false,
       "description": "Settings for notices we display to users via the tui and app-server clients (primarily the Codex IDE extension). NOTE: these are different from notifications - notices are warnings, NUX screens, acknowledgements, etc.",
@@ -824,6 +858,98 @@
           "format": "uint",
           "minimum": 1.0,
           "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "FirstMovesModeToml": {
+      "enum": [
+        "auto",
+        "suggest_only",
+        "prewarm",
+        "off"
+      ],
+      "type": "string"
+    },
+    "FirstMovesPrewarmToml": {
+      "enum": [
+        "off",
+        "high_confidence_only"
+      ],
+      "type": "string"
+    },
+    "FirstMovesToml": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "description": "Enable native first-moves prediction. Defaults to true.",
+          "type": "boolean"
+        },
+        "inject_context": {
+          "description": "Inject ranked opening reads/searches into the first model turn. Defaults to true.",
+          "type": "boolean"
+        },
+        "max_candidates": {
+          "description": "Maximum candidates returned by the predictor and tool. Defaults to 14.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_context_moves": {
+          "description": "Maximum candidates included in first-turn context. Defaults to 8.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_prewarm_files": {
+          "description": "Maximum files whose excerpts are embedded in first-turn context. Defaults to 2.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_read_bytes": {
+          "description": "Maximum bytes read from a prewarmed file excerpt. Defaults to 8192.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_scan_depth": {
+          "description": "Maximum directory depth scanned during prediction. Defaults to 6.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_scan_files": {
+          "description": "Maximum repo files scanned during prediction. Defaults to 2000.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "min_context_score": {
+          "description": "Minimum score for first-turn context inclusion. Defaults to 0.55.",
+          "format": "double",
+          "type": "number"
+        },
+        "min_prewarm_score": {
+          "description": "Minimum score for excerpt prewarm. Defaults to 0.82.",
+          "format": "double",
+          "type": "number"
+        },
+        "mode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/FirstMovesModeToml"
+            }
+          ],
+          "description": "Run mode: auto, suggest_only, prewarm, or off. Defaults to auto."
+        },
+        "prewarm": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/FirstMovesPrewarmToml"
+            }
+          ],
+          "description": "Prewarm strategy for high-confidence file reads. Defaults to high_confidence_only."
         }
       },
       "type": "object"
@@ -3765,6 +3891,15 @@
       "description": "Default permissions profile to apply. Names starting with `:` refer to built-in profiles; other names are resolved from the `[permissions]` table.",
       "type": "string"
     },
+    "desktop_automation": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/DesktopAutomationToml"
+        }
+      ],
+      "default": null,
+      "description": "Built-in Windows desktop automation and harness detection settings."
+    },
     "developer_instructions": {
       "default": null,
       "description": "Developer instructions inserted as a `developer` role message.",
@@ -3992,6 +4127,12 @@
         "search_tool": {
           "type": "boolean"
         },
+        "semantic_auto_compact": {
+          "type": "boolean"
+        },
+        "semantic_checkpoint_git_sync": {
+          "type": "boolean"
+        },
         "shell_snapshot": {
           "type": "boolean"
         },
@@ -4082,6 +4223,15 @@
         }
       ],
       "description": "Optional URI-based file opener. If set, citations to files in the model output will be hyperlinked using the specified URI scheme."
+    },
+    "first_moves": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/FirstMovesToml"
+        }
+      ],
+      "default": null,
+      "description": "Native first-turn repo navigation predictor settings."
     },
     "forced_chatgpt_workspace_id": {
       "default": null,

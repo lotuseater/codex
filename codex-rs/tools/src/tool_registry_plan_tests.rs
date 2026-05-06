@@ -529,6 +529,116 @@ fn view_image_tool_includes_detail_with_original_detail_support() {
 }
 
 #[test]
+fn desktop_automation_tools_respect_config() {
+    let model_info = model_info();
+    let features = Features::with_defaults();
+    let available_models = Vec::new();
+    let enabled_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        image_generation_tool_auth_allowed: false,
+        web_search_mode: Some(WebSearchMode::Disabled),
+        session_source: SessionSource::Cli,
+        permission_profile: &PermissionProfile::Disabled,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    })
+    .with_desktop_automation_config(/*enabled*/ true, /*allow_input*/ false);
+    let (enabled_tools, enabled_handlers) = build_specs(
+        &enabled_config,
+        /*mcp_tools*/ None,
+        /*deferred_mcp_tools*/ None,
+        &[],
+    );
+
+    assert_eq!(
+        enabled_tools
+            .iter()
+            .any(|tool| tool.name() == "dab_find_window"),
+        cfg!(windows)
+    );
+    assert!(!enabled_tools.iter().any(|tool| tool.name() == "dab_click"));
+    assert_eq!(
+        enabled_handlers
+            .iter()
+            .any(|handler| handler.name.name == "dab_find_window"),
+        cfg!(windows)
+    );
+
+    let disabled_config = enabled_config
+        .with_desktop_automation_config(/*enabled*/ false, /*allow_input*/ false);
+    let (disabled_tools, disabled_handlers) = build_specs(
+        &disabled_config,
+        /*mcp_tools*/ None,
+        /*deferred_mcp_tools*/ None,
+        &[],
+    );
+
+    assert!(
+        !disabled_tools
+            .iter()
+            .any(|tool| tool.name().starts_with("dab_"))
+    );
+    assert!(
+        !disabled_handlers
+            .iter()
+            .any(|handler| handler.name.name.starts_with("dab_"))
+    );
+}
+
+#[test]
+fn first_moves_tools_respect_config() {
+    let model_info = model_info();
+    let features = Features::with_defaults();
+    let available_models = Vec::new();
+    let default_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        image_generation_tool_auth_allowed: false,
+        web_search_mode: Some(WebSearchMode::Disabled),
+        session_source: SessionSource::Cli,
+        permission_profile: &PermissionProfile::Disabled,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+    let (default_tools, _) = build_specs(
+        &default_config,
+        /*mcp_tools*/ None,
+        /*deferred_mcp_tools*/ None,
+        &[],
+    );
+    assert!(
+        !default_tools
+            .iter()
+            .any(|tool| tool.name() == "first_moves_predict")
+    );
+
+    let enabled_config = default_config.with_first_moves_config(/*enabled*/ true);
+    let (enabled_tools, enabled_handlers) = build_specs(
+        &enabled_config,
+        /*mcp_tools*/ None,
+        /*deferred_mcp_tools*/ None,
+        &[],
+    );
+
+    assert!(
+        enabled_tools
+            .iter()
+            .any(|tool| tool.name() == "first_moves_predict")
+    );
+    assert!(
+        enabled_tools
+            .iter()
+            .any(|tool| tool.name() == "first_moves_stats")
+    );
+    assert!(
+        enabled_handlers
+            .iter()
+            .any(|handler| handler.name.name == "first_moves_predict")
+    );
+}
+
+#[test]
 fn disabled_environment_omits_environment_backed_tools() {
     let model_info = model_info();
     let mut features = Features::with_defaults();

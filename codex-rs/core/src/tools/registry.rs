@@ -18,6 +18,7 @@ use crate::tools::context::McpToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
+use crate::tools::handlers::spawn_record_tool_use_hit;
 use crate::tools::hook_names::HookToolName;
 use crate::tools::operation_cache;
 use crate::tools::tool_dispatch_trace::ToolDispatchTrace;
@@ -437,6 +438,7 @@ impl ToolRegistry {
                 mcp_server_origin_ref,
             );
             emit_metric_for_tool_read(&invocation, /*success*/ true).await;
+            maybe_spawn_first_moves_hit(&invocation, Some(pre_tool_use_payload), true);
             let post_tool_use_outcome = run_post_tool_use_hooks(
                 &invocation.session,
                 &invocation.turn,
@@ -547,6 +549,7 @@ impl ToolRegistry {
             Err(err) => (err.to_string(), false),
         };
         emit_metric_for_tool_read(&invocation, success).await;
+        maybe_spawn_first_moves_hit(&invocation, pre_tool_use_payload.as_ref(), success);
         let post_tool_use_payload = if success {
             let guard = response_cell.lock().await;
             guard
@@ -754,6 +757,27 @@ fn operation_cache_cwd(invocation: &ToolInvocation) -> AbsolutePathBuf {
             invocation.turn.cwd.clone()
         }
     }
+}
+
+fn maybe_spawn_first_moves_hit(
+    invocation: &ToolInvocation,
+    pre_tool_use_payload: Option<&PreToolUsePayload>,
+    success: bool,
+) {
+    if !success || !invocation.turn.config.first_moves.enabled() {
+        return;
+    }
+    let Some(pre_tool_use_payload) = pre_tool_use_payload else {
+        return;
+    };
+    let tool_input = serde_json::to_string(&pre_tool_use_payload.tool_input)
+        .unwrap_or_else(|_| pre_tool_use_payload.tool_input.to_string());
+    spawn_record_tool_use_hit(
+        invocation.turn.cwd.to_path_buf(),
+        invocation.turn.config.codex_home.to_path_buf(),
+        pre_tool_use_payload.tool_name.name().to_string(),
+        tool_input,
+    );
 }
 
 // Hooks use a separate wire-facing input type so hook payload JSON stays stable

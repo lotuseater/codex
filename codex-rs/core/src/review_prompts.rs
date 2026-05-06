@@ -116,7 +116,26 @@ pub fn user_facing_hint(target: &ReviewTarget) -> String {
                 format!("commit {short_sha}")
             }
         }
-        ReviewTarget::Custom { instructions } => instructions.trim().to_string(),
+        ReviewTarget::Custom { instructions } => custom_review_hint(instructions),
+    }
+}
+
+fn custom_review_hint(instructions: &str) -> String {
+    const MAX_HINT_CHARS: usize = 80;
+    let hint = instructions
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or("custom review");
+    let collapsed = hint.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut chars = collapsed.chars();
+    let truncated = chars.by_ref().take(MAX_HINT_CHARS).collect::<String>();
+    if chars.next().is_some() {
+        format!("{truncated}...")
+    } else if truncated.is_empty() {
+        "custom review".to_string()
+    } else {
+        truncated
     }
 }
 
@@ -180,6 +199,24 @@ mod tests {
             )
             .expect("commit prompt should render"),
             "Review the code changes introduced by commit deadbeef (\"Fix bug\"). Provide prioritized, actionable findings."
+        );
+    }
+
+    #[test]
+    fn custom_review_hint_is_bounded_to_first_line() {
+        assert_eq!(
+            user_facing_hint(&ReviewTarget::Custom {
+                instructions:
+                    "Automatic self-review of the just-completed work slice.\n\nLong details"
+                        .to_string(),
+            }),
+            "Automatic self-review of the just-completed work slice."
+        );
+        assert_eq!(
+            user_facing_hint(&ReviewTarget::Custom {
+                instructions: "x".repeat(100),
+            }),
+            format!("{}...", "x".repeat(80))
         );
     }
 }

@@ -103,6 +103,9 @@ pub struct ToolsConfig {
     pub code_mode_enabled: bool,
     pub code_mode_only_enabled: bool,
     pub can_request_original_image_detail: bool,
+    pub desktop_automation_enabled: bool,
+    pub desktop_automation_allow_input: bool,
+    pub first_moves_enabled: bool,
     pub collab_tools: bool,
     pub goal_tools: bool,
     pub multi_agent_v2: bool,
@@ -158,6 +161,7 @@ impl ToolsConfig {
         let include_image_gen_tool = *image_generation_tool_auth_allowed
             && features.enabled(Feature::ImageGeneration)
             && supports_image_generation(model_info);
+        let include_desktop_automation = cfg!(windows) && features.enabled(Feature::ComputerUse);
         let exec_permission_approvals_enabled = features.enabled(Feature::ExecPermissionApprovals);
         let request_permissions_tool_enabled = features.enabled(Feature::RequestPermissionsTool);
         let shell_command_backend =
@@ -220,6 +224,9 @@ impl ToolsConfig {
             code_mode_enabled: include_code_mode,
             code_mode_only_enabled: include_code_mode_only,
             can_request_original_image_detail: include_original_image_detail,
+            desktop_automation_enabled: include_desktop_automation,
+            desktop_automation_allow_input: include_desktop_automation,
+            first_moves_enabled: false,
             collab_tools: include_collab_tools,
             goal_tools: include_goal_tools,
             multi_agent_v2: include_multi_agent_v2,
@@ -282,6 +289,18 @@ impl ToolsConfig {
 
     pub fn with_goal_tools_allowed(mut self, allowed: bool) -> Self {
         self.goal_tools = self.goal_tools && allowed;
+        self
+    }
+
+    pub fn with_desktop_automation_config(mut self, enabled: bool, allow_input: bool) -> Self {
+        self.desktop_automation_enabled = self.desktop_automation_enabled && enabled;
+        self.desktop_automation_allow_input =
+            self.desktop_automation_enabled && self.desktop_automation_allow_input && allow_input;
+        self
+    }
+
+    pub fn with_first_moves_config(mut self, enabled: bool) -> Self {
+        self.first_moves_enabled = enabled;
         self
     }
 

@@ -181,6 +181,9 @@ pub(crate) enum AppEvent {
     /// Show or update the automatic idle loop.
     AutoLoop(AutoLoopUpdate),
 
+    /// Automatic self-review completed; resume the configured loop message immediately if safe.
+    SubmitAutoLoopAfterSelfReview,
+
     /// Resume a thread by UUID or thread name inside the running TUI session.
     ResumeSessionByIdOrName(String),
 

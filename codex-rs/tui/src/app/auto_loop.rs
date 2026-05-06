@@ -91,17 +91,29 @@ impl App {
             return;
         }
 
+        self.try_submit_auto_loop_message("periodic");
+    }
+
+    pub(super) fn handle_auto_loop_after_self_review(&mut self) -> bool {
+        if !self.auto_loop.settings.enabled {
+            return false;
+        }
+        self.try_submit_auto_loop_message("after_self_review")
+    }
+
+    fn try_submit_auto_loop_message(&mut self, context: &'static str) -> bool {
         let message = self.auto_loop.settings.message.clone();
         if self.chat_widget.submit_auto_loop_message(message) {
             self.auto_loop.note_activity();
-            return;
+            return true;
         }
 
         let reason = match self.chat_widget.can_submit_auto_loop_message() {
             Ok(()) => "loop message is empty",
             Err(reason) => reason,
         };
-        tracing::debug!(reason = %reason, "auto-loop postponed");
+        tracing::debug!(reason = %reason, context, "auto-loop postponed");
         self.auto_loop.note_activity();
+        false
     }
 }

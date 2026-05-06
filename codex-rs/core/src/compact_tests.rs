@@ -18,6 +18,7 @@ async fn process_compacted_history_with_test_session(
         &turn_context,
         compacted_history,
         InitialContextInjection::BeforeLastUserMessage,
+        /*task_memory_item*/ None,
     )
     .await;
     (refreshed, initial_context)
@@ -52,6 +53,41 @@ fn content_items_to_text_ignores_image_only_content() {
     let joined = content_items_to_text(&items);
 
     assert_eq!(None, joined);
+}
+
+#[test]
+fn collect_user_messages_filters_task_memory_entries() {
+    let task_memory = crate::task_memory::build_task_memory_item(&[
+        ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: "Remember the active task".to_string(),
+            }],
+            phase: None,
+        },
+        ResponseItem::Message {
+            id: None,
+            role: "assistant".to_string(),
+            content: vec![ContentItem::OutputText {
+                text: "<proposed_plan>\n# Plan\n- remember\n</proposed_plan>".to_string(),
+            }],
+            phase: None,
+        },
+    ])
+    .expect("expected task memory item");
+    let real_user = ResponseItem::Message {
+        id: None,
+        role: "user".to_string(),
+        content: vec![ContentItem::InputText {
+            text: "real user message".to_string(),
+        }],
+        phase: None,
+    };
+
+    let collected = collect_user_messages(&[task_memory, real_user]);
+
+    assert_eq!(collected, vec!["real user message".to_string()]);
 }
 
 #[test]
@@ -277,6 +313,93 @@ async fn process_compacted_history_reinjects_full_initial_context() {
         phase: None,
     });
     assert_eq!(refreshed, expected);
+}
+
+#[tokio::test]
+async fn process_compacted_history_replaces_stale_task_memory_with_fresh_item() {
+    let stale = crate::task_memory::build_task_memory_item(&[
+        ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: "old request".to_string(),
+            }],
+            phase: None,
+        },
+        ResponseItem::Message {
+            id: None,
+            role: "assistant".to_string(),
+            content: vec![ContentItem::OutputText {
+                text: "<proposed_plan>\n# Old Plan\n- old\n</proposed_plan>".to_string(),
+            }],
+            phase: None,
+        },
+    ])
+    .expect("expected stale task memory");
+    let fresh = crate::task_memory::build_task_memory_item(&[
+        ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: "new request".to_string(),
+            }],
+            phase: None,
+        },
+        ResponseItem::Message {
+            id: None,
+            role: "assistant".to_string(),
+            content: vec![ContentItem::OutputText {
+                text: "<proposed_plan>\n# New Plan\n- new\n</proposed_plan>".to_string(),
+            }],
+            phase: None,
+        },
+    ])
+    .expect("expected fresh task memory");
+    let fresh_digest = crate::task_memory::task_memory_item_digest(&fresh);
+    let compacted_history = vec![
+        stale,
+        ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: "summary".to_string(),
+            }],
+            phase: None,
+        },
+    ];
+
+    let (refreshed, _initial_context) = process_compacted_history_with_test_session(
+        compacted_history,
+        /*previous_turn_settings*/ None,
+    )
+    .await;
+    assert!(
+        refreshed
+            .iter()
+            .all(|item| crate::task_memory::task_memory_item_digest(item).is_none())
+    );
+
+    let (session, turn_context) = crate::session::tests::make_session_and_context().await;
+    let refreshed = crate::compact_remote::process_compacted_history(
+        &session,
+        &turn_context,
+        vec![ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: "summary".to_string(),
+            }],
+            phase: None,
+        }],
+        InitialContextInjection::BeforeLastUserMessage,
+        Some(fresh),
+    )
+    .await;
+    let digests = refreshed
+        .iter()
+        .filter_map(crate::task_memory::task_memory_item_digest)
+        .collect::<Vec<_>>();
+    assert_eq!(digests, vec![fresh_digest.expect("fresh digest")]);
 }
 
 #[tokio::test]

@@ -376,6 +376,7 @@ const USER_SHELL_COMMAND_HELP_TITLE: &str = "Prefix a command with ! to run it l
 const USER_SHELL_COMMAND_HELP_HINT: &str = "Example: !ls";
 const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 const DEFAULT_STATUS_LINE_ITEMS: [&str; 2] = ["model-with-reasoning", "current-dir"];
+const PLAN_SELF_REVIEW_COOLDOWN: Duration = Duration::from_secs(10 * 60);
 // Track information about an in-flight exec command.
 struct RunningCommand {
     command: Vec<String>,
@@ -723,6 +724,20 @@ impl PendingGuardianReviewStatus {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AutoLoopAfterSelfReview {
+    Idle,
+    AwaitingReviewExit,
+    Ready,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PlanSelfReview {
+    Idle,
+    AwaitingRevision,
+    ReviewedCurrentPlan,
+}
+
 /// Maintains the per-session UI state and interaction state machines for the chat screen.
 ///
 /// `ChatWidget` owns the state derived from the protocol event stream (history cells, streaming
@@ -799,6 +814,8 @@ pub(crate) struct ChatWidget {
     /// This is cached only for the approval popup. It is reset at the start of each new task so the
     /// fresh-context action cannot accidentally submit an older plan after a later turn begins.
     latest_proposed_plan_markdown: Option<String>,
+    plan_self_review: PlanSelfReview,
+    last_plan_self_review_started_at: Option<Instant>,
     /// Whether this turn already produced a copyable response.
     ///
     /// `TurnComplete.last_agent_message` is a fallback source: use it only when no earlier
@@ -942,6 +959,8 @@ pub(crate) struct ChatWidget {
     quit_shortcut_key: Option<KeyBinding>,
     // Simple review mode flag; used to adjust layout and banners.
     is_review_mode: bool,
+    // Tracks automatic self-review so loop mode can continue immediately after a successful review.
+    auto_loop_after_self_review: AutoLoopAfterSelfReview,
     // Snapshot of token usage to restore after review mode exits.
     pre_review_token_info: Option<Option<TokenUsageInfo>>,
     // Whether the next streamed assistant content should be preceded by a final message separator.
@@ -1556,6 +1575,20 @@ pub(crate) enum TurnAbortReason {
 fn contains_plan_keyword(text: &str) -> bool {
     text.split(|ch: char| !ch.is_alphanumeric() && ch != '_')
         .any(|word| word.eq_ignore_ascii_case("plan"))
+}
+
+fn plan_self_review_prompt(plan_markdown: &str) -> String {
+    format!(
+        "\
+Self-review the plan below before implementation.
+
+Read through the plan against the current conversation and repository context. Use targeted file reads or searches only if the context is insufficient. Improve task order, missing verification, risky assumptions, stale context, and user constraints. Keep the result practical and implementation-ready.
+
+Return the revised plan as the next proposed plan. If the plan is already strong, keep it and add only the minimal clarifications needed.
+
+Current plan:
+{plan_markdown}"
+    )
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2404,6 +2437,9 @@ impl ChatWidget {
         self.saw_plan_update_this_turn = false;
         self.saw_plan_item_this_turn = false;
         self.had_work_activity = false;
+        if self.plan_self_review == PlanSelfReview::ReviewedCurrentPlan {
+            self.plan_self_review = PlanSelfReview::Idle;
+        }
         self.latest_proposed_plan_markdown = None;
         self.plan_delta_buffer.clear();
         self.plan_item_active = false;
@@ -2522,10 +2558,22 @@ impl ChatWidget {
         let had_pending_steers = !self.pending_steers.is_empty();
         self.refresh_pending_input_preview();
 
-        let self_review_started = !from_replay && self.maybe_start_self_review();
+        let auto_loop_after_self_review_requested =
+            !from_replay && self.maybe_request_auto_loop_after_self_review();
+        let plan_self_review_started = !from_replay
+            && !auto_loop_after_self_review_requested
+            && !had_pending_steers
+            && self.maybe_start_plan_self_review();
+        let self_review_started = !from_replay
+            && !auto_loop_after_self_review_requested
+            && !plan_self_review_started
+            && !self.suppress_regular_self_review_for_plan_activity()
+            && self.maybe_start_self_review();
 
         if !from_replay
+            && !auto_loop_after_self_review_requested
             && !self_review_started
+            && !plan_self_review_started
             && !self.has_queued_follow_up_messages()
             && !had_pending_steers
         {
@@ -2537,7 +2585,10 @@ impl ChatWidget {
             self.saw_plan_item_this_turn = false;
         }
         // If there is a queued user message, send exactly one now to begin the next turn.
-        let follow_up_started = if self_review_started {
+        let follow_up_started = if auto_loop_after_self_review_requested
+            || self_review_started
+            || plan_self_review_started
+        {
             true
         } else {
             self.maybe_send_next_queued_input()
@@ -2586,6 +2637,72 @@ impl ChatWidget {
         self.open_plan_implementation_prompt();
     }
 
+    fn maybe_start_plan_self_review(&mut self) -> bool {
+        if !self.collaboration_modes_enabled() {
+            return false;
+        }
+        if self.active_mode_kind() != ModeKind::Plan {
+            return false;
+        }
+        match self.plan_self_review {
+            PlanSelfReview::Idle => {}
+            PlanSelfReview::AwaitingRevision => {
+                self.plan_self_review = PlanSelfReview::ReviewedCurrentPlan;
+                return false;
+            }
+            PlanSelfReview::ReviewedCurrentPlan => {
+                return false;
+            }
+        }
+        if !self.saw_plan_item_this_turn {
+            return false;
+        }
+        if self.has_queued_follow_up_messages() {
+            return false;
+        }
+        if !self.bottom_pane.no_modal_or_popup_active() {
+            return false;
+        }
+
+        let now = Instant::now();
+        let in_cooldown = self
+            .last_plan_self_review_started_at
+            .is_some_and(|started_at| {
+                now.saturating_duration_since(started_at) < PLAN_SELF_REVIEW_COOLDOWN
+            });
+        if in_cooldown {
+            return false;
+        }
+
+        let Some(plan_markdown) = self
+            .latest_proposed_plan_markdown
+            .as_deref()
+            .map(str::trim)
+            .filter(|plan| !plan.is_empty())
+        else {
+            return false;
+        };
+
+        self.plan_self_review = PlanSelfReview::AwaitingRevision;
+        self.last_plan_self_review_started_at = Some(now);
+        self.submit_user_message(UserMessage {
+            text: plan_self_review_prompt(plan_markdown),
+            local_images: Vec::new(),
+            remote_image_urls: Vec::new(),
+            text_elements: Vec::new(),
+            mention_bindings: Vec::new(),
+        });
+        true
+    }
+
+    fn suppress_regular_self_review_for_plan_activity(&self) -> bool {
+        self.collaboration_modes_enabled()
+            && self.active_mode_kind() == ModeKind::Plan
+            && (self.saw_plan_update_this_turn
+                || self.saw_plan_item_this_turn
+                || self.plan_self_review != PlanSelfReview::Idle)
+    }
+
     fn open_plan_implementation_prompt(&mut self) {
         let default_mask = collaboration_modes::default_mode_mask(self.model_catalog.as_ref());
         let context_usage_label = self.plan_implementation_context_usage_label();
@@ -2609,8 +2726,27 @@ impl ChatWidget {
         self.add_to_history(history_cell::new_self_review_reminder_line(
             self.self_review_tracker.reminder_message(),
         ));
-        self.app_event_tx.review(ReviewTarget::UncommittedChanges);
+        self.app_event_tx
+            .review(self.self_review_tracker.review_target());
         self.self_review_tracker.note_automatic_review_started(now);
+        self.auto_loop_after_self_review = AutoLoopAfterSelfReview::AwaitingReviewExit;
+        true
+    }
+
+    fn maybe_request_auto_loop_after_self_review(&mut self) -> bool {
+        if self.auto_loop_after_self_review != AutoLoopAfterSelfReview::Ready {
+            return false;
+        }
+        self.auto_loop_after_self_review = AutoLoopAfterSelfReview::Idle;
+        if let Err(reason) = self.can_submit_auto_loop_message() {
+            tracing::debug!(
+                reason = %reason,
+                "auto-loop self-review continuation not requested"
+            );
+            return false;
+        }
+        self.app_event_tx
+            .send(AppEvent::SubmitAutoLoopAfterSelfReview);
         true
     }
 
@@ -4385,6 +4521,11 @@ impl ChatWidget {
             None => (event_command, event_parsed, source),
         };
         let parsed = self.annotate_skill_reads_in_parsed_cmd(parsed);
+        let mut command_note = shlex::try_join(command.iter().map(String::as_str))
+            .unwrap_or_else(|_| command.join(" "));
+        if exit_code != 0 {
+            command_note.push_str(&format!(" (exit {exit_code})"));
+        }
         let is_unified_exec_interaction =
             matches!(source, ExecCommandSource::UnifiedExecInteraction);
         let is_user_shell = source == ExecCommandSource::UserShell;
@@ -4473,14 +4614,17 @@ impl ChatWidget {
         }
         // Mark that actual work was done (command executed)
         self.had_work_activity = true;
-        self.self_review_tracker.note_command();
+        self.self_review_tracker.note_command(command_note);
         if is_user_shell {
             self.maybe_send_next_queued_input();
         }
     }
 
     pub(crate) fn handle_file_change_completed_now(&mut self, item: ThreadItem) {
-        let ThreadItem::FileChange { status, .. } = item else {
+        let ThreadItem::FileChange {
+            status, changes, ..
+        } = item
+        else {
             return;
         };
         // If the patch was successful, just let the "Edited" block stand.
@@ -4494,7 +4638,8 @@ impl ChatWidget {
             &status,
             codex_app_server_protocol::PatchApplyStatus::Completed
         ) {
-            self.self_review_tracker.note_patch();
+            self.self_review_tracker
+                .note_patch(changes.into_iter().map(|change| change.path));
         }
     }
 
@@ -4931,6 +5076,8 @@ impl ChatWidget {
             visible_user_turn_count: 0,
             copy_history_evicted_by_rollback: false,
             latest_proposed_plan_markdown: None,
+            plan_self_review: PlanSelfReview::Idle,
+            last_plan_self_review_started_at: None,
             saw_copy_source_this_turn: false,
             mcp_startup_expected_servers: None,
             mcp_startup_ignore_updates_until_next_start: false,
@@ -4987,6 +5134,7 @@ impl ChatWidget {
             quit_shortcut_expires_at: None,
             quit_shortcut_key: None,
             is_review_mode: false,
+            auto_loop_after_self_review: AutoLoopAfterSelfReview::Idle,
             pre_review_token_info: None,
             needs_final_message_separator: false,
             had_work_activity: false,
@@ -6604,10 +6752,16 @@ impl ChatWidget {
         self.flush_interrupt_queue();
         self.flush_active_cell();
         self.is_review_mode = false;
+        if self.auto_loop_after_self_review == AutoLoopAfterSelfReview::AwaitingReviewExit {
+            self.auto_loop_after_self_review = AutoLoopAfterSelfReview::Ready;
+        }
         self.restore_pre_review_token_info();
         self.add_to_history(history_cell::new_review_status_line(
             "<< Code review finished >>".to_string(),
         ));
+        if !self.is_user_turn_pending_or_running() {
+            self.maybe_request_auto_loop_after_self_review();
+        }
         self.request_redraw();
     }
 

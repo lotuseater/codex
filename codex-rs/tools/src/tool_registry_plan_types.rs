@@ -17,6 +17,8 @@ pub enum ToolHandlerKind {
     CodeModeExecute,
     CodeModeWait,
     DynamicTool,
+    DesktopAutomation,
+    FirstMoves,
     FollowupTaskV2,
     Goal,
     ListAgentsV2,
