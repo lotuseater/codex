@@ -1,6 +1,6 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [ValidateSet("Status", "Progress", "FastRelease", "LowMemRelease", "DevRelease", "FullRelease", "DeployOnly", "Rollback")]
+    [ValidateSet("Status", "Diagnose", "Progress", "FastRelease", "LowMemRelease", "DevRelease", "FullRelease", "DeployOnly", "Rollback")]
     [string]$Mode = "Status",
 
     [string]$RepoRoot,
@@ -81,7 +81,8 @@ function Write-JsonObject {
         [System.Collections.IDictionary]$Payload
     )
 
-    $Payload | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $Path -Encoding UTF8
+    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    [System.IO.File]::WriteAllText($Path, ($Payload | ConvertTo-Json -Depth 8), $utf8NoBom)
 }
 
 function Get-WrapperEnvPath {
@@ -126,9 +127,9 @@ function Find-VsDevCmd {
 }
 
 function Join-CommandLine {
-    param([string[]]$Args)
+    param([string[]]$CommandArgs)
 
-    return ($Args | ForEach-Object {
+    return ($CommandArgs | ForEach-Object {
         if ($_ -match "\s") {
             '"' + ($_ -replace '"', '\"') + '"'
         }
@@ -136,6 +137,24 @@ function Join-CommandLine {
             $_
         }
     }) -join " "
+}
+
+function Get-PageFileSnapshot {
+    $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
+    $pageFiles = @(Get-CimInstance Win32_PageFileUsage -ErrorAction SilentlyContinue | ForEach-Object {
+            [ordered]@{
+                name = $_.Name
+                allocated_mb = [int]$_.AllocatedBaseSize
+                current_usage_mb = [int]$_.CurrentUsage
+                peak_usage_mb = [int]$_.PeakUsage
+            }
+        })
+    return [ordered]@{
+        page_files = $pageFiles
+        free_ram_gb = if ($os) { [math]::Round($os.FreePhysicalMemory / 1MB, 2) } else { $null }
+        total_virtual_gb = if ($os) { [math]::Round($os.TotalVirtualMemorySize / 1MB, 2) } else { $null }
+        free_virtual_gb = if ($os) { [math]::Round($os.FreeVirtualMemory / 1MB, 2) } else { $null }
+    }
 }
 
 function Test-ContainsText {
@@ -324,6 +343,11 @@ function Test-AndFreeDiskSpace {
     }
 
     Write-Host "Disk pre-check: $freeGB GB free (below warn threshold $WarnGB GB). Reclaiming..."
+    $pdbCleanup = Invoke-ReleasePdbCleanup -RepoRoot $RepoRoot
+    if ($pdbCleanup["reclaimed_mb"] -gt 0) {
+        Write-Host ("  - reclaimed {0,7:N1} MB from release PDB files" -f $pdbCleanup["reclaimed_mb"])
+    }
+
     foreach ($entry in $reclaimable) {
         if (-not (Test-Path -LiteralPath $entry.Path)) { continue }
         $sizeMB = 0
@@ -345,6 +369,30 @@ function Test-AndFreeDiskSpace {
     }
 }
 
+function Invoke-ReleasePdbCleanup {
+    param([string]$RepoRoot)
+
+    $release = Join-Path $RepoRoot "codex-rs\target\release"
+    if (-not (Test-Path -LiteralPath $release)) {
+        return [ordered]@{ removed = 0; reclaimed_mb = 0 }
+    }
+
+    $bytes = 0
+    $removed = 0
+    foreach ($file in @(Get-ChildItem -LiteralPath $release -Recurse -Force -File -Filter "*.pdb" -ErrorAction SilentlyContinue)) {
+        try {
+            $bytes += $file.Length
+            Remove-Item -LiteralPath $file.FullName -Force -ErrorAction Stop
+            $removed += 1
+        } catch {}
+    }
+
+    return [ordered]@{
+        removed = $removed
+        reclaimed_mb = [math]::Round($bytes / 1MB, 1)
+    }
+}
+
 function Invoke-PostBuildDiskCleanup {
     param(
         [string]$RepoRoot,
@@ -362,6 +410,13 @@ function Invoke-PostBuildDiskCleanup {
             Write-Host ("Post-build cleanup: reclaimed {0:N1} MB from release/incremental." -f $sizeMB)
         } catch {
             # Non-fatal: build already succeeded.
+        }
+    }
+
+    if ($BuildMode -in @("FastRelease", "LowMemRelease", "FullRelease")) {
+        $pdbCleanup = Invoke-ReleasePdbCleanup -RepoRoot $RepoRoot
+        if ($pdbCleanup["reclaimed_mb"] -gt 0) {
+            Write-Host ("Post-build cleanup: reclaimed {0:N1} MB from release PDB files." -f $pdbCleanup["reclaimed_mb"])
         }
     }
 }
@@ -432,7 +487,7 @@ function Test-WrapperEnvSanity {
 function Show-FailureLines {
     param([string]$Path)
 
-    $matches = Select-String -Path $Path -Pattern "error:|fatal error|failed|No space|no space|insufficient disk|LINK : fatal" -ErrorAction SilentlyContinue |
+    $matches = Select-String -Path $Path -Pattern "error:|fatal error|failed|No space|no space|insufficient disk|LINK : fatal|paging file|STATUS_|stack buffer|out of memory|memory allocation" -ErrorAction SilentlyContinue |
         Select-Object -Last 40
     if ($matches) {
         $matches | ForEach-Object { $_.Line } | Out-Host
@@ -440,6 +495,119 @@ function Show-FailureLines {
     }
 
     Get-Content -LiteralPath $Path -Tail 80 | Out-Host
+}
+
+function Get-DirectorySizeGB {
+    param([string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return 0
+    }
+    try {
+        $bytes = (Get-ChildItem -LiteralPath $Path -Recurse -Force -File -ErrorAction SilentlyContinue |
+            Measure-Object Length -Sum).Sum
+        return [math]::Round($bytes / 1GB, 2)
+    }
+    catch {
+        return $null
+    }
+}
+
+function Get-ReleasePdbSizeGB {
+    param([string]$RepoRoot)
+
+    $release = Join-Path $RepoRoot "codex-rs\target\release"
+    if (-not (Test-Path -LiteralPath $release)) {
+        return 0
+    }
+    try {
+        $bytes = (Get-ChildItem -LiteralPath $release -Recurse -Force -File -Filter "*.pdb" -ErrorAction SilentlyContinue |
+            Measure-Object Length -Sum).Sum
+        return [math]::Round($bytes / 1GB, 2)
+    }
+    catch {
+        return $null
+    }
+}
+
+function Get-ReleaseDepsDuplicateSummary {
+    param(
+        [string]$RepoRoot,
+        [int]$Limit = 20
+    )
+
+    $deps = Join-Path $RepoRoot "codex-rs\target\release\deps"
+    if (-not (Test-Path -LiteralPath $deps)) {
+        return @()
+    }
+
+    $items = Get-ChildItem -LiteralPath $deps -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^(?<base>.+)-[0-9a-f]{16}\.(?<ext>rlib|rmeta|d|pdb|dll|exe|lib|exp)$' } |
+        ForEach-Object {
+            [pscustomobject]@{
+                key = "$($matches.base).$($matches.ext)"
+                length = $_.Length
+                last_write_time = $_.LastWriteTime
+            }
+        }
+
+    return $items |
+        Group-Object key |
+        Where-Object { $_.Count -gt 2 } |
+        ForEach-Object {
+            $group = @($_.Group)
+            [ordered]@{
+                key = $_.Name
+                generations = $_.Count
+                total_mb = [math]::Round(($group | Measure-Object length -Sum).Sum / 1MB, 1)
+                newest = ($group | Sort-Object last_write_time -Descending | Select-Object -First 1).last_write_time.ToString("o")
+                oldest = ($group | Sort-Object last_write_time | Select-Object -First 1).last_write_time.ToString("o")
+            }
+        } |
+        Sort-Object { $_["total_mb"] } -Descending |
+        Select-Object -First $Limit
+}
+
+function Write-BuildLogEvent {
+    param(
+        [string]$Path,
+        [string]$Phase,
+        [System.Collections.IDictionary]$Payload
+    )
+
+    $entry = [ordered]@{
+        phase = $Phase
+        timestamp = (Get-Date).ToString("o")
+        data = $Payload
+    }
+    Add-Content -LiteralPath $Path -Value ""
+    Add-Content -LiteralPath $Path -Value "### build-local-codex:$Phase"
+    Add-Content -LiteralPath $Path -Value ($entry | ConvertTo-Json -Depth 8)
+}
+
+function Initialize-BuildLog {
+    param(
+        [string]$Root,
+        [string]$Path,
+        [string[]]$CargoArgs,
+        [System.Collections.IDictionary]$EnvOverrides
+    )
+
+    $codexRs = Join-Path $Root "codex-rs"
+    $releaseTarget = Join-Path $codexRs "target\release"
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Path) | Out-Null
+    Set-Content -LiteralPath $Path -Encoding UTF8 -Value "### build-local-codex:start"
+    Write-BuildLogEvent -Path $Path -Phase "environment" -Payload ([ordered]@{
+            repo_root = $Root
+            codex_rs = $codexRs
+            cargo_args = $CargoArgs
+            env_overrides = $EnvOverrides
+            release_target_gb = Get-DirectorySizeGB -Path $releaseTarget
+            debug_target_gb = Get-DirectorySizeGB -Path (Join-Path $codexRs "target\debug")
+            free_c_drive_gb = [math]::Round((Get-PSDrive C).Free / 1GB, 2)
+            memory = Get-PageFileSnapshot
+            active_build_processes = @(Get-RepoBuildProcesses -Root $Root)
+        })
 }
 
 function Ensure-ReleaseOnlyRustcWrapper {
@@ -489,7 +657,7 @@ function Invoke-CodexBuild {
         [Environment]::SetEnvironmentVariable($key, [string]$EnvOverrides[$key], "Process")
     }
 
-    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $LogPath) | Out-Null
+    Initialize-BuildLog -Root $Root -Path $LogPath -CargoArgs $CargoArgs -EnvOverrides $EnvOverrides
     Push-Location (Join-Path $Root "codex-rs")
     $nativeCommandPreference = Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue
     $oldNativeCommandPreference = $null
@@ -502,8 +670,20 @@ function Invoke-CodexBuild {
     try {
         $link = Get-Command link.exe -ErrorAction SilentlyContinue
         if ($link) {
-            & cargo @CargoArgs > $LogPath 2>&1
-            return $LASTEXITCODE
+            $cargoLine = "cargo " + (Join-CommandLine -CommandArgs $CargoArgs)
+            Write-BuildLogEvent -Path $LogPath -Phase "cargo-start" -Payload ([ordered]@{
+                    command = $cargoLine
+                    linker = $link.Source
+                })
+            $cmdLine = "$cargoLine >> `"$LogPath`" 2>&1"
+            & cmd.exe /d /s /c $cmdLine
+            $exitCode = $LASTEXITCODE
+            Write-BuildLogEvent -Path $LogPath -Phase "cargo-exit" -Payload ([ordered]@{
+                    exit_code = $exitCode
+                    memory = Get-PageFileSnapshot
+                    active_build_processes = @(Get-RepoBuildProcesses -Root $Root)
+                })
+            return $exitCode
         }
 
         $vsDevCmd = Find-VsDevCmd
@@ -511,10 +691,20 @@ function Invoke-CodexBuild {
             throw "MSVC linker link.exe is not on PATH and VsDevCmd.bat was not found. Install Visual Studio Build Tools with the C++ workload."
         }
 
-        $cargoLine = "cargo " + (Join-CommandLine -Args $CargoArgs)
-        $cmdLine = "call `"$vsDevCmd`" -arch=x64 -host_arch=x64 >nul && $cargoLine > `"$LogPath`" 2>&1"
+        $cargoLine = "cargo " + (Join-CommandLine -CommandArgs $CargoArgs)
+        Write-BuildLogEvent -Path $LogPath -Phase "cargo-start" -Payload ([ordered]@{
+                command = $cargoLine
+                vs_dev_cmd = $vsDevCmd
+            })
+        $cmdLine = "call `"$vsDevCmd`" -arch=x64 -host_arch=x64 >nul && $cargoLine >> `"$LogPath`" 2>&1"
         & cmd.exe /d /s /c $cmdLine
-        return $LASTEXITCODE
+        $exitCode = $LASTEXITCODE
+        Write-BuildLogEvent -Path $LogPath -Phase "cargo-exit" -Payload ([ordered]@{
+                exit_code = $exitCode
+                memory = Get-PageFileSnapshot
+                active_build_processes = @(Get-RepoBuildProcesses -Root $Root)
+            })
+        return $exitCode
     }
     finally {
         Pop-Location
@@ -553,7 +743,7 @@ function Invoke-Deploy {
         Copy-Item -LiteralPath $source -Destination $activeExe -Force
         Copy-Item -LiteralPath $envPath -Destination $envBackup -Force
 
-        [ordered]@{
+        Write-JsonObject -Path $manifestPath -Payload ([ordered]@{
             created_at = (Get-Date).ToString("o")
             action = "build-local-codex"
             mode = $ModeName
@@ -563,8 +753,7 @@ function Invoke-Deploy {
             wrapper_env_path = $envPath
             wrapper_env_backup = $envBackup
             previous_real_exe = $previousRealExe
-        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
-
+        })
         $payload["WIZARD_CODEX_REAL_EXE"] = $activeExe
         $payload["WIZARD_CODEX_LOCAL_FORK_MANIFEST"] = $manifestPath
         $payload["WIZARD_CODEX_LOCAL_FORK_INSTALLED_AT"] = (Get-Date).ToString("o")
@@ -657,9 +846,38 @@ else {
 }
 $wrapperPayload = if ($envPath) { Read-JsonObject -Path $envPath } else { [ordered]@{} }
 
-if ($Mode -eq "Status") {
-    [ordered]@{
+function Get-RecentBuildLogSummaries {
+    param(
+        [string]$Root,
+        [int]$Limit = 8
+    )
+
+    $logRoot = Join-Path $Root "logs"
+    if (-not (Test-Path -LiteralPath $logRoot)) {
+        return @()
+    }
+
+    return Get-ChildItem -LiteralPath $logRoot -Filter "*.log" -File -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First $Limit |
+        ForEach-Object {
+            $errors = Select-String -Path $_.FullName -Pattern "error\[|^error: |LLVM ERROR|fatal error|STATUS_|paging file|os error 112|os error 1455|out of memory|memory allocation|test result: FAILED|could not compile" -ErrorAction SilentlyContinue
+            $finished = Select-String -Path $_.FullName -Pattern "^\s*Finished |test result: ok" -ErrorAction SilentlyContinue | Select-Object -Last 1
+            [ordered]@{
+                path = $_.FullName
+                size_kb = [math]::Round($_.Length / 1KB, 1)
+                last_write_time = $_.LastWriteTime.ToString("o")
+                error_count = @($errors).Count
+                first_error = if ($errors) { @($errors)[0].Line.Trim() } else { $null }
+                last_success = if ($finished) { $finished.Line.Trim() } else { $null }
+            }
+        }
+}
+
+if ($Mode -in @("Status", "Diagnose")) {
+    $statusPayload = [ordered]@{
         status = "ok"
+        mode = $Mode
         repo_root = $RepoRoot
         active_build_processes = $activeBuilds
         release_binary = if (Test-Path -LiteralPath $releaseBinary) {
@@ -673,7 +891,18 @@ if ($Mode -eq "Status") {
         wrapper_env_path = $envPath
         wrapper_real_exe = [string]$wrapperPayload["WIZARD_CODEX_REAL_EXE"]
         free_c_drive_bytes = (Get-PSDrive C).Free
-    } | ConvertTo-Json -Depth 8
+    }
+    if ($Mode -eq "Diagnose") {
+        $statusPayload["target_release_gb"] = Get-DirectorySizeGB -Path (Join-Path $RepoRoot "codex-rs\target\release")
+        $statusPayload["target_debug_gb"] = Get-DirectorySizeGB -Path (Join-Path $RepoRoot "codex-rs\target\debug")
+        $statusPayload["target_dev_small_gb"] = Get-DirectorySizeGB -Path (Join-Path $RepoRoot "codex-rs\target\dev-small")
+        $statusPayload["memory"] = Get-PageFileSnapshot
+        $statusPayload["release_deps_prune"] = "disabled: Cargo can still reference older hashed deps artifacts from live fingerprints"
+        $statusPayload["release_pdb_gb"] = Get-ReleasePdbSizeGB -RepoRoot $RepoRoot
+        $statusPayload["release_deps_duplicate_summary"] = @(Get-ReleaseDepsDuplicateSummary -RepoRoot $RepoRoot -Limit 12)
+        $statusPayload["recent_logs"] = @(Get-RecentBuildLogSummaries -Root $RepoRoot)
+    }
+    $statusPayload | ConvertTo-Json -Depth 8
     return
 }
 
@@ -724,7 +953,7 @@ if ($Mode -eq "Progress") {
         rustc = $rustcInfo
         log = $logSummary
         free_c_drive_gb = [math]::Round((Get-PSDrive C).Free / 1GB, 1)
-        free_ram_gb = [math]::Round((Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue).FreePhysicalMemory / 1MB, 1)
+        memory = Get-PageFileSnapshot
     } | ConvertTo-Json -Depth 8
     return
 }

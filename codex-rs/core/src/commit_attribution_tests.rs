@@ -37,6 +37,7 @@ fn resolve_value_handles_default_custom_and_blank() {
 fn instruction_mentions_trailer_and_omits_generated_with() {
     let instruction = commit_message_trailer_instruction(Some("AgentX <agent@example.com>"))
         .expect("instruction expected");
+    assert!(instruction.contains("Before committing your own implementation work"));
     assert!(instruction.contains("Co-authored-by: AgentX <agent@example.com>"));
     assert!(instruction.contains("exactly once"));
     assert!(!instruction.contains("Generated-with"));

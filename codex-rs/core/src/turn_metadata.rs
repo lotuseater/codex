@@ -171,6 +171,7 @@ pub(crate) struct TurnMetadataState {
     base_metadata: TurnMetadataBag,
     base_header: String,
     enriched_header: Arc<RwLock<Option<String>>>,
+    initial_git_commit_hash: Arc<RwLock<Option<String>>>,
     turn_started_at_unix_ms: Arc<RwLock<Option<i64>>>,
     responsesapi_client_metadata: Arc<RwLock<Option<HashMap<String, String>>>>,
     enrichment_task: Arc<Mutex<Option<JoinHandle<()>>>>,
@@ -213,6 +214,7 @@ impl TurnMetadataState {
             base_metadata,
             base_header,
             enriched_header: Arc::new(RwLock::new(None)),
+            initial_git_commit_hash: Arc::new(RwLock::new(None)),
             turn_started_at_unix_ms: Arc::new(RwLock::new(None)),
             responsesapi_client_metadata: Arc::new(RwLock::new(None)),
             enrichment_task: Arc::new(Mutex::new(None)),
@@ -271,6 +273,26 @@ impl TurnMetadataState {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(turn_started_at_unix_ms);
     }
 
+    pub(crate) async fn ensure_initial_git_commit_hash(&self) {
+        if self.repo_root.is_none()
+            || self
+                .initial_git_commit_hash
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .is_some()
+        {
+            return;
+        }
+        let Some(latest_git_commit_hash) = get_head_commit_hash(&self.cwd).await.map(|sha| sha.0)
+        else {
+            return;
+        };
+        *self
+            .initial_git_commit_hash
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(latest_git_commit_hash);
+    }
+
     pub(crate) fn spawn_git_enrichment_task(&self) {
         if self.repo_root.is_none() {
             return;
@@ -322,6 +344,22 @@ impl TurnMetadataState {
         }
     }
 
+    pub(crate) async fn git_head_changed_since_start(&self) -> bool {
+        let initial_git_commit_hash = self
+            .initial_git_commit_hash
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let Some(initial_git_commit_hash) = initial_git_commit_hash else {
+            return false;
+        };
+        let Some(current_git_commit_hash) = get_head_commit_hash(&self.cwd).await.map(|sha| sha.0)
+        else {
+            return false;
+        };
+        current_git_commit_hash != initial_git_commit_hash
+    }
+
     async fn fetch_workspace_git_metadata(&self) -> WorkspaceGitMetadata {
         let (head_commit_hash, associated_remote_urls, has_changes) = tokio::join!(
             get_head_commit_hash(&self.cwd),
@@ -329,6 +367,13 @@ impl TurnMetadataState {
             get_has_changes(&self.cwd),
         );
         let latest_git_commit_hash = head_commit_hash.map(|sha| sha.0);
+        if let Some(latest_git_commit_hash) = latest_git_commit_hash.as_ref() {
+            *self
+                .initial_git_commit_hash
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) =
+                Some(latest_git_commit_hash.clone());
+        }
 
         WorkspaceGitMetadata {
             associated_remote_urls,

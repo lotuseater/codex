@@ -60,6 +60,11 @@ pub(super) async fn make_test_app() -> App {
         pending_app_server_requests: PendingAppServerRequests::default(),
         pending_plugin_enabled_writes: HashMap::new(),
         pending_hook_enabled_writes: HashMap::new(),
+        auto_loop: AutoLoopState::new(AutoLoopSettings::new(
+            /*enabled*/ false,
+            Duration::from_secs(300),
+            "go on".to_string(),
+        )),
     }
 }
 

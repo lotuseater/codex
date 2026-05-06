@@ -38,7 +38,11 @@ use codex_utils_cli::CliConfigOverrides;
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
 use std::path::PathBuf;
+use std::time::Duration;
 use supports_color::Stream;
+
+const DEFAULT_AUTO_LOOP_PERIOD: Duration = Duration::from_secs(5 * 60);
+const DEFAULT_AUTO_LOOP_MESSAGE: &str = "go on";
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod app_cmd;
@@ -752,6 +756,9 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
 
     match subcommand {
         None => {
+            if interactive.resume {
+                interactive.resume_picker = true;
+            }
             prepend_config_flags(
                 &mut interactive.config_overrides,
                 root_config_overrides.clone(),
@@ -1668,6 +1675,10 @@ fn merge_interactive_cli_flags(interactive: &mut TuiCli, subcommand_cli: TuiCli)
         shared,
         approval_policy,
         web_search,
+        resume,
+        auto_loop,
+        auto_loop_period,
+        auto_loop_message,
         prompt,
         config_overrides,
         ..
@@ -1680,6 +1691,18 @@ fn merge_interactive_cli_flags(interactive: &mut TuiCli, subcommand_cli: TuiCli)
     }
     if web_search {
         interactive.web_search = true;
+    }
+    if resume {
+        interactive.resume_picker = true;
+    }
+    if auto_loop {
+        interactive.auto_loop = true;
+        if auto_loop_period != DEFAULT_AUTO_LOOP_PERIOD {
+            interactive.auto_loop_period = auto_loop_period;
+        }
+        if auto_loop_message != DEFAULT_AUTO_LOOP_MESSAGE {
+            interactive.auto_loop_message = auto_loop_message;
+        }
     }
     if let Some(prompt) = prompt {
         // Normalize CRLF/CR to LF so CLI-provided text can't leak `\r` into TUI state.
@@ -2147,6 +2170,77 @@ mod tests {
 
         assert!(interactive.resume_picker);
         assert!(interactive.resume_include_non_interactive);
+    }
+
+    #[test]
+    fn root_resume_flag_opens_picker_and_preserves_loop_settings() {
+        let cli = MultitoolCli::try_parse_from([
+            "codex",
+            "--resume",
+            "--loop",
+            "--loop-period",
+            "90s",
+            "--loop-message",
+            "continue",
+        ])
+        .expect("parse");
+
+        assert!(cli.subcommand.is_none());
+        assert!(cli.interactive.resume);
+        assert!(cli.interactive.auto_loop);
+        assert_eq!(
+            cli.interactive.auto_loop_period,
+            std::time::Duration::from_secs(90)
+        );
+        assert_eq!(cli.interactive.auto_loop_message, "continue");
+    }
+
+    #[test]
+    fn resume_merges_loop_flags() {
+        let interactive = finalize_resume_from_args(
+            [
+                "codex",
+                "resume",
+                "--loop",
+                "--loop-period",
+                "2m",
+                "--loop-message",
+                "go on",
+            ]
+            .as_ref(),
+        );
+
+        assert!(interactive.resume_picker);
+        assert!(interactive.auto_loop);
+        assert_eq!(
+            interactive.auto_loop_period,
+            std::time::Duration::from_secs(120)
+        );
+        assert_eq!(interactive.auto_loop_message, "go on");
+    }
+
+    #[test]
+    fn resume_loop_preserves_root_loop_settings_when_subcommand_uses_defaults() {
+        let interactive = finalize_resume_from_args(
+            [
+                "codex",
+                "--loop-period",
+                "90s",
+                "--loop-message",
+                "continue",
+                "resume",
+                "--loop",
+            ]
+            .as_ref(),
+        );
+
+        assert!(interactive.resume_picker);
+        assert!(interactive.auto_loop);
+        assert_eq!(
+            interactive.auto_loop_period,
+            std::time::Duration::from_secs(90)
+        );
+        assert_eq!(interactive.auto_loop_message, "continue");
     }
 
     #[test]

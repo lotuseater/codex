@@ -1119,6 +1119,10 @@ impl BottomPane {
         self.pending_thread_approvals.threads()
     }
 
+    pub(crate) fn has_pending_thread_approvals(&self) -> bool {
+        !self.pending_thread_approvals.is_empty()
+    }
+
     /// Update the unified-exec process set and refresh whichever summary surface is active.
     ///
     /// The summary may be displayed inline in the status row or as a dedicated

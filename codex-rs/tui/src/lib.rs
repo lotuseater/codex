@@ -604,14 +604,26 @@ async fn lookup_latest_session_target_with_app_server(
     cwd_filter: Option<&Path>,
     include_non_interactive: bool,
 ) -> color_eyre::Result<Option<resume_picker::SessionTarget>> {
-    let response = app_server
+    let mut response = app_server
         .thread_list(latest_session_lookup_params(
             app_server.is_remote(),
             config,
             cwd_filter,
             include_non_interactive,
+            /*use_state_db_only*/ true,
         ))
         .await?;
+    if response.data.is_empty() && response.next_cursor.is_none() {
+        response = app_server
+            .thread_list(latest_session_lookup_params(
+                app_server.is_remote(),
+                config,
+                cwd_filter,
+                include_non_interactive,
+                /*use_state_db_only*/ false,
+            ))
+            .await?;
+    }
     Ok(response
         .data
         .into_iter()
@@ -623,6 +635,7 @@ fn latest_session_lookup_params(
     config: &Config,
     cwd_filter: Option<&Path>,
     include_non_interactive: bool,
+    use_state_db_only: bool,
 ) -> ThreadListParams {
     ThreadListParams {
         cursor: None,
@@ -638,7 +651,7 @@ fn latest_session_lookup_params(
             .then_some(vec![ThreadSourceKind::Cli, ThreadSourceKind::VsCode]),
         archived: Some(false),
         cwd: cwd_filter.map(|cwd| ThreadListCwdFilter::One(cwd.to_string_lossy().to_string())),
-        use_state_db_only: false,
+        use_state_db_only,
         search_term: None,
     }
 }
@@ -1421,6 +1434,9 @@ async fn run_ratatui_app(
         prompt,
         shared,
         no_alt_screen,
+        auto_loop,
+        auto_loop_period,
+        auto_loop_message,
         ..
     } = cli;
     let images = shared.into_inner().images;
@@ -1469,6 +1485,7 @@ async fn run_ratatui_app(
         remote_url,
         remote_auth_token,
         environment_manager,
+        crate::app::AutoLoopSettings::new(auto_loop, auto_loop_period, auto_loop_message),
     )
     .await;
 
@@ -1786,6 +1803,7 @@ mod tests {
             &config,
             Some(cwd.as_path()),
             /*include_non_interactive*/ false,
+            /*use_state_db_only*/ true,
         );
 
         assert_eq!(params.model_providers, Some(vec![config.model_provider_id]));
@@ -1804,7 +1822,7 @@ mod tests {
 
         let params = latest_session_lookup_params(
             /*is_remote*/ true, &config, /*cwd_filter*/ None,
-            /*include_non_interactive*/ false,
+            /*include_non_interactive*/ false, /*use_state_db_only*/ true,
         );
 
         assert_eq!(params.model_providers, None);
@@ -1824,6 +1842,7 @@ mod tests {
             &config,
             Some(cwd),
             /*include_non_interactive*/ false,
+            /*use_state_db_only*/ true,
         );
 
         assert_eq!(params.model_providers, None);

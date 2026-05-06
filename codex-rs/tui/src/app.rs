@@ -182,6 +182,7 @@ mod agent_navigation;
 mod app_server_event_targets;
 mod app_server_events;
 pub(crate) mod app_server_requests;
+mod auto_loop;
 mod background_requests;
 mod config_persistence;
 mod event_dispatch;
@@ -199,6 +200,9 @@ mod thread_events;
 mod thread_goal_actions;
 mod thread_routing;
 mod thread_session_state;
+
+pub(crate) use auto_loop::AutoLoopSettings;
+use auto_loop::AutoLoopState;
 
 use self::agent_navigation::AgentNavigationDirection;
 use self::agent_navigation::AgentNavigationState;
@@ -504,6 +508,7 @@ pub(crate) struct App {
     // Serialize hook enablement writes per hook so stale completions cannot
     // persist an older toggle after a newer one.
     pending_hook_enabled_writes: HashMap<String, Option<bool>>,
+    auto_loop: AutoLoopState,
 }
 
 fn active_turn_not_steerable_turn_error(error: &TypedRequestError) -> Option<AppServerTurnError> {
@@ -609,6 +614,7 @@ impl App {
         remote_app_server_url: Option<String>,
         remote_app_server_auth_token: Option<String>,
         environment_manager: Arc<EnvironmentManager>,
+        auto_loop_settings: AutoLoopSettings,
     ) -> Result<AppExitInfo> {
         use tokio_stream::StreamExt;
         let (app_event_tx, mut app_event_rx) = unbounded_channel();
@@ -887,6 +893,7 @@ See the Codex keymap documentation for supported actions and examples."
             pending_app_server_requests: PendingAppServerRequests::default(),
             pending_plugin_enabled_writes: HashMap::new(),
             pending_hook_enabled_writes: HashMap::new(),
+            auto_loop: AutoLoopState::new(auto_loop_settings),
         };
         if let Some(started) = initial_started_thread {
             app.enqueue_primary_thread_session(started.session, started.turns)
@@ -964,7 +971,10 @@ See the Codex keymap documentation for supported actions and examples."
                 let control = select! {
                     Some(event) = app_event_rx.recv() => {
                         match app.handle_event(tui, &mut app_server, event).await {
-                            Ok(control) => control,
+                            Ok(control) => {
+                                app.auto_loop.note_activity();
+                                control
+                            }
                             Err(err) => break Err(err),
                         }
                     }
@@ -982,6 +992,7 @@ See the Codex keymap documentation for supported actions and examples."
                             if let Err(err) = app.handle_active_thread_event(tui, &mut app_server, event).await {
                                 break Err(err);
                             }
+                            app.auto_loop.note_activity();
                         } else {
                             app.clear_active_thread().await;
                         }
@@ -989,8 +1000,15 @@ See the Codex keymap documentation for supported actions and examples."
                     }
                     event = tui_events.next() => {
                         if let Some(event) = event {
+                            let is_draw_or_resize =
+                                matches!(&event, TuiEvent::Draw | TuiEvent::Resize);
                             match app.handle_tui_event(tui, &mut app_server, event).await {
-                                Ok(control) => control,
+                                Ok(control) => {
+                                    if !is_draw_or_resize {
+                                        app.auto_loop.note_activity();
+                                    }
+                                    control
+                                }
                                 Err(err) => break Err(err),
                             }
                         } else {
@@ -1000,12 +1018,19 @@ See the Codex keymap documentation for supported actions and examples."
                     }
                     app_server_event = app_server.next_event(), if listen_for_app_server_events => {
                         match app_server_event {
-                            Some(event) => app.handle_app_server_event(&app_server, event).await,
+                            Some(event) => {
+                                app.handle_app_server_event(&app_server, event).await;
+                                app.auto_loop.note_activity();
+                            }
                             None => {
                                 listen_for_app_server_events = false;
                                 tracing::warn!("app-server event stream closed");
                             }
                         }
+                        AppRunControl::Continue
+                    }
+                    _ = tokio::time::sleep(app.auto_loop.sleep_duration()), if app.auto_loop.settings.enabled => {
+                        app.handle_auto_loop_tick();
                         AppRunControl::Continue
                     }
                 };

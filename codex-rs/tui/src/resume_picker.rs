@@ -417,16 +417,30 @@ async fn load_app_server_page(
     sort_key: ThreadSortKey,
     include_non_interactive: bool,
 ) -> std::io::Result<PickerPage> {
-    let response = app_server
+    let mut response = app_server
         .thread_list(thread_list_params(
-            cursor,
+            cursor.clone(),
             cwd_filter,
-            provider_filter,
+            provider_filter.clone(),
             sort_key,
             include_non_interactive,
+            /*use_state_db_only*/ true,
         ))
         .await
         .map_err(std::io::Error::other)?;
+    if cursor.is_none() && response.data.is_empty() && response.next_cursor.is_none() {
+        response = app_server
+            .thread_list(thread_list_params(
+                cursor,
+                cwd_filter,
+                provider_filter,
+                sort_key,
+                include_non_interactive,
+                /*use_state_db_only*/ false,
+            ))
+            .await
+            .map_err(std::io::Error::other)?;
+    }
     let num_scanned_files = response.data.len();
 
     Ok(PickerPage {
@@ -1001,6 +1015,7 @@ fn thread_list_params(
     provider_filter: ProviderFilter,
     sort_key: ThreadSortKey,
     include_non_interactive: bool,
+    use_state_db_only: bool,
 ) -> ThreadListParams {
     ThreadListParams {
         cursor,
@@ -1015,7 +1030,7 @@ fn thread_list_params(
             .then_some(vec![ThreadSourceKind::Cli, ThreadSourceKind::VsCode]),
         archived: Some(false),
         cwd: cwd_filter.map(|cwd| ThreadListCwdFilter::One(cwd.to_string_lossy().into_owned())),
-        use_state_db_only: false,
+        use_state_db_only,
         search_term: None,
     }
 }
@@ -1584,12 +1599,14 @@ mod tests {
             ProviderFilter::MatchDefault(String::from("openai")),
             ThreadSortKey::UpdatedAt,
             /*include_non_interactive*/ false,
+            /*use_state_db_only*/ true,
         );
 
         assert_eq!(
             params.cwd,
             Some(ThreadListCwdFilter::One(String::from("/tmp/project")))
         );
+        assert!(params.use_state_db_only);
     }
 
     #[test]
@@ -1600,6 +1617,7 @@ mod tests {
             ProviderFilter::Any,
             ThreadSortKey::UpdatedAt,
             /*include_non_interactive*/ false,
+            /*use_state_db_only*/ true,
         );
 
         assert_eq!(params.cursor, Some(String::from("cursor-1")));
@@ -1622,6 +1640,7 @@ mod tests {
             ProviderFilter::Any,
             ThreadSortKey::UpdatedAt,
             /*include_non_interactive*/ true,
+            /*use_state_db_only*/ true,
         );
 
         assert_eq!(params.cursor, Some(String::from("cursor-1")));

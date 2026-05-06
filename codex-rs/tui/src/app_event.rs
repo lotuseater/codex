@@ -9,6 +9,7 @@
 //! quits without reaching into the app loop or coupling to shutdown/exit sequencing.
 
 use std::path::PathBuf;
+use std::time::Duration;
 
 use codex_app_server_protocol::AddCreditsNudgeCreditType;
 use codex_app_server_protocol::AddCreditsNudgeEmailStatus;
@@ -62,6 +63,15 @@ pub(crate) enum RealtimeAudioDeviceKind {
 pub(crate) enum ThreadGoalSetMode {
     ConfirmIfExists,
     ReplaceExisting,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum AutoLoopUpdate {
+    Status,
+    Enable,
+    Disable,
+    SetPeriod(Duration),
+    SetMessage(String),
 }
 
 #[derive(Debug, Clone)]
@@ -167,6 +177,9 @@ pub(crate) enum AppEvent {
 
     /// Open the resume picker inside the running TUI session.
     OpenResumePicker,
+
+    /// Show or update the automatic idle loop.
+    AutoLoop(AutoLoopUpdate),
 
     /// Resume a thread by UUID or thread name inside the running TUI session.
     ResumeSessionByIdOrName(String),

@@ -6,6 +6,7 @@
 //! slash-command recall follows the same submitted-input rule as ordinary text.
 
 use super::*;
+use crate::app_event::AutoLoopUpdate;
 use crate::app_event::ThreadGoalSetMode;
 use crate::bottom_pane::prompt_args::parse_slash_name;
 use crate::bottom_pane::slash_commands;
@@ -146,6 +147,10 @@ impl ChatWidget {
             }
             SlashCommand::Fork => {
                 self.app_event_tx.send(AppEvent::ForkCurrentSession);
+            }
+            SlashCommand::Loop => {
+                self.app_event_tx
+                    .send(AppEvent::AutoLoop(AutoLoopUpdate::Status));
             }
             SlashCommand::Init => {
                 let init_target = self.config.cwd.join(DEFAULT_AGENTS_MD_FILENAME);
@@ -722,6 +727,9 @@ impl ChatWidget {
                 self.app_event_tx
                     .send(AppEvent::ResumeSessionByIdOrName(args));
             }
+            SlashCommand::Loop if !trimmed.is_empty() => {
+                self.dispatch_loop_command_args(trimmed);
+            }
             SlashCommand::SandboxReadRoot if !trimmed.is_empty() => {
                 self.app_event_tx
                     .send(AppEvent::BeginWindowsSandboxGrantReadRoot { path: args });
@@ -835,6 +843,45 @@ impl ChatWidget {
         }
     }
 
+    fn dispatch_loop_command_args(&mut self, trimmed: &str) {
+        let mut parts = trimmed.splitn(2, char::is_whitespace);
+        let command = parts.next().unwrap_or_default().to_ascii_lowercase();
+        let rest = parts.next().unwrap_or_default().trim();
+        let update = match command.as_str() {
+            "status" => AutoLoopUpdate::Status,
+            "on" => AutoLoopUpdate::Enable,
+            "off" => AutoLoopUpdate::Disable,
+            "period" => {
+                if rest.is_empty() {
+                    self.add_error_message("Usage: /loop period <duration>".to_string());
+                    return;
+                }
+                match crate::cli::parse_loop_period(rest) {
+                    Ok(period) => AutoLoopUpdate::SetPeriod(period),
+                    Err(err) => {
+                        self.add_error_message(format!("Invalid loop period: {err}"));
+                        return;
+                    }
+                }
+            }
+            "message" => {
+                let message = rest;
+                if message.is_empty() {
+                    self.add_error_message("Loop message must not be empty.".to_string());
+                    return;
+                }
+                AutoLoopUpdate::SetMessage(message.to_string())
+            }
+            _ => {
+                self.add_error_message(
+                    "Usage: /loop [status|on|off|period <duration>|message <text>]".to_string(),
+                );
+                return;
+            }
+        };
+        self.app_event_tx.send(AppEvent::AutoLoop(update));
+    }
+
     fn queued_command_drain_result(&self, cmd: SlashCommand) -> QueueDrain {
         if self.is_user_turn_pending_or_running() || !self.bottom_pane.no_modal_or_popup_active() {
             return QueueDrain::Stop;
@@ -862,6 +909,7 @@ impl ChatWidget {
             | SlashCommand::Clear
             | SlashCommand::Resume
             | SlashCommand::Fork
+            | SlashCommand::Loop
             | SlashCommand::Init
             | SlashCommand::Compact
             | SlashCommand::Review

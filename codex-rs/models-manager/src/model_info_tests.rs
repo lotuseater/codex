@@ -66,6 +66,7 @@ fn fallback_model_includes_self_review_instructions() {
             .base_instructions
             .contains("Report self-review details only")
     );
+    assert!(model.base_instructions.contains("review before the commit"));
 }
 
 #[test]

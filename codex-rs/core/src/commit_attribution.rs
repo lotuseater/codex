@@ -10,7 +10,7 @@ pub(crate) fn commit_message_trailer_instruction(
 ) -> Option<String> {
     let trailer = build_commit_message_trailer(config_attribution)?;
     Some(format!(
-        "When you write or edit a git commit message, ensure the message ends with this trailer exactly once:\n{trailer}\n\nRules:\n- Keep existing trailers and append this trailer at the end if missing.\n- Do not duplicate this trailer if it already exists.\n- Keep one blank line between the commit body and trailer block."
+        "Before committing your own implementation work, review the uncommitted diff and verification status. A review after commit is not a substitute because the uncommitted diff may already be gone.\n\nWhen you write or edit a git commit message, ensure the message ends with this trailer exactly once:\n{trailer}\n\nRules:\n- Keep existing trailers and append this trailer at the end if missing.\n- Do not duplicate this trailer if it already exists.\n- Keep one blank line between the commit body and trailer block."
     ))
 }
 

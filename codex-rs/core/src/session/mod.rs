@@ -1198,12 +1198,14 @@ impl Session {
         &self,
         turn_token_usage: &TokenUsage,
         tool_calls: u64,
+        git_commit_observed: bool,
     ) {
         let mut state = self.state.lock().await;
         state.record_regular_turn_finished_for_semantic_compact(
             checkpoint_policy::SemanticCompactTurnInput {
                 token_usage: turn_token_usage,
                 tool_calls,
+                git_commit_observed,
             },
         );
     }

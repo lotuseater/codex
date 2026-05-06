@@ -775,7 +775,7 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::SemanticAutoCompact,
         key: "semantic_auto_compact",
         stage: Stage::UnderDevelopment,
-        default_enabled: false,
+        default_enabled: true,
     },
     FeatureSpec {
         id: Feature::SemanticCheckpointGitSync,

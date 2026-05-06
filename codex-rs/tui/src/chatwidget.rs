@@ -10318,6 +10318,46 @@ impl ChatWidget {
         self.bottom_pane.composer_is_empty()
     }
 
+    pub(crate) fn can_submit_auto_loop_message(&self) -> Result<(), &'static str> {
+        if !self.is_session_configured() {
+            return Err("session is not configured yet");
+        }
+        if !self.bottom_pane.no_modal_or_popup_active() {
+            return Err("a prompt or popup is active");
+        }
+        if !self.bottom_pane.composer_is_empty() {
+            return Err("composer is not empty");
+        }
+        if self.is_user_turn_pending_or_running() {
+            return Err("a turn is still running");
+        }
+        if self.has_queued_follow_up_messages() || !self.pending_steers.is_empty() {
+            return Err("another message is already queued");
+        }
+        if self.bottom_pane.has_pending_thread_approvals() {
+            return Err("thread approvals are pending");
+        }
+        Ok(())
+    }
+
+    pub(crate) fn submit_auto_loop_message(&mut self, text: String) -> bool {
+        if text.trim().is_empty() || self.can_submit_auto_loop_message().is_err() {
+            return false;
+        }
+        let (accepted, _) = self.submit_user_message_with_history_and_shell_escape_policy(
+            UserMessage {
+                text,
+                local_images: Vec::new(),
+                remote_image_urls: Vec::new(),
+                text_elements: Vec::new(),
+                mention_bindings: Vec::new(),
+            },
+            UserMessageHistoryRecord::UserMessageText,
+            ShellEscapePolicy::Disallow,
+        );
+        accepted
+    }
+
     #[cfg(test)]
     pub(crate) fn is_task_running_for_test(&self) -> bool {
         self.bottom_pane.is_task_running()

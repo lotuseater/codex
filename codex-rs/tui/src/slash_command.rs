@@ -34,6 +34,7 @@ pub enum SlashCommand {
     New,
     Resume,
     Fork,
+    Loop,
     Init,
     Compact,
     Plan,
@@ -85,6 +86,7 @@ impl SlashCommand {
             SlashCommand::Review => "review my current changes and find issues",
             SlashCommand::Rename => "rename the current thread",
             SlashCommand::Resume => "resume a saved chat",
+            SlashCommand::Loop => "configure automatic idle continuation",
             SlashCommand::Clear => "clear the terminal and start a new chat",
             SlashCommand::Fork => "fork the current chat",
             SlashCommand::Quit | SlashCommand::Exit => "exit Codex",
@@ -155,6 +157,7 @@ impl SlashCommand {
                 | SlashCommand::Ide
                 | SlashCommand::Mcp
                 | SlashCommand::Side
+                | SlashCommand::Loop
                 | SlashCommand::Resume
                 | SlashCommand::SandboxReadRoot
         )
@@ -218,7 +221,8 @@ impl SlashCommand {
             | SlashCommand::Ide
             | SlashCommand::Quit
             | SlashCommand::Exit
-            | SlashCommand::Side => true,
+            | SlashCommand::Side
+            | SlashCommand::Loop => true,
             SlashCommand::Rollout => true,
             SlashCommand::TestApproval => true,
             SlashCommand::Realtime => true,

@@ -19,6 +19,7 @@ use tracing::info_span;
 use tracing::trace;
 use tracing::warn;
 
+use crate::compact::InitialContextInjection;
 use crate::config::Config;
 use crate::context::ContextualUserFragment;
 use crate::goals::GoalRuntimeEvent;
@@ -26,11 +27,16 @@ use crate::hook_runtime::PendingInputHookDisposition;
 use crate::hook_runtime::inspect_pending_input;
 use crate::hook_runtime::record_additional_contexts;
 use crate::hook_runtime::record_pending_input;
+use crate::session::checkpoint_policy::SemanticCompactDecision;
+use crate::session::checkpoint_policy::SemanticCompactInput;
 use crate::session::session::Session;
+use crate::session::turn::run_auto_compact;
 use crate::session::turn_context::TurnContext;
 use crate::state::ActiveTurn;
 use crate::state::RunningTask;
 use crate::state::TaskKind;
+use codex_analytics::CompactionPhase;
+use codex_analytics::CompactionReason;
 use codex_analytics::TurnTokenUsageFact;
 use codex_login::AuthManager;
 use codex_models_manager::manager::SharedModelsManager;
@@ -317,6 +323,10 @@ impl Session {
         turn_context
             .turn_metadata_state
             .set_turn_started_at_unix_ms(turn_started_at_unix_ms);
+        turn_context
+            .turn_metadata_state
+            .ensure_initial_git_commit_hash()
+            .await;
         let token_usage_at_turn_start = self.total_token_usage().await.unwrap_or_default();
 
         let cancellation_token = CancellationToken::new();
@@ -568,14 +578,15 @@ impl Session {
         let mut turn_token_usage_for_semantic_compact = TokenUsage::default();
         let mut records_turn_token_usage_on_span = false;
         let mut finished_task_kind = None;
+        let mut drained_pending_input = false;
         let turn_state = {
-            let mut active = self.active_turn.lock().await;
-            if let Some(at) = active.as_mut()
-                && let Some(removed_task) = at.remove_task(&turn_context.sub_id)
+            let active = self.active_turn.lock().await;
+            if let Some(at) = active.as_ref()
+                && let Some(task) = at.tasks.get(&turn_context.sub_id)
             {
-                finished_task_kind = Some(removed_task.kind);
-                records_turn_token_usage_on_span = removed_task.records_turn_token_usage_on_span;
-                if removed_task.active_turn_is_empty {
+                finished_task_kind = Some(task.kind);
+                records_turn_token_usage_on_span = task.task.records_turn_token_usage_on_span();
+                if at.tasks.len() == 1 {
                     should_clear_active_turn = true;
                     let turn_state = Arc::clone(&at.turn_state);
                     Some(turn_state)
@@ -589,6 +600,7 @@ impl Session {
         if let Some(turn_state) = turn_state.as_ref() {
             let mut ts = turn_state.lock().await;
             pending_input = ts.take_pending_input();
+            drained_pending_input = !pending_input.is_empty();
             turn_had_memory_citation = ts.has_memory_citation;
             turn_tool_calls = ts.tool_calls;
             token_usage_at_turn_start = Some(ts.token_usage_at_turn_start.clone());
@@ -727,6 +739,55 @@ impl Session {
             turn_context.config.memories.use_memories,
             turn_had_memory_citation,
         );
+        if should_clear_active_turn {
+            match finished_task_kind {
+                Some(TaskKind::Regular) => {
+                    let git_commit_observed = turn_context
+                        .turn_metadata_state
+                        .git_head_changed_since_start()
+                        .await;
+                    self.record_regular_turn_finished_for_semantic_compact(
+                        &turn_token_usage_for_semantic_compact,
+                        turn_tool_calls,
+                        git_commit_observed,
+                    )
+                    .await;
+                }
+                Some(TaskKind::Compact) => {
+                    self.record_compaction_finished_for_semantic_compact().await;
+                }
+                Some(TaskKind::Review) | None => {}
+            }
+        }
+        if should_clear_active_turn
+            && matches!(finished_task_kind, Some(TaskKind::Regular))
+            && !drained_pending_input
+            && let Err(err) = self
+                .maybe_run_post_turn_semantic_compact(&turn_context)
+                .await
+        {
+            warn!("failed to run post-turn semantic compact: {err}");
+        }
+        if should_clear_active_turn && matches!(finished_task_kind, Some(TaskKind::Regular)) {
+            let pending_after_compact = self.get_pending_input().await;
+            if !pending_after_compact.is_empty() {
+                self.queue_response_items_for_next_turn(pending_after_compact)
+                    .await;
+            }
+        }
+
+        let removed_active_turn_is_empty = {
+            let mut active = self.active_turn.lock().await;
+            if let Some(at) = active.as_mut()
+                && let Some(removed_task) = at.remove_task(&turn_context.sub_id)
+            {
+                removed_task.active_turn_is_empty
+            } else {
+                return;
+            }
+        };
+        should_clear_active_turn = removed_active_turn_is_empty;
+
         let (completed_at, duration_ms) = turn_context
             .turn_timing_state
             .completed_at_and_duration_ms()
@@ -743,21 +804,6 @@ impl Session {
             .await
         {
             warn!("failed to apply goal runtime turn-finished event: {err}");
-        }
-        if should_clear_active_turn {
-            match finished_task_kind {
-                Some(TaskKind::Regular) => {
-                    self.record_regular_turn_finished_for_semantic_compact(
-                        &turn_token_usage_for_semantic_compact,
-                        turn_tool_calls,
-                    )
-                    .await;
-                }
-                Some(TaskKind::Compact) => {
-                    self.record_compaction_finished_for_semantic_compact().await;
-                }
-                Some(TaskKind::Review) | None => {}
-            }
         }
         let event = EventMsg::TurnComplete(TurnCompleteEvent {
             turn_id: turn_context.sub_id.clone(),
@@ -798,6 +844,82 @@ impl Session {
                 warn!("failed to apply goal runtime maybe-continue event: {err}");
             }
         }
+    }
+
+    async fn maybe_run_post_turn_semantic_compact(
+        self: &Arc<Self>,
+        turn_context: &Arc<TurnContext>,
+    ) -> anyhow::Result<()> {
+        let total_usage_tokens = self.get_total_token_usage().await;
+        let auto_compact_limit = turn_context
+            .model_info
+            .auto_compact_token_limit()
+            .or_else(|| {
+                turn_context
+                    .model_info
+                    .context_window
+                    .map(|window| window.saturating_mul(4) / 5)
+            })
+            .unwrap_or(i64::MAX);
+        let reason = if total_usage_tokens >= auto_compact_limit {
+            Some(CompactionReason::ContextLimit)
+        } else {
+            match self
+                .semantic_compact_decision(SemanticCompactInput {
+                    feature_enabled: turn_context.features.enabled(Feature::SemanticAutoCompact),
+                    total_usage_tokens,
+                    auto_compact_limit,
+                })
+                .await
+            {
+                SemanticCompactDecision::Compact { reason } => Some(reason),
+                SemanticCompactDecision::Skip => None,
+            }
+        };
+
+        let Some(reason) = reason else {
+            return Ok(());
+        };
+        if self.has_pending_input().await {
+            return Ok(());
+        }
+        if reason == CompactionReason::SemanticCheckpoint {
+            let git_outcome = self
+                .semantic_checkpoint_git_sync(turn_context, reason)
+                .await;
+            if git_outcome.should_warn() {
+                self.send_event(
+                    turn_context.as_ref(),
+                    EventMsg::Warning(WarningEvent {
+                        message: git_outcome.summary(),
+                    }),
+                )
+                .await;
+            }
+            let scratchpad = self
+                .write_semantic_compact_scratchpad(turn_context, reason, &git_outcome.summary())
+                .await;
+            let compact_result = run_auto_compact(
+                self,
+                turn_context,
+                InitialContextInjection::DoNotInject,
+                reason,
+                CompactionPhase::PostTurn,
+            )
+            .await;
+            self.cleanup_semantic_compact_scratchpad(scratchpad);
+            compact_result?;
+        } else {
+            run_auto_compact(
+                self,
+                turn_context,
+                InitialContextInjection::DoNotInject,
+                reason,
+                CompactionPhase::PostTurn,
+            )
+            .await?;
+        }
+        Ok(())
     }
 
     async fn take_active_turn(&self) -> Option<ActiveTurn> {

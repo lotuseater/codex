@@ -148,7 +148,7 @@ pub(crate) async fn run_turn(
     }
 
     let model_info = turn_context.model_info.clone();
-    let auto_compact_limit = model_info.auto_compact_token_limit().unwrap_or(i64::MAX);
+    let auto_compact_limit = auto_compact_token_limit_from_model_info(&model_info);
     let mut prewarmed_client_session = prewarmed_client_session;
     // TODO(ccunningham): Pre-turn compaction runs before context updates and the
     // new user message are recorded. Estimate pending incoming items (context
@@ -721,10 +721,7 @@ async fn run_pre_sampling_compact(
     )
     .await?;
     let mut total_usage_tokens = sess.get_total_token_usage().await;
-    let auto_compact_limit = turn_context
-        .model_info
-        .auto_compact_token_limit()
-        .unwrap_or(i64::MAX);
+    let auto_compact_limit = auto_compact_token_limit(turn_context);
     if !pre_sampling_compacted {
         match sess
             .semantic_compact_decision(SemanticCompactInput {
@@ -807,10 +804,7 @@ async fn maybe_run_previous_model_inline_compact(
     let Some(new_context_window) = turn_context.model_context_window() else {
         return Ok(false);
     };
-    let new_auto_compact_limit = turn_context
-        .model_info
-        .auto_compact_token_limit()
-        .unwrap_or(i64::MAX);
+    let new_auto_compact_limit = auto_compact_token_limit(turn_context);
     let should_run = total_usage_tokens > new_auto_compact_limit
         && previous_model_turn_context.model_info.slug != turn_context.model_info.slug
         && old_context_window > new_context_window;
@@ -828,13 +822,14 @@ async fn maybe_run_previous_model_inline_compact(
     Ok(false)
 }
 
-async fn run_auto_compact(
+pub(crate) async fn run_auto_compact(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
     initial_context_injection: InitialContextInjection,
     reason: CompactionReason,
     phase: CompactionPhase,
 ) -> CodexResult<()> {
+    send_auto_compact_notice(sess, turn_context, reason, phase).await;
     if should_use_remote_compact_task(turn_context.provider.info()) {
         run_inline_remote_auto_compact_task(
             Arc::clone(sess),
@@ -856,6 +851,62 @@ async fn run_auto_compact(
     }
     sess.record_compaction_finished_for_semantic_compact().await;
     Ok(())
+}
+
+async fn send_auto_compact_notice(
+    sess: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
+    reason: CompactionReason,
+    phase: CompactionPhase,
+) {
+    let total_usage_tokens = sess.get_total_token_usage().await;
+    let auto_compact_limit = auto_compact_token_limit(turn_context);
+    sess.send_event(
+        turn_context.as_ref(),
+        EventMsg::Warning(WarningEvent {
+            message: format!(
+                "Auto-compact starting: {} during {} (tokens {total_usage_tokens}/{auto_compact_limit}).",
+                format_compaction_reason(reason),
+                format_compaction_phase(phase),
+            ),
+        }),
+    )
+    .await;
+}
+
+fn format_compaction_reason(reason: CompactionReason) -> &'static str {
+    match reason {
+        CompactionReason::UserRequested => "user requested compaction",
+        CompactionReason::ContextLimit => "context limit reached",
+        CompactionReason::ModelDownshift => "model context window is smaller",
+        CompactionReason::SemanticCheckpoint => "semantic checkpoint threshold reached",
+    }
+}
+
+fn format_compaction_phase(phase: CompactionPhase) -> &'static str {
+    match phase {
+        CompactionPhase::StandaloneTurn => "standalone compaction",
+        CompactionPhase::PreTurn => "pre-turn preparation",
+        CompactionPhase::MidTurn => "mid-turn continuation",
+        CompactionPhase::PostTurn => "post-turn cleanup",
+    }
+}
+
+fn auto_compact_token_limit(turn_context: &TurnContext) -> i64 {
+    auto_compact_token_limit_from_model_info(&turn_context.model_info)
+}
+
+fn auto_compact_token_limit_from_model_info(
+    model_info: &codex_protocol::openai_models::ModelInfo,
+) -> i64 {
+    model_info
+        .auto_compact_token_limit()
+        .or_else(|| {
+            model_info
+                .context_window
+                .map(|window| window.saturating_mul(4) / 5)
+        })
+        .unwrap_or(i64::MAX)
 }
 
 pub(super) fn collect_explicit_app_ids_from_skill_items(
