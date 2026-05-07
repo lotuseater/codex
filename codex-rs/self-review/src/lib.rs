@@ -10,7 +10,7 @@ pub const PLAN_UPDATED_MESSAGE: &str = "Plan updated";
 pub const SELF_REVIEW_CHECKPOINT_MESSAGE: &str = "\
 Plan updated
 
-Self-review checkpoint before continuing: actively review the plan as if the user had asked \"review and improve the plan\". Check task order, missing verification, risky assumptions, stale context, user constraints, and user/remote overlap. Revise the plan first if any issue is found.";
+Self-review checkpoint before continuing: actively review the plan as if the user had asked \"review and improve the plan\". First compare the plan to the user's prompt and confirm it actually plans the requested work. Then check task order, missing verification, risky assumptions, stale context, user constraints, and user/remote overlap. Revise the plan first if any issue is found.";
 
 #[derive(Debug, Default, Clone)]
 pub struct SelfReviewTracker {
@@ -159,7 +159,7 @@ pub fn plan_self_review_prompt(plan_markdown: &str) -> String {
         "\
 Self-review the plan below before implementation.
 
-Read through the plan against the current conversation and repository context. Use targeted file reads or searches only if the context is insufficient. Improve task order, missing verification, risky assumptions, stale context, and user constraints. Keep the result practical and implementation-ready.
+Read through the plan against the current conversation and repository context. Start by comparing the plan to the user's prompt: identify the requested outcome, required constraints, and important details, then verify the plan actually covers them without drifting into adjacent work. Use targeted file reads or searches only if the context is insufficient. Improve task order, missing verification, risky assumptions, stale context, and user constraints. Keep the result practical and implementation-ready.
 
 Return the revised plan as the next proposed plan. If the plan is already strong, keep it and add only the minimal clarifications needed.
 
@@ -302,6 +302,8 @@ mod tests {
         let prompt = plan_self_review_prompt("# Plan\n- inspect");
 
         assert!(prompt.contains("Self-review the plan"));
+        assert!(prompt.contains("comparing the plan to the user's prompt"));
+        assert!(prompt.contains("without drifting into adjacent work"));
         assert!(prompt.contains("# Plan\n- inspect"));
     }
 }
