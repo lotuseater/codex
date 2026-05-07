@@ -277,14 +277,6 @@ fn collab_runtime_details(
     }
 }
 
-fn completed_or_started_item(notification: &ServerNotification) -> Option<&ThreadItem> {
-    match notification {
-        ServerNotification::ItemStarted(notification) => Some(&notification.item),
-        ServerNotification::ItemCompleted(notification) => Some(&notification.item),
-        _ => None,
-    }
-}
-
 fn default_exec_approval_decisions(
     network_approval_context: Option<&codex_app_server_protocol::NetworkApprovalContext>,
     proposed_execpolicy_amendment: Option<&codex_app_server_protocol::ExecPolicyAmendment>,

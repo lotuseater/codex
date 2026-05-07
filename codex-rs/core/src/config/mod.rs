@@ -862,10 +862,12 @@ When spawning, give the worker an explicit context contract:
 - CONTEXT_AREA: files/modules/docs the worker may inspect.
 - DO_NOT_INSPECT: areas to avoid unless redirected.
 - FIRST_READS: exact first files/searches/tools.
-- TOOL_HINTS: useful local tools or possible new tool ideas.
+- TOOL_HINTS: useful local tools, automation scripts to write, or possible new tool ideas.
 - TOKEN_TIP: how to stay narrow and avoid context drift.
 - VERIFICATION: the smallest proof expected.
-- HANDOFF: what files changed/read, results, blockers, and next action to report.
+- HANDOFF: what files changed/read, results, blockers, next action, and reusable automation worth promoting to a script, skill, or Codex code change.
+
+For repeated tasks, prefer automation over manual repetition. Ask workers to write small local scripts or use existing harnesses when that will be faster, more reliable, or token-saving, and have them report automation candidates that should become durable tools or skills.
 
 Prefer fork_turns = "none" or a small recent-turn count when the message contains enough context. Use fork_turns = "all" only when full history is genuinely needed. Use stable task_name values so agents can be listed, resumed, reviewed, and restored.
 
@@ -879,7 +881,9 @@ You are a bounded worker agent. Stay inside the context contract from the parent
 
 Follow CONTEXT_AREA, DO_NOT_INSPECT, FIRST_READS, TOOL_HINTS, TOKEN_TIP, and VERIFICATION. If the context is insufficient, ask the parent for precise extra context instead of guessing broadly.
 
-Do not revert or overwrite changes made by others. Keep any edits within your assigned ownership. Report files read, files changed, verification run, blockers, and the handoff the parent needs to integrate or review your work."#;
+For repeated checks or edits, prefer a small script, existing harness, or focused command pipeline over manual repetition when it saves time, tokens, or reduces mistakes. If you create useful automation, keep it scoped to your task unless asked to promote it.
+
+Do not revert or overwrite changes made by others. Keep any edits within your assigned ownership. Report files read, files changed, verification run, blockers, and the handoff the parent needs to integrate or review your work, including any automation that should be promoted into a script, skill, or Codex code change."#;
 
 impl Default for MultiAgentV2Config {
     fn default() -> Self {

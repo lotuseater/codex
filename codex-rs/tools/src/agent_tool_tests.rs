@@ -70,6 +70,10 @@ fn spawn_agent_tool_v2_requires_task_name_and_lists_visible_models() {
     assert!(description.contains("DO_NOT_INSPECT"));
     assert!(description.contains("fork_turns = \"none\""));
     assert!(description.contains("resume_agent"));
+    assert!(description.contains("compact_agent"));
+    assert!(description.contains("restart_agent"));
+    assert!(description.contains("encourage automation"));
+    assert!(description.contains("promoted into a durable script, skill, or Codex code change"));
     assert!(description.contains("Available model overrides"));
     assert!(description.contains("visible display (`visible-model`)"));
     assert!(!description.contains("hidden display (`hidden-model`)"));
@@ -218,6 +222,66 @@ fn resume_agent_tool_v2_accepts_task_path_target() {
     assert_eq!(
         output_schema.expect("resume output schema")["required"],
         json!(["status"])
+    );
+}
+
+#[test]
+fn compact_agent_tool_requires_target_and_returns_statuses() {
+    let ToolSpec::Function(ResponsesApiTool {
+        description,
+        parameters,
+        output_schema,
+        ..
+    }) = create_compact_agent_tool()
+    else {
+        panic!("compact_agent should be a function tool");
+    };
+
+    assert!(description.contains("live non-root MultiAgentV2 subagent"));
+    let properties = parameters
+        .properties
+        .as_ref()
+        .expect("compact_agent should use object params");
+    assert!(properties.contains_key("target"));
+    assert!(properties.contains_key("reason"));
+    assert_eq!(
+        parameters.required.as_ref(),
+        Some(&vec!["target".to_string()])
+    );
+    assert_eq!(
+        output_schema.expect("compact_agent output schema")["required"],
+        json!(["previous_status", "current_status"])
+    );
+}
+
+#[test]
+fn restart_agent_tool_accepts_optional_message_model_and_effort() {
+    let ToolSpec::Function(ResponsesApiTool {
+        description,
+        parameters,
+        output_schema,
+        ..
+    }) = create_restart_agent_tool()
+    else {
+        panic!("restart_agent should be a function tool");
+    };
+
+    assert!(description.contains("Restart a non-root MultiAgentV2 subagent"));
+    let properties = parameters
+        .properties
+        .as_ref()
+        .expect("restart_agent should use object params");
+    assert!(properties.contains_key("target"));
+    assert!(properties.contains_key("message"));
+    assert!(properties.contains_key("model"));
+    assert!(properties.contains_key("reasoning_effort"));
+    assert_eq!(
+        parameters.required.as_ref(),
+        Some(&vec!["target".to_string()])
+    );
+    assert_eq!(
+        output_schema.expect("restart_agent output schema")["required"],
+        json!(["previous_status", "status"])
     );
 }
 

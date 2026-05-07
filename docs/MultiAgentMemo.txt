@@ -18,15 +18,17 @@ Implemented slice in Codex:
 - MultiAgentV2 is the default multi-agent surface now. Users can switch the feature off with the multi_agent_v2 feature flag; they can also keep the tools enabled but switch off the planning/context-contract hints with usage_hint_enabled = false.
 - The root agent gets default planning guidance for bounded delegation, explicit context contracts, stable task_name paths, narrow fork_turns, supervision, review, resume, and close behavior.
 - The spawn_agent v2 tool now carries the same context-contract vocabulary directly in its tool description: CONTEXT_AREA, DO_NOT_INSPECT, FIRST_READS, TOOL_HINTS, TOKEN_TIP, VERIFICATION, and HANDOFF.
+- The default guidance now encourages agents to use automation for repeated work: write small scripts or use existing harnesses when that is faster, more reliable, or token-saving, and report useful automation that should be promoted into scripts, skills, or Codex code.
 - For this slice, spawned agents inherit the parent permission mode. The parent may choose model and reasoning effort per subtask, but should prefer quality: inherit current model/effort by default, lower model/effort only for simple bounded low-risk tasks, and raise or change them when ambiguity, code changes, verification, or follow-up scope needs it.
 - MultiAgentV2 has path-based resume_agent so closed agents can be resumed by relative or canonical task name, not only raw thread id.
 - TUI activity rows now carry agent runtime details beside the agent label when known: model, reasoning effort, and context-window percentage used.
-- Inactive subagent item activity is mirrored into the main terminal with an extra left indent and the agent label so child work reads as a distinct stream rather than root-agent activity.
+- Inactive subagent activity is mirrored into the main terminal with an extra left indent and the agent label. The root-side evidence stream now includes compact item summaries plus useful notifications such as command output snippets, terminal input, file-change output, MCP progress, patch updates, compaction, and token usage updates.
+- MultiAgentV2 now exposes model-facing compact_agent and restart_agent supervisor controls for useful but context-heavy, stuck, stale, or broken subagents.
+- The existing self-review flow now has a completed-plan checkpoint: when every current plan item is marked completed, Codex either runs the normal automatic self-review first or directly switches back to Plan mode to decide whether a follow-up planning iteration is needed. Any follow-up plan then goes through the normal first-plan, plan self-review, revised-plan, worker/subagent execution, and supervision cycle.
 
 Already present before this slice:
 - Task-path agents, spawn_agent, send_message, followup_task, wait_agent, close_agent, list_agents, status summaries, nicknames/roles, app-server/TUI rendering, agent picker navigation, close/wait/resume history rows, and recursive restore of persisted open descendants.
 
 Remaining broader gaps:
-- Full same-terminal child streaming is not Team App parity yet; this slice mirrors item-level subagent activity summaries, not every token/tool-output delta.
-- Old session log inspection still needs a more complete per-agent evidence view for raw tool-output deltas and token timelines.
-- Parent-forced child compaction/restart policy is not a dedicated control surface yet.
+- Full same-terminal child streaming is not Team App parity yet; this slice mirrors a compact evidence stream rather than every child output token or raw terminal byte. Full detail remains in the child thread itself.
+- Old session log inspection still needs a more complete per-agent evidence view for raw terminal replay and complete token timelines.

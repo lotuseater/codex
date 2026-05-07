@@ -731,6 +731,17 @@ impl AgentControl {
         state.send_op(agent_id, Op::Interrupt).await
     }
 
+    /// Request context compaction for an existing agent thread.
+    pub(crate) async fn compact_agent(&self, agent_id: ThreadId) -> CodexResult<String> {
+        let state = self.upgrade()?;
+        self.handle_thread_request_result(
+            agent_id,
+            &state,
+            state.send_op(agent_id, Op::Compact).await,
+        )
+        .await
+    }
+
     async fn handle_thread_request_result(
         &self,
         agent_id: ThreadId,
@@ -782,7 +793,7 @@ impl AgentControl {
     }
 
     /// Shut down `agent_id` and any live descendants reachable from the in-memory spawn tree.
-    async fn shutdown_agent_tree(&self, agent_id: ThreadId) -> CodexResult<String> {
+    pub(crate) async fn shutdown_agent_tree(&self, agent_id: ThreadId) -> CodexResult<String> {
         let descendant_ids = self.live_thread_spawn_descendants(agent_id).await?;
         let result = self.shutdown_live_agent(agent_id).await;
         for descendant_id in descendant_ids {

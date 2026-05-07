@@ -899,11 +899,8 @@ impl App {
             return;
         }
 
-        let Some(item) = completed_or_started_item(notification) else {
-            return;
-        };
         self.chat_widget
-            .on_inactive_collab_agent_item(thread_id, item);
+            .on_inactive_collab_agent_activity(thread_id, notification);
     }
 
     /// Eagerly fetches nickname and role for receiver threads referenced by a collab notification.

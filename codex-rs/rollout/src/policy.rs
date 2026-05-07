@@ -127,6 +127,8 @@ fn event_msg_persistence_mode(ev: &EventMsg) -> Option<EventPersistenceMode> {
         | EventMsg::CollabWaitingEnd(_)
         | EventMsg::CollabCloseEnd(_)
         | EventMsg::CollabResumeEnd(_)
+        | EventMsg::CollabCompactEnd(_)
+        | EventMsg::CollabRestartEnd(_)
         | EventMsg::DynamicToolCallRequest(_)
         | EventMsg::DynamicToolCallResponse(_) => Some(EventPersistenceMode::Extended),
         EventMsg::Warning(_)
@@ -174,6 +176,8 @@ fn event_msg_persistence_mode(ev: &EventMsg) -> Option<EventPersistenceMode> {
         | EventMsg::CollabAgentInteractionBegin(_)
         | EventMsg::CollabWaitingBegin(_)
         | EventMsg::CollabCloseBegin(_)
-        | EventMsg::CollabResumeBegin(_) => None,
+        | EventMsg::CollabResumeBegin(_)
+        | EventMsg::CollabCompactBegin(_)
+        | EventMsg::CollabRestartBegin(_) => None,
     }
 }

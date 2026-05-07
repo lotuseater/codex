@@ -786,6 +786,96 @@ fn collab_spawn_begin_and_end_emit_item_events() {
 }
 
 #[test]
+fn collab_supervisor_tools_emit_distinct_item_events() {
+    let mut processor = EventProcessorWithJsonOutput::new(/*last_message_path*/ None);
+
+    let collected = processor.collect_thread_events(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            item: ThreadItem::CollabAgentToolCall {
+                id: "collab-2".to_string(),
+                tool: CollabAgentTool::RestartAgent,
+                status: ApiCollabAgentToolCallStatus::Completed,
+                sender_thread_id: "thread-parent".to_string(),
+                receiver_thread_ids: vec!["thread-child".to_string()],
+                prompt: Some("continue".to_string()),
+                model: Some("gpt-5.5".to_string()),
+                reasoning_effort: None,
+                agents_states: std::collections::HashMap::from([(
+                    "thread-child".to_string(),
+                    ApiCollabAgentState {
+                        status: ApiCollabAgentStatus::Running,
+                        message: None,
+                    },
+                )]),
+            },
+            thread_id: "thread-parent".to_string(),
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 0,
+        },
+    ));
+
+    assert_eq!(
+        collected,
+        CollectedThreadEvents {
+            events: vec![ThreadEvent::ItemCompleted(ItemCompletedEvent {
+                item: ExecThreadItem {
+                    id: "item_0".to_string(),
+                    details: ThreadItemDetails::CollabToolCall(CollabToolCallItem {
+                        tool: CollabTool::RestartAgent,
+                        sender_thread_id: "thread-parent".to_string(),
+                        receiver_thread_ids: vec!["thread-child".to_string()],
+                        prompt: Some("continue".to_string()),
+                        agents_states: std::collections::HashMap::from([(
+                            "thread-child".to_string(),
+                            CollabAgentState {
+                                status: CollabAgentStatus::Running,
+                                message: None,
+                            },
+                        )]),
+                        status: CollabToolCallStatus::Completed,
+                    },),
+                },
+            })],
+            status: CodexStatus::Running,
+        }
+    );
+
+    let mapped_tools = [
+        (CollabAgentTool::ResumeAgent, CollabTool::ResumeAgent),
+        (CollabAgentTool::CompactAgent, CollabTool::CompactAgent),
+    ];
+    for (api_tool, expected_tool) in mapped_tools {
+        let mut processor = EventProcessorWithJsonOutput::new(/*last_message_path*/ None);
+        let collected = processor.collect_thread_events(ServerNotification::ItemCompleted(
+            ItemCompletedNotification {
+                item: ThreadItem::CollabAgentToolCall {
+                    id: "collab-extra".to_string(),
+                    tool: api_tool,
+                    status: ApiCollabAgentToolCallStatus::Completed,
+                    sender_thread_id: "thread-parent".to_string(),
+                    receiver_thread_ids: vec!["thread-child".to_string()],
+                    prompt: None,
+                    model: None,
+                    reasoning_effort: None,
+                    agents_states: std::collections::HashMap::new(),
+                },
+                thread_id: "thread-parent".to_string(),
+                turn_id: "turn-1".to_string(),
+                completed_at_ms: 0,
+            },
+        ));
+        let [ThreadEvent::ItemCompleted(ItemCompletedEvent { item })] = collected.events.as_slice()
+        else {
+            panic!("expected one completed collab item");
+        };
+        let ThreadItemDetails::CollabToolCall(collab_item) = &item.details else {
+            panic!("expected collab tool call");
+        };
+        assert_eq!(collab_item.tool, expected_tool);
+    }
+}
+
+#[test]
 fn file_change_completion_maps_change_kinds() {
     let mut processor = EventProcessorWithJsonOutput::new(/*last_message_path*/ None);
 

@@ -150,9 +150,9 @@ struct ResumeAgentArgs {
 }
 
 #[derive(Debug)]
-struct ResumeTarget {
-    thread_id: ThreadId,
-    resolved_agent_path: Option<AgentPath>,
+pub(super) struct ResumeTarget {
+    pub(super) thread_id: ThreadId,
+    pub(super) resolved_agent_path: Option<AgentPath>,
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -178,7 +178,7 @@ impl ToolOutput for ResumeAgentResult {
     }
 }
 
-async fn resolve_resume_target(
+pub(super) async fn resolve_resume_target(
     session: &Arc<Session>,
     turn: &Arc<TurnContext>,
     target: &str,
@@ -274,7 +274,7 @@ async fn persisted_spawn_root_thread_id(
     }
 }
 
-async fn persisted_agent_metadata(
+pub(super) async fn persisted_agent_metadata(
     session: &Arc<Session>,
     thread_id: ThreadId,
     fallback_agent_path: Option<AgentPath>,
@@ -299,7 +299,7 @@ async fn persisted_agent_metadata(
     })
 }
 
-async fn try_resume_closed_agent(
+pub(super) async fn try_resume_closed_agent(
     session: &Arc<Session>,
     turn: &Arc<TurnContext>,
     receiver_thread_id: ThreadId,

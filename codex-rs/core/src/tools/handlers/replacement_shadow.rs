@@ -10,7 +10,6 @@ use super::context_ops;
 mod baseline_digest;
 mod classify;
 
-const DEFAULT_GIT_LIMIT: usize = 80;
 const DEFAULT_MAX_FILES: usize = 50;
 const DEFAULT_MAX_MATCHES_PER_FILE: usize = 5;
 const DEFAULT_MAX_OUTLINE_ITEMS: usize = 200;
@@ -28,9 +27,6 @@ pub(crate) struct ShellShadowRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ReplacementCandidate {
-    GitWorktreeSummary {
-        workdir: Option<PathBuf>,
-    },
     GitDiffStatCompact,
     GitStatusCompact,
     GitChangedFiles,
@@ -61,7 +57,6 @@ enum ReplacementCandidate {
 impl ReplacementCandidate {
     fn name(&self) -> &'static str {
         match self {
-            Self::GitWorktreeSummary { .. } => "git_worktree_summary",
             Self::GitDiffStatCompact => "git_diffstat_compact",
             Self::GitStatusCompact => "git_status_compact",
             Self::GitChangedFiles => "git_changed_files",
@@ -86,9 +81,7 @@ impl ReplacementCandidate {
 
     fn strategy(&self) -> &'static str {
         match self {
-            Self::GitWorktreeSummary { .. }
-            | Self::SearchText { .. }
-            | Self::FileOutline { .. } => "context_op_rerun",
+            Self::SearchText { .. } | Self::FileOutline { .. } => "context_op_rerun",
             Self::GitDiffStatCompact
             | Self::GitStatusCompact
             | Self::GitChangedFiles
@@ -111,15 +104,6 @@ impl ReplacementCandidate {
 
     async fn run(&self, cwd: &Path, baseline_model_visible_output: &str) -> Result<String, String> {
         match self {
-            Self::GitWorktreeSummary { workdir } => {
-                let workdir = resolve_optional_workdir(cwd, workdir.as_deref());
-                context_ops::git_worktree_summary::git_worktree_summary(
-                    workdir.as_path(),
-                    DEFAULT_GIT_LIMIT,
-                )
-                .await
-                .map_err(|err| err.to_string())
-            }
             Self::GitStatusCompact => Ok(baseline_digest::render_git_status_compact(
                 baseline_model_visible_output,
             )),
@@ -214,6 +198,7 @@ struct ReplacementBenchRecord {
     baseline_model_visible_tokens: usize,
     replacement_model_visible_tokens: Option<usize>,
     replacement_fallback_required: Option<bool>,
+    replacement_gate_passed: bool,
     saved_model_visible_tokens: Option<isize>,
     saved_model_visible_percent: Option<f64>,
     wall_time_ms: u128,
@@ -295,9 +280,17 @@ async fn run_shell_shadow(
         replacement_bytes,
         replacement_tokens,
         replacement_fallback_required,
+        replacement_gate_passed,
     ) = match candidate_output {
         Ok(output) => {
             let fallback_required = output.contains("fallback_required: true");
+            let rendered_output =
+                render_replacement_output(&request.command, candidate_name, &output);
+            let replacement_gate_passed = !fallback_required
+                && should_replace_model_output(
+                    &request.baseline_model_visible_output,
+                    &rendered_output,
+                );
             let replacement_artifact =
                 artifact_dir.join(format!("{stamp}-{safe_call_id}-{candidate_name}.txt"));
             tokio::fs::write(&replacement_artifact, &output)
@@ -309,9 +302,10 @@ async fn run_shell_shadow(
                 Some(output.len()),
                 Some(estimate_tokens(&output)),
                 Some(fallback_required),
+                replacement_gate_passed,
             )
         }
-        Err(err) => (None, Some(err), None, None, None),
+        Err(err) => (None, Some(err), None, None, None, false),
     };
 
     let saved_tokens = replacement_tokens.map(|tokens| baseline_tokens as isize - tokens as isize);
@@ -350,6 +344,7 @@ async fn run_shell_shadow(
         baseline_model_visible_tokens: baseline_tokens,
         replacement_model_visible_tokens: replacement_tokens,
         replacement_fallback_required,
+        replacement_gate_passed,
         saved_model_visible_tokens: saved_tokens,
         saved_model_visible_percent: saved_percent,
         wall_time_ms,
@@ -464,7 +459,12 @@ mod tests {
     #[test]
     fn reports_shadow_strategy_for_rerun_and_baseline_candidates() {
         assert_eq!(
-            ReplacementCandidate::GitWorktreeSummary { workdir: None }.strategy(),
+            ReplacementCandidate::SearchText {
+                pattern: "needle".to_string(),
+                glob: None,
+                paths: Vec::new()
+            }
+            .strategy(),
             "context_op_rerun"
         );
         assert_eq!(

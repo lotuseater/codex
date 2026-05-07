@@ -26,7 +26,7 @@ pub(super) fn render_git_status_compact(baseline_model_visible_output: &str) -> 
             branch = Some(line.to_string());
             continue;
         }
-        let status = line.get(..2).unwrap_or("??").to_string();
+        let status = normalized_status(line.get(..2).unwrap_or("??"));
         *status_counts.entry(status).or_default() += 1;
         paths.push(line.to_string());
     }
@@ -229,10 +229,15 @@ pub(super) fn render_run_check_digest(baseline_model_visible_output: &str) -> St
             diagnostics.len().min(MAX_DIAGNOSTIC_LINES)
         ),
     ];
-    if omitted > 0 {
-        lines.push("fallback_required: true".to_string());
-        lines.push("fallback_reason: max_diagnostics".to_string());
-    }
+    lines.push("fallback_required: true".to_string());
+    lines.push(format!(
+        "fallback_reason: {}",
+        if omitted > 0 {
+            "max_diagnostics"
+        } else {
+            "lossy_check_output"
+        }
+    ));
     if diagnostics.is_empty() {
         lines.push("status: no_diagnostics_detected".to_string());
     } else {
@@ -782,6 +787,15 @@ fn render_counts(counts: &BTreeMap<String, usize>) -> String {
         .join(", ")
 }
 
+fn normalized_status(status: &str) -> String {
+    let trimmed = status.trim();
+    if trimmed.is_empty() {
+        status.to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
 fn is_diagnostic_line(line: &str) -> bool {
     let lower = line.to_ascii_lowercase();
     lower.contains("error:")
@@ -805,7 +819,7 @@ mod tests {
             "Exit code: 0\nWall time: 1s\nOutput:\n## main\n M src/lib.rs\n?? README.md\n";
         assert_eq!(
             render_git_status_compact(baseline),
-            "git_status_compact\nchanged_paths: 2\nbranch: ## main\nstatus_counts:  M=1, ??=1\npaths: 2 shown, 0 omitted\n M src/lib.rs\n?? README.md"
+            "git_status_compact\nchanged_paths: 2\nbranch: ## main\nstatus_counts: ??=1, M=1\npaths: 2 shown, 0 omitted\n M src/lib.rs\n?? README.md"
         );
         assert_eq!(
             render_git_diffstat_compact(
@@ -888,6 +902,13 @@ mod tests {
         );
         assert!(filtered.contains("git_filtered_diff_digest"));
         assert!(filtered.contains("fallback_reason: lossy_diff_filter"));
+
+        let check = render_run_check_digest(
+            "Exit code: 0\nWall time: 1s\nOutput:\nwarning: slow check\nfinished\n",
+        );
+        assert!(check.contains("run_check_digest"));
+        assert!(check.contains("fallback_required: true"));
+        assert!(check.contains("fallback_reason: lossy_check_output"));
 
         let history = render_git_history_digest(
             "Exit code: 0\nWall time: 1s\nOutput:\ncommit abc\nAuthor: A\nDate: Today\n 1 file changed, 2 insertions(+)\n",

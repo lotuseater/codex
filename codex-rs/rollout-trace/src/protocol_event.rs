@@ -110,6 +110,10 @@ pub(crate) enum ToolRuntimePayload<'a> {
     CollabWaitingEnd(&'a codex_protocol::protocol::CollabWaitingEndEvent),
     CollabCloseBegin(&'a codex_protocol::protocol::CollabCloseBeginEvent),
     CollabCloseEnd(&'a codex_protocol::protocol::CollabCloseEndEvent),
+    CollabCompactBegin(&'a codex_protocol::protocol::CollabCompactBeginEvent),
+    CollabCompactEnd(&'a codex_protocol::protocol::CollabCompactEndEvent),
+    CollabRestartBegin(&'a codex_protocol::protocol::CollabRestartBeginEvent),
+    CollabRestartEnd(&'a codex_protocol::protocol::CollabRestartEndEvent),
 }
 
 impl Serialize for ToolRuntimePayload<'_> {
@@ -132,6 +136,10 @@ impl Serialize for ToolRuntimePayload<'_> {
             ToolRuntimePayload::CollabWaitingEnd(event) => event.serialize(serializer),
             ToolRuntimePayload::CollabCloseBegin(event) => event.serialize(serializer),
             ToolRuntimePayload::CollabCloseEnd(event) => event.serialize(serializer),
+            ToolRuntimePayload::CollabCompactBegin(event) => event.serialize(serializer),
+            ToolRuntimePayload::CollabCompactEnd(event) => event.serialize(serializer),
+            ToolRuntimePayload::CollabRestartBegin(event) => event.serialize(serializer),
+            ToolRuntimePayload::CollabRestartEnd(event) => event.serialize(serializer),
         }
     }
 }
@@ -214,6 +222,24 @@ pub(crate) fn tool_runtime_trace_event(event: &EventMsg) -> Option<ToolRuntimeTr
             tool_call_id: &event.call_id,
             status: ExecutionStatus::Completed,
             payload: ToolRuntimePayload::CollabCloseEnd(event),
+        }),
+        EventMsg::CollabCompactBegin(event) => Some(ToolRuntimeTraceEvent::Started {
+            tool_call_id: &event.call_id,
+            payload: ToolRuntimePayload::CollabCompactBegin(event),
+        }),
+        EventMsg::CollabCompactEnd(event) => Some(ToolRuntimeTraceEvent::Ended {
+            tool_call_id: &event.call_id,
+            status: ExecutionStatus::Completed,
+            payload: ToolRuntimePayload::CollabCompactEnd(event),
+        }),
+        EventMsg::CollabRestartBegin(event) => Some(ToolRuntimeTraceEvent::Started {
+            tool_call_id: &event.call_id,
+            payload: ToolRuntimePayload::CollabRestartBegin(event),
+        }),
+        EventMsg::CollabRestartEnd(event) => Some(ToolRuntimeTraceEvent::Ended {
+            tool_call_id: &event.call_id,
+            status: ExecutionStatus::Completed,
+            payload: ToolRuntimePayload::CollabRestartEnd(event),
         }),
         EventMsg::Error(_)
         | EventMsg::Warning(_)
@@ -355,7 +381,11 @@ pub(crate) fn wrapped_protocol_event_type(event: &EventMsg) -> Option<&'static s
         | EventMsg::CollabCloseBegin(_)
         | EventMsg::CollabCloseEnd(_)
         | EventMsg::CollabResumeBegin(_)
-        | EventMsg::CollabResumeEnd(_) => None,
+        | EventMsg::CollabResumeEnd(_)
+        | EventMsg::CollabCompactBegin(_)
+        | EventMsg::CollabCompactEnd(_)
+        | EventMsg::CollabRestartBegin(_)
+        | EventMsg::CollabRestartEnd(_) => None,
     }
 }
 

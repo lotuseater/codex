@@ -1109,6 +1109,236 @@ async fn plan_self_review_revision_without_plan_item_does_not_start_regular_self
 }
 
 #[tokio::test]
+async fn completed_plan_starts_followup_consideration_in_plan_mode() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
+    chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
+
+    chat.on_task_started();
+    chat.on_plan_update(UpdatePlanArgs {
+        explanation: Some("Everything in scope is done.".to_string()),
+        plan: vec![
+            PlanItemArg {
+                step: "Inspect".to_string(),
+                status: StepStatus::Completed,
+            },
+            PlanItemArg {
+                step: "Verify".to_string(),
+                status: StepStatus::Completed,
+            },
+        ],
+    });
+    chat.on_task_complete(
+        /*last_agent_message*/ None, /*duration_ms*/ None, /*from_replay*/ false,
+    );
+
+    assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
+    match next_submit_op(&mut op_rx) {
+        Op::UserTurn {
+            items,
+            collaboration_mode:
+                Some(CollaborationMode {
+                    mode: ModeKind::Plan,
+                    ..
+                }),
+            ..
+        } => {
+            let [UserInput::Text { text, .. }] = items.as_slice() else {
+                panic!("expected one text item, got {items:?}");
+            };
+            assert!(text.contains("The current plan appears complete."));
+            assert!(text.contains("follow-up planning iteration"));
+            assert!(text.contains("first proposed plan, plan self-review"));
+            assert!(text.contains("Explanation: Everything in scope is done."));
+            assert!(text.contains("- completed: Inspect"));
+            assert!(text.contains("- completed: Verify"));
+        }
+        other => panic!("expected plan completion follow-up user turn, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn completed_plan_followup_survives_temporary_blocker() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
+    chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
+
+    chat.on_task_started();
+    chat.on_plan_update(UpdatePlanArgs {
+        explanation: None,
+        plan: vec![PlanItemArg {
+            step: "Implement".to_string(),
+            status: StepStatus::Completed,
+        }],
+    });
+    chat.bottom_pane.set_composer_text(
+        "draft blocks follow-up".to_string(),
+        Vec::new(),
+        Vec::new(),
+    );
+    chat.on_task_complete(
+        /*last_agent_message*/ None, /*duration_ms*/ None, /*from_replay*/ false,
+    );
+
+    assert!(
+        op_rx.try_recv().is_err(),
+        "expected completed-plan follow-up to wait while composer is non-empty"
+    );
+
+    chat.bottom_pane
+        .set_composer_text(String::new(), Vec::new(), Vec::new());
+    chat.on_task_started();
+    chat.on_task_complete(
+        /*last_agent_message*/ None, /*duration_ms*/ None, /*from_replay*/ false,
+    );
+
+    match next_submit_op(&mut op_rx) {
+        Op::UserTurn { items, .. } => {
+            let [UserInput::Text { text, .. }] = items.as_slice() else {
+                panic!("expected one text item, got {items:?}");
+            };
+            assert!(text.contains("The current plan appears complete."));
+            assert!(text.contains("- completed: Implement"));
+        }
+        other => panic!("expected plan completion follow-up user turn, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn completed_plan_followup_clears_when_plan_reopens() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
+    chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
+
+    chat.on_task_started();
+    chat.on_plan_update(UpdatePlanArgs {
+        explanation: None,
+        plan: vec![PlanItemArg {
+            step: "Implement".to_string(),
+            status: StepStatus::Completed,
+        }],
+    });
+    chat.on_plan_update(UpdatePlanArgs {
+        explanation: None,
+        plan: vec![PlanItemArg {
+            step: "Verify".to_string(),
+            status: StepStatus::InProgress,
+        }],
+    });
+    chat.on_task_complete(
+        /*last_agent_message*/ None, /*duration_ms*/ None, /*from_replay*/ false,
+    );
+
+    assert!(
+        op_rx.try_recv().is_err(),
+        "expected no completed-plan follow-up after the plan reopened"
+    );
+}
+
+#[tokio::test]
+async fn completed_plan_followup_waits_for_regular_self_review() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
+    chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
+    let mut changes = HashMap::new();
+    changes.insert(
+        PathBuf::from("notes.md"),
+        FileChange::Add {
+            content: "implementation notes\n".to_string(),
+        },
+    );
+
+    chat.on_task_started();
+    handle_patch_apply_end(
+        &mut chat,
+        "patch-1",
+        "turn-1",
+        changes,
+        AppServerPatchApplyStatus::Completed,
+    );
+    chat.on_plan_update(UpdatePlanArgs {
+        explanation: None,
+        plan: vec![PlanItemArg {
+            step: "Implement".to_string(),
+            status: StepStatus::Completed,
+        }],
+    });
+    chat.on_task_complete(
+        /*last_agent_message*/ None, /*duration_ms*/ None, /*from_replay*/ false,
+    );
+
+    assert!(
+        op_rx.try_recv().is_err(),
+        "expected automatic self-review before plan completion follow-up"
+    );
+
+    chat.exit_review_mode_after_item();
+
+    match next_submit_op(&mut op_rx) {
+        Op::UserTurn { items, .. } => {
+            let [UserInput::Text { text, .. }] = items.as_slice() else {
+                panic!("expected one text item, got {items:?}");
+            };
+            assert!(text.contains("The current plan appears complete."));
+            assert!(text.contains("follow-up planning iteration"));
+            assert!(text.contains("first account for its findings"));
+            assert!(text.contains("- completed: Implement"));
+        }
+        other => panic!("expected plan completion follow-up user turn, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn completed_plan_followup_survives_self_review_action_turn() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
+    chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
+    let mut changes = HashMap::new();
+    changes.insert(
+        PathBuf::from("notes.md"),
+        FileChange::Add {
+            content: "implementation notes\n".to_string(),
+        },
+    );
+
+    chat.on_task_started();
+    handle_patch_apply_end(
+        &mut chat,
+        "patch-1",
+        "turn-1",
+        changes,
+        AppServerPatchApplyStatus::Completed,
+    );
+    chat.on_plan_update(UpdatePlanArgs {
+        explanation: None,
+        plan: vec![PlanItemArg {
+            step: "Implement".to_string(),
+            status: StepStatus::Completed,
+        }],
+    });
+    chat.on_task_complete(
+        /*last_agent_message*/ None, /*duration_ms*/ None, /*from_replay*/ false,
+    );
+
+    chat.on_task_started();
+    chat.exit_review_mode_after_item();
+    assert!(
+        op_rx.try_recv().is_err(),
+        "expected no follow-up while self-review action turn is still running"
+    );
+
+    chat.on_task_complete(
+        /*last_agent_message*/ None, /*duration_ms*/ None, /*from_replay*/ false,
+    );
+
+    match next_submit_op(&mut op_rx) {
+        Op::UserTurn { items, .. } => {
+            let [UserInput::Text { text, .. }] = items.as_slice() else {
+                panic!("expected one text item, got {items:?}");
+            };
+            assert!(text.contains("The current plan appears complete."));
+            assert!(text.contains("- completed: Implement"));
+        }
+        other => panic!("expected plan completion follow-up user turn, got {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn plan_implementation_popup_skips_when_steer_follows_proposed_plan() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
     chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);

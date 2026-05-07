@@ -6581,7 +6581,9 @@
           "sendInput",
           "resumeAgent",
           "wait",
-          "closeAgent"
+          "closeAgent",
+          "compactAgent",
+          "restartAgent"
         ],
         "type": "string"
       },

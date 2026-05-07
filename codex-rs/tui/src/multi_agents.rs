@@ -31,6 +31,7 @@ const COLLAB_AGENT_RESPONSE_PREVIEW_GRAPHEMES: usize = 240;
 mod activity;
 
 pub(crate) use activity::subagent_activity_history_cell;
+pub(crate) use activity::subagent_activity_history_cell_for_notification;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AgentPickerThreadEntry {
@@ -278,6 +279,34 @@ pub(crate) fn tool_call_history_cell(
                 )
             }
         }),
+        CollabAgentTool::CompactAgent => first_receiver.map(|receiver_thread_id| {
+            if matches!(status, CollabAgentToolCallStatus::InProgress) {
+                compact_begin(receiver_thread_id, prompt, &mut agent_metadata)
+            } else {
+                let state = first_agent_state(receiver_thread_ids, agents_states);
+                compact_end(
+                    receiver_thread_id,
+                    prompt,
+                    state,
+                    "Agent compact failed",
+                    &mut agent_metadata,
+                )
+            }
+        }),
+        CollabAgentTool::RestartAgent => first_receiver.map(|receiver_thread_id| {
+            if matches!(status, CollabAgentToolCallStatus::InProgress) {
+                restart_begin(receiver_thread_id, prompt, &mut agent_metadata)
+            } else {
+                let state = first_agent_state(receiver_thread_ids, agents_states);
+                restart_end(
+                    receiver_thread_id,
+                    prompt,
+                    state,
+                    "Agent restart failed",
+                    &mut agent_metadata,
+                )
+            }
+        }),
         CollabAgentTool::Wait => {
             if matches!(status, CollabAgentToolCallStatus::InProgress) {
                 Some(waiting_begin(receiver_thread_ids, &mut agent_metadata))
@@ -424,6 +453,86 @@ fn resume_end(
     )
 }
 
+fn compact_begin(
+    receiver_thread_id: ThreadId,
+    reason: &str,
+    agent_metadata: &mut impl FnMut(ThreadId) -> AgentMetadata,
+) -> PlainHistoryCell {
+    let mut details = Vec::new();
+    if let Some(line) = prompt_line(reason) {
+        details.push(line);
+    }
+    collab_event(
+        title_with_agent(
+            "Compacting",
+            agent_label(receiver_thread_id, &agent_metadata(receiver_thread_id)),
+            /*spawn_request*/ None,
+        ),
+        details,
+    )
+}
+
+fn compact_end(
+    receiver_thread_id: ThreadId,
+    reason: &str,
+    status: Option<&CollabAgentState>,
+    fallback_error: &str,
+    agent_metadata: &mut impl FnMut(ThreadId) -> AgentMetadata,
+) -> PlainHistoryCell {
+    let mut details = vec![status_summary_line(status, fallback_error)];
+    if let Some(line) = prompt_line(reason) {
+        details.push(line);
+    }
+    collab_event(
+        title_with_agent(
+            "Compacted",
+            agent_label(receiver_thread_id, &agent_metadata(receiver_thread_id)),
+            /*spawn_request*/ None,
+        ),
+        details,
+    )
+}
+
+fn restart_begin(
+    receiver_thread_id: ThreadId,
+    prompt: &str,
+    agent_metadata: &mut impl FnMut(ThreadId) -> AgentMetadata,
+) -> PlainHistoryCell {
+    let mut details = Vec::new();
+    if let Some(line) = prompt_line(prompt) {
+        details.push(line);
+    }
+    collab_event(
+        title_with_agent(
+            "Restarting",
+            agent_label(receiver_thread_id, &agent_metadata(receiver_thread_id)),
+            /*spawn_request*/ None,
+        ),
+        details,
+    )
+}
+
+fn restart_end(
+    receiver_thread_id: ThreadId,
+    prompt: &str,
+    status: Option<&CollabAgentState>,
+    fallback_error: &str,
+    agent_metadata: &mut impl FnMut(ThreadId) -> AgentMetadata,
+) -> PlainHistoryCell {
+    let mut details = vec![status_summary_line(status, fallback_error)];
+    if let Some(line) = prompt_line(prompt) {
+        details.push(line);
+    }
+    collab_event(
+        title_with_agent(
+            "Restarted",
+            agent_label(receiver_thread_id, &agent_metadata(receiver_thread_id)),
+            /*spawn_request*/ None,
+        ),
+        details,
+    )
+}
+
 fn collab_event(title: Line<'static>, details: Vec<Line<'static>>) -> PlainHistoryCell {
     let mut lines: Vec<Line<'static>> = vec![title];
     if !details.is_empty() {
@@ -522,23 +631,15 @@ fn agent_activity_spans(
         .reasoning_effort
         .or_else(|| spawn_request.map(|request| request.reasoning_effort));
 
-    let mut details = Vec::new();
-    match (model, reasoning_effort) {
-        (Some(model), Some(reasoning_effort)) => {
-            details.push(format!("{model} {reasoning_effort}"))
-        }
-        (Some(model), None) => details.push(model),
-        (None, Some(reasoning_effort)) => details.push(reasoning_effort.to_string()),
-        (None, None) => {}
-    }
-
-    if let Some(percent) = agent.token_context_percent_used {
-        details.push(format!("{percent}% used"));
-    }
-
-    if details.is_empty() {
-        return Vec::new();
-    }
+    let model = model.unwrap_or_else(|| "model ?".to_string());
+    let reasoning_effort = reasoning_effort
+        .map(|reasoning_effort| reasoning_effort.to_string())
+        .unwrap_or_else(|| "effort ?".to_string());
+    let token_usage = agent
+        .token_context_percent_used
+        .map(|percent| format!("{percent}% used"))
+        .unwrap_or_else(|| "--% used".to_string());
+    let details = [model, reasoning_effort, token_usage];
 
     vec![
         Span::from(" ").dim(),
@@ -668,7 +769,12 @@ fn error_summary_spans(error: &str) -> Vec<Span<'static>> {
 mod tests {
     use super::*;
     use crate::history_cell::HistoryCell;
+    use codex_app_server_protocol::CommandExecutionOutputDeltaNotification;
     use codex_app_server_protocol::CommandExecutionStatus;
+    use codex_app_server_protocol::ServerNotification;
+    use codex_app_server_protocol::ThreadTokenUsage;
+    use codex_app_server_protocol::ThreadTokenUsageUpdatedNotification;
+    use codex_app_server_protocol::TokenUsageBreakdown;
     #[cfg(target_os = "macos")]
     use crossterm::event::KeyEvent;
     #[cfg(target_os = "macos")]
@@ -791,7 +897,47 @@ mod tests {
         )
         .expect("close item renders");
 
-        let snapshot = [spawn, send, waiting, finished, close]
+        let compact = tool_call_history_cell(
+            &ThreadItem::CollabAgentToolCall {
+                id: "call-compact".to_string(),
+                tool: CollabAgentTool::CompactAgent,
+                status: CollabAgentToolCallStatus::Completed,
+                sender_thread_id: sender_thread_id.to_string(),
+                receiver_thread_ids: vec![robie_id.to_string()],
+                prompt: Some("trim context".to_string()),
+                model: None,
+                reasoning_effort: None,
+                agents_states: HashMap::from([(
+                    robie_id.to_string(),
+                    agent_state(CollabAgentStatus::Completed, Some("ready")),
+                )]),
+            },
+            /*cached_spawn_request*/ None,
+            |thread_id| metadata_for(thread_id, robie_id, bob_id),
+        )
+        .expect("compact item renders");
+
+        let restart = tool_call_history_cell(
+            &ThreadItem::CollabAgentToolCall {
+                id: "call-restart".to_string(),
+                tool: CollabAgentTool::RestartAgent,
+                status: CollabAgentToolCallStatus::Completed,
+                sender_thread_id: sender_thread_id.to_string(),
+                receiver_thread_ids: vec![robie_id.to_string()],
+                prompt: Some("continue with focused automation".to_string()),
+                model: Some("gpt-5.5".to_string()),
+                reasoning_effort: Some(ReasoningEffortConfig::High),
+                agents_states: HashMap::from([(
+                    robie_id.to_string(),
+                    agent_state(CollabAgentStatus::Running, /*message*/ None),
+                )]),
+            },
+            /*cached_spawn_request*/ None,
+            |thread_id| metadata_for(thread_id, robie_id, bob_id),
+        )
+        .expect("restart item renders");
+
+        let snapshot = [spawn, send, waiting, finished, close, compact, restart]
             .iter()
             .map(cell_to_text)
             .collect::<Vec<_>>()
@@ -883,7 +1029,7 @@ mod tests {
         assert_eq!(title.spans[4].content.as_ref(), "[explorer]");
         assert_eq!(title.spans[4].style.fg, None);
         assert!(!title.spans[4].style.add_modifier.contains(Modifier::DIM));
-        assert_eq!(title.spans[6].content.as_ref(), "(gpt-5 high)");
+        assert_eq!(title.spans[6].content.as_ref(), "(gpt-5, high, --% used)");
         assert_eq!(title.spans[6].style.fg, Some(Color::Magenta));
     }
 
@@ -952,10 +1098,69 @@ mod tests {
         assert_snapshot!("subagent_activity_indented", cell_to_text(&cell));
     }
 
+    #[test]
+    fn subagent_activity_notification_snapshot_includes_evidence_and_token_updates() {
+        let robie_id = ThreadId::from_string("00000000-0000-0000-0000-000000000002")
+            .expect("valid robie thread id");
+        let metadata = AgentMetadata {
+            agent_nickname: Some("Robie".to_string()),
+            agent_role: Some("worker".to_string()),
+            model: Some("gpt-5.5".to_string()),
+            reasoning_effort: Some(ReasoningEffortConfig::High),
+            token_context_percent_used: Some(17),
+        };
+        let command_cell = subagent_activity_history_cell_for_notification(
+            robie_id,
+            &ServerNotification::CommandExecutionOutputDelta(
+                CommandExecutionOutputDeltaNotification {
+                    thread_id: robie_id.to_string(),
+                    turn_id: "turn-1".to_string(),
+                    item_id: "exec-1".to_string(),
+                    delta: "codex-rs/tui/src/multi_agents.rs:1:hit".to_string(),
+                },
+            ),
+            &metadata,
+        )
+        .expect("command output notification renders");
+        let token_cell = subagent_activity_history_cell_for_notification(
+            robie_id,
+            &ServerNotification::ThreadTokenUsageUpdated(ThreadTokenUsageUpdatedNotification {
+                thread_id: robie_id.to_string(),
+                turn_id: "turn-1".to_string(),
+                token_usage: ThreadTokenUsage {
+                    total: token_usage_breakdown(20_000),
+                    last: token_usage_breakdown(1_000),
+                    model_context_window: Some(100_000),
+                },
+            }),
+            &metadata,
+        )
+        .expect("token usage notification renders");
+
+        assert_snapshot!(
+            "subagent_activity_notifications",
+            [command_cell, token_cell]
+                .iter()
+                .map(cell_to_text)
+                .collect::<Vec<_>>()
+                .join("\n\n")
+        );
+    }
+
     fn agent_state(status: CollabAgentStatus, message: Option<&str>) -> CollabAgentState {
         CollabAgentState {
             status,
             message: message.map(str::to_string),
+        }
+    }
+
+    fn token_usage_breakdown(total_tokens: i64) -> TokenUsageBreakdown {
+        TokenUsageBreakdown {
+            total_tokens,
+            input_tokens: total_tokens,
+            cached_input_tokens: 0,
+            output_tokens: 0,
+            reasoning_output_tokens: 0,
         }
     }
 

@@ -2,6 +2,7 @@ use super::AgentMetadata;
 use super::agent_label;
 use super::agent_label_spans;
 use super::title_spans_line;
+use super::token_context_percent_used;
 use crate::history_cell::PlainHistoryCell;
 use crate::render::line_utils::prefix_lines;
 use crate::text_formatting::truncate_text;
@@ -13,6 +14,7 @@ use codex_app_server_protocol::DynamicToolCallStatus;
 use codex_app_server_protocol::FileUpdateChange;
 use codex_app_server_protocol::McpToolCallStatus;
 use codex_app_server_protocol::PatchApplyStatus;
+use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ThreadItem;
 use codex_protocol::ThreadId;
 use ratatui::style::Stylize;
@@ -28,6 +30,23 @@ pub(crate) fn subagent_activity_history_cell(
     metadata: &AgentMetadata,
 ) -> Option<PlainHistoryCell> {
     let activity = subagent_activity_summary(item)?;
+    Some(subagent_activity_cell(thread_id, metadata, activity))
+}
+
+pub(crate) fn subagent_activity_history_cell_for_notification(
+    thread_id: ThreadId,
+    notification: &ServerNotification,
+    metadata: &AgentMetadata,
+) -> Option<PlainHistoryCell> {
+    let activity = subagent_notification_summary(notification)?;
+    Some(subagent_activity_cell(thread_id, metadata, activity))
+}
+
+fn subagent_activity_cell(
+    thread_id: ThreadId,
+    metadata: &AgentMetadata,
+    activity: SubagentActivitySummary,
+) -> PlainHistoryCell {
     let mut title_spans = agent_label_spans(agent_label(thread_id, metadata));
     title_spans.push(Span::from(": ").dim());
     title_spans.push(Span::from(activity.title).bold());
@@ -41,7 +60,7 @@ pub(crate) fn subagent_activity_history_cell(
         SUBAGENT_ACTIVITY_LEFT_INDENT.into(),
         SUBAGENT_ACTIVITY_LEFT_INDENT.into(),
     );
-    Some(PlainHistoryCell::new(lines))
+    PlainHistoryCell::new(lines)
 }
 
 struct SubagentActivitySummary {
@@ -260,6 +279,79 @@ fn subagent_activity_summary(item: &ThreadItem) -> Option<SubagentActivitySummar
     }
 }
 
+fn subagent_notification_summary(
+    notification: &ServerNotification,
+) -> Option<SubagentActivitySummary> {
+    match notification {
+        ServerNotification::ItemStarted(notification) => {
+            subagent_activity_summary(&notification.item)
+        }
+        ServerNotification::ItemCompleted(notification) => {
+            subagent_activity_summary(&notification.item)
+        }
+        ServerNotification::CommandExecutionOutputDelta(notification) => {
+            preview_text(&notification.delta).map(|delta| SubagentActivitySummary {
+                title: "Command output",
+                details: vec![delta.into()],
+            })
+        }
+        ServerNotification::TerminalInteraction(notification) => {
+            let mut details = Vec::new();
+            if let Some(stdin) = preview_text(&notification.stdin) {
+                details.push(Line::from(vec!["Input: ".dim(), stdin.into()]));
+            }
+            details.push(Line::from(vec![
+                "Process: ".dim(),
+                notification.process_id.clone().into(),
+            ]));
+            Some(SubagentActivitySummary {
+                title: "Terminal input",
+                details,
+            })
+        }
+        ServerNotification::FileChangeOutputDelta(notification) => {
+            preview_text(&notification.delta).map(|delta| SubagentActivitySummary {
+                title: "File change output",
+                details: vec![delta.into()],
+            })
+        }
+        ServerNotification::FileChangePatchUpdated(notification) => Some(SubagentActivitySummary {
+            title: "Patch updated",
+            details: file_change_lines(&notification.changes),
+        }),
+        ServerNotification::McpToolCallProgress(notification) => {
+            preview_text(&notification.message).map(|message| SubagentActivitySummary {
+                title: "Tool progress",
+                details: vec![message.into()],
+            })
+        }
+        ServerNotification::ContextCompacted(_) => Some(SubagentActivitySummary {
+            title: "Context compacted",
+            details: Vec::new(),
+        }),
+        ServerNotification::ThreadTokenUsageUpdated(notification) => {
+            let mut details = vec![
+                format!(
+                    "Total tokens: {}",
+                    notification.token_usage.total.total_tokens
+                )
+                .into(),
+            ];
+            if let Some(percent) = token_context_percent_used(
+                notification.token_usage.total.total_tokens,
+                notification.token_usage.model_context_window,
+            ) {
+                details.push(format!("Context: {percent}% used").into());
+            }
+            Some(SubagentActivitySummary {
+                title: "Token usage",
+                details,
+            })
+        }
+        _ => None,
+    }
+}
+
 fn preview_lines<'a>(texts: impl IntoIterator<Item = &'a str>) -> Vec<Line<'static>> {
     texts
         .into_iter()
@@ -333,6 +425,8 @@ fn collab_tool_name(tool: &CollabAgentTool) -> &'static str {
         CollabAgentTool::ResumeAgent => "resume_agent",
         CollabAgentTool::Wait => "wait_agent",
         CollabAgentTool::CloseAgent => "close_agent",
+        CollabAgentTool::CompactAgent => "compact_agent",
+        CollabAgentTool::RestartAgent => "restart_agent",
     }
 }
 

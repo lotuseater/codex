@@ -12,11 +12,13 @@ const SPAWN_AGENT_V2_DEFAULT_USAGE_HINT: &str = r#"### MultiAgentV2 delegation g
 - Decide during planning whether the immediate critical path stays local and which bounded sidecar tasks can run in parallel.
 - Spawn only concrete, self-contained work that materially advances the user's task. Keep urgent blockers local when your next step depends on them.
 - Give every spawned agent a compact context contract in `message`: `CONTEXT_AREA`, `DO_NOT_INSPECT`, `FIRST_READS`, `TOOL_HINTS`, `TOKEN_TIP`, `VERIFICATION`, and `HANDOFF`.
+- Use `TOOL_HINTS` to encourage automation: for repeated checks or edits, tell agents to write a small script or use an existing harness when it will be faster, more reliable, or token-saving.
 - Use stable, descriptive `task_name` values so agents can be listed, resumed, reviewed, and restored by path.
 - Prefer `fork_turns = "none"` or a small recent-turn count when the message carries enough context; use `fork_turns = "all"` only when the child truly needs full prior conversation.
 - Choose each spawned agent's model and reasoning effort deliberately. Prefer quality and inherit the current model/effort unless the task is simple, bounded, and low risk enough for lower effort or a simpler model; raise effort/model quality for ambiguous, risky, code-changing, or verification-heavy work.
 - For code changes, assign disjoint write scopes and tell agents they are not alone in the codebase and must not revert others' work.
-- Supervise agents with `list_agents`, `wait_agent`, `send_message`, `followup_task`, `resume_agent`, and `close_agent`; use `followup_task` to adjust model/effort for later turns when the task changes, and review outputs before integrating or reporting them."#;
+- Supervise agents with `list_agents`, `wait_agent`, `send_message`, `followup_task`, `compact_agent`, `restart_agent`, `resume_agent`, and `close_agent`; use `followup_task` to adjust model/effort for later turns, `compact_agent` for useful but drifting/token-heavy idle agents, and `restart_agent` for stuck or stale agents after checking evidence.
+- Ask agents to report reusable automation that should be promoted into a durable script, skill, or Codex code change."#;
 
 #[derive(Debug, Clone)]
 pub struct SpawnAgentToolOptions<'a> {
@@ -241,6 +243,80 @@ pub fn create_resume_agent_tool_v2() -> ToolSpec {
             Some(false.into()),
         ),
         output_schema: Some(resume_agent_output_schema()),
+    })
+}
+
+pub fn create_compact_agent_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "target".to_string(),
+            JsonSchema::string(Some(
+                "Agent id, relative task name, or canonical task name to compact.".to_string(),
+            )),
+        ),
+        (
+            "reason".to_string(),
+            JsonSchema::string(Some(
+                "Optional short reason for the compaction request.".to_string(),
+            )),
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "compact_agent".to_string(),
+        description: "Request context compaction for a live non-root MultiAgentV2 subagent. Use this for useful agents that are idle or waiting but have accumulated too much context; if the agent is actively running, wait or restart instead.".to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::object(
+            properties,
+            Some(vec!["target".to_string()]),
+            Some(false.into()),
+        ),
+        output_schema: Some(compact_agent_output_schema()),
+    })
+}
+
+pub fn create_restart_agent_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "target".to_string(),
+            JsonSchema::string(Some(
+                "Agent id, relative task name, or canonical task name to restart.".to_string(),
+            )),
+        ),
+        (
+            "message".to_string(),
+            JsonSchema::string(Some(
+                "Optional follow-up work message to send after the agent is restarted.".to_string(),
+            )),
+        ),
+        (
+            "model".to_string(),
+            JsonSchema::string(Some(
+                "Optional model override for the restarted agent's next turn. Prefer quality; only select a simpler model when the restarted task is simple, bounded, and low risk."
+                    .to_string(),
+            )),
+        ),
+        (
+            "reasoning_effort".to_string(),
+            JsonSchema::string(Some(
+                "Optional reasoning effort override for the restarted agent's next turn. Prefer current or higher effort for ambiguous, risky, code-changing, or verification-heavy work."
+                    .to_string(),
+            )),
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "restart_agent".to_string(),
+        description: "Restart a non-root MultiAgentV2 subagent by shutting down its live thread tree without closing the persisted spawn edge, resuming it from rollout, and optionally assigning a follow-up task. Use this for stuck, stale, or broken agents after inspecting their activity.".to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::object(
+            properties,
+            Some(vec!["target".to_string()]),
+            Some(false.into()),
+        ),
+        output_schema: Some(restart_agent_output_schema()),
     })
 }
 
@@ -622,6 +698,42 @@ fn spawn_agent_common_properties_v2(agent_type_description: &str) -> BTreeMap<St
             )),
         ),
     ])
+}
+
+fn compact_agent_output_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "previous_status": {
+                "description": "The agent status observed before compaction was requested.",
+                "allOf": [agent_status_output_schema()]
+            },
+            "current_status": {
+                "description": "The agent status observed after the compaction request was submitted.",
+                "allOf": [agent_status_output_schema()]
+            }
+        },
+        "required": ["previous_status", "current_status"],
+        "additionalProperties": false
+    })
+}
+
+fn restart_agent_output_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "previous_status": {
+                "description": "The agent status observed before restart.",
+                "allOf": [agent_status_output_schema()]
+            },
+            "status": {
+                "description": "The agent status observed after restart and optional follow-up submission.",
+                "allOf": [agent_status_output_schema()]
+            }
+        },
+        "required": ["previous_status", "status"],
+        "additionalProperties": false
+    })
 }
 
 fn hide_spawn_agent_metadata_options(properties: &mut BTreeMap<String, JsonSchema>) {

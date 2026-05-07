@@ -913,6 +913,8 @@ pub enum CollabAgentTool {
     ResumeAgent,
     Wait,
     CloseAgent,
+    CompactAgent,
+    RestartAgent,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]

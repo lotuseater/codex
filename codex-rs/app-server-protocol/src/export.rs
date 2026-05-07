@@ -2167,6 +2167,10 @@ mod tests {
                                 | "CollabCloseEndEvent"
                                 | "CollabResumeBeginEvent"
                                 | "CollabResumeEndEvent"
+                                | "CollabCompactBeginEvent"
+                                | "CollabCompactEndEvent"
+                                | "CollabRestartBeginEvent"
+                                | "CollabRestartEndEvent"
                                 | "ReviewTarget"
                         )
                 });

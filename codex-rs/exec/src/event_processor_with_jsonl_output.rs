@@ -244,9 +244,11 @@ impl EventProcessorWithJsonOutput {
                     tool: match tool {
                         CollabAgentTool::SpawnAgent => CollabTool::SpawnAgent,
                         CollabAgentTool::SendInput => CollabTool::SendInput,
-                        CollabAgentTool::ResumeAgent => CollabTool::Wait,
+                        CollabAgentTool::ResumeAgent => CollabTool::ResumeAgent,
                         CollabAgentTool::Wait => CollabTool::Wait,
                         CollabAgentTool::CloseAgent => CollabTool::CloseAgent,
+                        CollabAgentTool::CompactAgent => CollabTool::CompactAgent,
+                        CollabAgentTool::RestartAgent => CollabTool::RestartAgent,
                     },
                     sender_thread_id,
                     receiver_thread_ids,

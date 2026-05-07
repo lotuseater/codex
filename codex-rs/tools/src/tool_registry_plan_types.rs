@@ -11,6 +11,7 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolHandlerKind {
     ApplyPatch,
+    CompactAgentV2,
     CloseAgentV1,
     CloseAgentV2,
     CodeModeExecute,
@@ -36,6 +37,7 @@ pub enum ToolHandlerKind {
     RequestPluginInstall,
     RequestPermissions,
     RequestUserInput,
+    RestartAgentV2,
     ResumeAgentV1,
     ResumeAgentV2,
     SendInputV1,

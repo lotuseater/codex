@@ -122,6 +122,8 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
             create_spawn_agent_tool_v2(spawn_agent_tool_options(&config)),
             create_send_message_tool(),
             create_followup_task_tool(),
+            create_compact_agent_tool(),
+            create_restart_agent_tool(),
             create_resume_agent_tool_v2(),
             create_wait_agent_tool_v2(wait_agent_timeout_options()),
             create_close_agent_tool_v2(),
@@ -321,6 +323,8 @@ fn test_build_specs_multi_agent_v2_uses_task_names_and_resume_paths() {
             "spawn_agent",
             "send_message",
             "followup_task",
+            "compact_agent",
+            "restart_agent",
             "resume_agent",
             "wait_agent",
             "close_agent",
@@ -393,6 +397,48 @@ fn test_build_specs_multi_agent_v2_uses_task_names_and_resume_paths() {
     assert_eq!(
         required,
         Some(&vec!["target".to_string(), "message".to_string()])
+    );
+
+    let compact_agent = find_tool(&tools, "compact_agent");
+    let ToolSpec::Function(ResponsesApiTool {
+        parameters,
+        output_schema,
+        ..
+    }) = &compact_agent.spec
+    else {
+        panic!("compact_agent should be a function tool");
+    };
+    let (properties, required) = expect_object_schema(parameters);
+    assert!(properties.contains_key("target"));
+    assert!(properties.contains_key("reason"));
+    assert_eq!(required, Some(&vec!["target".to_string()]));
+    assert_eq!(
+        output_schema
+            .as_ref()
+            .expect("compact_agent should define output schema")["required"],
+        json!(["previous_status", "current_status"])
+    );
+
+    let restart_agent = find_tool(&tools, "restart_agent");
+    let ToolSpec::Function(ResponsesApiTool {
+        parameters,
+        output_schema,
+        ..
+    }) = &restart_agent.spec
+    else {
+        panic!("restart_agent should be a function tool");
+    };
+    let (properties, required) = expect_object_schema(parameters);
+    assert!(properties.contains_key("target"));
+    assert!(properties.contains_key("message"));
+    assert!(properties.contains_key("model"));
+    assert!(properties.contains_key("reasoning_effort"));
+    assert_eq!(required, Some(&vec!["target".to_string()]));
+    assert_eq!(
+        output_schema
+            .as_ref()
+            .expect("restart_agent should define output schema")["required"],
+        json!(["previous_status", "status"])
     );
 
     let resume_agent = find_tool(&tools, "resume_agent");
@@ -487,6 +533,8 @@ fn test_build_specs_multi_agent_v2_does_not_require_collab_feature() {
             "spawn_agent",
             "send_message",
             "followup_task",
+            "compact_agent",
+            "restart_agent",
             "resume_agent",
             "wait_agent",
             "close_agent",

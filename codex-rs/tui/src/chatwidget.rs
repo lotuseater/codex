@@ -165,6 +165,7 @@ use codex_protocol::request_permissions::RequestPermissionsEvent;
 use codex_protocol::user_input::ByteRange;
 use codex_protocol::user_input::TextElement;
 use codex_self_review::SelfReviewTracker;
+use codex_self_review::plan_completion_followup_prompt;
 use codex_self_review::plan_self_review_prompt;
 use codex_terminal_detection::Multiplexer;
 use codex_terminal_detection::TerminalInfo;
@@ -824,6 +825,8 @@ pub(crate) struct ChatWidget {
     /// This is cached only for the approval popup. It is reset at the start of each new task so the
     /// fresh-context action cannot accidentally submit an older plan after a later turn begins.
     latest_proposed_plan_markdown: Option<String>,
+    /// Latest fully completed `update_plan` checklist, used by the post-plan follow-up checkpoint.
+    latest_completed_plan_markdown: Option<String>,
     plan_self_review: PlanSelfReview,
     last_plan_self_review_started_at: Option<Instant>,
     /// Whether this turn already produced a copyable response.
@@ -989,6 +992,10 @@ pub(crate) struct ChatWidget {
     // later steer. This is cleared when the user submits a steer so the plan popup only appears
     // if a newer proposed plan arrives afterward.
     saw_plan_item_this_turn: bool,
+    // Whether this turn marked every item in the current `update_plan` checklist completed.
+    plan_completed_this_turn: bool,
+    // Whether post-plan follow-up consideration is waiting for review/blockers to clear.
+    plan_completion_followup_pending: bool,
     // Latest `update_plan` checklist task counts for terminal-title rendering.
     last_plan_progress: Option<(usize, usize)>,
     // Incremental buffer for streamed plan content.
@@ -2491,6 +2498,7 @@ impl ChatWidget {
         self.saw_copy_source_this_turn = false;
         self.saw_plan_update_this_turn = false;
         self.saw_plan_item_this_turn = false;
+        self.plan_completed_this_turn = false;
         self.had_work_activity = false;
         if self.plan_self_review == PlanSelfReview::ReviewedCurrentPlan {
             self.plan_self_review = PlanSelfReview::Idle;
@@ -2614,8 +2622,9 @@ impl ChatWidget {
         let had_pending_steers = !self.pending_steers.is_empty();
         self.refresh_pending_input_preview();
 
-        let auto_loop_after_self_review_requested =
-            !from_replay && self.maybe_request_auto_loop_after_self_review();
+        let auto_loop_after_self_review_requested = !from_replay
+            && !self.plan_completion_followup_pending
+            && self.maybe_request_auto_loop_after_self_review();
         let plan_self_review_started = !from_replay
             && !auto_loop_after_self_review_requested
             && !had_pending_steers
@@ -2625,11 +2634,26 @@ impl ChatWidget {
             && !plan_self_review_started
             && !self.suppress_regular_self_review_for_plan_activity()
             && self.maybe_start_self_review();
+        let plan_completion_followup_started = if !from_replay
+            && !auto_loop_after_self_review_requested
+            && !plan_self_review_started
+            && !had_pending_steers
+        {
+            if self_review_started {
+                self.plan_completed_this_turn = false;
+                false
+            } else {
+                self.maybe_start_plan_completion_followup()
+            }
+        } else {
+            false
+        };
 
         if !from_replay
             && !auto_loop_after_self_review_requested
             && !self_review_started
             && !plan_self_review_started
+            && !plan_completion_followup_started
             && !self.has_queued_follow_up_messages()
             && !had_pending_steers
         {
@@ -2644,6 +2668,7 @@ impl ChatWidget {
         let follow_up_started = if auto_loop_after_self_review_requested
             || self_review_started
             || plan_self_review_started
+            || plan_completion_followup_started
         {
             true
         } else {
@@ -2748,6 +2773,44 @@ impl ChatWidget {
             text_elements: Vec::new(),
             mention_bindings: Vec::new(),
         });
+        true
+    }
+
+    fn maybe_start_plan_completion_followup(&mut self) -> bool {
+        if !self.plan_completion_followup_pending {
+            return false;
+        }
+        if !self.collaboration_modes_enabled() {
+            return false;
+        }
+        let Some(plan_mask) =
+            collaboration_modes::mask_for_kind(self.model_catalog.as_ref(), ModeKind::Plan)
+        else {
+            return false;
+        };
+        if self.has_queued_follow_up_messages() || !self.pending_steers.is_empty() {
+            return false;
+        }
+        if !self.bottom_pane.no_modal_or_popup_active() || !self.bottom_pane.composer_is_empty() {
+            return false;
+        }
+        if self.bottom_pane.has_pending_thread_approvals() || self.is_user_turn_pending_or_running()
+        {
+            return false;
+        }
+        if matches!(
+            self.rate_limit_switch_prompt,
+            RateLimitSwitchPromptState::Pending
+        ) {
+            return false;
+        }
+
+        let prompt =
+            plan_completion_followup_prompt(self.latest_completed_plan_markdown.as_deref());
+        self.plan_completed_this_turn = false;
+        self.plan_completion_followup_pending = false;
+        self.auto_loop_after_self_review = AutoLoopAfterSelfReview::Idle;
+        self.submit_user_message_with_mode(prompt, plan_mask);
         true
     }
 
@@ -3604,6 +3667,32 @@ impl ChatWidget {
             })
             .count();
         self.last_plan_progress = (total > 0).then_some((completed, total));
+        if total > 0 && completed == total {
+            self.plan_completed_this_turn = true;
+            self.plan_completion_followup_pending = true;
+            let mut completed_plan = Vec::new();
+            if let Some(explanation) = update
+                .explanation
+                .as_deref()
+                .map(str::trim)
+                .filter(|explanation| !explanation.is_empty())
+            {
+                completed_plan.push(format!("Explanation: {explanation}"));
+            }
+            completed_plan.extend(update.plan.iter().map(|item| {
+                let status = match &item.status {
+                    StepStatus::Pending => "pending",
+                    StepStatus::InProgress => "in_progress",
+                    StepStatus::Completed => "completed",
+                };
+                format!("- {status}: {}", item.step)
+            }));
+            self.latest_completed_plan_markdown = Some(completed_plan.join("\n"));
+        } else {
+            self.plan_completed_this_turn = false;
+            self.plan_completion_followup_pending = false;
+            self.latest_completed_plan_markdown = None;
+        }
         self.refresh_status_surfaces();
         self.self_review_tracker.note_plan_update();
         self.add_to_history(history_cell::new_plan_update(update));
@@ -4183,6 +4272,21 @@ impl ChatWidget {
         let metadata = self.collab_agent_metadata(thread_id);
         if let Some(cell) = multi_agents::subagent_activity_history_cell(thread_id, item, &metadata)
         {
+            self.on_collab_event(cell);
+        }
+    }
+
+    pub(crate) fn on_inactive_collab_agent_activity(
+        &mut self,
+        thread_id: ThreadId,
+        notification: &ServerNotification,
+    ) {
+        let metadata = self.collab_agent_metadata(thread_id);
+        if let Some(cell) = multi_agents::subagent_activity_history_cell_for_notification(
+            thread_id,
+            notification,
+            &metadata,
+        ) {
             self.on_collab_event(cell);
         }
     }
@@ -5183,6 +5287,7 @@ impl ChatWidget {
             visible_user_turn_count: 0,
             copy_history_evicted_by_rollback: false,
             latest_proposed_plan_markdown: None,
+            latest_completed_plan_markdown: None,
             plan_self_review: PlanSelfReview::Idle,
             last_plan_self_review_started_at: None,
             saw_copy_source_this_turn: false,
@@ -5247,6 +5352,8 @@ impl ChatWidget {
             had_work_activity: false,
             saw_plan_update_this_turn: false,
             saw_plan_item_this_turn: false,
+            plan_completed_this_turn: false,
+            plan_completion_followup_pending: false,
             last_plan_progress: None,
             plan_delta_buffer: String::new(),
             plan_item_active: false,
@@ -6876,7 +6983,11 @@ impl ChatWidget {
             "<< Code review finished >>".to_string(),
         ));
         if !self.is_user_turn_pending_or_running() {
-            self.maybe_request_auto_loop_after_self_review();
+            if self.plan_completion_followup_pending {
+                self.maybe_start_plan_completion_followup();
+            } else {
+                self.maybe_request_auto_loop_after_self_review();
+            }
         }
         self.request_redraw();
     }

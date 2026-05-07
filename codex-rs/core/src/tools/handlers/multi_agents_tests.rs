@@ -10,8 +10,10 @@ use crate::thread_manager::agent_graph_store_from_state_db;
 use crate::thread_manager::thread_store_from_config;
 use crate::tools::context::ToolOutput;
 use crate::tools::handlers::multi_agents_v2::CloseAgentHandler as CloseAgentHandlerV2;
+use crate::tools::handlers::multi_agents_v2::CompactAgentHandler as CompactAgentHandlerV2;
 use crate::tools::handlers::multi_agents_v2::FollowupTaskHandler as FollowupTaskHandlerV2;
 use crate::tools::handlers::multi_agents_v2::ListAgentsHandler as ListAgentsHandlerV2;
+use crate::tools::handlers::multi_agents_v2::RestartAgentHandler as RestartAgentHandlerV2;
 use crate::tools::handlers::multi_agents_v2::ResumeAgentHandler as ResumeAgentHandlerV2;
 use crate::tools::handlers::multi_agents_v2::SendMessageHandler as SendMessageHandlerV2;
 use crate::tools::handlers::multi_agents_v2::SpawnAgentHandler as SpawnAgentHandlerV2;
@@ -475,7 +477,7 @@ async fn multi_agent_v2_spawn_accepts_child_model_override_fields() {
 
 #[tokio::test]
 async fn multi_agent_v2_spawn_partial_fork_turns_allows_explicit_reasoning_effort() {
-    let (mut session, mut turn) = make_session_and_context().await;
+    let (mut session, turn) = make_session_and_context().await;
     let manager = thread_manager().await;
     let root = manager
         .start_thread((*turn.config).clone())
@@ -3364,6 +3366,185 @@ async fn multi_agent_v2_resume_agent_restores_closed_agent_by_task_name() {
         ))
         .await
         .expect("send_message should accept the resumed worker path");
+}
+
+#[tokio::test]
+async fn multi_agent_v2_compact_agent_accepts_idle_task_name_target() {
+    let (mut session, mut turn) = make_session_and_context().await;
+    let manager = thread_manager().await;
+    let root = manager
+        .start_thread((*turn.config).clone())
+        .await
+        .expect("root thread should start");
+    session.services.agent_control = manager.agent_control();
+    session.conversation_id = root.thread_id;
+    let mut config = (*turn.config).clone();
+    config
+        .features
+        .enable(Feature::MultiAgentV2)
+        .expect("test config should allow feature update");
+    turn.config = Arc::new(config);
+
+    let session = Arc::new(session);
+    let turn = Arc::new(turn);
+    SpawnAgentHandlerV2
+        .handle(invocation(
+            session.clone(),
+            turn.clone(),
+            "spawn_agent",
+            function_payload(json!({
+                "message": "inspect this repo",
+                "task_name": "worker"
+            })),
+        ))
+        .await
+        .expect("spawn_agent should succeed");
+
+    let agent_id = session
+        .services
+        .agent_control
+        .resolve_agent_reference(session.conversation_id, &turn.session_source, "worker")
+        .await
+        .expect("worker path should resolve");
+    let child_thread = manager
+        .get_thread(agent_id)
+        .await
+        .expect("child thread should exist");
+    let child_turn = child_thread.codex.session.new_default_turn().await;
+    child_thread
+        .codex
+        .session
+        .send_event(
+            child_turn.as_ref(),
+            EventMsg::TurnComplete(TurnCompleteEvent {
+                turn_id: child_turn.sub_id.clone(),
+                last_agent_message: Some("done".to_string()),
+                completed_at: None,
+                duration_ms: None,
+                time_to_first_token_ms: None,
+            }),
+        )
+        .await;
+
+    let output = CompactAgentHandlerV2
+        .handle(invocation(
+            session,
+            turn,
+            "compact_agent",
+            function_payload(json!({
+                "target": "worker",
+                "reason": "preserve useful state"
+            })),
+        ))
+        .await
+        .expect("compact_agent should succeed for a completed worker");
+    let (content, success) = expect_text_output(output);
+    let result: serde_json::Value =
+        serde_json::from_str(&content).expect("compact_agent result should be json");
+    assert_eq!(result["previous_status"], json!({"completed": "done"}));
+    assert_eq!(success, Some(true));
+    assert!(
+        manager
+            .captured_ops()
+            .into_iter()
+            .any(|(id, op)| id == agent_id && matches!(op, Op::Compact))
+    );
+}
+
+#[tokio::test]
+async fn multi_agent_v2_restart_agent_resumes_with_optional_model_effort_and_message() {
+    let (mut session, mut turn) = make_session_and_context().await;
+    let manager = thread_manager().await;
+    let root = manager
+        .start_thread((*turn.config).clone())
+        .await
+        .expect("root thread should start");
+    session.services.agent_control = manager.agent_control();
+    session.conversation_id = root.thread_id;
+    let mut config = (*turn.config).clone();
+    config
+        .features
+        .enable(Feature::MultiAgentV2)
+        .expect("test config should allow feature update");
+    let requested_model = turn.model_info.slug.clone();
+    let requested_reasoning_effort = supported_reasoning_effort_for_override(&turn);
+    turn.config = Arc::new(config);
+
+    let session = Arc::new(session);
+    let turn = Arc::new(turn);
+    SpawnAgentHandlerV2
+        .handle(invocation(
+            session.clone(),
+            turn.clone(),
+            "spawn_agent",
+            function_payload(json!({
+                "message": "inspect this repo",
+                "task_name": "worker"
+            })),
+        ))
+        .await
+        .expect("spawn_agent should succeed");
+
+    let agent_id = session
+        .services
+        .agent_control
+        .resolve_agent_reference(session.conversation_id, &turn.session_source, "worker")
+        .await
+        .expect("worker path should resolve");
+    let output = RestartAgentHandlerV2
+        .handle(invocation(
+            session,
+            turn,
+            "restart_agent",
+            function_payload(json!({
+                "target": "worker",
+                "message": "continue with automation where useful",
+                "model": requested_model,
+                "reasoning_effort": requested_reasoning_effort.to_string()
+            })),
+        ))
+        .await
+        .expect("restart_agent should succeed");
+    let (content, success) = expect_text_output(output);
+    let result: serde_json::Value =
+        serde_json::from_str(&content).expect("restart_agent result should be json");
+    assert_ne!(result["previous_status"], json!("not_found"));
+    assert_ne!(result["status"], json!("not_found"));
+    assert_eq!(success, Some(true));
+
+    let snapshot = manager
+        .get_thread(agent_id)
+        .await
+        .expect("restarted agent thread should exist")
+        .config_snapshot()
+        .await;
+    assert_eq!(snapshot.model, requested_model);
+    assert_eq!(snapshot.reasoning_effort, Some(requested_reasoning_effort));
+    let captured_ops = manager.captured_ops();
+    assert!(
+        captured_ops
+            .iter()
+            .any(|(id, op)| *id == agent_id && matches!(op, Op::Shutdown { .. }))
+    );
+    assert!(captured_ops.iter().any(|(id, op)| matches!(
+        op,
+        Op::OverrideTurnContext {
+            model: Some(model),
+            effort: Some(effort),
+            ..
+        } if *id == agent_id
+            && model == &requested_model
+            && effort == &Some(requested_reasoning_effort)
+    )));
+    assert!(captured_ops.iter().any(|(id, op)| matches!(
+        op,
+        Op::InterAgentCommunication { communication }
+            if *id == agent_id
+                && communication.author == AgentPath::root()
+                && communication.recipient.as_str() == "/root/worker"
+                && communication.content == "continue with automation where useful"
+                && communication.trigger_turn
+    )));
 }
 
 #[tokio::test]

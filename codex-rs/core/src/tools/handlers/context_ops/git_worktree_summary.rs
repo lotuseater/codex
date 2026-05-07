@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::path::Path;
 use tokio::process::Command;
 
@@ -229,15 +230,22 @@ fn render_git_worktree_summary(
     entries: &[GitStatusEntry],
     limit: usize,
 ) -> String {
+    let status_counts = count_statuses(entries);
     let mut lines = vec![
         "git_worktree_summary".to_string(),
-        format!("workdir: {}", workdir.display()),
         format!("repo_root: {repo_root}"),
     ];
+    let workdir_text = workdir.display().to_string();
+    if normalize_path_for_compare(&workdir_text) != normalize_path_for_compare(repo_root) {
+        lines.push(format!("workdir: {}", workdir.display()));
+    }
     if !branch.is_empty() {
         lines.push(format!("branch: {branch}"));
     }
     lines.push(format!("changed_paths: {}", entries.len()));
+    if !status_counts.is_empty() {
+        lines.push(format!("status_counts: {}", render_counts(&status_counts)));
+    }
     if !staged_shortstat.is_empty() {
         lines.push(format!("staged_diff: {staged_shortstat}"));
     }
@@ -264,8 +272,40 @@ fn render_git_worktree_summary(
     );
     if omitted > 0 {
         lines.push("fallback_required: true".to_string());
+        lines.push("fallback_reason: max_paths".to_string());
     }
     lines.join("\n")
+}
+
+fn count_statuses(entries: &[GitStatusEntry]) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for entry in entries {
+        *counts.entry(normalized_status(&entry.status)).or_default() += 1;
+    }
+    counts
+}
+
+fn normalized_status(status: &str) -> String {
+    let trimmed = status.trim();
+    if trimmed.is_empty() {
+        status.to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn normalize_path_for_compare(path: &str) -> String {
+    path.replace('\\', "/")
+        .trim_end_matches('/')
+        .to_ascii_lowercase()
+}
+
+fn render_counts(counts: &BTreeMap<String, usize>) -> String {
+    counts
+        .iter()
+        .map(|(key, count)| format!("{key}={count}"))
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 #[cfg(test)]
@@ -320,7 +360,9 @@ mod tests {
         );
 
         assert!(summary.contains("changed_paths: 2"));
+        assert!(summary.contains("status_counts: M=1,??=1"));
         assert!(summary.contains("paths: 1 shown, 1 omitted"));
         assert!(summary.contains("fallback_required: true"));
+        assert!(summary.contains("fallback_reason: max_paths"));
     }
 }

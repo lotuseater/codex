@@ -220,8 +220,11 @@ pub enum CollabToolCallStatus {
 pub enum CollabTool {
     SpawnAgent,
     SendInput,
+    ResumeAgent,
     Wait,
     CloseAgent,
+    CompactAgent,
+    RestartAgent,
 }
 
 /// The status of a collab agent.

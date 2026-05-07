@@ -238,9 +238,11 @@ WHERE child_thread_id = ?
         .bind(child_thread_id.to_string())
         .fetch_optional(self.pool.as_ref())
         .await?;
-        row.map(|row| ThreadId::try_from(row.try_get::<String, _>("parent_thread_id")?))
-            .transpose()
-            .map_err(Into::into)
+        row.map(|row| -> anyhow::Result<ThreadId> {
+            let parent_thread_id = row.try_get::<String, _>("parent_thread_id")?;
+            ThreadId::try_from(parent_thread_id).map_err(Into::into)
+        })
+        .transpose()
     }
 
     /// Find the root thread of the persisted spawn tree containing `descendant_thread_id`.
@@ -268,9 +270,11 @@ LIMIT 1
         .bind(descendant_thread_id.to_string())
         .fetch_optional(self.pool.as_ref())
         .await?;
-        row.map(|row| ThreadId::try_from(row.try_get::<String, _>("parent_thread_id")?))
-            .transpose()
-            .map_err(Into::into)
+        row.map(|row| -> anyhow::Result<ThreadId> {
+            let parent_thread_id = row.try_get::<String, _>("parent_thread_id")?;
+            ThreadId::try_from(parent_thread_id).map_err(Into::into)
+        })
+        .transpose()
     }
 
     async fn list_thread_spawn_children_matching(

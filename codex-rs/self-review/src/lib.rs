@@ -168,6 +168,25 @@ Current plan:
     )
 }
 
+pub fn plan_completion_followup_prompt(completed_plan_markdown: Option<&str>) -> String {
+    let completed_plan_section = completed_plan_markdown
+        .map(str::trim)
+        .filter(|plan| !plan.is_empty())
+        .map(|plan| format!("\nCompleted plan:\n{plan}"))
+        .unwrap_or_default();
+
+    format!(
+        "\
+The current plan appears complete.
+
+Review the completed work against the user's request and repository state. Decide whether the work is genuinely done or whether a follow-up planning iteration is needed. Follow-up may happen only after the current plan is complete; this is that completion checkpoint.
+
+If a self-review just ran, first account for its findings and any actions already taken or still needed. Do not open unrelated follow-up scope until review findings are resolved or represented in the next plan.
+
+If another iteration is needed, return the next proposed plan. That next plan should go through the normal cycle: first proposed plan, plan self-review, revised plan if needed, then bounded worker/subagent execution and supervision. If no follow-up is needed, say that directly and summarize the final readiness/verification state.{completed_plan_section}"
+    )
+}
+
 fn push_recent(items: &mut Vec<String>, value: String, max_items: usize) {
     let value = truncate_note(value.trim());
     if value.is_empty() || items.iter().any(|item| item == &value) {
@@ -305,5 +324,17 @@ mod tests {
         assert!(prompt.contains("comparing the plan to the user's prompt"));
         assert!(prompt.contains("without drifting into adjacent work"));
         assert!(prompt.contains("# Plan\n- inspect"));
+    }
+
+    #[test]
+    fn plan_completion_followup_prompt_contains_completed_plan_and_cycle() {
+        let prompt = plan_completion_followup_prompt(Some("- completed: Inspect"));
+
+        assert!(prompt.contains("The current plan appears complete."));
+        assert!(prompt.contains("follow-up planning iteration"));
+        assert!(prompt.contains("first account for its findings"));
+        assert!(prompt.contains("first proposed plan, plan self-review"));
+        assert!(prompt.contains("bounded worker/subagent execution and supervision"));
+        assert!(prompt.contains("- completed: Inspect"));
     }
 }

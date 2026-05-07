@@ -1449,6 +1449,14 @@ pub enum EventMsg {
     CollabResumeBegin(CollabResumeBeginEvent),
     /// Collab interaction: resume end.
     CollabResumeEnd(CollabResumeEndEvent),
+    /// Collab interaction: compact begin.
+    CollabCompactBegin(CollabCompactBeginEvent),
+    /// Collab interaction: compact end.
+    CollabCompactEnd(CollabCompactEndEvent),
+    /// Collab interaction: restart begin.
+    CollabRestartBegin(CollabRestartBeginEvent),
+    /// Collab interaction: restart end.
+    CollabRestartEnd(CollabRestartEndEvent),
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS, EnumIter)]
@@ -1660,6 +1668,30 @@ impl From<CollabResumeBeginEvent> for EventMsg {
 impl From<CollabResumeEndEvent> for EventMsg {
     fn from(event: CollabResumeEndEvent) -> Self {
         EventMsg::CollabResumeEnd(event)
+    }
+}
+
+impl From<CollabCompactBeginEvent> for EventMsg {
+    fn from(event: CollabCompactBeginEvent) -> Self {
+        EventMsg::CollabCompactBegin(event)
+    }
+}
+
+impl From<CollabCompactEndEvent> for EventMsg {
+    fn from(event: CollabCompactEndEvent) -> Self {
+        EventMsg::CollabCompactEnd(event)
+    }
+}
+
+impl From<CollabRestartBeginEvent> for EventMsg {
+    fn from(event: CollabRestartBeginEvent) -> Self {
+        EventMsg::CollabRestartBegin(event)
+    }
+}
+
+impl From<CollabRestartEndEvent> for EventMsg {
+    fn from(event: CollabRestartEndEvent) -> Self {
+        EventMsg::CollabRestartEnd(event)
     }
 }
 
@@ -3910,6 +3942,94 @@ pub struct CollabResumeEndEvent {
     pub receiver_agent_role: Option<String>,
     /// Last known status of the receiver agent reported to the sender agent after
     /// resume.
+    pub status: AgentStatus,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+pub struct CollabCompactBeginEvent {
+    /// Identifier for the collab tool call.
+    pub call_id: String,
+    #[serde(default)]
+    pub started_at_ms: i64,
+    /// Thread ID of the sender.
+    pub sender_thread_id: ThreadId,
+    /// Thread ID of the receiver.
+    pub receiver_thread_id: ThreadId,
+    /// Optional reason recorded beside the compaction request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+pub struct CollabCompactEndEvent {
+    /// Identifier for the collab tool call.
+    pub call_id: String,
+    #[serde(default)]
+    pub completed_at_ms: i64,
+    /// Thread ID of the sender.
+    pub sender_thread_id: ThreadId,
+    /// Thread ID of the receiver.
+    pub receiver_thread_id: ThreadId,
+    /// Optional nickname assigned to the receiver agent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub receiver_agent_nickname: Option<String>,
+    /// Optional role assigned to the receiver agent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub receiver_agent_role: Option<String>,
+    /// Optional reason recorded beside the compaction request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// Last known status of the receiver agent after the compaction request.
+    pub status: AgentStatus,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+pub struct CollabRestartBeginEvent {
+    /// Identifier for the collab tool call.
+    pub call_id: String,
+    #[serde(default)]
+    pub started_at_ms: i64,
+    /// Thread ID of the sender.
+    pub sender_thread_id: ThreadId,
+    /// Thread ID of the receiver.
+    pub receiver_thread_id: ThreadId,
+    /// Optional follow-up prompt sent after restart.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+    /// Effective model requested for the restarted agent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Effective reasoning effort requested for the restarted agent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<ReasoningEffortConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+pub struct CollabRestartEndEvent {
+    /// Identifier for the collab tool call.
+    pub call_id: String,
+    #[serde(default)]
+    pub completed_at_ms: i64,
+    /// Thread ID of the sender.
+    pub sender_thread_id: ThreadId,
+    /// Thread ID of the receiver.
+    pub receiver_thread_id: ThreadId,
+    /// Optional nickname assigned to the receiver agent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub receiver_agent_nickname: Option<String>,
+    /// Optional role assigned to the receiver agent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub receiver_agent_role: Option<String>,
+    /// Optional follow-up prompt sent after restart.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+    /// Effective model used by the restarted agent after any override.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Effective reasoning effort used by the restarted agent after any override.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<ReasoningEffortConfig>,
+    /// Last known status of the receiver agent after restart.
     pub status: AgentStatus,
 }
 

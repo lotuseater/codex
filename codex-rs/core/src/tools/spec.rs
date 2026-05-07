@@ -109,8 +109,10 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::multi_agents::SpawnAgentHandler;
     use crate::tools::handlers::multi_agents::WaitAgentHandler;
     use crate::tools::handlers::multi_agents_v2::CloseAgentHandler as CloseAgentHandlerV2;
+    use crate::tools::handlers::multi_agents_v2::CompactAgentHandler as CompactAgentHandlerV2;
     use crate::tools::handlers::multi_agents_v2::FollowupTaskHandler as FollowupTaskHandlerV2;
     use crate::tools::handlers::multi_agents_v2::ListAgentsHandler as ListAgentsHandlerV2;
+    use crate::tools::handlers::multi_agents_v2::RestartAgentHandler as RestartAgentHandlerV2;
     use crate::tools::handlers::multi_agents_v2::ResumeAgentHandler as ResumeAgentHandlerV2;
     use crate::tools::handlers::multi_agents_v2::SendMessageHandler as SendMessageHandlerV2;
     use crate::tools::handlers::multi_agents_v2::SpawnAgentHandler as SpawnAgentHandlerV2;
@@ -190,6 +192,9 @@ pub(crate) fn build_specs_with_discoverable_tools(
             ToolHandlerKind::ApplyPatch => {
                 builder.register_handler(Arc::new(ApplyPatchHandler));
             }
+            ToolHandlerKind::CompactAgentV2 => {
+                builder.register_handler(Arc::new(CompactAgentHandlerV2));
+            }
             ToolHandlerKind::CloseAgentV1 => {
                 builder.register_handler(Arc::new(CloseAgentHandler));
             }
@@ -263,6 +268,9 @@ pub(crate) fn build_specs_with_discoverable_tools(
                 builder.register_handler(Arc::new(RequestUserInputHandler {
                     available_modes: config.request_user_input_available_modes.clone(),
                 }));
+            }
+            ToolHandlerKind::RestartAgentV2 => {
+                builder.register_handler(Arc::new(RestartAgentHandlerV2));
             }
             ToolHandlerKind::ResumeAgentV1 => {
                 builder.register_handler(Arc::new(ResumeAgentHandler));

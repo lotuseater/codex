@@ -70,9 +70,8 @@ fn classify_git_candidate(tokens: &[String]) -> Option<ReplacementCandidate> {
     }
 
     let mut index = 1;
-    let mut workdir = None;
     if tokens.get(index).is_some_and(|token| token == "-C") {
-        workdir = tokens.get(index + 1).map(PathBuf::from);
+        tokens.get(index + 1)?;
         index += 2;
     }
 
@@ -81,7 +80,7 @@ fn classify_git_candidate(tokens: &[String]) -> Option<ReplacementCandidate> {
             Some(ReplacementCandidate::GitStatusCompact)
         }
         "diff" if git_diff_stat_args_are_shadowable(&tokens[index + 1..]) => {
-            Some(ReplacementCandidate::GitWorktreeSummary { workdir })
+            Some(ReplacementCandidate::GitDiffStatCompact)
         }
         "diff" if git_diff_name_only_args_are_shadowable(&tokens[index + 1..]) => {
             Some(ReplacementCandidate::GitChangedFiles)
@@ -105,9 +104,10 @@ fn classify_promoted_git_diff_candidate(tokens: &[String]) -> Option<Replacement
         return None;
     }
 
-    let index = 1;
+    let mut index = 1;
     if tokens.get(index).is_some_and(|token| token == "-C") {
-        return None;
+        tokens.get(index + 1)?;
+        index += 2;
     }
 
     match tokens.get(index).map(String::as_str)? {
@@ -221,42 +221,10 @@ fn classify_rg_candidate(tokens: &[String]) -> Option<ReplacementCandidate> {
             paths.extend(tokens.iter().skip(index + 1).cloned());
             break;
         }
-        if pattern.is_none() && token.starts_with('-') {
-            match token.as_str() {
-                "--files"
-                | "-l"
-                | "--files-with-matches"
-                | "--files-without-match"
-                | "--count"
-                | "--replace"
-                | "--json"
-                | "-A"
-                | "-B"
-                | "-C"
-                | "--after-context"
-                | "--before-context"
-                | "--context" => return None,
-                "-g" | "--glob" => {
-                    index += 1;
-                    glob = Some(tokens.get(index)?.clone());
-                }
-                "-e" | "--regexp" => {
-                    index += 1;
-                    pattern = Some(tokens.get(index)?.clone());
-                }
-                "-m" | "--max-count" | "--max-columns" | "--color" => {
-                    index += 1;
-                    tokens.get(index)?;
-                }
-                "-n" | "--line-number" | "--column" | "--heading" | "--no-heading"
-                | "--with-filename" => {}
-                _ if token.starts_with("--glob=") => {
-                    glob = token.strip_prefix("--glob=").map(ToString::to_string);
-                }
-                _ if token.starts_with("--max-count=")
-                    || token.starts_with("--max-columns=")
-                    || token.starts_with("--color=") => {}
-                _ => return None,
+        if token.starts_with('-') {
+            match parse_rg_option(tokens, &mut index, &mut pattern, &mut glob) {
+                RgOptionParse::Continue => {}
+                RgOptionParse::Reject => return None,
             }
         } else if pattern.is_none() {
             pattern = Some(token.clone());
@@ -273,6 +241,87 @@ fn classify_rg_candidate(tokens: &[String]) -> Option<ReplacementCandidate> {
             paths,
         })
     })
+}
+
+enum RgOptionParse {
+    Continue,
+    Reject,
+}
+
+fn parse_rg_option(
+    tokens: &[String],
+    index: &mut usize,
+    pattern: &mut Option<String>,
+    glob: &mut Option<String>,
+) -> RgOptionParse {
+    let Some(token) = tokens.get(*index) else {
+        return RgOptionParse::Reject;
+    };
+    match token.as_str() {
+        "--files"
+        | "-l"
+        | "--files-with-matches"
+        | "--files-without-match"
+        | "--count"
+        | "--count-matches"
+        | "--replace"
+        | "--json"
+        | "-A"
+        | "-B"
+        | "-C"
+        | "-i"
+        | "-F"
+        | "-t"
+        | "-T"
+        | "--after-context"
+        | "--before-context"
+        | "--context"
+        | "--fixed-strings"
+        | "--hidden"
+        | "--ignore-case"
+        | "--type"
+        | "--type-not" => RgOptionParse::Reject,
+        "-g" | "--glob" => {
+            *index += 1;
+            if let Some(value) = tokens.get(*index) {
+                *glob = Some(value.clone());
+                RgOptionParse::Continue
+            } else {
+                RgOptionParse::Reject
+            }
+        }
+        "-e" | "--regexp" => {
+            *index += 1;
+            if let Some(value) = tokens.get(*index) {
+                *pattern = Some(value.clone());
+                RgOptionParse::Continue
+            } else {
+                RgOptionParse::Reject
+            }
+        }
+        "-m" | "--max-count" | "--max-columns" | "--color" => {
+            *index += 1;
+            if tokens.get(*index).is_some() {
+                RgOptionParse::Continue
+            } else {
+                RgOptionParse::Reject
+            }
+        }
+        "-n" | "--line-number" | "--column" | "--heading" | "--no-heading" | "--with-filename" => {
+            RgOptionParse::Continue
+        }
+        _ if token.starts_with("--glob=") => {
+            *glob = token.strip_prefix("--glob=").map(ToString::to_string);
+            RgOptionParse::Continue
+        }
+        _ if token.starts_with("--max-count=")
+            || token.starts_with("--max-columns=")
+            || token.starts_with("--color=") =>
+        {
+            RgOptionParse::Continue
+        }
+        _ => RgOptionParse::Reject,
+    }
 }
 
 fn classify_rg_files_candidate(tokens: &[String]) -> Option<ReplacementCandidate> {
@@ -548,9 +597,7 @@ mod tests {
         );
         assert_eq!(
             classify_shell_replacement("git -C codex-rs diff --stat"),
-            Some(ReplacementCandidate::GitWorktreeSummary {
-                workdir: Some(PathBuf::from("codex-rs"))
-            })
+            Some(ReplacementCandidate::GitDiffStatCompact)
         );
         assert_eq!(
             classify_shell_replacement("git diff --name-only"),
@@ -584,7 +631,10 @@ mod tests {
             classify_promoted_replacement("git diff --cached --stat"),
             Some(ReplacementCandidate::GitDiffStatCompact)
         );
-        assert_eq!(classify_promoted_replacement("git -C .. diff --stat"), None);
+        assert_eq!(
+            classify_promoted_replacement("git -C .. diff --stat"),
+            Some(ReplacementCandidate::GitDiffStatCompact)
+        );
         assert_eq!(classify_promoted_replacement("git diff --name-only"), None);
         assert_eq!(
             classify_promoted_replacement("Get-Content -Path codex-rs/core/src/tools/mod.rs"),
@@ -619,6 +669,26 @@ mod tests {
     }
 
     #[test]
+    fn classifies_rg_search_options_after_pattern_as_options_not_paths() {
+        assert_eq!(
+            classify_shell_replacement("rg context_ops -g '*.rs' codex-rs/core"),
+            Some(ReplacementCandidate::SearchText {
+                pattern: "context_ops".to_string(),
+                glob: Some("*.rs".to_string()),
+                paths: vec!["codex-rs/core".to_string()]
+            })
+        );
+        assert_eq!(
+            classify_shell_replacement("rg context_ops --max-count 3 codex-rs/core"),
+            Some(ReplacementCandidate::SearchText {
+                pattern: "context_ops".to_string(),
+                glob: None,
+                paths: vec!["codex-rs/core".to_string()]
+            })
+        );
+    }
+
+    #[test]
     fn classifies_rg_files_and_run_checks_as_baseline_summaries() {
         assert_eq!(
             classify_shell_replacement("rg --files -g '*.rs' codex-rs/core"),
@@ -648,6 +718,8 @@ mod tests {
         assert_eq!(classify_shell_replacement("rg -F 'a.b'"), None);
         assert_eq!(classify_shell_replacement("rg --type rust foo"), None);
         assert_eq!(classify_shell_replacement("rg --hidden foo"), None);
+        assert_eq!(classify_shell_replacement("rg foo --type rust src"), None);
+        assert_eq!(classify_shell_replacement("rg foo --hidden src"), None);
     }
 
     #[test]

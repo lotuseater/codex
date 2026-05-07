@@ -27,6 +27,7 @@ use crate::create_apply_patch_json_tool;
 use crate::create_close_agent_tool_v1;
 use crate::create_close_agent_tool_v2;
 use crate::create_code_mode_tool;
+use crate::create_compact_agent_tool;
 use crate::create_context_ops_tools;
 use crate::create_create_goal_tool;
 use crate::create_desktop_automation_tools;
@@ -44,6 +45,7 @@ use crate::create_report_agent_job_result_tool;
 use crate::create_request_permissions_tool;
 use crate::create_request_plugin_install_tool;
 use crate::create_request_user_input_tool;
+use crate::create_restart_agent_tool;
 use crate::create_resume_agent_tool;
 use crate::create_resume_agent_tool_v2;
 use crate::create_send_input_tool_v1;
@@ -479,6 +481,16 @@ pub fn build_tool_registry_plan(
                 config.code_mode_enabled,
             );
             plan.push_spec(
+                create_compact_agent_tool(),
+                /*supports_parallel_tool_calls*/ false,
+                config.code_mode_enabled,
+            );
+            plan.push_spec(
+                create_restart_agent_tool(),
+                /*supports_parallel_tool_calls*/ false,
+                config.code_mode_enabled,
+            );
+            plan.push_spec(
                 create_resume_agent_tool_v2(),
                 /*supports_parallel_tool_calls*/ false,
                 config.code_mode_enabled,
@@ -501,6 +513,8 @@ pub fn build_tool_registry_plan(
             plan.register_handler("spawn_agent", ToolHandlerKind::SpawnAgentV2);
             plan.register_handler("send_message", ToolHandlerKind::SendMessageV2);
             plan.register_handler("followup_task", ToolHandlerKind::FollowupTaskV2);
+            plan.register_handler("compact_agent", ToolHandlerKind::CompactAgentV2);
+            plan.register_handler("restart_agent", ToolHandlerKind::RestartAgentV2);
             plan.register_handler("resume_agent", ToolHandlerKind::ResumeAgentV2);
             plan.register_handler("wait_agent", ToolHandlerKind::WaitAgentV2);
             plan.register_handler("close_agent", ToolHandlerKind::CloseAgentV2);

@@ -209,6 +209,10 @@ impl ThreadHistoryBuilder {
             EventMsg::CollabCloseEnd(payload) => self.handle_collab_close_end(payload),
             EventMsg::CollabResumeBegin(payload) => self.handle_collab_resume_begin(payload),
             EventMsg::CollabResumeEnd(payload) => self.handle_collab_resume_end(payload),
+            EventMsg::CollabCompactBegin(payload) => self.handle_collab_compact_begin(payload),
+            EventMsg::CollabCompactEnd(payload) => self.handle_collab_compact_end(payload),
+            EventMsg::CollabRestartBegin(payload) => self.handle_collab_restart_begin(payload),
+            EventMsg::CollabRestartEnd(payload) => self.handle_collab_restart_end(payload),
             EventMsg::ContextCompacted(payload) => self.handle_context_compacted(payload),
             EventMsg::EnteredReviewMode(payload) => self.handle_entered_review_mode(payload),
             EventMsg::ExitedReviewMode(payload) => self.handle_exited_review_mode(payload),
@@ -837,6 +841,98 @@ impl ThreadHistoryBuilder {
             prompt: None,
             model: None,
             reasoning_effort: None,
+            agents_states,
+        });
+    }
+
+    fn handle_collab_compact_begin(
+        &mut self,
+        payload: &codex_protocol::protocol::CollabCompactBeginEvent,
+    ) {
+        let item = ThreadItem::CollabAgentToolCall {
+            id: payload.call_id.clone(),
+            tool: CollabAgentTool::CompactAgent,
+            status: CollabAgentToolCallStatus::InProgress,
+            sender_thread_id: payload.sender_thread_id.to_string(),
+            receiver_thread_ids: vec![payload.receiver_thread_id.to_string()],
+            prompt: payload.reason.clone(),
+            model: None,
+            reasoning_effort: None,
+            agents_states: HashMap::new(),
+        };
+        self.upsert_item_in_current_turn(item);
+    }
+
+    fn handle_collab_compact_end(
+        &mut self,
+        payload: &codex_protocol::protocol::CollabCompactEndEvent,
+    ) {
+        let status = match &payload.status {
+            AgentStatus::Errored(_) | AgentStatus::NotFound => CollabAgentToolCallStatus::Failed,
+            _ => CollabAgentToolCallStatus::Completed,
+        };
+        let receiver_id = payload.receiver_thread_id.to_string();
+        let agents_states = [(
+            receiver_id.clone(),
+            CollabAgentState::from(payload.status.clone()),
+        )]
+        .into_iter()
+        .collect();
+        self.upsert_item_in_current_turn(ThreadItem::CollabAgentToolCall {
+            id: payload.call_id.clone(),
+            tool: CollabAgentTool::CompactAgent,
+            status,
+            sender_thread_id: payload.sender_thread_id.to_string(),
+            receiver_thread_ids: vec![receiver_id],
+            prompt: payload.reason.clone(),
+            model: None,
+            reasoning_effort: None,
+            agents_states,
+        });
+    }
+
+    fn handle_collab_restart_begin(
+        &mut self,
+        payload: &codex_protocol::protocol::CollabRestartBeginEvent,
+    ) {
+        let item = ThreadItem::CollabAgentToolCall {
+            id: payload.call_id.clone(),
+            tool: CollabAgentTool::RestartAgent,
+            status: CollabAgentToolCallStatus::InProgress,
+            sender_thread_id: payload.sender_thread_id.to_string(),
+            receiver_thread_ids: vec![payload.receiver_thread_id.to_string()],
+            prompt: payload.prompt.clone(),
+            model: payload.model.clone(),
+            reasoning_effort: payload.reasoning_effort,
+            agents_states: HashMap::new(),
+        };
+        self.upsert_item_in_current_turn(item);
+    }
+
+    fn handle_collab_restart_end(
+        &mut self,
+        payload: &codex_protocol::protocol::CollabRestartEndEvent,
+    ) {
+        let status = match &payload.status {
+            AgentStatus::Errored(_) | AgentStatus::NotFound => CollabAgentToolCallStatus::Failed,
+            _ => CollabAgentToolCallStatus::Completed,
+        };
+        let receiver_id = payload.receiver_thread_id.to_string();
+        let agents_states = [(
+            receiver_id.clone(),
+            CollabAgentState::from(payload.status.clone()),
+        )]
+        .into_iter()
+        .collect();
+        self.upsert_item_in_current_turn(ThreadItem::CollabAgentToolCall {
+            id: payload.call_id.clone(),
+            tool: CollabAgentTool::RestartAgent,
+            status,
+            sender_thread_id: payload.sender_thread_id.to_string(),
+            receiver_thread_ids: vec![receiver_id],
+            prompt: payload.prompt.clone(),
+            model: payload.model.clone(),
+            reasoning_effort: payload.reasoning_effort,
             agents_states,
         });
     }
@@ -2777,6 +2873,96 @@ mod tests {
                     "00000000-0000-0000-0000-000000000002".into(),
                     CollabAgentState {
                         status: crate::protocol::v2::CollabAgentStatus::Completed,
+                        message: None,
+                    },
+                )]
+                .into_iter()
+                .collect(),
+            }
+        );
+    }
+
+    #[test]
+    fn collab_agent_supervisor_tools_reconstruct_compact_and_restart_items() {
+        let sender = ThreadId::try_from("00000000-0000-0000-0000-000000000001")
+            .expect("valid sender thread id");
+        let receiver = ThreadId::try_from("00000000-0000-0000-0000-000000000002")
+            .expect("valid receiver thread id");
+        let events = vec![
+            EventMsg::UserMessage(UserMessageEvent {
+                message: "supervise agent".into(),
+                images: None,
+                text_elements: Vec::new(),
+                local_images: Vec::new(),
+            }),
+            EventMsg::CollabCompactEnd(codex_protocol::protocol::CollabCompactEndEvent {
+                call_id: "compact-1".into(),
+                completed_at_ms: 0,
+                sender_thread_id: sender,
+                receiver_thread_id: receiver,
+                receiver_agent_nickname: None,
+                receiver_agent_role: None,
+                reason: Some("trim context".into()),
+                status: AgentStatus::Completed(Some("ready".into())),
+            }),
+            EventMsg::CollabRestartEnd(codex_protocol::protocol::CollabRestartEndEvent {
+                call_id: "restart-1".into(),
+                completed_at_ms: 0,
+                sender_thread_id: sender,
+                receiver_thread_id: receiver,
+                receiver_agent_nickname: None,
+                receiver_agent_role: None,
+                prompt: Some("continue".into()),
+                model: Some("gpt-5.5".into()),
+                reasoning_effort: Some(codex_protocol::openai_models::ReasoningEffort::High),
+                status: AgentStatus::Running,
+            }),
+        ];
+
+        let items = events
+            .into_iter()
+            .map(RolloutItem::EventMsg)
+            .collect::<Vec<_>>();
+        let turns = build_turns_from_rollout_items(&items);
+        assert_eq!(turns.len(), 1);
+        assert_eq!(turns[0].items.len(), 3);
+        assert_eq!(
+            turns[0].items[1],
+            ThreadItem::CollabAgentToolCall {
+                id: "compact-1".into(),
+                tool: CollabAgentTool::CompactAgent,
+                status: CollabAgentToolCallStatus::Completed,
+                sender_thread_id: sender.to_string(),
+                receiver_thread_ids: vec![receiver.to_string()],
+                prompt: Some("trim context".into()),
+                model: None,
+                reasoning_effort: None,
+                agents_states: [(
+                    receiver.to_string(),
+                    CollabAgentState {
+                        status: crate::protocol::v2::CollabAgentStatus::Completed,
+                        message: Some("ready".into()),
+                    },
+                )]
+                .into_iter()
+                .collect(),
+            }
+        );
+        assert_eq!(
+            turns[0].items[2],
+            ThreadItem::CollabAgentToolCall {
+                id: "restart-1".into(),
+                tool: CollabAgentTool::RestartAgent,
+                status: CollabAgentToolCallStatus::Completed,
+                sender_thread_id: sender.to_string(),
+                receiver_thread_ids: vec![receiver.to_string()],
+                prompt: Some("continue".into()),
+                model: Some("gpt-5.5".into()),
+                reasoning_effort: Some(codex_protocol::openai_models::ReasoningEffort::High),
+                agents_states: [(
+                    receiver.to_string(),
+                    CollabAgentState {
+                        status: crate::protocol::v2::CollabAgentStatus::Running,
                         message: None,
                     },
                 )]
