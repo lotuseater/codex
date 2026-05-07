@@ -223,6 +223,56 @@ LIMIT 2
         one_thread_id_from_rows(rows, agent_path)
     }
 
+    /// Find the direct parent thread for a spawned child, if one is persisted.
+    pub async fn find_thread_spawn_parent(
+        &self,
+        child_thread_id: ThreadId,
+    ) -> anyhow::Result<Option<ThreadId>> {
+        let row = sqlx::query(
+            r#"
+SELECT parent_thread_id
+FROM thread_spawn_edges
+WHERE child_thread_id = ?
+            "#,
+        )
+        .bind(child_thread_id.to_string())
+        .fetch_optional(self.pool.as_ref())
+        .await?;
+        row.map(|row| ThreadId::try_from(row.try_get::<String, _>("parent_thread_id")?))
+            .transpose()
+            .map_err(Into::into)
+    }
+
+    /// Find the root thread of the persisted spawn tree containing `descendant_thread_id`.
+    pub async fn find_thread_spawn_root_for_descendant(
+        &self,
+        descendant_thread_id: ThreadId,
+    ) -> anyhow::Result<Option<ThreadId>> {
+        let row = sqlx::query(
+            r#"
+WITH RECURSIVE ancestors(parent_thread_id, child_thread_id, depth) AS (
+    SELECT parent_thread_id, child_thread_id, 1
+    FROM thread_spawn_edges
+    WHERE child_thread_id = ?
+    UNION ALL
+    SELECT edge.parent_thread_id, edge.child_thread_id, ancestors.depth + 1
+    FROM thread_spawn_edges AS edge
+    JOIN ancestors ON edge.child_thread_id = ancestors.parent_thread_id
+)
+SELECT parent_thread_id
+FROM ancestors
+ORDER BY depth DESC
+LIMIT 1
+            "#,
+        )
+        .bind(descendant_thread_id.to_string())
+        .fetch_optional(self.pool.as_ref())
+        .await?;
+        row.map(|row| ThreadId::try_from(row.try_get::<String, _>("parent_thread_id")?))
+            .transpose()
+            .map_err(Into::into)
+    }
+
     async fn list_thread_spawn_children_matching(
         &self,
         parent_thread_id: ThreadId,
@@ -1940,6 +1990,24 @@ mod tests {
             .await
             .expect("all descendants should load");
         assert_eq!(all_descendants, vec![child_thread_id, grandchild_thread_id]);
+
+        let grandchild_parent = runtime
+            .find_thread_spawn_parent(grandchild_thread_id)
+            .await
+            .expect("spawn parent should load");
+        assert_eq!(grandchild_parent, Some(child_thread_id));
+
+        let grandchild_root = runtime
+            .find_thread_spawn_root_for_descendant(grandchild_thread_id)
+            .await
+            .expect("spawn root should load");
+        assert_eq!(grandchild_root, Some(parent_thread_id));
+
+        let missing_root = runtime
+            .find_thread_spawn_root_for_descendant(parent_thread_id)
+            .await
+            .expect("missing spawn root should load");
+        assert_eq!(missing_root, None);
     }
 
     #[tokio::test]

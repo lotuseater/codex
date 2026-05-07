@@ -54,6 +54,8 @@ impl ToolHandler for Handler {
                     sender_thread_id: session.conversation_id,
                     receiver_thread_id,
                     prompt: prompt.clone(),
+                    model: None,
+                    reasoning_effort: None,
                 }
                 .into(),
             )
@@ -80,6 +82,8 @@ impl ToolHandler for Handler {
                     receiver_agent_role: receiver_agent.agent_role,
                     prompt,
                     status,
+                    model: None,
+                    reasoning_effort: None,
                 }
                 .into(),
             )

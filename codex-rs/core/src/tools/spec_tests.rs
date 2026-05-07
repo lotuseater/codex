@@ -396,10 +396,12 @@ async fn test_build_specs_gpt5_codex_default() {
             "image_generation",
             "view_image",
             "spawn_agent",
-            "send_input",
+            "send_message",
+            "followup_task",
             "resume_agent",
             "wait_agent",
             "close_agent",
+            "list_agents",
         ],
     )
     .await;
@@ -421,10 +423,12 @@ async fn test_build_specs_gpt51_codex_default() {
             "image_generation",
             "view_image",
             "spawn_agent",
-            "send_input",
+            "send_message",
+            "followup_task",
             "resume_agent",
             "wait_agent",
             "close_agent",
+            "list_agents",
         ],
     )
     .await;
@@ -448,10 +452,12 @@ async fn test_build_specs_gpt5_codex_unified_exec_web_search() {
             "image_generation",
             "view_image",
             "spawn_agent",
-            "send_input",
+            "send_message",
+            "followup_task",
             "resume_agent",
             "wait_agent",
             "close_agent",
+            "list_agents",
         ],
     )
     .await;
@@ -475,10 +481,12 @@ async fn test_build_specs_gpt51_codex_unified_exec_web_search() {
             "image_generation",
             "view_image",
             "spawn_agent",
-            "send_input",
+            "send_message",
+            "followup_task",
             "resume_agent",
             "wait_agent",
             "close_agent",
+            "list_agents",
         ],
     )
     .await;
@@ -500,10 +508,12 @@ async fn test_gpt_5_1_codex_max_defaults() {
             "image_generation",
             "view_image",
             "spawn_agent",
-            "send_input",
+            "send_message",
+            "followup_task",
             "resume_agent",
             "wait_agent",
             "close_agent",
+            "list_agents",
         ],
     )
     .await;
@@ -525,10 +535,12 @@ async fn test_codex_5_1_mini_defaults() {
             "image_generation",
             "view_image",
             "spawn_agent",
-            "send_input",
+            "send_message",
+            "followup_task",
             "resume_agent",
             "wait_agent",
             "close_agent",
+            "list_agents",
         ],
     )
     .await;
@@ -550,10 +562,12 @@ async fn test_gpt_5_defaults() {
             "image_generation",
             "view_image",
             "spawn_agent",
-            "send_input",
+            "send_message",
+            "followup_task",
             "resume_agent",
             "wait_agent",
             "close_agent",
+            "list_agents",
         ],
     )
     .await;
@@ -575,10 +589,12 @@ async fn test_gpt_5_1_defaults() {
             "image_generation",
             "view_image",
             "spawn_agent",
-            "send_input",
+            "send_message",
+            "followup_task",
             "resume_agent",
             "wait_agent",
             "close_agent",
+            "list_agents",
         ],
     )
     .await;
@@ -602,10 +618,12 @@ async fn test_gpt_5_1_codex_max_unified_exec_web_search() {
             "image_generation",
             "view_image",
             "spawn_agent",
-            "send_input",
+            "send_message",
+            "followup_task",
             "resume_agent",
             "wait_agent",
             "close_agent",
+            "list_agents",
         ],
     )
     .await;
@@ -719,10 +737,11 @@ async fn spawn_agent_description_omits_usage_hint_when_disabled() {
         r#"(?sx)
             ^\s*
             No\ picker-visible\ model\ overrides\ are\ currently\ loaded\.
-            \s+Spawns\ an\ agent\ to\ work\ on\ the\ specified\ task\.\ If\ your\ current\ task\ is\ `/root/task1`\ and\ you\ spawn_agent\ with\ task_name\ "task_3"\ the\ agent\ will\ have\ canonical\ task\ name\ `/root/task1/task_3`\.
+            \s+
+            Spawns\ an\ agent\ to\ work\ on\ the\ specified\ task\.\ If\ your\ current\ task\ is\ `/root/task1`\ and\ you\ spawn_agent\ with\ task_name\ "task_3"\ the\ agent\ will\ have\ canonical\ task\ name\ `/root/task1/task_3`\.
             \s+You\ are\ then\ able\ to\ refer\ to\ this\ agent\ as\ `task_3`\ or\ `/root/task1/task_3`\ interchangeably\.\ However\ an\ agent\ `/root/task2/task_3`\ would\ only\ be\ able\ to\ communicate\ with\ this\ agent\ via\ its\ canonical\ name\ `/root/task1/task_3`\.
             \s+The\ spawned\ agent\ will\ have\ the\ same\ tools\ as\ you\ and\ the\ ability\ to\ spawn\ its\ own\ subagents\.
-            \s+Spawned\ agents\ inherit\ your\ current\ model\ by\ default\.\ Omit\ `model`\ to\ use\ that\ preferred\ default;\ set\ `model`\ only\ when\ an\ explicit\ override\ is\ needed\.
+            \s+The\ spawned\ agent\ inherits\ your\ current\ permission\ mode\.\ You\ may\ choose\ its\ model\ and\ reasoning\ effort\ for\ the\ task;\ prefer\ quality\ and\ inherit\ the\ current\ model/effort\ unless\ a\ simpler\ bounded\ task\ is\ clearly\ safe\ for\ lower\ effort\ or\ a\ simpler\ model\.
             \s+It\ will\ be\ able\ to\ send\ you\ and\ other\ running\ agents\ messages,\ and\ its\ final\ answer\ will\ be\ provided\ to\ you\ when\ it\ finishes\.
             \s+The\ new\ agent's\ canonical\ task\ name\ will\ be\ provided\ to\ it\ along\ with\ the\ message\.
             \s+This\ session\ is\ configured\ with\ `max_concurrent_threads_per_session\ =\ 4`\ for\ concurrently\ open\ agent\ threads\.
@@ -745,10 +764,11 @@ async fn spawn_agent_description_uses_configured_usage_hint_text() {
         r#"(?sx)
             ^\s*
             No\ picker-visible\ model\ overrides\ are\ currently\ loaded\.
-            \s+Spawns\ an\ agent\ to\ work\ on\ the\ specified\ task\.\ If\ your\ current\ task\ is\ `/root/task1`\ and\ you\ spawn_agent\ with\ task_name\ "task_3"\ the\ agent\ will\ have\ canonical\ task\ name\ `/root/task1/task_3`\.
+            \s+
+            Spawns\ an\ agent\ to\ work\ on\ the\ specified\ task\.\ If\ your\ current\ task\ is\ `/root/task1`\ and\ you\ spawn_agent\ with\ task_name\ "task_3"\ the\ agent\ will\ have\ canonical\ task\ name\ `/root/task1/task_3`\.
             \s+You\ are\ then\ able\ to\ refer\ to\ this\ agent\ as\ `task_3`\ or\ `/root/task1/task_3`\ interchangeably\.\ However\ an\ agent\ `/root/task2/task_3`\ would\ only\ be\ able\ to\ communicate\ with\ this\ agent\ via\ its\ canonical\ name\ `/root/task1/task_3`\.
             \s+The\ spawned\ agent\ will\ have\ the\ same\ tools\ as\ you\ and\ the\ ability\ to\ spawn\ its\ own\ subagents\.
-            \s+Spawned\ agents\ inherit\ your\ current\ model\ by\ default\.\ Omit\ `model`\ to\ use\ that\ preferred\ default;\ set\ `model`\ only\ when\ an\ explicit\ override\ is\ needed\.
+            \s+The\ spawned\ agent\ inherits\ your\ current\ permission\ mode\.\ You\ may\ choose\ its\ model\ and\ reasoning\ effort\ for\ the\ task;\ prefer\ quality\ and\ inherit\ the\ current\ model/effort\ unless\ a\ simpler\ bounded\ task\ is\ clearly\ safe\ for\ lower\ effort\ or\ a\ simpler\ model\.
             \s+It\ will\ be\ able\ to\ send\ you\ and\ other\ running\ agents\ messages,\ and\ its\ final\ answer\ will\ be\ provided\ to\ you\ when\ it\ finishes\.
             \s+The\ new\ agent's\ canonical\ task\ name\ will\ be\ provided\ to\ it\ along\ with\ the\ message\.
             \s+This\ session\ is\ configured\ with\ `max_concurrent_threads_per_session\ =\ 4`\ for\ concurrently\ open\ agent\ threads\.

@@ -7,6 +7,7 @@ use crate::agent::role::DEFAULT_ROLE_NAME;
 use crate::agent::role::apply_role_to_config;
 use crate::turn_timing::now_unix_timestamp_ms;
 use codex_protocol::AgentPath;
+use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::Op;
 
@@ -38,6 +39,8 @@ impl ToolHandler for Handler {
         let arguments = function_arguments(payload)?;
         let args: SpawnAgentArgs = parse_arguments(&arguments)?;
         let fork_mode = args.fork_mode()?;
+        let requested_model = args.model.clone();
+        let requested_reasoning_effort = args.reasoning_effort;
         let role_name = args
             .agent_type
             .as_deref()
@@ -57,8 +60,14 @@ impl ToolHandler for Handler {
                     started_at_ms: now_unix_timestamp_ms(),
                     sender_thread_id: session.conversation_id,
                     prompt: prompt.clone(),
-                    model: args.model.clone().unwrap_or_default(),
-                    reasoning_effort: args.reasoning_effort.unwrap_or_default(),
+                    model: requested_model
+                        .clone()
+                        .unwrap_or_else(|| turn.model_info.slug.clone()),
+                    reasoning_effort: requested_reasoning_effort
+                        .or(turn
+                            .reasoning_effort
+                            .or(turn.model_info.default_reasoning_level))
+                        .unwrap_or_default(),
                 }
                 .into(),
             )
@@ -66,24 +75,24 @@ impl ToolHandler for Handler {
         let mut config =
             build_agent_spawn_config(&session.get_base_instructions().await, turn.as_ref())?;
         if matches!(fork_mode, Some(SpawnAgentForkMode::FullHistory)) {
-            reject_full_fork_spawn_overrides(
-                role_name,
-                args.model.as_deref(),
-                args.reasoning_effort,
-            )?;
+            if role_name.is_some() {
+                return Err(FunctionCallError::RespondToModel(
+                    "Full-history forked agents inherit the parent agent type; omit agent_type, or spawn without fork_turns=\"all\".".to_string(),
+                ));
+            }
         } else {
-            apply_requested_spawn_agent_model_overrides(
-                &session,
-                turn.as_ref(),
-                &mut config,
-                args.model.as_deref(),
-                args.reasoning_effort,
-            )
-            .await?;
             apply_role_to_config(&mut config, role_name)
                 .await
                 .map_err(FunctionCallError::RespondToModel)?;
         }
+        apply_requested_spawn_agent_model_overrides(
+            &session,
+            turn.as_ref(),
+            &mut config,
+            requested_model.as_deref(),
+            requested_reasoning_effort,
+        )
+        .await?;
         apply_spawn_agent_runtime_overrides(&mut config, turn.as_ref())?;
         apply_spawn_agent_overrides(&mut config, child_depth);
 
@@ -163,11 +172,20 @@ impl ToolHandler for Handler {
         let effective_model = agent_snapshot
             .as_ref()
             .map(|snapshot| snapshot.model.clone())
-            .unwrap_or_else(|| args.model.clone().unwrap_or_default());
+            .unwrap_or_else(|| {
+                requested_model
+                    .clone()
+                    .unwrap_or_else(|| turn.model_info.slug.clone())
+            });
         let effective_reasoning_effort = agent_snapshot
             .as_ref()
             .and_then(|snapshot| snapshot.reasoning_effort)
-            .unwrap_or(args.reasoning_effort.unwrap_or_default());
+            .unwrap_or_else(|| {
+                requested_reasoning_effort
+                    .or(turn.reasoning_effort)
+                    .or(turn.model_info.default_reasoning_level)
+                    .unwrap_or_default()
+            });
         let nickname = new_agent_nickname.clone();
         session
             .send_event(
@@ -218,10 +236,10 @@ struct SpawnAgentArgs {
     message: String,
     task_name: String,
     agent_type: Option<String>,
-    model: Option<String>,
-    reasoning_effort: Option<ReasoningEffort>,
     fork_turns: Option<String>,
     fork_context: Option<bool>,
+    model: Option<String>,
+    reasoning_effort: Option<ReasoningEffort>,
 }
 
 impl SpawnAgentArgs {

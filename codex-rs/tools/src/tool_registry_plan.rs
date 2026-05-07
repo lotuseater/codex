@@ -45,6 +45,7 @@ use crate::create_request_permissions_tool;
 use crate::create_request_plugin_install_tool;
 use crate::create_request_user_input_tool;
 use crate::create_resume_agent_tool;
+use crate::create_resume_agent_tool_v2;
 use crate::create_send_input_tool_v1;
 use crate::create_send_message_tool;
 use crate::create_shell_command_tool;
@@ -478,6 +479,11 @@ pub fn build_tool_registry_plan(
                 config.code_mode_enabled,
             );
             plan.push_spec(
+                create_resume_agent_tool_v2(),
+                /*supports_parallel_tool_calls*/ false,
+                config.code_mode_enabled,
+            );
+            plan.push_spec(
                 create_wait_agent_tool_v2(params.wait_agent_timeouts),
                 /*supports_parallel_tool_calls*/ false,
                 config.code_mode_enabled,
@@ -495,6 +501,7 @@ pub fn build_tool_registry_plan(
             plan.register_handler("spawn_agent", ToolHandlerKind::SpawnAgentV2);
             plan.register_handler("send_message", ToolHandlerKind::SendMessageV2);
             plan.register_handler("followup_task", ToolHandlerKind::FollowupTaskV2);
+            plan.register_handler("resume_agent", ToolHandlerKind::ResumeAgentV2);
             plan.register_handler("wait_agent", ToolHandlerKind::WaitAgentV2);
             plan.register_handler("close_agent", ToolHandlerKind::CloseAgentV2);
             plan.register_handler("list_agents", ToolHandlerKind::ListAgentsV2);

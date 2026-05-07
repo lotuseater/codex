@@ -12,6 +12,7 @@ use crate::tools::context::ToolOutput;
 use crate::tools::handlers::multi_agents_v2::CloseAgentHandler as CloseAgentHandlerV2;
 use crate::tools::handlers::multi_agents_v2::FollowupTaskHandler as FollowupTaskHandlerV2;
 use crate::tools::handlers::multi_agents_v2::ListAgentsHandler as ListAgentsHandlerV2;
+use crate::tools::handlers::multi_agents_v2::ResumeAgentHandler as ResumeAgentHandlerV2;
 use crate::tools::handlers::multi_agents_v2::SendMessageHandler as SendMessageHandlerV2;
 use crate::tools::handlers::multi_agents_v2::SpawnAgentHandler as SpawnAgentHandlerV2;
 use crate::tools::handlers::multi_agents_v2::WaitAgentHandler as WaitAgentHandlerV2;
@@ -170,6 +171,18 @@ struct ListedAgentResult {
     agent_name: String,
     agent_status: serde_json::Value,
     last_task_message: Option<String>,
+}
+
+fn supported_reasoning_effort_for_override(turn: &TurnContext) -> ReasoningEffort {
+    let current = turn
+        .reasoning_effort
+        .or(turn.model_info.default_reasoning_level);
+    turn.model_info
+        .supported_reasoning_levels
+        .iter()
+        .map(|preset| preset.effort)
+        .find(|effort| Some(*effort) != current)
+        .unwrap_or_else(|| current.unwrap_or_default())
 }
 
 #[tokio::test]
@@ -401,13 +414,13 @@ async fn multi_agent_v2_spawn_fork_turns_all_rejects_agent_type_override() {
     assert_eq!(
         err,
         FunctionCallError::RespondToModel(
-            "Full-history forked agents inherit the parent agent type, model, and reasoning effort; omit agent_type, model, and reasoning_effort, or spawn without a full-history fork.".to_string(),
+            "Full-history forked agents inherit the parent agent type; omit agent_type, or spawn without fork_turns=\"all\".".to_string(),
         )
     );
 }
 
 #[tokio::test]
-async fn multi_agent_v2_spawn_defaults_to_full_fork_and_rejects_child_model_overrides() {
+async fn multi_agent_v2_spawn_accepts_child_model_override_fields() {
     let (mut session, mut turn) = make_session_and_context().await;
     let manager = thread_manager().await;
     let root = manager
@@ -421,9 +434,11 @@ async fn multi_agent_v2_spawn_defaults_to_full_fork_and_rejects_child_model_over
         .features
         .enable(Feature::MultiAgentV2)
         .expect("test config should allow feature update");
+    let expected_model = turn.model_info.slug.clone();
+    let requested_reasoning_effort = supported_reasoning_effort_for_override(&turn);
     turn.config = Arc::new(config);
 
-    let err = SpawnAgentHandlerV2
+    let output = SpawnAgentHandlerV2
         .handle(invocation(
             Arc::new(session),
             Arc::new(turn),
@@ -431,25 +446,36 @@ async fn multi_agent_v2_spawn_defaults_to_full_fork_and_rejects_child_model_over
             function_payload(json!({
                 "message": "inspect this repo",
                 "task_name": "fork_context_v2",
-                "model": "gpt-5-child-override",
-                "reasoning_effort": "low"
+                "model": expected_model,
+                "reasoning_effort": requested_reasoning_effort.to_string()
             })),
         ))
         .await
-        .expect_err("default full fork should reject child model overrides");
+        .expect("v2 spawn should accept model and effort overrides");
+    let (content, _) = expect_text_output(output);
+    let result: serde_json::Value =
+        serde_json::from_str(&content).expect("spawn_agent result should be json");
+    assert_eq!(result["task_name"], "/root/fork_context_v2");
+    let agent_id = manager
+        .captured_ops()
+        .into_iter()
+        .map(|(thread_id, _)| thread_id)
+        .find(|thread_id| *thread_id != root.thread_id)
+        .expect("spawned agent should receive an op");
+    let snapshot = manager
+        .get_thread(agent_id)
+        .await
+        .expect("spawned agent thread should exist")
+        .config_snapshot()
+        .await;
 
-    assert_eq!(
-        err,
-            FunctionCallError::RespondToModel(
-            "Full-history forked agents inherit the parent agent type, model, and reasoning effort; omit agent_type, model, and reasoning_effort, or spawn without a full-history fork.".to_string(),
-        )
-    );
+    assert_eq!(snapshot.model, expected_model);
+    assert_eq!(snapshot.reasoning_effort, Some(requested_reasoning_effort));
 }
 
 #[tokio::test]
-async fn multi_agent_v2_spawn_partial_fork_turns_allows_agent_type_override() {
+async fn multi_agent_v2_spawn_partial_fork_turns_allows_explicit_reasoning_effort() {
     let (mut session, mut turn) = make_session_and_context().await;
-    let role_name = install_role_with_model_override(&mut turn).await;
     let manager = thread_manager().await;
     let root = manager
         .start_thread((*turn.config).clone())
@@ -462,6 +488,9 @@ async fn multi_agent_v2_spawn_partial_fork_turns_allows_agent_type_override() {
         .features
         .enable(Feature::MultiAgentV2)
         .expect("test config should allow feature update");
+    let expected_model = turn.model_info.slug.clone();
+    let expected_model_provider_id = turn.config.model_provider_id.clone();
+    let requested_reasoning_effort = supported_reasoning_effort_for_override(&turn);
     let turn = TurnContext {
         config: Arc::new(config),
         ..turn
@@ -475,12 +504,12 @@ async fn multi_agent_v2_spawn_partial_fork_turns_allows_agent_type_override() {
             function_payload(json!({
                 "message": "inspect this repo",
                 "task_name": "partial_fork",
-                "agent_type": role_name,
-                "fork_turns": "1"
+                "fork_turns": "1",
+                "reasoning_effort": requested_reasoning_effort.to_string()
             })),
         ))
         .await
-        .expect("partial fork should allow agent_type overrides");
+        .expect("partial fork should allow an explicit reasoning effort");
     let (content, _) = expect_text_output(output);
     let result: serde_json::Value =
         serde_json::from_str(&content).expect("spawn_agent result should be json");
@@ -498,9 +527,9 @@ async fn multi_agent_v2_spawn_partial_fork_turns_allows_agent_type_override() {
         .config_snapshot()
         .await;
 
-    assert_eq!(snapshot.model, "gpt-5-role-override");
-    assert_eq!(snapshot.model_provider_id, "ollama");
-    assert_eq!(snapshot.reasoning_effort, Some(ReasoningEffort::Minimal));
+    assert_eq!(snapshot.model, expected_model);
+    assert_eq!(snapshot.model_provider_id, expected_model_provider_id);
+    assert_eq!(snapshot.reasoning_effort, Some(requested_reasoning_effort));
 }
 
 #[tokio::test]
@@ -3250,6 +3279,91 @@ async fn multi_agent_v2_close_agent_accepts_task_name_target() {
         manager.agent_control().get_status(agent_id).await,
         AgentStatus::NotFound
     );
+}
+
+#[tokio::test]
+async fn multi_agent_v2_resume_agent_restores_closed_agent_by_task_name() {
+    let (mut session, mut turn) = make_session_and_context().await;
+    let manager = thread_manager().await;
+    let root = manager
+        .start_thread((*turn.config).clone())
+        .await
+        .expect("root thread should start");
+    session.services.agent_control = manager.agent_control();
+    session.conversation_id = root.thread_id;
+    let mut config = (*turn.config).clone();
+    config
+        .features
+        .enable(Feature::MultiAgentV2)
+        .expect("test config should allow feature update");
+    turn.config = Arc::new(config);
+
+    let session = Arc::new(session);
+    let turn = Arc::new(turn);
+    SpawnAgentHandlerV2
+        .handle(invocation(
+            session.clone(),
+            turn.clone(),
+            "spawn_agent",
+            function_payload(json!({
+                "message": "inspect this repo",
+                "task_name": "worker"
+            })),
+        ))
+        .await
+        .expect("spawn_agent should succeed");
+
+    let agent_id = session
+        .services
+        .agent_control
+        .resolve_agent_reference(session.conversation_id, &turn.session_source, "worker")
+        .await
+        .expect("worker path should resolve");
+    CloseAgentHandlerV2
+        .handle(invocation(
+            session.clone(),
+            turn.clone(),
+            "close_agent",
+            function_payload(json!({"target": "worker"})),
+        ))
+        .await
+        .expect("close_agent should close the worker");
+    assert_eq!(
+        manager.agent_control().get_status(agent_id).await,
+        AgentStatus::NotFound
+    );
+
+    let resume_output = ResumeAgentHandlerV2
+        .handle(invocation(
+            session.clone(),
+            turn.clone(),
+            "resume_agent",
+            function_payload(json!({"target": "worker"})),
+        ))
+        .await
+        .expect("resume_agent should restore the worker by task name");
+    let (resume_content, resume_success) = expect_text_output(resume_output);
+    let resume_result: serde_json::Value =
+        serde_json::from_str(&resume_content).expect("resume_agent result should be json");
+    assert_ne!(resume_result["status"], json!("not_found"));
+    assert_eq!(resume_success, Some(true));
+    assert_ne!(
+        manager.agent_control().get_status(agent_id).await,
+        AgentStatus::NotFound
+    );
+
+    SendMessageHandlerV2
+        .handle(invocation(
+            session,
+            turn,
+            "send_message",
+            function_payload(json!({
+                "target": "worker",
+                "message": "continue"
+            })),
+        ))
+        .await
+        .expect("send_message should accept the resumed worker path");
 }
 
 #[tokio::test]

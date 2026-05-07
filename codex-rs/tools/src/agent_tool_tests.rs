@@ -63,28 +63,26 @@ fn spawn_agent_tool_v2_requires_task_name_and_lists_visible_models() {
         .expect("spawn_agent should use object params");
     assert!(description.contains("Spawns an agent to work on the specified task."));
     assert!(description.contains("The spawned agent will have the same tools as you"));
+    assert!(description.contains("inherits your current permission mode"));
+    assert!(description.contains("prefer quality"));
     assert!(description.contains("`max_concurrent_threads_per_session = 4`"));
-    assert!(description.contains(SPAWN_AGENT_INHERITED_MODEL_GUIDANCE));
-    assert!(
-        description
-            .contains("Available model overrides (optional; inherited parent model is preferred):")
-    );
+    assert!(description.contains("CONTEXT_AREA"));
+    assert!(description.contains("DO_NOT_INSPECT"));
+    assert!(description.contains("fork_turns = \"none\""));
+    assert!(description.contains("resume_agent"));
+    assert!(description.contains("Available model overrides"));
     assert!(description.contains("visible display (`visible-model`)"));
     assert!(!description.contains("hidden display (`hidden-model`)"));
     assert!(properties.contains_key("task_name"));
     assert!(properties.contains_key("message"));
     assert!(properties.contains_key("fork_turns"));
+    assert!(properties.contains_key("model"));
+    assert!(properties.contains_key("reasoning_effort"));
     assert!(!properties.contains_key("items"));
     assert!(!properties.contains_key("fork_context"));
     assert_eq!(
         properties.get("agent_type"),
         Some(&JsonSchema::string(Some("role help".to_string())))
-    );
-    assert_eq!(
-        properties
-            .get("model")
-            .and_then(|schema| schema.description.as_deref()),
-        Some(SPAWN_AGENT_MODEL_OVERRIDE_DESCRIPTION)
     );
     assert_eq!(
         parameters.required.as_ref(),
@@ -184,12 +182,43 @@ fn followup_task_tool_requires_message_and_has_no_output_schema() {
         .expect("followup_task should use object params");
     assert!(properties.contains_key("target"));
     assert!(properties.contains_key("message"));
+    assert!(properties.contains_key("model"));
+    assert!(properties.contains_key("reasoning_effort"));
     assert!(!properties.contains_key("items"));
     assert_eq!(
         parameters.required.as_ref(),
         Some(&vec!["target".to_string(), "message".to_string()])
     );
     assert_eq!(output_schema, None);
+}
+
+#[test]
+fn resume_agent_tool_v2_accepts_task_path_target() {
+    let ToolSpec::Function(ResponsesApiTool {
+        description,
+        parameters,
+        output_schema,
+        ..
+    }) = create_resume_agent_tool_v2()
+    else {
+        panic!("resume_agent should be a function tool");
+    };
+
+    assert!(description.contains("previously closed MultiAgentV2 agent"));
+    let properties = parameters
+        .properties
+        .as_ref()
+        .expect("resume_agent should use object params");
+    assert!(properties.contains_key("target"));
+    assert!(!properties.contains_key("id"));
+    assert_eq!(
+        parameters.required.as_ref(),
+        Some(&vec!["target".to_string()])
+    );
+    assert_eq!(
+        output_schema.expect("resume output schema")["required"],
+        json!(["status"])
+    );
 }
 
 #[test]

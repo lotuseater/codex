@@ -549,7 +549,7 @@ hide_spawn_agent_metadata = true
 }
 
 #[test]
-fn multi_agent_v2_feature_config_usage_hint_enabled_does_not_enable_feature() {
+fn multi_agent_v2_feature_config_usage_hint_enabled_does_not_disable_default_feature() {
     let features_toml: FeaturesToml = toml::from_str(
         r#"
 [multi_agent_v2]
@@ -566,7 +566,7 @@ usage_hint_enabled = false
         FeatureOverrides::default(),
     );
 
-    assert_eq!(features.enabled(Feature::MultiAgentV2), false);
+    assert_eq!(features.enabled(Feature::MultiAgentV2), true);
     assert_eq!(features_toml.entries(), BTreeMap::new());
     assert_eq!(
         features_toml.multi_agent_v2,

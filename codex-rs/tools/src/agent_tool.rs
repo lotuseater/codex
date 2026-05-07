@@ -8,6 +8,15 @@ use std::collections::BTreeMap;
 
 const SPAWN_AGENT_INHERITED_MODEL_GUIDANCE: &str = "Spawned agents inherit your current model by default. Omit `model` to use that preferred default; set `model` only when an explicit override is needed.";
 const SPAWN_AGENT_MODEL_OVERRIDE_DESCRIPTION: &str = "Optional model override for the new agent. Leave unset to inherit the same model as the parent, which is the preferred default. Only set this when the user explicitly asks for a different model or the task clearly requires one.";
+const SPAWN_AGENT_V2_DEFAULT_USAGE_HINT: &str = r#"### MultiAgentV2 delegation guidance
+- Decide during planning whether the immediate critical path stays local and which bounded sidecar tasks can run in parallel.
+- Spawn only concrete, self-contained work that materially advances the user's task. Keep urgent blockers local when your next step depends on them.
+- Give every spawned agent a compact context contract in `message`: `CONTEXT_AREA`, `DO_NOT_INSPECT`, `FIRST_READS`, `TOOL_HINTS`, `TOKEN_TIP`, `VERIFICATION`, and `HANDOFF`.
+- Use stable, descriptive `task_name` values so agents can be listed, resumed, reviewed, and restored by path.
+- Prefer `fork_turns = "none"` or a small recent-turn count when the message carries enough context; use `fork_turns = "all"` only when the child truly needs full prior conversation.
+- Choose each spawned agent's model and reasoning effort deliberately. Prefer quality and inherit the current model/effort unless the task is simple, bounded, and low risk enough for lower effort or a simpler model; raise effort/model quality for ambiguous, risky, code-changing, or verification-heavy work.
+- For code changes, assign disjoint write scopes and tell agents they are not alone in the codebase and must not revert others' work.
+- Supervise agents with `list_agents`, `wait_agent`, `send_message`, `followup_task`, `resume_agent`, and `close_agent`; use `followup_task` to adjust model/effort for later turns when the task changes, and review outputs before integrating or reporting them."#;
 
 #[derive(Debug, Clone)]
 pub struct SpawnAgentToolOptions<'a> {
@@ -166,6 +175,20 @@ pub fn create_followup_task_tool() -> ToolSpec {
                 "Message text to send to the target agent.".to_string(),
             )),
         ),
+        (
+            "model".to_string(),
+            JsonSchema::string(Some(
+                "Optional model override for this target agent's next turn. Prefer quality; only select a simpler model when the follow-up task is simple, bounded, and low risk."
+                    .to_string(),
+            )),
+        ),
+        (
+            "reasoning_effort".to_string(),
+            JsonSchema::string(Some(
+                "Optional reasoning effort override for this target agent's next turn. Prefer the current or higher effort for ambiguous, risky, code-changing, or verification-heavy work; lower it only for simple bounded tasks."
+                    .to_string(),
+            )),
+        ),
     ]);
 
     ToolSpec::Function(ResponsesApiTool {
@@ -193,6 +216,30 @@ pub fn create_resume_agent_tool() -> ToolSpec {
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::object(properties, Some(vec!["id".to_string()]), Some(false.into())),
+        output_schema: Some(resume_agent_output_schema()),
+    })
+}
+
+pub fn create_resume_agent_tool_v2() -> ToolSpec {
+    let properties = BTreeMap::from([(
+        "target".to_string(),
+        JsonSchema::string(Some(
+            "Agent id, relative task name, or canonical task name to resume.".to_string(),
+        )),
+    )]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "resume_agent".to_string(),
+        description:
+            "Resume a previously closed MultiAgentV2 agent so it can receive send_message, followup_task, and wait_agent calls."
+                .to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::object(
+            properties,
+            Some(vec!["target".to_string()]),
+            Some(false.into()),
+        ),
         output_schema: Some(resume_agent_output_schema()),
     })
 }
@@ -563,13 +610,14 @@ fn spawn_agent_common_properties_v2(agent_type_description: &str) -> BTreeMap<St
         (
             "model".to_string(),
             JsonSchema::string(Some(
-                SPAWN_AGENT_MODEL_OVERRIDE_DESCRIPTION.to_string(),
+                "Optional model override for the new agent. Prefer quality and inherit the parent model unless the subtask is simple, bounded, and low risk enough for a simpler model."
+                    .to_string(),
             )),
         ),
         (
             "reasoning_effort".to_string(),
             JsonSchema::string(Some(
-                "Optional reasoning effort override for the new agent. Replaces the inherited reasoning effort."
+                "Optional reasoning effort override for the new agent. Prefer inherited or higher effort for ambiguous, risky, code-changing, or verification-heavy work; lower it only for simple bounded subtasks."
                     .to_string(),
             )),
         ),
@@ -672,7 +720,7 @@ fn spawn_agent_tool_description_v2(
         Spawns an agent to work on the specified task. If your current task is `/root/task1` and you spawn_agent with task_name "task_3" the agent will have canonical task name `/root/task1/task_3`.
 You are then able to refer to this agent as `task_3` or `/root/task1/task_3` interchangeably. However an agent `/root/task2/task_3` would only be able to communicate with this agent via its canonical name `/root/task1/task_3`.
 The spawned agent will have the same tools as you and the ability to spawn its own subagents.
-{SPAWN_AGENT_INHERITED_MODEL_GUIDANCE}
+The spawned agent inherits your current permission mode. You may choose its model and reasoning effort for the task; prefer quality and inherit the current model/effort unless a simpler bounded task is clearly safe for lower effort or a simpler model.
 It will be able to send you and other running agents messages, and its final answer will be provided to you when it finishes.
 The new agent's canonical task name will be provided to it along with the message.
 {concurrency_guidance}"#
@@ -688,7 +736,11 @@ The new agent's canonical task name will be provided to it along with the messag
 {usage_hint_text}"#
         );
     }
-    tool_description
+    format!(
+        r#"
+        {tool_description}
+{SPAWN_AGENT_V2_DEFAULT_USAGE_HINT}"#
+    )
 }
 
 fn spawn_agent_models_description(models: &[ModelPreset]) -> String {

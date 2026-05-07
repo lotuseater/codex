@@ -6,6 +6,7 @@
 use super::*;
 use crate::tools::context::FunctionToolOutput;
 use crate::turn_timing::now_unix_timestamp_ms;
+use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::protocol::InterAgentCommunication;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -44,6 +45,20 @@ pub(crate) struct SendMessageArgs {
 pub(crate) struct FollowupTaskArgs {
     pub(crate) target: String,
     pub(crate) message: String,
+    pub(crate) model: Option<String>,
+    pub(crate) reasoning_effort: Option<ReasoningEffort>,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct FollowupTaskTurnOverrides {
+    pub(crate) model: Option<String>,
+    pub(crate) reasoning_effort: Option<ReasoningEffort>,
+}
+
+impl FollowupTaskTurnOverrides {
+    fn has_updates(&self) -> bool {
+        self.model.is_some() || self.reasoning_effort.is_some()
+    }
 }
 
 fn message_content(message: String) -> Result<String, FunctionCallError> {
@@ -61,6 +76,7 @@ pub(crate) async fn handle_message_string_tool(
     mode: MessageDeliveryMode,
     target: String,
     message: String,
+    turn_overrides: FollowupTaskTurnOverrides,
 ) -> Result<FunctionToolOutput, FunctionCallError> {
     let prompt = message_content(message)?;
     let ToolInvocation {
@@ -85,6 +101,31 @@ pub(crate) async fn handle_message_string_tool(
             "Tasks can't be assigned to the root agent".to_string(),
         ));
     }
+    let requested_model = turn_overrides.model.clone();
+    let requested_reasoning_effort = turn_overrides.reasoning_effort;
+    if mode == MessageDeliveryMode::TriggerTurn && turn_overrides.has_updates() {
+        session
+            .services
+            .agent_control
+            .override_agent_turn_context(
+                receiver_thread_id,
+                requested_model,
+                requested_reasoning_effort,
+            )
+            .await
+            .map_err(|err| collab_agent_error(receiver_thread_id, err))?;
+    }
+    let receiver_config = session
+        .services
+        .agent_control
+        .get_agent_config_snapshot(receiver_thread_id)
+        .await;
+    let receiver_model = receiver_config
+        .as_ref()
+        .map(|snapshot| snapshot.model.clone());
+    let receiver_reasoning_effort = receiver_config
+        .as_ref()
+        .and_then(|snapshot| snapshot.reasoning_effort);
     session
         .send_event(
             &turn,
@@ -94,6 +135,8 @@ pub(crate) async fn handle_message_string_tool(
                 sender_thread_id: session.conversation_id,
                 receiver_thread_id,
                 prompt: prompt.clone(),
+                model: receiver_model.clone(),
+                reasoning_effort: receiver_reasoning_effort,
             }
             .into(),
         )
@@ -133,6 +176,8 @@ pub(crate) async fn handle_message_string_tool(
                 receiver_agent_role: receiver_agent.agent_role,
                 prompt,
                 status,
+                model: receiver_model,
+                reasoning_effort: receiver_reasoning_effort,
             }
             .into(),
         )

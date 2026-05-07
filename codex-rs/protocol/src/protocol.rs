@@ -3774,6 +3774,12 @@ pub struct CollabAgentInteractionBeginEvent {
     /// Prompt sent from the sender to the receiver. Can be empty to prevent CoT
     /// leaking at the beginning.
     pub prompt: String,
+    /// Effective model used by the receiver agent for the interaction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Effective reasoning effort used by the receiver agent for the interaction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<ReasoningEffortConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
@@ -3797,6 +3803,12 @@ pub struct CollabAgentInteractionEndEvent {
     pub prompt: String,
     /// Last known status of the receiver agent reported to the sender agent.
     pub status: AgentStatus,
+    /// Effective model used by the receiver agent after any follow-up override.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Effective reasoning effort used by the receiver agent after any follow-up override.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<ReasoningEffortConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]

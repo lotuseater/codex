@@ -818,6 +818,7 @@ impl App {
             (guard.active, guard.side_parent_pending_status())
         };
         let notification_status_change = SideParentStatusChange::for_notification(&notification);
+        self.update_agent_activity_metadata_for_notification(Some(thread_id), &notification);
 
         if should_send {
             match sender.try_send(ThreadBufferedEvent::Notification(notification)) {
@@ -833,6 +834,8 @@ impl App {
                     tracing::warn!("thread {thread_id} event channel closed");
                 }
             }
+        } else {
+            self.maybe_render_inactive_collab_agent_activity(thread_id, &notification);
         }
         if let Some(status) = pending_status {
             self.set_side_parent_status(thread_id, Some(status));
@@ -841,6 +844,66 @@ impl App {
         }
         self.refresh_pending_thread_approvals().await;
         Ok(())
+    }
+
+    fn update_agent_activity_metadata_for_notification(
+        &mut self,
+        route_thread_id: Option<ThreadId>,
+        notification: &ServerNotification,
+    ) {
+        if let Some((receiver_thread_ids, model, reasoning_effort)) =
+            collab_runtime_details(notification)
+            && (model.is_some() || reasoning_effort.is_some())
+        {
+            for receiver_thread_id in receiver_thread_ids {
+                let Ok(receiver_thread_id) = ThreadId::from_string(receiver_thread_id) else {
+                    tracing::warn!(
+                        thread_id = receiver_thread_id,
+                        "ignoring collab receiver with invalid thread id during runtime metadata update"
+                    );
+                    continue;
+                };
+                self.update_agent_runtime_details(
+                    receiver_thread_id,
+                    model.map(str::to_string),
+                    reasoning_effort,
+                );
+            }
+        }
+
+        if let ServerNotification::ThreadTokenUsageUpdated(notification) = notification {
+            let thread_id = ThreadId::from_string(&notification.thread_id)
+                .ok()
+                .or(route_thread_id);
+            if let Some(thread_id) = thread_id {
+                self.update_agent_token_context_percent_used(
+                    thread_id,
+                    crate::multi_agents::token_context_percent_used(
+                        notification.token_usage.total.total_tokens,
+                        notification.token_usage.model_context_window,
+                    ),
+                );
+            }
+        }
+    }
+
+    fn maybe_render_inactive_collab_agent_activity(
+        &mut self,
+        thread_id: ThreadId,
+        notification: &ServerNotification,
+    ) {
+        if self.primary_thread_id != self.active_thread_id
+            || self.primary_thread_id == Some(thread_id)
+            || self.agent_navigation.get(&thread_id).is_none()
+        {
+            return;
+        }
+
+        let Some(item) = completed_or_started_item(notification) else {
+            return;
+        };
+        self.chat_widget
+            .on_inactive_collab_agent_item(thread_id, item);
     }
 
     /// Eagerly fetches nickname and role for receiver threads referenced by a collab notification.
@@ -1366,6 +1429,10 @@ impl App {
         );
         match event {
             ThreadBufferedEvent::Notification(notification) => {
+                self.update_agent_activity_metadata_for_notification(
+                    notification_thread_id(&notification),
+                    &notification,
+                );
                 self.chat_widget
                     .handle_server_notification(notification, /*replay_kind*/ None);
             }
@@ -1392,9 +1459,14 @@ impl App {
 
     pub(super) fn handle_thread_event_replay(&mut self, event: ThreadBufferedEvent) {
         match event {
-            ThreadBufferedEvent::Notification(notification) => self
-                .chat_widget
-                .handle_server_notification(notification, Some(ReplayKind::ThreadSnapshot)),
+            ThreadBufferedEvent::Notification(notification) => {
+                self.update_agent_activity_metadata_for_notification(
+                    notification_thread_id(&notification),
+                    &notification,
+                );
+                self.chat_widget
+                    .handle_server_notification(notification, Some(ReplayKind::ThreadSnapshot));
+            }
             ThreadBufferedEvent::Request(request) => self
                 .chat_widget
                 .handle_server_request(request, Some(ReplayKind::ThreadSnapshot)),
@@ -1478,5 +1550,15 @@ impl App {
             tui.frame_requester().schedule_frame();
         }
         Ok(())
+    }
+}
+
+fn notification_thread_id(notification: &ServerNotification) -> Option<ThreadId> {
+    match super::app_server_event_targets::server_notification_thread_target(notification) {
+        super::app_server_event_targets::ServerNotificationThreadTarget::Thread(thread_id) => {
+            Some(thread_id)
+        }
+        super::app_server_event_targets::ServerNotificationThreadTarget::InvalidThreadId(_)
+        | super::app_server_event_targets::ServerNotificationThreadTarget::Global => None,
     }
 }

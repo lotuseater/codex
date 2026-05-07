@@ -251,6 +251,40 @@ fn collab_receiver_thread_ids(notification: &ServerNotification) -> Option<&[Str
     }
 }
 
+fn collab_runtime_details(
+    notification: &ServerNotification,
+) -> Option<(&[String], Option<&str>, Option<ReasoningEffortConfig>)> {
+    match notification {
+        ServerNotification::ItemStarted(notification) => match &notification.item {
+            ThreadItem::CollabAgentToolCall {
+                receiver_thread_ids,
+                model,
+                reasoning_effort,
+                ..
+            } => Some((receiver_thread_ids, model.as_deref(), *reasoning_effort)),
+            _ => None,
+        },
+        ServerNotification::ItemCompleted(notification) => match &notification.item {
+            ThreadItem::CollabAgentToolCall {
+                receiver_thread_ids,
+                model,
+                reasoning_effort,
+                ..
+            } => Some((receiver_thread_ids, model.as_deref(), *reasoning_effort)),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn completed_or_started_item(notification: &ServerNotification) -> Option<&ThreadItem> {
+    match notification {
+        ServerNotification::ItemStarted(notification) => Some(&notification.item),
+        ServerNotification::ItemCompleted(notification) => Some(&notification.item),
+        _ => None,
+    }
+}
+
 fn default_exec_approval_decisions(
     network_approval_context: Option<&codex_app_server_protocol::NetworkApprovalContext>,
     proposed_execpolicy_amendment: Option<&codex_app_server_protocol::ExecPolicyAmendment>,

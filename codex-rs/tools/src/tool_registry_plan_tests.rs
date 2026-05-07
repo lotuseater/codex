@@ -121,8 +121,11 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
         vec![
             create_spawn_agent_tool_v2(spawn_agent_tool_options(&config)),
             create_send_message_tool(),
+            create_followup_task_tool(),
+            create_resume_agent_tool_v2(),
             create_wait_agent_tool_v2(wait_agent_timeout_options()),
             create_close_agent_tool_v2(),
+            create_list_agents_tool(),
         ]
     } else {
         vec![
@@ -208,6 +211,7 @@ fn test_build_specs_collab_tools_enabled() {
     let model_info = model_info();
     let mut features = Features::with_defaults();
     features.enable(Feature::Collab);
+    features.disable(Feature::MultiAgentV2);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -288,7 +292,7 @@ fn goal_tools_require_goals_feature() {
 }
 
 #[test]
-fn test_build_specs_multi_agent_v2_uses_task_names_and_hides_resume() {
+fn test_build_specs_multi_agent_v2_uses_task_names_and_resume_paths() {
     let model_info = model_info();
     let mut features = Features::with_defaults();
     features.enable(Feature::Collab);
@@ -317,6 +321,7 @@ fn test_build_specs_multi_agent_v2_uses_task_names_and_hides_resume() {
             "spawn_agent",
             "send_message",
             "followup_task",
+            "resume_agent",
             "wait_agent",
             "close_agent",
             "list_agents",
@@ -336,6 +341,8 @@ fn test_build_specs_multi_agent_v2_uses_task_names_and_hides_resume() {
     assert!(properties.contains_key("task_name"));
     assert!(properties.contains_key("message"));
     assert!(properties.contains_key("fork_turns"));
+    assert!(properties.contains_key("model"));
+    assert!(properties.contains_key("reasoning_effort"));
     assert!(!properties.contains_key("items"));
     assert!(!properties.contains_key("fork_context"));
     assert_eq!(
@@ -380,11 +387,31 @@ fn test_build_specs_multi_agent_v2_uses_task_names_and_hides_resume() {
     let (properties, required) = expect_object_schema(parameters);
     assert!(properties.contains_key("target"));
     assert!(properties.contains_key("message"));
+    assert!(properties.contains_key("model"));
+    assert!(properties.contains_key("reasoning_effort"));
     assert!(!properties.contains_key("items"));
     assert_eq!(
         required,
         Some(&vec!["target".to_string(), "message".to_string()])
     );
+
+    let resume_agent = find_tool(&tools, "resume_agent");
+    let ToolSpec::Function(ResponsesApiTool {
+        parameters,
+        output_schema,
+        ..
+    }) = &resume_agent.spec
+    else {
+        panic!("resume_agent should be a function tool");
+    };
+    let (properties, required) = expect_object_schema(parameters);
+    assert!(properties.contains_key("target"));
+    assert!(!properties.contains_key("id"));
+    assert_eq!(required, Some(&vec!["target".to_string()]));
+    let output_schema = output_schema
+        .as_ref()
+        .expect("resume_agent should define output schema");
+    assert_eq!(output_schema["required"], json!(["status"]));
 
     let wait_agent = find_tool(&tools, "wait_agent");
     let ToolSpec::Function(ResponsesApiTool {
@@ -427,7 +454,6 @@ fn test_build_specs_multi_agent_v2_uses_task_names_and_hides_resume() {
         json!(["agent_name", "agent_status", "last_task_message"])
     );
     assert_lacks_tool_name(&tools, "send_input");
-    assert_lacks_tool_name(&tools, "resume_agent");
 }
 
 #[test]
@@ -461,13 +487,13 @@ fn test_build_specs_multi_agent_v2_does_not_require_collab_feature() {
             "spawn_agent",
             "send_message",
             "followup_task",
+            "resume_agent",
             "wait_agent",
             "close_agent",
             "list_agents",
         ],
     );
     assert_lacks_tool_name(&tools, "send_input");
-    assert_lacks_tool_name(&tools, "resume_agent");
 }
 
 #[test]
@@ -498,9 +524,12 @@ fn test_build_specs_enable_fanout_enables_agent_jobs_and_collab_tools() {
         &tools,
         &[
             "spawn_agent",
-            "send_input",
+            "send_message",
+            "followup_task",
+            "resume_agent",
             "wait_agent",
             "close_agent",
+            "list_agents",
             "spawn_agents_on_csv",
         ],
     );
@@ -797,10 +826,12 @@ fn test_build_specs_agent_job_worker_tools_enabled() {
         &tools,
         &[
             "spawn_agent",
-            "send_input",
+            "send_message",
+            "followup_task",
             "resume_agent",
             "wait_agent",
             "close_agent",
+            "list_agents",
             "spawn_agents_on_csv",
             "report_agent_job_result",
             REQUEST_USER_INPUT_TOOL_NAME,

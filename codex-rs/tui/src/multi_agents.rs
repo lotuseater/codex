@@ -28,6 +28,9 @@ use std::collections::HashSet;
 const COLLAB_PROMPT_PREVIEW_GRAPHEMES: usize = 160;
 const COLLAB_AGENT_ERROR_PREVIEW_GRAPHEMES: usize = 160;
 const COLLAB_AGENT_RESPONSE_PREVIEW_GRAPHEMES: usize = 240;
+mod activity;
+
+pub(crate) use activity::subagent_activity_history_cell;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AgentPickerThreadEntry {
@@ -37,6 +40,12 @@ pub(crate) struct AgentPickerThreadEntry {
     pub(crate) agent_role: Option<String>,
     /// Whether the thread has emitted a close event and should render dimmed.
     pub(crate) is_closed: bool,
+    /// Last known model for this agent, when the TUI has seen it in activity.
+    pub(crate) model: Option<String>,
+    /// Last known reasoning effort for this agent, when the TUI has seen it in activity.
+    pub(crate) reasoning_effort: Option<ReasoningEffortConfig>,
+    /// Last known percentage of the context window used by this agent.
+    pub(crate) token_context_percent_used: Option<i64>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -45,6 +54,12 @@ pub(crate) struct AgentMetadata {
     pub(crate) agent_nickname: Option<String>,
     /// Agent type shown in brackets when present, for example `worker`.
     pub(crate) agent_role: Option<String>,
+    /// Last known model shown beside the agent label in activity rows.
+    pub(crate) model: Option<String>,
+    /// Last known reasoning effort shown beside the agent label in activity rows.
+    pub(crate) reasoning_effort: Option<ReasoningEffortConfig>,
+    /// Last known percentage of the context window used by this agent.
+    pub(crate) token_context_percent_used: Option<i64>,
 }
 
 #[derive(Clone, Copy)]
@@ -52,6 +67,9 @@ struct AgentLabel<'a> {
     thread_id: Option<ThreadId>,
     nickname: Option<&'a str>,
     role: Option<&'a str>,
+    model: Option<&'a str>,
+    reasoning_effort: Option<ReasoningEffortConfig>,
+    token_context_percent_used: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -186,6 +204,21 @@ pub(crate) fn spawn_request_summary(item: &ThreadItem) -> Option<SpawnRequestSum
         }),
         _ => None,
     }
+}
+
+pub(crate) fn token_context_percent_used(
+    total_tokens: i64,
+    model_context_window: Option<i64>,
+) -> Option<i64> {
+    let model_context_window = model_context_window?;
+    if model_context_window <= 0 {
+        return None;
+    }
+    Some(
+        ((total_tokens.max(0) as f64 / model_context_window as f64) * 100.0)
+            .clamp(0.0, 100.0)
+            .round() as i64,
+    )
 }
 
 pub(crate) fn tool_call_history_cell(
@@ -409,8 +442,7 @@ fn title_with_agent(
     spawn_request: Option<&SpawnRequestSummary>,
 ) -> Line<'static> {
     let mut spans = vec![Span::from(format!("{prefix} ")).bold()];
-    spans.extend(agent_label_spans(agent));
-    spans.extend(spawn_request_spans(spawn_request));
+    spans.extend(agent_label_spans_with_fallback(agent, spawn_request));
     title_spans_line(spans)
 }
 
@@ -430,6 +462,9 @@ fn agent_label(thread_id: ThreadId, metadata: &AgentMetadata) -> AgentLabel<'_> 
         thread_id: Some(thread_id),
         nickname: metadata.agent_nickname.as_deref(),
         role: metadata.agent_role.as_deref(),
+        model: metadata.model.as_deref(),
+        reasoning_effort: metadata.reasoning_effort,
+        token_context_percent_used: metadata.token_context_percent_used,
     }
 }
 
@@ -438,6 +473,13 @@ fn agent_label_line(agent: AgentLabel<'_>) -> Line<'static> {
 }
 
 fn agent_label_spans(agent: AgentLabel<'_>) -> Vec<Span<'static>> {
+    agent_label_spans_with_fallback(agent, /*spawn_request*/ None)
+}
+
+fn agent_label_spans_with_fallback(
+    agent: AgentLabel<'_>,
+    spawn_request: Option<&SpawnRequestSummary>,
+) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
     let nickname = agent
         .nickname
@@ -458,26 +500,50 @@ fn agent_label_spans(agent: AgentLabel<'_>) -> Vec<Span<'static>> {
         spans.push(Span::from(format!("[{role}]")));
     }
 
+    spans.extend(agent_activity_spans(agent, spawn_request));
     spans
 }
 
-fn spawn_request_spans(spawn_request: Option<&SpawnRequestSummary>) -> Vec<Span<'static>> {
-    let Some(spawn_request) = spawn_request else {
-        return Vec::new();
-    };
+fn agent_activity_spans(
+    agent: AgentLabel<'_>,
+    spawn_request: Option<&SpawnRequestSummary>,
+) -> Vec<Span<'static>> {
+    let model = agent
+        .model
+        .map(str::trim)
+        .filter(|model| !model.is_empty())
+        .map(ToOwned::to_owned)
+        .or_else(|| {
+            spawn_request
+                .map(|request| request.model.trim().to_string())
+                .filter(|model| !model.is_empty())
+        });
+    let reasoning_effort = agent
+        .reasoning_effort
+        .or_else(|| spawn_request.map(|request| request.reasoning_effort));
 
-    let model = spawn_request.model.trim();
-    if model.is_empty() && spawn_request.reasoning_effort == ReasoningEffortConfig::default() {
+    let mut details = Vec::new();
+    match (model, reasoning_effort) {
+        (Some(model), Some(reasoning_effort)) => {
+            details.push(format!("{model} {reasoning_effort}"))
+        }
+        (Some(model), None) => details.push(model),
+        (None, Some(reasoning_effort)) => details.push(reasoning_effort.to_string()),
+        (None, None) => {}
+    }
+
+    if let Some(percent) = agent.token_context_percent_used {
+        details.push(format!("{percent}% used"));
+    }
+
+    if details.is_empty() {
         return Vec::new();
     }
 
-    let details = if model.is_empty() {
-        format!("({})", spawn_request.reasoning_effort)
-    } else {
-        format!("({model} {})", spawn_request.reasoning_effort)
-    };
-
-    vec![Span::from(" ").dim(), Span::from(details).magenta()]
+    vec![
+        Span::from(" ").dim(),
+        Span::from(format!("({})", details.join(", "))).magenta(),
+    ]
 }
 
 fn prompt_line(prompt: &str) -> Option<Line<'static>> {
@@ -602,6 +668,7 @@ fn error_summary_spans(error: &str) -> Vec<Span<'static>> {
 mod tests {
     use super::*;
     use crate::history_cell::HistoryCell;
+    use codex_app_server_protocol::CommandExecutionStatus;
     #[cfg(target_os = "macos")]
     use crossterm::event::KeyEvent;
     #[cfg(target_os = "macos")]
@@ -850,6 +917,41 @@ mod tests {
         assert_snapshot!("collab_resume_interrupted", cell_to_text(&cell));
     }
 
+    #[test]
+    fn subagent_activity_snapshot_includes_indent_and_runtime_details() {
+        let robie_id = ThreadId::from_string("00000000-0000-0000-0000-000000000002")
+            .expect("valid robie thread id");
+        let metadata = AgentMetadata {
+            agent_nickname: Some("Robie".to_string()),
+            agent_role: Some("worker".to_string()),
+            model: Some("gpt-5.5".to_string()),
+            reasoning_effort: Some(ReasoningEffortConfig::High),
+            token_context_percent_used: Some(17),
+        };
+        let cell = subagent_activity_history_cell(
+            robie_id,
+            &ThreadItem::CommandExecution {
+                id: "exec-1".to_string(),
+                command: "rg multi_agent codex-rs/tui/src".to_string(),
+                cwd: codex_utils_absolute_path::AbsolutePathBuf::try_from(
+                    std::env::current_dir().expect("current directory"),
+                )
+                .expect("absolute current directory"),
+                process_id: None,
+                source: codex_app_server_protocol::CommandExecutionSource::Agent,
+                status: CommandExecutionStatus::Completed,
+                command_actions: Vec::new(),
+                aggregated_output: Some("codex-rs/tui/src/multi_agents.rs:1:hit".to_string()),
+                exit_code: Some(0),
+                duration_ms: Some(42),
+            },
+            &metadata,
+        )
+        .expect("subagent command renders");
+
+        assert_snapshot!("subagent_activity_indented", cell_to_text(&cell));
+    }
+
     fn agent_state(status: CollabAgentStatus, message: Option<&str>) -> CollabAgentState {
         CollabAgentState {
             status,
@@ -862,11 +964,13 @@ mod tests {
             AgentMetadata {
                 agent_nickname: Some("Robie".to_string()),
                 agent_role: Some("explorer".to_string()),
+                ..AgentMetadata::default()
             }
         } else if thread_id == bob_id {
             AgentMetadata {
                 agent_nickname: Some("Bob".to_string()),
                 agent_role: Some("worker".to_string()),
+                ..AgentMetadata::default()
             }
         } else {
             AgentMetadata::default()

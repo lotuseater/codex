@@ -35,6 +35,7 @@ use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
 use codex_app_server_protocol::ConfigWarningNotification;
 use codex_app_server_protocol::FileChangeRequestApprovalParams;
 use codex_app_server_protocol::FileUpdateChange;
+use codex_app_server_protocol::ItemCompletedNotification;
 use codex_app_server_protocol::ItemStartedNotification;
 use codex_app_server_protocol::JSONRPCErrorError;
 use codex_app_server_protocol::McpServerElicitationRequest;
@@ -609,6 +610,65 @@ async fn enqueue_thread_event_does_not_block_when_channel_full() -> Result<()> {
         .expect("timed out waiting for second event")
         .expect("channel closed unexpectedly");
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn inactive_subagent_activity_renders_indented_in_primary_view() -> Result<()> {
+    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
+    let primary_thread_id = ThreadId::new();
+    app.enqueue_primary_thread_session(
+        test_thread_session(primary_thread_id, test_path_buf("/tmp/project")),
+        Vec::new(),
+    )
+    .await?;
+    while app_event_rx.try_recv().is_ok() {}
+
+    let agent_thread_id = ThreadId::new();
+    app.upsert_agent_picker_thread(
+        agent_thread_id,
+        Some("Robie".to_string()),
+        Some("worker".to_string()),
+        /*is_closed*/ false,
+    );
+    app.update_agent_runtime_details(
+        agent_thread_id,
+        Some("gpt-5".to_string()),
+        Some(ReasoningEffortConfig::High),
+    );
+    app.update_agent_token_context_percent_used(agent_thread_id, Some(12));
+
+    app.enqueue_thread_notification(
+        agent_thread_id,
+        ServerNotification::ItemCompleted(ItemCompletedNotification {
+            thread_id: agent_thread_id.to_string(),
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 0,
+            item: ThreadItem::AgentMessage {
+                id: "msg-1".to_string(),
+                text: "child result ready".to_string(),
+                phase: None,
+                memory_citation: None,
+            },
+        }),
+    )
+    .await?;
+
+    let mut rendered = String::new();
+    while let Ok(event) = app_event_rx.try_recv() {
+        if let AppEvent::InsertHistoryCell(cell) = event {
+            rendered.push_str(&lines_to_single_string(&cell.display_lines(/*width*/ 120)));
+        }
+    }
+
+    assert!(
+        rendered.contains("    • Robie [worker] (gpt-5 high, 12% used): Message"),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("      └ child result ready"),
+        "{rendered}"
+    );
     Ok(())
 }
 
@@ -1280,6 +1340,9 @@ async fn open_agent_picker_keeps_missing_threads_for_replay() -> Result<()> {
             agent_nickname: None,
             agent_role: None,
             is_closed: true,
+            model: None,
+            reasoning_effort: None,
+            token_context_percent_used: None,
         })
     );
     assert_eq!(app.agent_navigation.ordered_thread_ids(), vec![thread_id]);
@@ -1313,6 +1376,9 @@ async fn open_agent_picker_preserves_cached_metadata_for_replay_threads() -> Res
             agent_nickname: Some("Robie".to_string()),
             agent_role: Some("explorer".to_string()),
             is_closed: true,
+            model: None,
+            reasoning_effort: None,
+            token_context_percent_used: None,
         })
     );
     Ok(())
@@ -1367,6 +1433,9 @@ async fn open_agent_picker_marks_terminal_read_errors_closed() -> Result<()> {
             agent_nickname: Some("Robie".to_string()),
             agent_role: Some("explorer".to_string()),
             is_closed: true,
+            model: None,
+            reasoning_effort: None,
+            token_context_percent_used: None,
         })
     );
     Ok(())
@@ -1405,6 +1474,9 @@ fn open_agent_picker_marks_loaded_threads_open() -> Result<()> {
                 agent_nickname: None,
                 agent_role: None,
                 is_closed: false,
+                model: None,
+                reasoning_effort: None,
+                token_context_percent_used: None,
             })
         );
         Ok(())
@@ -2977,6 +3049,9 @@ async fn inactive_thread_started_notification_initializes_replay_session() -> Re
             agent_nickname: Some("Robie".to_string()),
             agent_role: Some("explorer".to_string()),
             is_closed: false,
+            model: None,
+            reasoning_effort: None,
+            token_context_percent_used: None,
         })
     );
 

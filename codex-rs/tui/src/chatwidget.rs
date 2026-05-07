@@ -1696,13 +1696,35 @@ impl ChatWidget {
         agent_nickname: Option<String>,
         agent_role: Option<String>,
     ) {
-        self.collab_agent_metadata.insert(
-            thread_id,
-            AgentMetadata {
-                agent_nickname,
-                agent_role,
-            },
-        );
+        let metadata = self.collab_agent_metadata.entry(thread_id).or_default();
+        metadata.agent_nickname = agent_nickname;
+        metadata.agent_role = agent_role;
+    }
+
+    pub(crate) fn set_collab_agent_runtime_details(
+        &mut self,
+        thread_id: ThreadId,
+        model: Option<String>,
+        reasoning_effort: Option<ReasoningEffortConfig>,
+    ) {
+        let metadata = self.collab_agent_metadata.entry(thread_id).or_default();
+        if model.is_some() {
+            metadata.model = model;
+        }
+        if reasoning_effort.is_some() {
+            metadata.reasoning_effort = reasoning_effort;
+        }
+    }
+
+    pub(crate) fn set_collab_agent_token_context_percent_used(
+        &mut self,
+        thread_id: ThreadId,
+        token_context_percent_used: Option<i64>,
+    ) {
+        self.collab_agent_metadata
+            .entry(thread_id)
+            .or_default()
+            .token_context_percent_used = token_context_percent_used;
     }
 
     /// Returns the cached metadata for a thread, defaulting to empty if none has been registered.
@@ -4157,13 +4179,38 @@ impl ChatWidget {
         self.request_redraw();
     }
 
+    pub(crate) fn on_inactive_collab_agent_item(&mut self, thread_id: ThreadId, item: &ThreadItem) {
+        let metadata = self.collab_agent_metadata(thread_id);
+        if let Some(cell) = multi_agents::subagent_activity_history_cell(thread_id, item, &metadata)
+        {
+            self.on_collab_event(cell);
+        }
+    }
+
     fn on_collab_agent_tool_call(&mut self, item: ThreadItem) {
         let ThreadItem::CollabAgentToolCall {
-            id, tool, status, ..
+            id,
+            tool,
+            status,
+            receiver_thread_ids,
+            model,
+            reasoning_effort,
+            ..
         } = &item
         else {
             return;
         };
+        if model.is_some() || reasoning_effort.is_some() {
+            for thread_id in receiver_thread_ids {
+                if let Ok(thread_id) = ThreadId::from_string(thread_id) {
+                    self.set_collab_agent_runtime_details(
+                        thread_id,
+                        model.clone(),
+                        *reasoning_effort,
+                    );
+                }
+            }
+        }
         if matches!(tool, CollabAgentTool::SpawnAgent)
             && let Some(spawn_request) = multi_agents::spawn_request_summary(&item)
         {

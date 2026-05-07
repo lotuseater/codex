@@ -86,14 +86,63 @@ impl AgentNavigationState {
         if !self.threads.contains_key(&thread_id) {
             self.order.push(thread_id);
         }
+        let existing = self.threads.get(&thread_id);
         self.threads.insert(
             thread_id,
             AgentPickerThreadEntry {
                 agent_nickname,
                 agent_role,
                 is_closed,
+                model: existing.and_then(|entry| entry.model.clone()),
+                reasoning_effort: existing.and_then(|entry| entry.reasoning_effort),
+                token_context_percent_used: existing
+                    .and_then(|entry| entry.token_context_percent_used),
             },
         );
+    }
+
+    pub(crate) fn update_runtime_details(
+        &mut self,
+        thread_id: ThreadId,
+        model: Option<String>,
+        reasoning_effort: Option<codex_protocol::openai_models::ReasoningEffort>,
+    ) {
+        let entry = self.threads.entry(thread_id).or_insert_with(|| {
+            self.order.push(thread_id);
+            AgentPickerThreadEntry {
+                agent_nickname: None,
+                agent_role: None,
+                is_closed: false,
+                model: None,
+                reasoning_effort: None,
+                token_context_percent_used: None,
+            }
+        });
+        if model.is_some() {
+            entry.model = model;
+        }
+        if reasoning_effort.is_some() {
+            entry.reasoning_effort = reasoning_effort;
+        }
+    }
+
+    pub(crate) fn update_token_context_percent_used(
+        &mut self,
+        thread_id: ThreadId,
+        token_context_percent_used: Option<i64>,
+    ) {
+        let entry = self.threads.entry(thread_id).or_insert_with(|| {
+            self.order.push(thread_id);
+            AgentPickerThreadEntry {
+                agent_nickname: None,
+                agent_role: None,
+                is_closed: false,
+                model: None,
+                reasoning_effort: None,
+                token_context_percent_used: None,
+            }
+        });
+        entry.token_context_percent_used = token_context_percent_used;
     }
 
     /// Marks a thread as closed without removing it from the traversal cache.

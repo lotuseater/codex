@@ -666,8 +666,8 @@ impl ThreadHistoryBuilder {
             sender_thread_id: payload.sender_thread_id.to_string(),
             receiver_thread_ids: vec![payload.receiver_thread_id.to_string()],
             prompt: Some(payload.prompt.clone()),
-            model: None,
-            reasoning_effort: None,
+            model: payload.model.clone(),
+            reasoning_effort: payload.reasoning_effort,
             agents_states: HashMap::new(),
         };
         self.upsert_item_in_current_turn(item);
@@ -690,8 +690,8 @@ impl ThreadHistoryBuilder {
             sender_thread_id: payload.sender_thread_id.to_string(),
             receiver_thread_ids: vec![receiver_id.clone()],
             prompt: Some(payload.prompt.clone()),
-            model: None,
-            reasoning_effort: None,
+            model: payload.model.clone(),
+            reasoning_effort: payload.reasoning_effort,
             agents_states: [(receiver_id, received_status)].into_iter().collect(),
         });
     }
@@ -2867,6 +2867,8 @@ mod tests {
                     sender_thread_id: sender,
                     receiver_thread_id: receiver,
                     prompt: "new task".into(),
+                    model: None,
+                    reasoning_effort: None,
                 },
             ),
             EventMsg::CollabAgentInteractionEnd(
@@ -2879,6 +2881,8 @@ mod tests {
                     receiver_agent_role: None,
                     prompt: "new task".into(),
                     status: AgentStatus::Interrupted,
+                    model: None,
+                    reasoning_effort: None,
                 },
             ),
         ];

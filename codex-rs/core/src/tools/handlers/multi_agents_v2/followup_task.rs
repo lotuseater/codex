@@ -1,4 +1,5 @@
 use super::message_tool::FollowupTaskArgs;
+use super::message_tool::FollowupTaskTurnOverrides;
 use super::message_tool::MessageDeliveryMode;
 use super::message_tool::handle_message_string_tool;
 use super::*;
@@ -29,6 +30,10 @@ impl ToolHandler for Handler {
             MessageDeliveryMode::TriggerTurn,
             args.target,
             args.message,
+            FollowupTaskTurnOverrides {
+                model: args.model,
+                reasoning_effort: args.reasoning_effort,
+            },
         )
         .await
     }

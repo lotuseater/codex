@@ -121,7 +121,42 @@ impl App {
         );
         self.agent_navigation
             .upsert(thread_id, agent_nickname, agent_role, is_closed);
+        if let Some(entry) = self.agent_navigation.get(&thread_id) {
+            self.chat_widget.set_collab_agent_runtime_details(
+                thread_id,
+                entry.model.clone(),
+                entry.reasoning_effort,
+            );
+            self.chat_widget
+                .set_collab_agent_token_context_percent_used(
+                    thread_id,
+                    entry.token_context_percent_used,
+                );
+        }
         self.sync_active_agent_label();
+    }
+
+    pub(super) fn update_agent_token_context_percent_used(
+        &mut self,
+        thread_id: ThreadId,
+        token_context_percent_used: Option<i64>,
+    ) {
+        self.agent_navigation
+            .update_token_context_percent_used(thread_id, token_context_percent_used);
+        self.chat_widget
+            .set_collab_agent_token_context_percent_used(thread_id, token_context_percent_used);
+    }
+
+    pub(super) fn update_agent_runtime_details(
+        &mut self,
+        thread_id: ThreadId,
+        model: Option<String>,
+        reasoning_effort: Option<ReasoningEffortConfig>,
+    ) {
+        self.agent_navigation
+            .update_runtime_details(thread_id, model.clone(), reasoning_effort);
+        self.chat_widget
+            .set_collab_agent_runtime_details(thread_id, model, reasoning_effort);
     }
 
     /// Marks a cached picker thread closed and recomputes the contextual footer label.
@@ -273,6 +308,15 @@ impl App {
                 thread_id,
                 entry.agent_nickname.clone(),
                 entry.agent_role.clone(),
+            );
+            chat_widget.set_collab_agent_runtime_details(
+                thread_id,
+                entry.model.clone(),
+                entry.reasoning_effort,
+            );
+            chat_widget.set_collab_agent_token_context_percent_used(
+                thread_id,
+                entry.token_context_percent_used,
             );
         }
         self.chat_widget = chat_widget;

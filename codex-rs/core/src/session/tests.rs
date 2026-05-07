@@ -5931,6 +5931,8 @@ async fn make_multi_agent_v2_usage_hint_test_session(
         |config| {
             if enable_multi_agent_v2 {
                 let _ = config.features.enable(Feature::MultiAgentV2);
+            } else {
+                let _ = config.features.disable(Feature::MultiAgentV2);
             }
             config.multi_agent_v2.root_agent_usage_hint_text = Some("Root guidance.".to_string());
             config.multi_agent_v2.subagent_usage_hint_text = Some("Subagent guidance.".to_string());
@@ -6020,6 +6022,34 @@ async fn build_initial_context_omits_multi_agent_v2_usage_hints_when_feature_dis
 }
 
 #[tokio::test]
+async fn build_initial_context_omits_multi_agent_v2_usage_hints_when_usage_hint_disabled() {
+    let (session, turn_context, _rx_event) = make_session_and_context_with_auth_and_config_and_rx(
+        CodexAuth::from_api_key("Test API Key"),
+        Vec::new(),
+        |config| {
+            let _ = config.features.enable(Feature::MultiAgentV2);
+            config.multi_agent_v2.usage_hint_enabled = false;
+            config.multi_agent_v2.root_agent_usage_hint_text = Some("Root guidance.".to_string());
+            config.multi_agent_v2.subagent_usage_hint_text = Some("Subagent guidance.".to_string());
+        },
+    )
+    .await;
+
+    let initial_context = session.build_initial_context(turn_context.as_ref()).await;
+
+    let developer_messages = developer_message_texts(&initial_context);
+    assert!(
+        !developer_messages.iter().any(|message| {
+            matches!(
+                message.as_slice(),
+                ["Root guidance."] | ["Subagent guidance."]
+            )
+        }),
+        "did not expect multi-agent v2 usage hint developer messages, got {developer_messages:?}"
+    );
+}
+
+#[tokio::test]
 async fn configured_multi_agent_v2_usage_hint_texts_use_effective_enabled_feature_state() {
     let (mut session, _turn_context) =
         make_multi_agent_v2_usage_hint_test_session(/*enable_multi_agent_v2*/ false).await;
@@ -6044,9 +6074,30 @@ async fn configured_multi_agent_v2_usage_hint_texts_use_effective_enabled_featur
 async fn configured_multi_agent_v2_usage_hint_texts_omit_effectively_disabled_feature() {
     let (mut session, _turn_context) =
         make_multi_agent_v2_usage_hint_test_session(/*enable_multi_agent_v2*/ true).await;
+    let mut effective_features = Features::with_defaults();
+    effective_features.disable(Feature::MultiAgentV2);
     Arc::get_mut(&mut session)
         .expect("session should not be shared")
-        .features = Features::with_defaults().into();
+        .features = effective_features.into();
+
+    let hint_texts = session.configured_multi_agent_v2_usage_hint_texts().await;
+
+    assert_eq!(hint_texts, Vec::<String>::new());
+}
+
+#[tokio::test]
+async fn configured_multi_agent_v2_usage_hint_texts_omit_disabled_usage_hints() {
+    let (session, _turn_context, _rx_event) = make_session_and_context_with_auth_and_config_and_rx(
+        CodexAuth::from_api_key("Test API Key"),
+        Vec::new(),
+        |config| {
+            let _ = config.features.enable(Feature::MultiAgentV2);
+            config.multi_agent_v2.usage_hint_enabled = false;
+            config.multi_agent_v2.root_agent_usage_hint_text = Some("Root guidance.".to_string());
+            config.multi_agent_v2.subagent_usage_hint_text = Some("Subagent guidance.".to_string());
+        },
+    )
+    .await;
 
     let hint_texts = session.configured_multi_agent_v2_usage_hint_texts().await;
 

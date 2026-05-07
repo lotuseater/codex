@@ -867,6 +867,9 @@ impl Session {
 
         let state = self.state.lock().await;
         let config = &state.session_configuration.original_config_do_not_use;
+        if !config.multi_agent_v2.usage_hint_enabled {
+            return Vec::new();
+        }
         [
             config.multi_agent_v2.root_agent_usage_hint_text.clone(),
             config.multi_agent_v2.subagent_usage_hint_text.clone(),

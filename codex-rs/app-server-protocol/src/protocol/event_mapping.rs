@@ -139,8 +139,8 @@ pub fn item_event_to_server_notification(
                 sender_thread_id: begin_event.sender_thread_id.to_string(),
                 receiver_thread_ids,
                 prompt: Some(begin_event.prompt),
-                model: None,
-                reasoning_effort: None,
+                model: begin_event.model,
+                reasoning_effort: begin_event.reasoning_effort,
                 agents_states: HashMap::new(),
             };
             ServerNotification::ItemStarted(ItemStartedNotification {
@@ -167,8 +167,8 @@ pub fn item_event_to_server_notification(
                 sender_thread_id: end_event.sender_thread_id.to_string(),
                 receiver_thread_ids: vec![receiver_id.clone()],
                 prompt: Some(end_event.prompt),
-                model: None,
-                reasoning_effort: None,
+                model: end_event.model,
+                reasoning_effort: end_event.reasoning_effort,
                 agents_states: [(receiver_id, received_status)].into_iter().collect(),
             };
             ServerNotification::ItemCompleted(ItemCompletedNotification {
