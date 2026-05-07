@@ -20,7 +20,9 @@ fn under_development_features_are_disabled_by_default() {
         if matches!(spec.stage, Stage::UnderDevelopment) {
             if matches!(
                 spec.id,
-                Feature::ToolSearchAlwaysDeferMcpTools | Feature::ContextOpsShadow
+                Feature::ToolSearchAlwaysDeferMcpTools
+                    | Feature::ContextOpsShadow
+                    | Feature::ContextOpsReplace
             ) {
                 continue;
             }
@@ -44,6 +46,7 @@ fn default_enabled_features_are_stable() {
                         Feature::TerminalResizeReflow
                             | Feature::ToolSearchAlwaysDeferMcpTools
                             | Feature::ContextOpsShadow
+                            | Feature::ContextOpsReplace
                     ),
                 "feature `{}` is enabled by default but is not stable/removed ({:?})",
                 spec.key,
@@ -212,6 +215,16 @@ fn context_ops_shadow_is_enabled_by_default_for_local_benchmarking() {
     );
     assert_eq!(Feature::ContextOpsShadow.stage(), Stage::UnderDevelopment);
     assert_eq!(Feature::ContextOpsShadow.default_enabled(), true);
+}
+
+#[test]
+fn context_ops_replace_is_enabled_by_default_for_promoted_local_replacements() {
+    assert_eq!(
+        feature_for_key("context_ops_replace"),
+        Some(Feature::ContextOpsReplace)
+    );
+    assert_eq!(Feature::ContextOpsReplace.stage(), Stage::UnderDevelopment);
+    assert_eq!(Feature::ContextOpsReplace.default_enabled(), true);
 }
 
 #[test]

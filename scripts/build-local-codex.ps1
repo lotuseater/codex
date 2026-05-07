@@ -387,8 +387,9 @@ function Test-AndFreeDiskSpace {
             $sizeMB = [math]::Round((Get-ChildItem -LiteralPath $entry.Path -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum / 1MB, 1)
         } catch {}
         try {
-            Remove-Item -LiteralPath $entry.Path -Recurse -Force -ErrorAction Stop
-            Write-Host ("  - reclaimed {0,7:N1} MB from {1}" -f $sizeMB, $entry.Reason)
+            if (Remove-GeneratedPathFast -Path $entry.Path -Action "remove $($entry.Reason)") {
+                Write-Host ("  - reclaimed {0,7:N1} MB from {1}" -f $sizeMB, $entry.Reason)
+            }
         } catch {
             Write-Host ("  - skip (in use): {0}" -f $entry.Path)
         }
@@ -445,6 +446,75 @@ function Get-PathSizeMB {
     }
 }
 
+function Remove-GeneratedPathFast {
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = "High")]
+    param(
+        [string]$Path,
+        [string]$Action = "remove generated path"
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $false
+    }
+    $item = Get-Item -LiteralPath $Path -Force
+    if (-not $PSCmdlet.ShouldProcess($item.FullName, $Action)) {
+        return $false
+    }
+
+    try {
+        if ($item.PSIsContainer) {
+            [System.IO.Directory]::Delete($item.FullName, $true)
+        }
+        else {
+            [System.IO.File]::Delete($item.FullName)
+        }
+    }
+    catch {
+        $originalError = $_
+        Clear-GeneratedPathReadOnlyAttributes -Path $item.FullName
+        try {
+            if ($item.PSIsContainer) {
+                [System.IO.Directory]::Delete($item.FullName, $true)
+            }
+            else {
+                [System.IO.File]::Delete($item.FullName)
+            }
+        }
+        catch {
+            throw $originalError
+        }
+    }
+
+    return $true
+}
+
+function Clear-GeneratedPathReadOnlyAttributes {
+    param([string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+
+    $readOnly = [System.IO.FileAttributes]::ReadOnly
+    $clearReadOnly = {
+        param([string]$ItemPath)
+
+        $attributes = [System.IO.File]::GetAttributes($ItemPath)
+        if (($attributes -band $readOnly) -ne 0) {
+            [System.IO.File]::SetAttributes($ItemPath, ($attributes -band (-bnot $readOnly)))
+        }
+    }
+
+    & $clearReadOnly $Path
+    if (-not (Get-Item -LiteralPath $Path -Force).PSIsContainer) {
+        return
+    }
+
+    foreach ($child in [System.IO.Directory]::EnumerateFileSystemEntries($Path, "*", [System.IO.SearchOption]::AllDirectories)) {
+        & $clearReadOnly $child
+    }
+}
+
 function Invoke-GeneratedPathCleanup {
     param(
         [string]$Path,
@@ -464,13 +534,13 @@ function Invoke-GeneratedPathCleanup {
 
     $safePath = Assert-UnderRoot -Path $Path -Root $Root -Label $Reason
     $sizeMB = Get-PathSizeMB -Path $safePath
-    Remove-Item -LiteralPath $safePath -Recurse -Force -ErrorAction Stop
+    $removed = Remove-GeneratedPathFast -Path $safePath -Action "remove $Reason"
     return [ordered]@{
         path = $safePath
         reason = $Reason
-        removed = $true
-        reclaimed_mb = $sizeMB
-        status = "removed"
+        removed = $removed
+        reclaimed_mb = if ($removed) { $sizeMB } else { 0 }
+        status = if ($removed) { "removed" } else { "skipped" }
     }
 }
 
@@ -597,8 +667,9 @@ function Invoke-PostBuildDiskCleanup {
     if (Test-Path -LiteralPath $inc) {
         try {
             $sizeMB = [math]::Round((Get-ChildItem -LiteralPath $inc -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum / 1MB, 1)
-            Remove-Item -LiteralPath $inc -Recurse -Force -ErrorAction Stop
-            Write-Host ("Post-build cleanup: reclaimed {0:N1} MB from release/incremental." -f $sizeMB)
+            if (Remove-GeneratedPathFast -Path $inc -Action "remove release/incremental") {
+                Write-Host ("Post-build cleanup: reclaimed {0:N1} MB from release/incremental." -f $sizeMB)
+            }
         } catch {
             # Non-fatal: build already succeeded.
         }
@@ -633,8 +704,9 @@ function Invoke-CrossModeCleanup {
         if (-not (Test-Path -LiteralPath $entry.Path)) { continue }
         try {
             $sizeMB = [math]::Round((Get-ChildItem -LiteralPath $entry.Path -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum / 1MB, 1)
-            Remove-Item -LiteralPath $entry.Path -Recurse -Force -ErrorAction Stop
-            Write-Host ("Cross-mode cleanup: reclaimed {0:N1} MB from {1}" -f $sizeMB, $entry.Reason)
+            if (Remove-GeneratedPathFast -Path $entry.Path -Action "remove $($entry.Reason)") {
+                Write-Host ("Cross-mode cleanup: reclaimed {0:N1} MB from {1}" -f $sizeMB, $entry.Reason)
+            }
         } catch {
             Write-Host ("Cross-mode cleanup skip (in use): {0}" -f $entry.Path)
         }
@@ -871,11 +943,11 @@ function Invoke-ReleaseProfileCacheReset {
     }
 
     $sizeMB = Get-PathSizeMB -Path $releaseRoot
-    Remove-Item -LiteralPath $releaseRoot -Recurse -Force -ErrorAction Stop
+    $removed = Remove-GeneratedPathFast -Path $releaseRoot -Action "remove release target cache"
     return [ordered]@{
-        removed = $true
-        reclaimed_mb = $sizeMB
-        status = "removed"
+        removed = $removed
+        reclaimed_mb = if ($removed) { $sizeMB } else { 0 }
+        status = if ($removed) { "removed" } else { "skipped" }
         profile_state = $ProfileState
     }
 }

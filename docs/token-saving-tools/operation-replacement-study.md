@@ -395,7 +395,33 @@ Current native stage:
 - It writes `replacement_bench` JSONL records and full baseline/replacement
   artifacts under `<codex_log_dir>/replacement-shadow/`.
 - Initial candidates are `git_worktree_summary`, `search_text`, and
-  `file_outline`.
+  `file_outline`. The pre-build shadow pack adds baseline-derived candidates
+  that do not rerun shell commands: `git_status_compact`,
+  `git_changed_files`, `rg_files_compact`, `diff_hunk_summary`, and
+  `run_check_digest`.
+- `features.context_ops_replace` is the first standard replacement lane. The
+  initial promoted command class is intentionally narrow: exact
+  `git diff --stat`/`--shortstat` commands that succeeded normally and whose
+  `git_worktree_summary` candidate saves at least 32 estimated tokens and 30
+  percent of model-visible output. It is disabled automatically for remote
+  primary turn environments and for commands outside the local primary cwd.
+- Do not promote `file_outline` as a silent replacement for whole-file reads.
+  Live shadow records showed strong savings, but an outline is a lossy
+  navigation primitive and now always reports `fallback_required: true`.
+  Use it to narrow context before exact `read_file_slice`/`read_symbol`, not as
+  a drop-in replacement for `cat`/`Get-Content`.
+- Do not promote `git status --short --branch`: live records showed negative
+  savings in small/medium repos. Keep it shadow-only until a status-specific
+  compact format beats raw output.
+- Do not promote `search_text` yet: capped search is useful, but replacement
+  needs an artifact or explicit continuation path when files/matches are
+  omitted. The current hardening fixes path operands such as
+  `rg -n pattern path/to/file` by treating trailing operands as path filters,
+  not as the current working directory.
+- Do not promote the new baseline-derived shadows yet. They exist to collect
+  real measurements in the next build without duplicate command execution:
+  status summaries for dirty repos, changed-file lists, file-index listings,
+  full-diff hunk summaries, and check/build/test digests.
 
 Phase 3: low-risk typed tools.
 
@@ -418,9 +444,28 @@ Phase 5: semantic code operations.
 
 Phase 6: guarded auto-routing.
 
-- Auto-route only exact read-only command patterns with tested equivalence.
+- Auto-route only exact read-only command patterns with tested equivalence and
+  dynamic savings checks.
 - Keep raw-shell escape hatches.
 - Emit a trace explaining the substitution.
+
+## Live Shadow Findings, 2026-05-07
+
+Shadow benchmarking on live Codex, DonutGame, and Serial sessions produced
+these promotion decisions:
+
+| Candidate | Decision | Observed result |
+|---|---|---|
+| `git_diffstat_compact` for `git diff --stat` | Promote narrowly | About 47 percent average model-visible token savings across real records; generated from the captured baseline output so the standard replacement and shadow benchmark measure the same candidate. |
+| `file_outline` for whole-file reads | Keep shadow/first-pass only | About 81 percent average savings, but lossy by design and always `fallback_required: true`. |
+| `git_worktree_summary` for `git status --short --branch` | Reject for standard replacement | Several records were larger than raw output. |
+| `search_text` for simple `rg -n` | Keep shadow only | Savings were promising, but capped/fallback output needs artifact-backed continuation. |
+| `git_status_compact`, `git_changed_files`, `rg_files_compact`, `diff_hunk_summary`, `run_check_digest`, `file_excerpt_digest`, `select_string_digest`, `rg_count_digest`, `rg_file_set_digest`, `rg_json_digest`, `git_name_status_compact`, `git_numstat_compact`, `git_filtered_diff_digest`, `git_history_digest`, `directory_listing_compact`, `process_table_compact` | New shadow-only pack | Added for the next build to benchmark status, path listings, file excerpts, search expansions, git metadata, process/listing scans, full diffs, history, and checks without rerunning commands. |
+
+The first standard replacement should therefore be small by design. It should
+shape high-volume diffstat output while preserving exact raw shell behavior for
+status, search, file reads, full diffs, file listings, and checks until those
+operations have exact follow-up mechanisms or artifact handles.
 
 ## Benchmarks To Run
 

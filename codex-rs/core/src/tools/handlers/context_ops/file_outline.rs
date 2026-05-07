@@ -4,8 +4,9 @@ use std::path::Path;
 use crate::function_tool::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
-use crate::tools::handlers::parse_arguments_with_base_path;
-use crate::tools::handlers::resolve_workdir_base_path;
+use crate::tools::handlers::parse_arguments;
+
+use super::execution;
 
 const DEFAULT_MAX_OUTLINE_ITEMS: usize = 200;
 const MAX_OUTLINE_ITEMS: usize = 1000;
@@ -16,8 +17,8 @@ const MAX_IMPORTS: usize = 40;
 #[serde(deny_unknown_fields)]
 struct FileOutlineArgs {
     path: String,
-    #[serde(default, rename = "workdir")]
-    _workdir: Option<String>,
+    #[serde(default)]
+    workdir: Option<String>,
     #[serde(default)]
     max_items: Option<usize>,
 }
@@ -42,14 +43,16 @@ pub(super) async fn handle(
     invocation: ToolInvocation,
     arguments: &str,
 ) -> Result<FunctionToolOutput, FunctionCallError> {
-    let base_path = resolve_workdir_base_path(arguments, &invocation.turn.cwd)?;
-    let args: FileOutlineArgs = parse_arguments_with_base_path(arguments, &base_path)?;
+    let args: FileOutlineArgs = parse_arguments(arguments)?;
+    let turn_environment = execution::primary_environment(&invocation)?;
+    let base_path = execution::resolve_workdir(turn_environment, args.workdir.as_deref());
     let path = base_path.join(args.path);
     let max_items = args
         .max_items
         .unwrap_or(DEFAULT_MAX_OUTLINE_ITEMS)
         .clamp(1, MAX_OUTLINE_ITEMS);
-    let output = file_outline(path.as_path(), max_items).await?;
+    let bytes = execution::read_file(&invocation, turn_environment, &path).await?;
+    let output = file_outline_from_bytes(path.as_path(), &bytes, max_items);
     Ok(FunctionToolOutput::from_text(output, Some(true)))
 }
 
@@ -61,9 +64,13 @@ pub(crate) async fn file_outline(
     let bytes = tokio::fs::read(path)
         .await
         .map_err(|err| FunctionCallError::RespondToModel(format!("failed to read file: {err}")))?;
-    let text = String::from_utf8_lossy(&bytes);
-    let outline = build_file_outline(&text, max_items);
-    Ok(render_file_outline(path, &outline))
+    Ok(file_outline_from_bytes(path, &bytes, max_items))
+}
+
+fn file_outline_from_bytes(path: &Path, bytes: &[u8], max_items: usize) -> String {
+    let text = String::from_utf8_lossy(bytes);
+    let outline = build_file_outline(&text, max_items.clamp(1, MAX_OUTLINE_ITEMS));
+    render_file_outline(path, &outline)
 }
 
 fn build_file_outline(text: &str, max_items: usize) -> FileOutline {
@@ -275,11 +282,8 @@ fn render_file_outline(path: &Path, outline: &FileOutline) -> String {
             outline.definitions.len(),
             outline.omitted_definitions
         ),
+        "fallback_required: true".to_string(),
     ];
-
-    if outline.omitted_definitions > 0 {
-        lines.push("fallback_required: true".to_string());
-    }
 
     if !outline.imports.is_empty() {
         lines.push("imports:".to_string());
@@ -333,5 +337,13 @@ def helper():
                 (6, "fn", "pub async fn load() {}"),
             ]
         );
+    }
+
+    #[test]
+    fn rendered_file_outline_marks_lossy_output_as_fallback_required() {
+        let outline = build_file_outline("plain body\nwithout definitions\n", 10);
+        let rendered = render_file_outline(Path::new("README.md"), &outline);
+
+        assert!(rendered.contains("fallback_required: true"));
     }
 }

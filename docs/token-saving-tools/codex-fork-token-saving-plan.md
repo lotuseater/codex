@@ -430,6 +430,39 @@ Initial prototype:
   shell discovery commands, runs the compact candidate in the background, and
   writes `replacement_bench` JSONL plus artifacts under
   `<codex_log_dir>/replacement-shadow/`.
+- Live shadow results from 2026-05-07 promoted only the exact git diffstat
+  path. Observed records across Codex, DonutGame, and Serial showed
+  `file_outline` saving about 81 percent on average, but it is intentionally
+  lossy and now always emits `fallback_required: true`, so it stays shadow-only
+  until Codex has a first-pass outline workflow plus exact slice/symbol
+  follow-up. The exact `git diff --stat` path passed at about 47 percent
+  average savings and is the first standard replacement candidate; the current
+  implementation uses `git_diffstat_compact` from the captured baseline output
+  so the promoted path and shadow benchmark measure the same candidate.
+  `git status --short --branch` was rejected because the summary was often
+  larger than raw output. `search_text` remains shadow-only because capped
+  output needs an artifact/follow-up path before it can replace raw `rg`.
+- Pre-build hardening for the next rollout fixes `search_text` path operands:
+  trailing `rg` operands are now path filters passed after the pattern instead
+  of being treated as a working directory. Search output records path filters
+  and emits `fallback_reason: max_files` and/or
+  `fallback_reason: max_matches_per_file` when caps make the compact result
+  lossy.
+- Shadow stage 2 adds observe-only candidates for more common token-heavy
+  shell operations without changing model-visible shell output and without
+  rerunning expensive commands where the baseline output is already available:
+  `git_status_compact`, `git_changed_files`, `rg_files_compact`,
+  `diff_hunk_summary`, `run_check_digest`, `file_excerpt_digest`,
+  `select_string_digest`, `rg_count_digest`, `rg_file_set_digest`,
+  `rg_json_digest`, `git_name_status_compact`, `git_numstat_compact`,
+  `git_filtered_diff_digest`, `git_history_digest`,
+  `directory_listing_compact`, and `process_table_compact`.
+- Standard replacement stage 1 is `features.context_ops_replace`,
+  default-enabled in this fork after the shadow gate. It only substitutes
+  `git diff --stat`/`--shortstat` when the shell command succeeded, the primary
+  turn environment is local, the candidate does not require fallback, and the
+  compact output saves at least 32 estimated tokens and 30 percent of
+  model-visible output. Everything else falls back to raw shell output.
 
 ## Priority 8: Replace Common Shell Operations With Better Primitives
 
@@ -440,20 +473,25 @@ turns. They are repeated shell-mediated file reads, `rg` searches, recursive
 listing, `git status`/`git diff`, process inspection, and session-log discovery.
 These should become typed, budgeted Codex operations.
 
-Initial replacements:
+Initial replacement targets:
 
-- `git status`, `git diff --stat`, `git diff --name-only` ->
-  `git_worktree_summary` and `changed_files`.
-- `Get-Content`/`cat` whole files -> `read_file_slice`, `file_outline`, and
-  later `read_symbol`.
+- `git diff --stat` and `git diff --shortstat` -> `git_diffstat_compact` in
+  standard replacement mode after the dynamic savings gate.
+- `git status`, `git diff --name-only`, and full `git diff` -> shadow or future
+  `git_status_compact`, `changed_files`, or `diff_hunk_summary` only until
+  quality and size gates pass.
+- `Get-Content`/`cat` whole files -> `file_outline` as a first-pass shadow
+  signal, followed by exact `read_file_slice` or later `read_symbol`; do not
+  silently replace exact file reads with lossy outlines.
 - broad `rg` -> capped `search_text`, symbol search, reference search, or
   graph/wiki query depending on task.
-- recursive `Get-ChildItem`/`rg --files` -> indexed `find_file`/fuzzy file
-  query.
+- recursive `Get-ChildItem`/`rg --files` -> `rg_files_compact` shadow first,
+  then indexed `find_file`/fuzzy file query once a project index exists.
 - process/session PowerShell scans -> native `process_find`, `session_find`,
   and `session_tail`.
-- build/test commands -> `run_check` that stores full logs as artifacts and
-  returns failure summaries.
+- build/test commands -> `run_check_digest` shadow from the baseline output,
+  then `run_check` that stores full logs as artifacts and returns failure
+  summaries.
 
 Adopt in four stages:
 
@@ -471,9 +509,10 @@ Recommended order after the other active build/code session is done:
 1. Finish and canary the read-only `features.context_ops` native tools:
    `file_outline`, `git_worktree_summary`, and `search_text`.
 2. Ship default-on observe-only `features.context_ops_shadow` for exact safe
-   shell patterns (`git status`/`git diff --stat`, capped `rg`, and whole-file
-   reads) so the next build collects replacement benchmarks without changing
-   model-visible behavior.
+   shell patterns (`git status`, `git diff --stat`, `git diff --name-only`,
+   full `git diff`, capped `rg`, `rg --files`, whole-file reads, and common
+   build/test checks) so the next build collects replacement benchmarks without
+   changing model-visible behavior.
 3. Patch MCP tool exposure so external Wizard first-moves is not direct-default
    when native first-moves is available.
 4. Add hard timeout/fail-open around pre-LLM scouts and any external context
@@ -494,6 +533,11 @@ Recommended order after the other active build/code session is done:
     session discovery, and capped file slices in `recommend` or `shadow` mode.
 14. Canary only candidates whose `replacement_bench` records pass the quality
     and token gates.
+15. Fix the live-session handoff path observed during the 2026-05-07 rollout:
+    `resume-loop` in the Wizard handoff script used stale CLI syntax for this
+    Codex build, and GUI discovery timed out. Native Codex session tools should
+    discover by known log root/state DB/recent timestamps first and use DAB only
+    for exact live terminal control.
 
 ## Success Criteria
 

@@ -1,3 +1,4 @@
+mod execution;
 pub(crate) mod file_outline;
 pub(crate) mod git_worktree_summary;
 pub(crate) mod search_text;

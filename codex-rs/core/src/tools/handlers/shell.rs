@@ -750,14 +750,28 @@ impl ShellHandler {
             .ok()
             .map(|output| crate::tools::format_exec_output_str(output, turn.truncation_policy))
             .map(JsonValue::String);
-        let content = emitter.finish(event_ctx, out).await?;
+        let raw_content = emitter.finish(event_ctx, out).await?;
+        let content = if freeform
+            && turn.features.enabled(Feature::ContextOpsReplace)
+            && can_use_context_ops_replace(turn.as_ref(), exec_params.cwd.as_path())
+        {
+            replacement_shadow::maybe_compact_shell_output(
+                hook_command.as_str(),
+                exec_params.cwd.as_path(),
+                raw_content.as_str(),
+            )
+            .await
+            .unwrap_or_else(|| raw_content.clone())
+        } else {
+            raw_content.clone()
+        };
         if turn.features.enabled(Feature::ContextOpsShadow) {
             replacement_shadow::maybe_spawn_shell_shadow(replacement_shadow::ShellShadowRequest {
                 tool_name: tool_ctx.tool_name.clone(),
                 call_id: call_id.clone(),
                 command: hook_command,
                 cwd: exec_params.cwd.to_path_buf(),
-                baseline_model_visible_output: content.clone(),
+                baseline_model_visible_output: raw_content,
                 log_dir: turn.config.log_dir.clone(),
             });
         }
@@ -769,6 +783,12 @@ impl ShellHandler {
             post_tool_use_response,
         })
     }
+}
+
+fn can_use_context_ops_replace(turn: &TurnContext, cwd: &std::path::Path) -> bool {
+    turn.environments.primary().is_some_and(|environment| {
+        !environment.environment.is_remote() && cwd.starts_with(environment.cwd.as_path())
+    })
 }
 
 #[cfg(test)]

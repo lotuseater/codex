@@ -1,0 +1,15 @@
+Please study team app MEMO and implementation in C:\Users\Oleh\Documents\GitHub\Wizard_Erasmus.
+I want to borrow some ideas, mode of work, from it into Codex.
+Starting with the following:
+In cases it is reasonable for context saving - to avoid general context drift and need to autocompact during subtask implementation.
+I want Codex while planning: subdivide the task into subtasks that may be handled by spawned agents. Codex decides, if delegate subtask to a subagent(s).
+
+Codex decides, what context should spawned agent(s) have - limit it explicitly for them, telling to look only on this area of project. Maybe, gives more instructions where to look for what, tips how to solve the task better and with less token used. Suggests possible tools, maybe creation of new tools if needed.
+Spawned agents activity should be outputed in the same terminal as the original Codex, but marked with special colours and signatures - to tell what agents does what. Same as for Codex, when inspecting old session log, we need to see same amount of info (say tools, tokens used) for each spawned agent.
+
+Goal is to keep general task and plan context in the Codex's mind from drifting, to save tokens and to improve quality of work.
+
+Keep in mind also session restoration - agents should also be restored where stopped. Maybe additional files for that also needed, think better about implementation.
+
+Codex oversees agents activity - may send them prompts, compact their context, stop and restart them.
+Codex may review their work, ask follow-ups.

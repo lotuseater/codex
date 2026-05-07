@@ -245,6 +245,8 @@ pub enum Feature {
     ContextOps,
     /// Shadow safe shell discovery commands with compact context operations.
     ContextOpsShadow,
+    /// Replace proven read-only shell outputs with compact context operation output.
+    ContextOpsReplace,
 }
 
 impl Feature {
@@ -1188,6 +1190,12 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::ContextOpsShadow,
         key: "context_ops_shadow",
+        stage: Stage::UnderDevelopment,
+        default_enabled: true,
+    },
+    FeatureSpec {
+        id: Feature::ContextOpsReplace,
+        key: "context_ops_replace",
         stage: Stage::UnderDevelopment,
         default_enabled: true,
     },

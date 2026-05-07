@@ -3,9 +3,12 @@ use std::path::Path;
 use tokio::process::Command;
 
 use crate::function_tool::FunctionCallError;
+use crate::session::turn_context::TurnEnvironment;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::handlers::parse_arguments;
+
+use super::execution;
 
 const DEFAULT_GIT_LIMIT: usize = 80;
 const MAX_GIT_LIMIT: usize = 500;
@@ -30,12 +33,14 @@ pub(super) async fn handle(
     arguments: &str,
 ) -> Result<FunctionToolOutput, FunctionCallError> {
     let args: GitWorktreeSummaryArgs = parse_arguments(arguments)?;
-    let workdir = invocation.turn.resolve_path(args.workdir);
+    let turn_environment = execution::primary_environment(&invocation)?;
+    let workdir = execution::resolve_workdir(turn_environment, args.workdir.as_deref());
     let limit = args
         .limit
         .unwrap_or(DEFAULT_GIT_LIMIT)
         .clamp(1, MAX_GIT_LIMIT);
-    let output = git_worktree_summary(workdir.as_path(), limit).await?;
+    let output =
+        git_worktree_summary_in_environment(&invocation, turn_environment, &workdir, limit).await?;
     Ok(FunctionToolOutput::from_text(output, Some(true)))
 }
 
@@ -66,6 +71,100 @@ pub(crate) async fn git_worktree_summary(
         &status_entries,
         limit,
     ))
+}
+
+async fn git_worktree_summary_in_environment(
+    invocation: &ToolInvocation,
+    turn_environment: &TurnEnvironment,
+    workdir: &codex_utils_absolute_path::AbsolutePathBuf,
+    limit: usize,
+) -> Result<String, FunctionCallError> {
+    let limit = limit.clamp(1, MAX_GIT_LIMIT);
+    let repo_root = run_git_in_environment(
+        invocation,
+        turn_environment,
+        workdir,
+        &["rev-parse", "--show-toplevel"],
+    )
+    .await?;
+    let branch = run_git_in_environment(
+        invocation,
+        turn_environment,
+        workdir,
+        &["branch", "--show-current"],
+    )
+    .await
+    .unwrap_or_default();
+    let status_raw = run_git_bytes_in_environment(
+        invocation,
+        turn_environment,
+        workdir,
+        &["status", "--porcelain=v1", "-z"],
+    )
+    .await?;
+    let status_entries = parse_git_status_z(&status_raw);
+    let shortstat = run_git_in_environment(
+        invocation,
+        turn_environment,
+        workdir,
+        &["diff", "--shortstat"],
+    )
+    .await
+    .unwrap_or_default();
+    let staged_shortstat = run_git_in_environment(
+        invocation,
+        turn_environment,
+        workdir,
+        &["diff", "--cached", "--shortstat"],
+    )
+    .await
+    .unwrap_or_default();
+
+    Ok(render_git_worktree_summary(
+        workdir.as_path(),
+        repo_root.trim(),
+        branch.trim(),
+        shortstat.trim(),
+        staged_shortstat.trim(),
+        &status_entries,
+        limit,
+    ))
+}
+
+async fn run_git_in_environment(
+    invocation: &ToolInvocation,
+    turn_environment: &TurnEnvironment,
+    workdir: &codex_utils_absolute_path::AbsolutePathBuf,
+    args: &[&str],
+) -> Result<String, FunctionCallError> {
+    let output = run_git_bytes_in_environment(invocation, turn_environment, workdir, args).await?;
+    Ok(String::from_utf8_lossy(&output).to_string())
+}
+
+async fn run_git_bytes_in_environment(
+    invocation: &ToolInvocation,
+    turn_environment: &TurnEnvironment,
+    workdir: &codex_utils_absolute_path::AbsolutePathBuf,
+    args: &[&str],
+) -> Result<Vec<u8>, FunctionCallError> {
+    let mut command = vec!["git".to_string()];
+    command.extend(args.iter().map(|arg| arg.to_string()));
+    let output = execution::run_command(invocation, turn_environment, workdir, command).await?;
+    if output.timed_out {
+        return Err(FunctionCallError::RespondToModel(
+            "git timed out while inspecting the worktree".to_string(),
+        ));
+    }
+    if output.exit_code != 0 {
+        let stderr = output.stderr_text();
+        let message = if stderr.is_empty() {
+            format!("git exited with status {}", output.exit_code)
+        } else {
+            stderr
+        };
+        return Err(FunctionCallError::RespondToModel(message));
+    }
+    Ok(output.stdout)
 }
 
 async fn run_git(workdir: &Path, args: &[&str]) -> Result<String, FunctionCallError> {

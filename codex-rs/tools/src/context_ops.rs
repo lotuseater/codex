@@ -84,6 +84,16 @@ pub fn create_context_ops_tools() -> Vec<ToolSpec> {
                         )),
                     ),
                     (
+                        "paths",
+                        JsonSchema::array(
+                            JsonSchema::string(/*description*/ None),
+                            Some(
+                                "Optional path filters searched relative to workdir, passed after the pattern."
+                                    .to_string(),
+                            ),
+                        ),
+                    ),
+                    (
                         "max_files",
                         JsonSchema::integer(Some(
                             "Maximum matching files to return. Defaults to 50 and is capped at 500."
