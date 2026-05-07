@@ -1,8 +1,10 @@
 use codex_desktop_automation::execute_tool;
 use codex_desktop_automation::is_mutating_tool;
+use codex_desktop_automation::text_output_value;
 use codex_protocol::models::DEFAULT_IMAGE_DETAIL;
 use codex_protocol::models::FunctionCallOutputContentItem;
 use codex_protocol::openai_models::InputModality;
+use codex_tools::ToolName;
 use serde_json::Value;
 
 use crate::function_tool::FunctionCallError;
@@ -16,10 +18,22 @@ use crate::tools::registry::PreToolUsePayload;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
 
-pub struct DesktopAutomationHandler;
+pub struct DesktopAutomationHandler {
+    tool_name: ToolName,
+}
+
+impl DesktopAutomationHandler {
+    pub fn new(tool_name: ToolName) -> Self {
+        Self { tool_name }
+    }
+}
 
 impl ToolHandler for DesktopAutomationHandler {
     type Output = FunctionToolOutput;
+
+    fn tool_name(&self) -> ToolName {
+        self.tool_name.clone()
+    }
 
     fn kind(&self) -> ToolKind {
         ToolKind::Function
@@ -67,7 +81,8 @@ impl ToolHandler for DesktopAutomationHandler {
         .await
         .map_err(|err| FunctionCallError::RespondToModel(err.to_string()))?;
 
-        let text = serde_json::to_string_pretty(&result.output)
+        let text_output = text_output_value(&result.output);
+        let text = serde_json::to_string_pretty(&text_output)
             .unwrap_or_else(|err| format!("failed to serialize desktop automation output: {err}"));
         let mut content = vec![FunctionCallOutputContentItem::InputText { text }];
         if let Some(image_url) = result.image_url.clone()
@@ -84,7 +99,7 @@ impl ToolHandler for DesktopAutomationHandler {
         }
 
         let mut output = FunctionToolOutput::from_content(content, Some(result.ok));
-        output.post_tool_use_response = Some(result.output);
+        output.post_tool_use_response = Some(text_output);
         Ok(output)
     }
 }

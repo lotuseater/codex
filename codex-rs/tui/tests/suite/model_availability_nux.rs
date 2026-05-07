@@ -73,7 +73,7 @@ trust_level = "trusted"
     let codex = if let Ok(path) = codex_utils_cargo_bin::cargo_bin("codex") {
         path
     } else {
-        let fallback = repo_root.join("codex-rs/target/debug/codex");
+        let fallback = repo_root.join("codex-rs/target/release/codex");
         if fallback.is_file() {
             fallback
         } else {

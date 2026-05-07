@@ -189,9 +189,9 @@ pub(crate) fn parse_loop_period(value: &str) -> Result<Duration, String> {
 
 pub(crate) fn format_loop_period(duration: Duration) -> String {
     let seconds = duration.as_secs();
-    if seconds % 3600 == 0 {
+    if seconds.is_multiple_of(3600) {
         format!("{}h", seconds / 3600)
-    } else if seconds % 60 == 0 {
+    } else if seconds.is_multiple_of(60) {
         format!("{}m", seconds / 60)
     } else {
         format!("{seconds}s")

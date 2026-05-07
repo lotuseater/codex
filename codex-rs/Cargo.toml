@@ -5,6 +5,8 @@ members = [
     "agent-graph-store",
     "agent-identity",
     "backend-client",
+    "builtin-mcps",
+    "bwrap",
     "ansi-escape",
     "async-utils",
     "app-server",
@@ -54,12 +56,14 @@ members = [
     "login",
     "codex-mcp",
     "mcp-server",
+    "memories/mcp",
     "memories/read",
     "memories/write",
     "model-provider-info",
     "models-manager",
     "network-proxy",
     "ollama",
+    "operation-cache",
     "process-hardening",
     "protocol",
     "realtime-webrtc",
@@ -70,6 +74,7 @@ members = [
     "responses-api-proxy",
     "response-debug-context",
     "sandboxing",
+    "self-review",
     "stdio-to-uds",
     "otel",
     "tui",
@@ -101,6 +106,7 @@ members = [
     "codex-client",
     "codex-api",
     "state",
+    "task-memory",
     "terminal-detection",
     "test-binary-support",
     "thread-manager-sample",
@@ -139,6 +145,7 @@ codex-apply-patch = { path = "apply-patch" }
 codex-arg0 = { path = "arg0" }
 codex-async-utils = { path = "async-utils" }
 codex-backend-client = { path = "backend-client" }
+codex-builtin-mcps = { path = "builtin-mcps" }
 codex-chatgpt = { path = "chatgpt" }
 codex-cli = { path = "cli" }
 codex-client = { path = "codex-client" }
@@ -173,6 +180,8 @@ codex-keyring-store = { path = "keyring-store" }
 codex-linux-sandbox = { path = "linux-sandbox" }
 codex-lmstudio = { path = "lmstudio" }
 codex-login = { path = "login" }
+codex-message-history = { path = "message-history" }
+codex-memories-mcp = { path = "memories/mcp" }
 codex-memories-read = { path = "memories/read" }
 codex-memories-write = { path = "memories/write" }
 codex-mcp = { path = "codex-mcp" }
@@ -184,6 +193,7 @@ codex-ollama = { path = "ollama" }
 codex-otel = { path = "otel" }
 codex-plugin = { path = "plugin" }
 codex-model-provider = { path = "model-provider" }
+codex-operation-cache = { path = "operation-cache" }
 codex-process-hardening = { path = "process-hardening" }
 codex-protocol = { path = "protocol" }
 codex-realtime-webrtc = { path = "realtime-webrtc" }
@@ -194,11 +204,13 @@ codex-rmcp-client = { path = "rmcp-client" }
 codex-rollout = { path = "rollout" }
 codex-rollout-trace = { path = "rollout-trace" }
 codex-sandboxing = { path = "sandboxing" }
+codex-self-review = { path = "self-review" }
 codex-secrets = { path = "secrets" }
 codex-shell-command = { path = "shell-command" }
 codex-shell-escalation = { path = "shell-escalation" }
 codex-skills = { path = "skills" }
 codex-state = { path = "state" }
+codex-task-memory = { path = "task-memory" }
 codex-stdio-to-uds = { path = "stdio-to-uds" }
 codex-terminal-detection = { path = "terminal-detection" }
 codex-test-binary-support = { path = "test-binary-support" }
@@ -467,6 +479,7 @@ unwrap_used = "deny"
 [workspace.metadata.cargo-shear]
 ignored = [
     "codex-agent-graph-store",
+    "codex-memories-mcp",
     "icu_provider",
     "openssl-sys",
     "codex-utils-readiness",

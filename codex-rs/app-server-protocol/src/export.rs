@@ -2126,6 +2126,13 @@ mod tests {
                 .ok_or_else(|| anyhow::anyhow!("missing v2/ThreadStartParams.ts fixture"))?,
         )?;
         assert_eq!(thread_start_ts.contains("mockExperimentalField"), false);
+        let review_target_ts = std::str::from_utf8(
+            fixture_tree
+                .get(Path::new("v2/ReviewTarget.ts"))
+                .ok_or_else(|| anyhow::anyhow!("missing v2/ReviewTarget.ts fixture"))?,
+        )?;
+        assert_eq!(review_target_ts.contains("title?: string | null"), true);
+        assert_eq!(review_target_ts.contains("title: string | null"), false);
         assert_eq!(
             fixture_tree.contains_key(Path::new("v2/MockExperimentalMethodParams.ts")),
             false
@@ -2143,7 +2150,8 @@ mod tests {
             }
 
             // Only allow "?: T | null" in objects representing JSON-RPC requests,
-            // which we assume are called "*Params".
+            // which we assume are called "*Params", plus documented input union
+            // shapes that accept omitted-or-null fields.
             let allow_optional_nullable = path
                 .file_stem()
                 .and_then(|stem| stem.to_str())
@@ -2159,6 +2167,7 @@ mod tests {
                                 | "CollabCloseEndEvent"
                                 | "CollabResumeBeginEvent"
                                 | "CollabResumeEndEvent"
+                                | "ReviewTarget"
                         )
                 });
 

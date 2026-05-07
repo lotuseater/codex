@@ -361,18 +361,34 @@ fn sha256_hex(value: &str) -> String {
 }
 
 fn normalize_root(project_root: &Path) -> PathBuf {
-    project_root
-        .canonicalize()
-        .unwrap_or_else(|_| project_root.to_path_buf())
+    strip_windows_verbatim_prefix(
+        project_root
+            .canonicalize()
+            .unwrap_or_else(|_| project_root.to_path_buf()),
+    )
 }
 
 pub(crate) fn resolve_repo_root(project_root: &Path) -> PathBuf {
     let normalized_root = normalize_root(project_root);
-    normalized_root
-        .ancestors()
-        .find(|path| path.join(".git").exists())
-        .map(Path::to_path_buf)
-        .unwrap_or(normalized_root)
+    strip_windows_verbatim_prefix(
+        normalized_root
+            .ancestors()
+            .find(|path| path.join(".git").exists())
+            .map(Path::to_path_buf)
+            .unwrap_or(normalized_root),
+    )
+}
+
+fn strip_windows_verbatim_prefix(path: PathBuf) -> PathBuf {
+    let text = path.as_os_str().to_string_lossy();
+    if let Some(stripped) = text.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{stripped}"));
+    }
+    if let Some(stripped) = text.strip_prefix(r"\\?\") {
+        PathBuf::from(stripped)
+    } else {
+        path
+    }
 }
 
 fn safe_path_segment(value: &str) -> String {
@@ -429,6 +445,20 @@ mod tests {
 
         assert!(storage.repo_key.starts_with("actual-repo-"));
         assert_eq!(storage.repo_db, Some(repo.join(DB_FILENAME)));
+    }
+
+    #[test]
+    fn strip_windows_verbatim_prefix_preserves_unc_roots() {
+        let path = strip_windows_verbatim_prefix(PathBuf::from(r"\\?\UNC\server\share\repo"));
+
+        assert_eq!(path, PathBuf::from(r"\\server\share\repo"));
+    }
+
+    #[test]
+    fn strip_windows_verbatim_prefix_preserves_drive_roots() {
+        let path = strip_windows_verbatim_prefix(PathBuf::from(r"\\?\C:\repo"));
+
+        assert_eq!(path, PathBuf::from(r"C:\repo"));
     }
 
     #[tokio::test]

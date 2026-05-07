@@ -20,6 +20,15 @@ expensive or unsafe lanes.
   module/prefix filter such as `session::checkpoint_policy::tests`, or run separate Cargo commands.
 - Do not start a second build while `build-local-codex.ps1 -Mode Status` reports active Cargo,
   rustc, link, or cmd processes for this repo.
+- Treat an active Codex Cargo command without an absolute repo path, such as
+  `cargo check -p codex-core --release`, as a competing build. It still
+  consumes Cargo locks, memory, and release-cache headroom.
+- If `build-local-codex.ps1` reports a release-profile/toolchain stamp mismatch, either keep the
+  old cache and stop, or intentionally rebuild one clean generation with
+  `-ResetReleaseCacheOnProfileChange`; do not prune individual hashed files in
+  `target/release/deps`.
+- If `target/debug` appears, remove it with `build-local-codex.ps1 -Mode CleanSafe`; local schema
+  and generated-artifact recipes must use release Cargo commands.
 
 ## Incidents
 
@@ -36,6 +45,9 @@ expensive or unsafe lanes.
 | 2026-05-05 | `logs/test-core-checkpoint-policy-*.log` | `cargo test -p codex-core --release checkpoint_policy -j 1` failed before repo code because `target/release/deps/libthiserror-*.rmeta` had been pruned while `ts-rs` still referenced it. | Disabled release deps pruning; keep `Mode Diagnose` as reporting-only for duplicate generations. Repair with targeted `cargo clean -p thiserror -p thiserror-impl --release` if this appears again. |
 | 2026-05-05 | `logs/test-core-checkpoint-policy-20260505-205832.log` | Broad `cargo test -p codex-core --release checkpoint_policy -j 1` compiled toward integration-test dependencies for 30 minutes and reduced C: free space to about 3.9 GB before timeout. | Use `--lib` for core unit-test filters. |
 | 2026-05-06 | `cargo test --release -p codex-core <test-a> <test-b> ... -- --nocapture` | Cargo rejected the command with `unexpected argument` because it supports only one test filter before harness args. | Use one common prefix filter, or run each exact test filter as its own command. |
+| 2026-05-07 | `just write-app-server-schema` before the release-only fix | The recipe used debug `cargo run`, creating 3.44 GB in `target/debug` while C: had about 1 GB free. | Switched generated-artifact Just recipes to `cargo run --release` and added `CleanSafe` cleanup. |
+| 2026-05-07 | release test lanes after repeated focused checks | `target/release/deps` included 24 disposable test executables totaling about 2.18 GB, plus release PDBs. | `CleanSafe -CleanTestArtifacts` removes release test `.exe` files and matching PDBs only under explicit disk-pressure cleanup. |
+| 2026-05-07 | `cargo check -p codex-core --release --quiet` overlapping a deploy build | A second Codex Cargo command was active while `FastRelease -Jobs 1` was compiling `codex-tui`, increasing memory and Cargo-cache pressure. | Extended `build-local-codex.ps1` process detection to catch Codex package commands even when their command line does not include the repo root. |
 
 ## Verification Lanes That Worked
 

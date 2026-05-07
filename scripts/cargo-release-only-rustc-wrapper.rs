@@ -21,7 +21,15 @@ fn main() {
         std::process::exit(1);
     }
 
-    let status = match Command::new(rustc).args(rustc_args).status() {
+    let inner_wrapper = env::var_os("CODEX_CARGO_INNER_RUSTC_WRAPPER")
+        .filter(|value| !value.is_empty());
+
+    let status = match inner_wrapper {
+        Some(wrapper) => Command::new(wrapper).arg(rustc).args(rustc_args).status(),
+        None => Command::new(rustc).args(rustc_args).status(),
+    };
+
+    let status = match status {
         Ok(status) => status,
         Err(err) => {
             eprintln!("Build only release! failed to invoke rustc: {err}");

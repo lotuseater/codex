@@ -55,7 +55,8 @@ In the codex-rs folder where the rust code lives:
 - When running Rust commands (e.g. `just fix` or `cargo test`) be patient with the command and never try to kill them using the PID. Rust lock can make the execution slow, this is expected.
 - For long-running builds, release builds, or any build expected to take more than a few minutes, capture stdout and stderr to a repo-local log file such as `logs/fast-release-build-YYYYMMDD-HHMMSS.log` while preserving the command exit code. Inspect the saved log before retrying or changing strategy.
 - On this Windows checkout, do not use debug-profile Cargo builds/tests. This fork is release-only locally; debug builds can exhaust C: disk and memory. Use release-profile checks and `scripts/build-local-codex.ps1` for Codex binary verification; local release wrappers and blocked script modes should fail with `Build only release!`.
-- All local Cargo release builds/tests/checks must reuse the repo-local low-memory release profile from `.cargo/config.toml` (`lto=off`, `codegen-units=64`, `opt-level=2`, `debug=0`, `strip=symbols`, `incremental=false`). Do not override these profile settings ad hoc from scripts, env vars, or one-off commands; changing them creates a different `target/release` artifact shape and forces expensive rebuilds.
+- All local Cargo release builds/tests/checks must reuse the repo-local low-memory release profile from `.cargo/config.toml` (`lto=off`, `codegen-units=64`, `opt-level=2`, `debug=0`, `strip=symbols`, `incremental=false`). Do not override these profile settings ad hoc from scripts, env vars, or one-off commands; changing them creates a different `target/release` artifact shape and forces expensive rebuilds. Cargo can run release builds with incremental compilation when explicitly enabled, but this checkout keeps the shared deploy release lane non-incremental to avoid extra `target` cache growth and profile-shape churn. Use a separate measured non-deploy lane if release-incremental behavior needs evaluation.
+- If `codex-rs\target\debug` exists in this checkout, treat it as accidental local debris. Run `powershell -ExecutionPolicy Bypass -File scripts\build-local-codex.ps1 -Mode CleanSafe` after confirming no active Cargo/rustc/link processes. Use `-CleanTestArtifacts` only under disk pressure to remove disposable release test executables from `target\release\deps`.
 - Prefer the memory-efficient release script modes for local Codex builds:
   - Start with `powershell -ExecutionPolicy Bypass -File scripts\build-local-codex.ps1 -Mode FastRelease`.
   - Use `-Mode LowMemRelease` only to lower Cargo job count; it uses the same release profile/cache as `FastRelease`.
@@ -63,8 +64,8 @@ In the codex-rs folder where the rust code lives:
 
 Run `just fmt` (in `codex-rs` directory) automatically after you have finished making Rust code changes; do not ask for approval to run it. Additionally, run the tests:
 
-1. Run the test for the specific project that was changed. For example, if changes were made in `codex-rs/tui`, run `cargo test -p codex-tui`.
-2. Once those pass, if any changes were made in common, core, or protocol, run the complete test suite with `cargo test` (or `just test` if `cargo-nextest` is installed). Avoid `--all-features` for routine local runs because it expands the build matrix and can significantly increase `target/` disk usage; use it only when you specifically need full feature coverage. project-specific or individual tests can be run without asking the user, but do ask the user before running the complete test suite.
+1. Run the test for the specific project that was changed with the local release profile. For example, if changes were made in `codex-rs/tui`, run `cargo test -p codex-tui --release`.
+2. Once those pass, if any changes were made in common, core, or protocol, ask before running the complete release test suite with `cargo test --release` (or `just test` only if it is configured for release in this checkout). Avoid `--all-features` for routine local runs because it expands the build matrix and can significantly increase `target/` disk usage; use it only when you specifically need full feature coverage. Project-specific or individual release tests can be run without asking the user, but do ask the user before running the complete test suite.
 
 Before finalizing a large change to `codex-rs`, run `just fix -p <project>` (in `codex-rs` directory) to fix any linter issues in the code. Prefer scoping with `-p` to avoid slow workspace‑wide Clippy builds; only run `just fix` without `-p` if you changed shared crates. Do not re-run tests after running `fix` or `fmt`.
 
@@ -127,7 +128,7 @@ is easy to review and future diffs stay visual.
 When UI or text output changes intentionally, update the snapshots as follows:
 
 - Run tests to generate any updated snapshots:
-  - `cargo test -p codex-tui`
+  - `cargo test -p codex-tui --release`
 - Check what’s pending:
   - `cargo insta pending-snapshots -p codex-tui`
 - Review changes by reading the generated `*.snap.new` files directly in the repo, or preview a specific file:

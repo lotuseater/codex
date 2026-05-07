@@ -376,12 +376,14 @@ impl Session {
         let task_cancellation_token = cancellation_token.child_token();
         // Task-owned turn spans keep a core-owned span open for the
         // full task lifecycle after the submission dispatch span ends.
+        let reasoning_effort = turn_context.effective_reasoning_effort_for_tracing();
         let task_span = info_span!(
             "turn",
             otel.name = span_name,
             thread.id = %self.conversation_id,
             turn.id = %turn_context.sub_id,
             model = %turn_context.model_info.slug,
+            codex.turn.reasoning_effort = %reasoning_effort,
             codex.turn.token_usage.input_tokens = field::Empty,
             codex.turn.token_usage.cached_input_tokens = field::Empty,
             codex.turn.token_usage.non_cached_input_tokens = field::Empty,
@@ -883,6 +885,7 @@ impl Session {
         if self.has_pending_input().await {
             return Ok(());
         }
+        let mut client_session = self.services.model_client.new_session();
         if reason == CompactionReason::SemanticCheckpoint {
             let git_outcome = self
                 .semantic_checkpoint_git_sync(turn_context, reason)
@@ -902,6 +905,7 @@ impl Session {
             let compact_result = run_auto_compact(
                 self,
                 turn_context,
+                &mut client_session,
                 InitialContextInjection::DoNotInject,
                 reason,
                 CompactionPhase::PostTurn,
@@ -913,6 +917,7 @@ impl Session {
             run_auto_compact(
                 self,
                 turn_context,
+                &mut client_session,
                 InitialContextInjection::DoNotInject,
                 reason,
                 CompactionPhase::PostTurn,

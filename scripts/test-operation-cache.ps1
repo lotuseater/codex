@@ -7,9 +7,7 @@ param(
 
     [switch]$SkipPython,
 
-    [switch]$SkipRust,
-
-    [switch]$StrictRelease
+    [switch]$SkipRust
 )
 
 $ErrorActionPreference = "Stop"
@@ -42,24 +40,16 @@ if (-not $SkipRust) {
     Push-Location $codexRs
     try {
         $oldRustMinStack = $env:RUST_MIN_STACK
-        $oldLto = $env:CARGO_PROFILE_RELEASE_LTO
-        $oldCodegenUnits = $env:CARGO_PROFILE_RELEASE_CODEGEN_UNITS
         $oldNativeCommandPreference = $PSNativeCommandUseErrorActionPreference
 
         $env:RUST_MIN_STACK = "33554432"
         $PSNativeCommandUseErrorActionPreference = $false
-        if (-not $StrictRelease) {
-            $env:CARGO_PROFILE_RELEASE_LTO = "off"
-            $env:CARGO_PROFILE_RELEASE_CODEGEN_UNITS = "16"
-        }
 
         cargo test -p codex-core --lib operation_cache --release -j $Jobs *> $log
         $exit = $LASTEXITCODE
     }
     finally {
         $env:RUST_MIN_STACK = $oldRustMinStack
-        $env:CARGO_PROFILE_RELEASE_LTO = $oldLto
-        $env:CARGO_PROFILE_RELEASE_CODEGEN_UNITS = $oldCodegenUnits
         $PSNativeCommandUseErrorActionPreference = $oldNativeCommandPreference
         Pop-Location
     }

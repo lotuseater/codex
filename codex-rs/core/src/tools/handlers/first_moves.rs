@@ -5,6 +5,7 @@ use codex_first_moves::record_tool_use_hit;
 use codex_first_moves::stats;
 use codex_tools::FIRST_MOVES_PREDICT_TOOL_NAME;
 use codex_tools::FIRST_MOVES_STATS_TOOL_NAME;
+use codex_tools::ToolName;
 use serde::Deserialize;
 use serde_json::Value;
 use std::path::PathBuf;
@@ -17,7 +18,15 @@ use crate::tools::handlers::parse_arguments;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
 
-pub struct FirstMovesHandler;
+pub struct FirstMovesHandler {
+    tool_name: ToolName,
+}
+
+impl FirstMovesHandler {
+    pub fn new(tool_name: ToolName) -> Self {
+        Self { tool_name }
+    }
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -35,6 +44,10 @@ struct FirstMovesStatsArgs {
 
 impl ToolHandler for FirstMovesHandler {
     type Output = FunctionToolOutput;
+
+    fn tool_name(&self) -> ToolName {
+        self.tool_name.clone()
+    }
 
     fn kind(&self) -> ToolKind {
         ToolKind::Function

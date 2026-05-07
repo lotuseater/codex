@@ -43,21 +43,21 @@ backup under `C:\Users\Oleh\.codex\binary-backups`, updates
 `WIZARD_CODEX_REAL_EXE`, and verifies that the user-facing `codex` command
 still enters through `C:\Users\Oleh\.codex\system-wrapper`.
 
-Available build modes (smaller → larger memory + time):
+Available build modes (smaller to larger memory + time):
 
 | Mode | When to use |
 |---|---|
-| `DevRelease` | dev-small profile; fastest iteration; smallest disk + RAM peak |
-| `LowMemRelease` | release profile but cu=256, opt=1, RAM/disk-aware -j |
-| `FastRelease` | release profile, LTO off, cu=16, opt=2 — default |
-| `FullRelease` | full upstream release profile (slow LTO single-cu) — only for testing |
+| `LowMemRelease` | same shared release profile, lower RAM/disk-aware job count |
+| `FastRelease` | same shared release profile, default deploy build |
+| `FullRelease` | compatibility alias for the shared release profile |
 
-All release modes set `CARGO_INCREMENTAL=0` (release builds don't benefit
-from incremental compilation but cargo still creates the dir, eating
-multi-GB scratch). The script also runs a disk-space pre-check, evicts
-known-regeneratable artifacts when below 8 GB free, and aborts before
-starting if still below 5 GB so we don't lose 30+ minutes to a doomed
-disk-out condition mid-link.
+All local modes reuse the same release profile from `.cargo/config.toml`.
+`DevRelease`/`dev-small` is intentionally blocked in this checkout with
+`Build only release!` because switching profiles creates another large target
+tree and breaks cache reuse. The script also runs a disk-space pre-check,
+evicts known-regeneratable artifacts when below 8 GB free, and aborts before
+starting if still below 5 GB so we don't lose 30+ minutes to a doomed disk-out
+condition mid-link.
 
 ## Implementation Priorities
 

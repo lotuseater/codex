@@ -1,7 +1,11 @@
+mod context;
 mod harness;
 
 mod windows;
 
+pub use context::DesktopAutomationContextConfig;
+pub use context::desktop_automation_context_for_prompt;
+pub use context::merge_desktop_automation_context;
 use serde::Serialize;
 use serde_json::Value;
 use std::path::Path;
@@ -89,6 +93,29 @@ pub fn is_mutating_tool(tool_name: &str) -> bool {
     )
 }
 
+pub fn text_output_value(value: &Value) -> Value {
+    let mut output = value.clone();
+    remove_image_urls(&mut output);
+    output
+}
+
+fn remove_image_urls(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            map.remove("image_url");
+            for value in map.values_mut() {
+                remove_image_urls(value);
+            }
+        }
+        Value::Array(values) => {
+            for value in values {
+                remove_image_urls(value);
+            }
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+    }
+}
+
 pub async fn execute_tool(
     tool_name: &str,
     input: Value,
@@ -100,5 +127,40 @@ pub async fn execute_tool(
         other => Err(DesktopAutomationError::Unsupported(format!(
             "unsupported desktop automation tool `{other}`"
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn text_output_removes_embedded_image_urls() {
+        let output = text_output_value(&json!({
+            "ok": true,
+            "image_url": "data:image/png;base64,abc",
+            "screenshot": {
+                "path": "shot.png",
+                "image_url": "data:image/png;base64,def"
+            },
+            "elements": [
+                {"name": "Save", "image_url": "data:image/png;base64,ghi"}
+            ]
+        }));
+
+        assert_eq!(
+            output,
+            json!({
+                "ok": true,
+                "screenshot": {
+                    "path": "shot.png"
+                },
+                "elements": [
+                    {"name": "Save"}
+                ]
+            })
+        );
     }
 }

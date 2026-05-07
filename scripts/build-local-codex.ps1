@@ -1,6 +1,6 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [ValidateSet("Status", "Diagnose", "Progress", "FastRelease", "LowMemRelease", "DevRelease", "FullRelease", "DeployOnly", "Rollback")]
+    [ValidateSet("Status", "Diagnose", "Progress", "CleanSafe", "FastRelease", "LowMemRelease", "DevRelease", "FullRelease", "DeployOnly", "Rollback")]
     [string]$Mode = "Status",
 
     [string]$RepoRoot,
@@ -19,7 +19,15 @@ param(
 
     [switch]$Timings,
 
-    [int]$Jobs = 0
+    [int]$Jobs = 0,
+
+    [switch]$CleanTestArtifacts,
+
+    [int]$CleanTestArtifactsBelowGB = 5,
+
+    [switch]$UseSccache,
+
+    [switch]$ResetReleaseCacheOnProfileChange
 )
 
 $ErrorActionPreference = "Stop"
@@ -167,6 +175,36 @@ function Test-ContainsText {
         ($Haystack.IndexOf($Needle, [System.StringComparison]::OrdinalIgnoreCase) -ge 0)
 }
 
+function Test-CodexCargoCommandLine {
+    param([string]$CommandLine)
+
+    if ([string]::IsNullOrWhiteSpace($CommandLine)) {
+        return $false
+    }
+
+    $lower = $CommandLine.ToLowerInvariant()
+    $isCargo = (Test-ContainsText -Haystack $lower -Needle "cargo.exe") -or
+        (Test-ContainsText -Haystack $lower -Needle "\cargo") -or
+        $lower.StartsWith("cargo ")
+    $targetsCodexPackage = (Test-ContainsText -Haystack $lower -Needle "-p codex-") -or
+        (Test-ContainsText -Haystack $lower -Needle "--package codex-")
+
+    return $isCargo -and $targetsCodexPackage
+}
+
+function Test-CodexRustcCommandLine {
+    param([string]$CommandLine)
+
+    if ([string]::IsNullOrWhiteSpace($CommandLine)) {
+        return $false
+    }
+
+    $lower = $CommandLine.ToLowerInvariant()
+    return ((Test-ContainsText -Haystack $lower -Needle "rustc.exe") -or
+        (Test-ContainsText -Haystack $lower -Needle "\rustc")) -and
+        (Test-ContainsText -Haystack $lower -Needle "--crate-name codex_")
+}
+
 function Get-RepoBuildProcesses {
     param([string]$Root)
 
@@ -184,7 +222,9 @@ function Get-RepoBuildProcesses {
     foreach ($process in $processes) {
         $commandLine = [string]$process.CommandLine
         if ((Test-ContainsText -Haystack $commandLine -Needle $Root) -or
-            (Test-ContainsText -Haystack $commandLine -Needle $codexRs)) {
+            (Test-ContainsText -Haystack $commandLine -Needle $codexRs) -or
+            (Test-CodexCargoCommandLine -CommandLine $commandLine) -or
+            (Test-CodexRustcCommandLine -CommandLine $commandLine)) {
             $matching[[int]$process.ProcessId] = $true
             if ($process.ParentProcessId) {
                 $matching[[int]$process.ParentProcessId] = $true
@@ -277,16 +317,7 @@ function Get-BuildPlan {
             }
         }
         "DevRelease" {
-            $description = "dev-small build (no opt, fastest iteration, smallest memory peak)"
-            $cargoArgs = @("build", "-p", "codex-cli", "--profile", "dev-small", "--bin", "codex")
-            $binary = Join-Path $TargetRoot "dev-small\codex.exe"
-            # dev-small profile DOES benefit from incremental — keep it on.
-            # No release-shared defaults here (this is a dev profile).
-            $envOverrides["CARGO_INCREMENTAL"] = "1"
-            $envOverrides["RUST_MIN_STACK"] = "16777216"
-            if ($JobsOverride -le 0) {
-                $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 700 -PerJobDiskMB 900 -Ceiling 3
-            }
+            throw "Build only release!"
         }
         "FullRelease" {
             $description = "local low-memory release build (FullRelease alias, same shared release profile)"
@@ -329,9 +360,10 @@ function Test-AndFreeDiskSpace {
     $tgt = Join-Path $codexRs "target"
     $tgtRelease = Join-Path $codexRs "target\release"
     $reclaimable = @(
-        # 'incremental/' is created on every build but useless for `--release`
-        # builds; cargo treats incremental compilation as a debug-mode feature.
-        @{ Path = (Join-Path $tgtRelease "incremental"); Reason = "release/incremental (release builds don't use incremental)" },
+        # The shared local release lane keeps incremental=false so all release
+        # builds reuse one stable artifact shape. If an override creates this
+        # cache anyway, it is not useful to the deploy lane.
+        @{ Path = (Join-Path $tgtRelease "incremental"); Reason = "release/incremental (shared release lane keeps incremental disabled)" },
         @{ Path = (Join-Path $tgt "debug"); Reason = "target/debug (debug builds are disabled for this checkout)" },
         @{ Path = (Join-Path $tgt "dev-small"); Reason = "target/dev-small (non-release profile artifacts)" }
     )
@@ -393,15 +425,174 @@ function Invoke-ReleasePdbCleanup {
     }
 }
 
+function Get-PathSizeMB {
+    param([string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return 0
+    }
+    $item = Get-Item -LiteralPath $Path -Force
+    if (-not $item.PSIsContainer) {
+        return [math]::Round($item.Length / 1MB, 1)
+    }
+    try {
+        $bytes = (Get-ChildItem -LiteralPath $Path -Recurse -Force -File -ErrorAction SilentlyContinue |
+            Measure-Object Length -Sum).Sum
+        return [math]::Round($bytes / 1MB, 1)
+    }
+    catch {
+        return $null
+    }
+}
+
+function Invoke-GeneratedPathCleanup {
+    param(
+        [string]$Path,
+        [string]$Root,
+        [string]$Reason
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return [ordered]@{
+            path = $Path
+            reason = $Reason
+            removed = $false
+            reclaimed_mb = 0
+            status = "missing"
+        }
+    }
+
+    $safePath = Assert-UnderRoot -Path $Path -Root $Root -Label $Reason
+    $sizeMB = Get-PathSizeMB -Path $safePath
+    Remove-Item -LiteralPath $safePath -Recurse -Force -ErrorAction Stop
+    return [ordered]@{
+        path = $safePath
+        reason = $Reason
+        removed = $true
+        reclaimed_mb = $sizeMB
+        status = "removed"
+    }
+}
+
+function Get-ReleaseTestArtifactSummary {
+    param([string]$RepoRoot)
+
+    $deps = Join-Path $RepoRoot "codex-rs\target\release\deps"
+    if (-not (Test-Path -LiteralPath $deps)) {
+        return [ordered]@{
+            count = 0
+            total_mb = 0
+            matching_pdb_count = 0
+            matching_pdb_mb = 0
+        }
+    }
+
+    $exeFiles = @(Get-ChildItem -LiteralPath $deps -File -Filter "*.exe" -ErrorAction SilentlyContinue)
+    $pdbFiles = @()
+    foreach ($exe in $exeFiles) {
+        $pdb = [System.IO.Path]::ChangeExtension($exe.FullName, ".pdb")
+        if (Test-Path -LiteralPath $pdb) {
+            $pdbFiles += Get-Item -LiteralPath $pdb
+        }
+    }
+
+    return [ordered]@{
+        count = $exeFiles.Count
+        total_mb = [math]::Round(($exeFiles | Measure-Object Length -Sum).Sum / 1MB, 1)
+        matching_pdb_count = $pdbFiles.Count
+        matching_pdb_mb = [math]::Round(($pdbFiles | Measure-Object Length -Sum).Sum / 1MB, 1)
+    }
+}
+
+function Invoke-ReleaseTestArtifactCleanup {
+    param([string]$RepoRoot)
+
+    $deps = Join-Path $RepoRoot "codex-rs\target\release\deps"
+    if (-not (Test-Path -LiteralPath $deps)) {
+        return [ordered]@{ removed = 0; reclaimed_mb = 0; status = "missing" }
+    }
+
+    $bytes = 0
+    $removed = 0
+    foreach ($exe in @(Get-ChildItem -LiteralPath $deps -File -Filter "*.exe" -ErrorAction SilentlyContinue)) {
+        foreach ($path in @($exe.FullName, [System.IO.Path]::ChangeExtension($exe.FullName, ".pdb"))) {
+            if (-not (Test-Path -LiteralPath $path)) {
+                continue
+            }
+            $safePath = Assert-UnderRoot -Path $path -Root $deps -Label "release test artifact"
+            $item = Get-Item -LiteralPath $safePath -Force
+            $bytes += $item.Length
+            Remove-Item -LiteralPath $safePath -Force -ErrorAction Stop
+            $removed += 1
+        }
+    }
+
+    return [ordered]@{
+        removed = $removed
+        reclaimed_mb = [math]::Round($bytes / 1MB, 1)
+        status = "removed"
+    }
+}
+
+function Invoke-SafeLocalCleanup {
+    param(
+        [string]$RepoRoot,
+        [switch]$IncludeTestArtifacts,
+        [int]$TestArtifactThresholdGB = 5
+    )
+
+    $targetRoot = Assert-UnderRoot -Path (Join-Path $RepoRoot "codex-rs\target") -Root $RepoRoot -Label "target root"
+    $releaseRoot = Assert-UnderRoot -Path (Join-Path $targetRoot "release") -Root $targetRoot -Label "release target"
+    $beforeBytes = (Get-PSDrive C).Free
+    $cleanup = @()
+
+    $cleanup += Invoke-GeneratedPathCleanup -Path (Join-Path $targetRoot "debug") -Root $targetRoot -Reason "target/debug (debug builds are disabled for this checkout)"
+    $cleanup += Invoke-GeneratedPathCleanup -Path (Join-Path $targetRoot "dev-small") -Root $targetRoot -Reason "target/dev-small (non-release profile artifacts)"
+    $cleanup += Invoke-GeneratedPathCleanup -Path (Join-Path $releaseRoot "incremental") -Root $releaseRoot -Reason "release/incremental (shared release lane keeps incremental disabled)"
+
+    $pdbCleanup = Invoke-ReleasePdbCleanup -RepoRoot $RepoRoot
+    $testArtifactsBefore = Get-ReleaseTestArtifactSummary -RepoRoot $RepoRoot
+    $testCleanup = [ordered]@{ removed = 0; reclaimed_mb = 0; status = "not_requested" }
+    $freeAfterSafeGB = [math]::Round((Get-PSDrive C).Free / 1GB, 2)
+    if ($IncludeTestArtifacts) {
+        if ($TestArtifactThresholdGB -le 0 -or $freeAfterSafeGB -lt $TestArtifactThresholdGB) {
+            $testCleanup = Invoke-ReleaseTestArtifactCleanup -RepoRoot $RepoRoot
+        }
+        else {
+            $testCleanup = [ordered]@{
+                removed = 0
+                reclaimed_mb = 0
+                status = "skipped_above_threshold"
+                free_c_drive_gb = $freeAfterSafeGB
+                threshold_gb = $TestArtifactThresholdGB
+            }
+        }
+    }
+
+    $afterBytes = (Get-PSDrive C).Free
+    return [ordered]@{
+        status = "ok"
+        mode = "CleanSafe"
+        free_c_drive_before_gb = [math]::Round($beforeBytes / 1GB, 2)
+        free_c_drive_after_gb = [math]::Round($afterBytes / 1GB, 2)
+        reclaimed_mb = [math]::Round(($afterBytes - $beforeBytes) / 1MB, 1)
+        generated_paths = $cleanup
+        release_pdb_cleanup = $pdbCleanup
+        release_test_artifacts_before = $testArtifactsBefore
+        release_test_artifact_cleanup = $testCleanup
+    }
+}
+
 function Invoke-PostBuildDiskCleanup {
     param(
         [string]$RepoRoot,
         [string]$BuildMode = ""
     )
 
-    # Release builds don't use incremental; cargo creates the dir anyway when
-    # CARGO_INCREMENTAL is not '0'. Sweep it after success so the next build
-    # starts with maximum headroom. Safe — the dir is rebuilt on demand.
+    # The shared local release lane keeps incremental disabled. Cargo can still
+    # create this cache if an env/config override leaks in, so sweep it after a
+    # successful deploy build to preserve disk headroom. Safe: it is rebuilt on
+    # demand when a deliberately incremental profile uses it.
     $inc = Join-Path $RepoRoot "codex-rs\target\release\incremental"
     if (Test-Path -LiteralPath $inc) {
         try {
@@ -422,12 +613,9 @@ function Invoke-PostBuildDiskCleanup {
 }
 
 # Memory reuse between modes: artifacts in target/dev-small are useless for a
-# release build (and vice versa), but cargo keeps them around and they each
-# claim 2-4 GB of disk. Before kicking off a release build, evict the
-# dev-small profile dir; before dev-small, evict release/incremental (the
-# release ARTIFACTS we keep — they're needed when the user later rebuilds
-# release). This makes back-to-back mode switches cheap on disk without
-# forcing a full rebuild within the same mode.
+# release build, but older local runs may still have left that profile around.
+# Before kicking off a release build, evict the dev-small profile dir without
+# touching the shared release cache.
 function Invoke-CrossModeCleanup {
     param(
         [string]$RepoRoot,
@@ -439,9 +627,6 @@ function Invoke-CrossModeCleanup {
 
     if ($ActiveMode -in @("FastRelease", "LowMemRelease", "FullRelease")) {
         $dropTargets += @{ Path = (Join-Path $tgt "dev-small"); Reason = "target/dev-small (other-profile artifacts)" }
-    }
-    elseif ($ActiveMode -eq "DevRelease") {
-        $dropTargets += @{ Path = (Join-Path $tgt "release\incremental"); Reason = "release/incremental (DevRelease doesn't need it)" }
     }
 
     foreach ($entry in $dropTargets) {
@@ -568,6 +753,133 @@ function Get-ReleaseDepsDuplicateSummary {
         Select-Object -First $Limit
 }
 
+function Get-ReleaseProfileStampPath {
+    param([string]$RepoRoot)
+
+    return Join-Path $RepoRoot "codex-rs\target\release\.codex-local-release-profile.json"
+}
+
+function Get-ReleaseProfileSignature {
+    param([string]$RepoRoot)
+
+    $codexRs = Join-Path $RepoRoot "codex-rs"
+    $configPath = Join-Path $codexRs ".cargo\config.toml"
+    $files = @()
+    foreach ($path in @($configPath)) {
+        $sha256 = "missing"
+        if (Test-Path -LiteralPath $path) {
+            $sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+        }
+        $files += [ordered]@{
+            path = $path
+            sha256 = $sha256
+        }
+    }
+
+    $rustcVersion = "rustc-unavailable"
+    try {
+        $rustcVersion = (& rustc -Vv 2>$null) -join "`n"
+    }
+    catch {}
+
+    $details = [ordered]@{
+        release_lane = "shared-low-memory-release-v1"
+        files = $files
+        rustc_version = $rustcVersion
+    }
+    $json = $details | ConvertTo-Json -Depth 8 -Compress
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $hashBytes = $sha.ComputeHash($bytes)
+    }
+    finally {
+        $sha.Dispose()
+    }
+
+    return [ordered]@{
+        signature = (-join ($hashBytes | ForEach-Object { $_.ToString("x2") }))
+        details = $details
+    }
+}
+
+function Get-ReleaseProfileState {
+    param([string]$RepoRoot)
+
+    $stampPath = Get-ReleaseProfileStampPath -RepoRoot $RepoRoot
+    $current = Get-ReleaseProfileSignature -RepoRoot $RepoRoot
+    $stamp = $null
+    if (Test-Path -LiteralPath $stampPath) {
+        try {
+            $stamp = Read-JsonObject -Path $stampPath
+        }
+        catch {
+            $stamp = [ordered]@{
+                read_error = $_.Exception.Message
+            }
+        }
+    }
+
+    $stampSignature = if ($stamp -and $stamp.Contains("signature")) { [string]$stamp["signature"] } else { $null }
+    return [ordered]@{
+        stamp_path = $stampPath
+        stamp_exists = [bool]$stamp
+        current_signature = [string]$current["signature"]
+        stamp_signature = $stampSignature
+        matches = (-not $stamp) -or ($stampSignature -eq [string]$current["signature"])
+        stamped_at = if ($stamp -and $stamp.Contains("stamped_at")) { [string]$stamp["stamped_at"] } else { $null }
+        mode = if ($stamp -and $stamp.Contains("mode")) { [string]$stamp["mode"] } else { $null }
+        read_error = if ($stamp -and $stamp.Contains("read_error")) { [string]$stamp["read_error"] } else { $null }
+    }
+}
+
+function Write-ReleaseProfileStamp {
+    param(
+        [string]$RepoRoot,
+        [string]$ModeName,
+        [string[]]$CargoArgs
+    )
+
+    $stampPath = Get-ReleaseProfileStampPath -RepoRoot $RepoRoot
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $stampPath) | Out-Null
+    $signature = Get-ReleaseProfileSignature -RepoRoot $RepoRoot
+    Write-JsonObject -Path $stampPath -Payload ([ordered]@{
+            stamped_at = (Get-Date).ToString("o")
+            mode = $ModeName
+            cargo_args = $CargoArgs
+            signature = [string]$signature["signature"]
+            details = $signature["details"]
+        })
+    return $stampPath
+}
+
+function Invoke-ReleaseProfileCacheReset {
+    param(
+        [string]$RepoRoot,
+        [System.Collections.IDictionary]$ProfileState
+    )
+
+    $targetRoot = Assert-UnderRoot -Path (Join-Path $RepoRoot "codex-rs\target") -Root $RepoRoot -Label "target root"
+    $releaseRoot = Assert-UnderRoot -Path (Join-Path $targetRoot "release") -Root $targetRoot -Label "release target"
+    if (-not (Test-Path -LiteralPath $releaseRoot)) {
+        return [ordered]@{
+            removed = $false
+            reclaimed_mb = 0
+            status = "missing"
+            profile_state = $ProfileState
+        }
+    }
+
+    $sizeMB = Get-PathSizeMB -Path $releaseRoot
+    Remove-Item -LiteralPath $releaseRoot -Recurse -Force -ErrorAction Stop
+    return [ordered]@{
+        removed = $true
+        reclaimed_mb = $sizeMB
+        status = "removed"
+        profile_state = $ProfileState
+    }
+}
+
 function Write-BuildLogEvent {
     param(
         [string]$Path,
@@ -606,6 +918,7 @@ function Initialize-BuildLog {
             debug_target_gb = Get-DirectorySizeGB -Path (Join-Path $codexRs "target\debug")
             free_c_drive_gb = [math]::Round((Get-PSDrive C).Free / 1GB, 2)
             memory = Get-PageFileSnapshot
+            release_profile_state = Get-ReleaseProfileState -RepoRoot $Root
             active_build_processes = @(Get-RepoBuildProcesses -Root $Root)
         })
 }
@@ -890,6 +1203,7 @@ if ($Mode -in @("Status", "Diagnose")) {
         } else { $null }
         wrapper_env_path = $envPath
         wrapper_real_exe = [string]$wrapperPayload["WIZARD_CODEX_REAL_EXE"]
+        release_profile_state = Get-ReleaseProfileState -RepoRoot $RepoRoot
         free_c_drive_bytes = (Get-PSDrive C).Free
     }
     if ($Mode -eq "Diagnose") {
@@ -899,6 +1213,7 @@ if ($Mode -in @("Status", "Diagnose")) {
         $statusPayload["memory"] = Get-PageFileSnapshot
         $statusPayload["release_deps_prune"] = "disabled: Cargo can still reference older hashed deps artifacts from live fingerprints"
         $statusPayload["release_pdb_gb"] = Get-ReleasePdbSizeGB -RepoRoot $RepoRoot
+        $statusPayload["release_test_artifacts"] = Get-ReleaseTestArtifactSummary -RepoRoot $RepoRoot
         $statusPayload["release_deps_duplicate_summary"] = @(Get-ReleaseDepsDuplicateSummary -RepoRoot $RepoRoot -Limit 12)
         $statusPayload["recent_logs"] = @(Get-RecentBuildLogSummaries -Root $RepoRoot)
     }
@@ -958,6 +1273,16 @@ if ($Mode -eq "Progress") {
     return
 }
 
+if ($Mode -eq "CleanSafe") {
+    if ($activeBuilds.Count -gt 0) {
+        $ids = ($activeBuilds | ForEach-Object { $_["process_id"] }) -join ", "
+        throw "Repo-local cargo/rustc build process already active ($ids). Run Status to inspect it; CleanSafe will not remove artifacts while a build is active."
+    }
+    Invoke-SafeLocalCleanup -RepoRoot $RepoRoot -IncludeTestArtifacts:$CleanTestArtifacts -TestArtifactThresholdGB $CleanTestArtifactsBelowGB |
+        ConvertTo-Json -Depth 8
+    return
+}
+
 if ($Mode -eq "Rollback") {
     Invoke-Rollback | ConvertTo-Json -Depth 6
     return
@@ -990,6 +1315,27 @@ if ([System.IO.Path]::DirectorySeparatorChar -eq "\") {
 else {
     $plan.env_overrides["CARGO_BUILD_RUSTC_WRAPPER"] = Join-Path $RepoRoot "scripts/cargo-release-only-rustc-wrapper"
 }
+if ($UseSccache) {
+    $sccache = Get-Command sccache -ErrorAction SilentlyContinue
+    if (-not $sccache) {
+        throw "sccache was requested with -UseSccache, but it is not installed or not on PATH."
+    }
+    $plan.env_overrides["CODEX_CARGO_INNER_RUSTC_WRAPPER"] = $sccache.Source
+    if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable("SCCACHE_CACHE_SIZE", "Process")) -and
+        [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable("SCCACHE_CACHE_SIZE", "User")) -and
+        [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable("SCCACHE_CACHE_SIZE", "Machine"))) {
+        $plan.env_overrides["SCCACHE_CACHE_SIZE"] = "2G"
+    }
+}
+
+$profileState = Get-ReleaseProfileState -RepoRoot $RepoRoot
+if ($profileState["stamp_exists"] -and -not $profileState["matches"]) {
+    if (-not $ResetReleaseCacheOnProfileChange) {
+        throw "Release profile/toolchain changed since the last successful local release build. To prevent another huge target/release generation, this script stopped before Cargo. Re-run with -ResetReleaseCacheOnProfileChange to remove target/release and rebuild one clean shared release cache. Stamp: $($profileState["stamp_path"])"
+    }
+    $reset = Invoke-ReleaseProfileCacheReset -RepoRoot $RepoRoot -ProfileState $profileState
+    Write-Host ("Release profile changed; reset target/release ({0}, reclaimed {1:N1} MB)." -f $reset["status"], $reset["reclaimed_mb"])
+}
 
 # Pre-build planning, in this order:
 #   1. Cross-mode cleanup: drop other-profile artifacts that just claim disk.
@@ -1011,9 +1357,10 @@ if ($PSCmdlet.ShouldProcess($RepoRoot, "run $($plan.description)")) {
         Show-FailureLines -Path $logPath
         throw "cargo build failed with exit code $exitCode. Log: $logPath"
     }
-    # Post-build housekeeping: free release/incremental (unused for release
-    # builds) so the next build starts with maximum headroom.
+    # Post-build housekeeping: free release/incremental (unused by the shared
+    # release deploy lane) so the next build starts with maximum headroom.
     Invoke-PostBuildDiskCleanup -RepoRoot $RepoRoot -BuildMode $Mode
+    Write-ReleaseProfileStamp -RepoRoot $RepoRoot -ModeName $Mode -CargoArgs $plan.cargo_args | Out-Null
 }
 else {
     [ordered]@{

@@ -1,3 +1,4 @@
 codex-rs/app-server-protocol/schema/** linguist-generated
 codex-rs/hooks/schema/generated/** linguist-generated
 scripts/cargo-release-only-rustc-wrapper text eol=lf
+scripts/*.sh text eol=lf

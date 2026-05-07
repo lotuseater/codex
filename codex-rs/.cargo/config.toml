@@ -9,3 +9,11 @@ rustflags = ["-C", "link-arg=/STACK:8388608", "-C", "link-arg=/arm64hazardfree"]
 
 [target.'cfg(all(windows, target_env = "gnu"))']
 rustflags = ["-C", "link-arg=-Wl,--stack,8388608"]
+
+[profile.release]
+lto = "off"
+codegen-units = 64
+opt-level = 2
+debug = 0
+strip = "symbols"
+incremental = false
