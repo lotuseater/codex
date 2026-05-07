@@ -106,6 +106,7 @@ pub struct ToolsConfig {
     pub desktop_automation_enabled: bool,
     pub desktop_automation_allow_input: bool,
     pub first_moves_enabled: bool,
+    pub repo_context_scout_tool_enabled: bool,
     pub context_ops_enabled: bool,
     pub collab_tools: bool,
     pub goal_tools: bool,
@@ -250,6 +251,7 @@ impl ToolsConfig {
             desktop_automation_enabled: include_desktop_automation,
             desktop_automation_allow_input: include_desktop_automation,
             first_moves_enabled: false,
+            repo_context_scout_tool_enabled: false,
             context_ops_enabled: include_context_ops,
             collab_tools: include_collab_tools,
             goal_tools: include_goal_tools,
@@ -325,6 +327,11 @@ impl ToolsConfig {
 
     pub fn with_first_moves_config(mut self, enabled: bool) -> Self {
         self.first_moves_enabled = enabled;
+        self
+    }
+
+    pub fn with_repo_context_scout_config(mut self, tool_enabled: bool) -> Self {
+        self.repo_context_scout_tool_enabled = tool_enabled;
         self
     }
 

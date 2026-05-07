@@ -47,6 +47,7 @@ use crate::session::desktop_automation::desktop_automation_context_for_prompt;
 use crate::session::desktop_automation::merge_desktop_automation_context;
 use crate::session::first_moves::first_moves_context_for_fresh_turn;
 use crate::session::first_moves::merge_first_moves_context;
+use crate::session::first_moves::spawn_repo_context_scout_shadow_for_fresh_turn;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use crate::stream_events_utils::HandleOutputCtx;
@@ -315,6 +316,7 @@ pub(crate) async fn run_turn(
         let initial_input_for_turn: ResponseInputItem = ResponseInputItem::from(input.clone());
         let response_item: ResponseItem = initial_input_for_turn.clone().into();
         let prompt = UserMessageItem::new(&input).message();
+        spawn_repo_context_scout_shadow_for_fresh_turn(&sess, &turn_context, prompt.as_str()).await;
         let first_moves_context =
             first_moves_context_for_fresh_turn(&sess, &turn_context, prompt.as_str()).await;
         let desktop_automation_context = desktop_automation_context_for_prompt(

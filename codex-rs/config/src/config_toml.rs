@@ -368,6 +368,10 @@ pub struct ConfigToml {
     #[serde(default)]
     pub first_moves: Option<FirstMovesToml>,
 
+    /// Durable repo context scout settings.
+    #[serde(default)]
+    pub repo_context_scout: Option<RepoContextScoutToml>,
+
     /// Additional discoverable tools that can be suggested for installation.
     pub tool_suggest: Option<ToolSuggestConfig>,
 
@@ -688,6 +692,37 @@ pub enum FirstMovesPrewarmToml {
     Off,
     #[default]
     HighConfidenceOnly,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct RepoContextScoutToml {
+    /// Run mode: off, shadow, or tool. Defaults to shadow in this fork.
+    pub mode: Option<RepoContextScoutModeToml>,
+
+    /// Maximum files indexed. Defaults to 5000.
+    pub max_files: Option<usize>,
+
+    /// Maximum bytes read from one file while extracting anchors. Defaults to 131072.
+    pub max_file_bytes: Option<u64>,
+
+    /// Maximum anchors extracted from one file. Defaults to 24.
+    pub max_anchors_per_file: Option<usize>,
+
+    /// Maximum approximate tokens in a scout packet. Defaults to 1200.
+    pub max_output_tokens: Option<usize>,
+
+    /// Maximum ranked file candidates. Defaults to 12.
+    pub max_candidates: Option<usize>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RepoContextScoutModeToml {
+    Off,
+    #[default]
+    Shadow,
+    Tool,
 }
 
 #[derive(Deserialize)]

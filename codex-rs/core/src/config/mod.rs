@@ -33,6 +33,8 @@ use codex_config::config_toml::FirstMovesToml;
 use codex_config::config_toml::ProjectConfig;
 use codex_config::config_toml::RealtimeAudioConfig;
 use codex_config::config_toml::RealtimeConfig;
+use codex_config::config_toml::RepoContextScoutModeToml;
+use codex_config::config_toml::RepoContextScoutToml;
 use codex_config::config_toml::ThreadStoreToml;
 use codex_config::config_toml::validate_model_providers;
 use codex_config::loader::load_config_layers_state;
@@ -109,6 +111,8 @@ use codex_protocol::permissions::FileSystemSandboxPolicy;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::SandboxPolicy;
+use codex_repo_context_scout::RepoContextScoutConfig;
+use codex_repo_context_scout::RepoContextScoutMode;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::AbsolutePathBufGuard;
 use serde::Deserialize;
@@ -789,6 +793,9 @@ pub struct Config {
 
     /// Native first-turn repo navigation predictor settings.
     pub first_moves: FirstMovesConfig,
+
+    /// Durable repo context scout settings.
+    pub repo_context_scout: RepoContextScoutConfig,
 
     /// Centralized feature flags; source of truth for feature gating.
     pub features: ManagedFeatures,
@@ -2160,6 +2167,48 @@ fn first_moves_prewarm_from_toml(prewarm: FirstMovesPrewarmToml) -> FirstMovesPr
     }
 }
 
+fn resolve_repo_context_scout_config(
+    base: Option<&RepoContextScoutToml>,
+    profile: Option<&RepoContextScoutToml>,
+) -> RepoContextScoutConfig {
+    let defaults = RepoContextScoutConfig::default();
+    RepoContextScoutConfig {
+        mode: profile
+            .and_then(|config| config.mode)
+            .or_else(|| base.and_then(|config| config.mode))
+            .map(repo_context_scout_mode_from_toml)
+            .unwrap_or(defaults.mode),
+        max_files: profile
+            .and_then(|config| config.max_files)
+            .or_else(|| base.and_then(|config| config.max_files))
+            .unwrap_or(defaults.max_files),
+        max_file_bytes: profile
+            .and_then(|config| config.max_file_bytes)
+            .or_else(|| base.and_then(|config| config.max_file_bytes))
+            .unwrap_or(defaults.max_file_bytes),
+        max_anchors_per_file: profile
+            .and_then(|config| config.max_anchors_per_file)
+            .or_else(|| base.and_then(|config| config.max_anchors_per_file))
+            .unwrap_or(defaults.max_anchors_per_file),
+        max_output_tokens: profile
+            .and_then(|config| config.max_output_tokens)
+            .or_else(|| base.and_then(|config| config.max_output_tokens))
+            .unwrap_or(defaults.max_output_tokens),
+        max_candidates: profile
+            .and_then(|config| config.max_candidates)
+            .or_else(|| base.and_then(|config| config.max_candidates))
+            .unwrap_or(defaults.max_candidates),
+    }
+}
+
+fn repo_context_scout_mode_from_toml(mode: RepoContextScoutModeToml) -> RepoContextScoutMode {
+    match mode {
+        RepoContextScoutModeToml::Off => RepoContextScoutMode::Off,
+        RepoContextScoutModeToml::Shadow => RepoContextScoutMode::Shadow,
+        RepoContextScoutModeToml::Tool => RepoContextScoutMode::Tool,
+    }
+}
+
 fn apps_mcp_path_override_toml_config(
     features: Option<&FeaturesToml>,
 ) -> Option<&AppsMcpPathOverrideConfigToml> {
@@ -2864,6 +2913,10 @@ impl Config {
             resolve_desktop_automation_config(cfg.desktop_automation.as_ref(), config_profile.desktop_automation.as_ref());
         let first_moves =
             resolve_first_moves_config(cfg.first_moves.as_ref(), config_profile.first_moves.as_ref());
+        let repo_context_scout = resolve_repo_context_scout_config(
+            cfg.repo_context_scout.as_ref(),
+            config_profile.repo_context_scout.as_ref(),
+        );
 
         let model = model.or(config_profile.model).or(cfg.model);
         let mut notices = cfg.notice.unwrap_or_default();
@@ -3276,6 +3329,7 @@ impl Config {
             multi_agent_v2,
             desktop_automation,
             first_moves,
+            repo_context_scout,
             features,
             suppress_unstable_features_warning: cfg
                 .suppress_unstable_features_warning

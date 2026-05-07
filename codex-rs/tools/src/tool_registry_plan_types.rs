@@ -32,6 +32,7 @@ pub enum ToolHandlerKind {
     Plan,
     ReadMcpResource,
     ReportAgentJobResult,
+    RepoContextScout,
     RequestPluginInstall,
     RequestPermissions,
     RequestUserInput,

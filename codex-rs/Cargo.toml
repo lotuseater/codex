@@ -20,6 +20,7 @@ members = [
     "feedback",
     "features",
     "first-moves",
+    "repo-context-scout",
     "install-context",
     "codex-backend-openapi-models",
     "code-mode",
@@ -172,6 +173,7 @@ codex-experimental-api-macros = { path = "codex-experimental-api-macros" }
 codex-features = { path = "features" }
 codex-feedback = { path = "feedback" }
 codex-first-moves = { path = "first-moves" }
+codex-repo-context-scout = { path = "repo-context-scout" }
 codex-install-context = { path = "install-context" }
 codex-file-search = { path = "file-search" }
 codex-git-utils = { path = "git-utils" }

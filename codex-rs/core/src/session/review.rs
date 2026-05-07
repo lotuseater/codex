@@ -62,6 +62,7 @@ pub(super) async fn spawn_review_thread(
         config.desktop_automation.allow_input,
     )
     .with_first_moves_config(config.first_moves.enabled())
+    .with_repo_context_scout_config(config.repo_context_scout.mode.tool_enabled())
     .with_max_concurrent_threads_per_session(config.agent_max_threads)
     .with_wait_agent_min_timeout_ms(
         review_features

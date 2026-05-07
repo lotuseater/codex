@@ -225,6 +225,7 @@ impl TurnContext {
             config.desktop_automation.allow_input,
         )
         .with_first_moves_config(config.first_moves.enabled())
+        .with_repo_context_scout_config(config.repo_context_scout.mode.tool_enabled())
         .with_max_concurrent_threads_per_session(
             config
                 .features
@@ -512,6 +513,7 @@ impl Session {
             per_turn_config.desktop_automation.allow_input,
         )
         .with_first_moves_config(per_turn_config.first_moves.enabled())
+        .with_repo_context_scout_config(per_turn_config.repo_context_scout.mode.tool_enabled())
         .with_max_concurrent_threads_per_session(
             per_turn_config
                 .features

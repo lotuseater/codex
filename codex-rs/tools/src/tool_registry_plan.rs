@@ -39,6 +39,7 @@ use crate::create_list_mcp_resource_templates_tool;
 use crate::create_list_mcp_resources_tool;
 use crate::create_local_shell_tool;
 use crate::create_read_mcp_resource_tool;
+use crate::create_repo_context_scout_tool;
 use crate::create_report_agent_job_result_tool;
 use crate::create_request_permissions_tool;
 use crate::create_request_plugin_install_tool;
@@ -403,6 +404,17 @@ pub fn build_tool_registry_plan(
                 );
                 plan.register_handler(name, ToolHandlerKind::FirstMoves);
             }
+        }
+
+        if config.repo_context_scout_tool_enabled {
+            let tool = create_repo_context_scout_tool();
+            let name = tool.name().to_string();
+            plan.push_spec(
+                tool,
+                /*supports_parallel_tool_calls*/ true,
+                config.code_mode_enabled,
+            );
+            plan.register_handler(name, ToolHandlerKind::RepoContextScout);
         }
 
         if config.context_ops_enabled {

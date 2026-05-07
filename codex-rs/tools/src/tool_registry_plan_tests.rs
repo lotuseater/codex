@@ -684,6 +684,59 @@ fn first_moves_tools_respect_config() {
 }
 
 #[test]
+fn repo_context_scout_tool_respects_config() {
+    let model_info = model_info();
+    let features = Features::with_defaults();
+    let available_models = Vec::new();
+    let default_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        image_generation_tool_auth_allowed: false,
+        web_search_mode: Some(WebSearchMode::Disabled),
+        session_source: SessionSource::Cli,
+        permission_profile: &PermissionProfile::Disabled,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+    let (default_tools, default_handlers) = build_specs(
+        &default_config,
+        /*mcp_tools*/ None,
+        /*deferred_mcp_tools*/ None,
+        &[],
+    );
+    assert!(
+        !default_tools
+            .iter()
+            .any(|tool| tool.name() == "repo_context_scout")
+    );
+    assert!(
+        !default_handlers
+            .iter()
+            .any(|handler| handler.kind == ToolHandlerKind::RepoContextScout)
+    );
+
+    let enabled_config = default_config.with_repo_context_scout_config(/*tool_enabled*/ true);
+    let (enabled_tools, enabled_handlers) = build_specs(
+        &enabled_config,
+        /*mcp_tools*/ None,
+        /*deferred_mcp_tools*/ None,
+        &[],
+    );
+
+    assert!(
+        enabled_tools
+            .iter()
+            .any(|tool| tool.name() == "repo_context_scout")
+    );
+    assert!(
+        enabled_handlers
+            .iter()
+            .any(|handler| handler.name.name == "repo_context_scout"
+                && handler.kind == ToolHandlerKind::RepoContextScout)
+    );
+}
+
+#[test]
 fn disabled_environment_omits_environment_backed_tools() {
     let model_info = model_info();
     let mut features = Features::with_defaults();

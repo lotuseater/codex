@@ -91,6 +91,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::McpHandler;
     use crate::tools::handlers::PlanHandler;
     use crate::tools::handlers::ReadMcpResourceHandler;
+    use crate::tools::handlers::RepoContextScoutHandler;
     use crate::tools::handlers::RequestPermissionsHandler;
     use crate::tools::handlers::RequestPluginInstallHandler;
     use crate::tools::handlers::RequestUserInputHandler;
@@ -250,6 +251,9 @@ pub(crate) fn build_specs_with_discoverable_tools(
             }
             ToolHandlerKind::ReportAgentJobResult => {
                 builder.register_handler(Arc::new(ReportAgentJobResultHandler));
+            }
+            ToolHandlerKind::RepoContextScout => {
+                builder.register_handler(Arc::new(RepoContextScoutHandler::new(name)));
             }
             ToolHandlerKind::RequestPermissions => {
                 builder.register_handler(Arc::new(RequestPermissionsHandler));

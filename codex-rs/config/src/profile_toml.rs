@@ -5,6 +5,7 @@ use serde::Serialize;
 
 use crate::config_toml::DesktopAutomationToml;
 use crate::config_toml::FirstMovesToml;
+use crate::config_toml::RepoContextScoutToml;
 use crate::config_toml::ToolsToml;
 use crate::types::AnalyticsConfigToml;
 use crate::types::ApprovalsReviewer;
@@ -66,6 +67,7 @@ pub struct ConfigProfile {
     pub tools: Option<ToolsToml>,
     pub desktop_automation: Option<DesktopAutomationToml>,
     pub first_moves: Option<FirstMovesToml>,
+    pub repo_context_scout: Option<RepoContextScoutToml>,
     pub web_search: Option<WebSearchMode>,
     pub analytics: Option<AnalyticsConfigToml>,
     /// TUI settings scoped to this profile.

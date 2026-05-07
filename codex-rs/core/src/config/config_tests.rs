@@ -21,6 +21,7 @@ use codex_config::config_toml::RealtimeToml;
 use codex_config::config_toml::RealtimeTransport;
 use codex_config::config_toml::RealtimeWsMode;
 use codex_config::config_toml::RealtimeWsVersion;
+use codex_config::config_toml::RepoContextScoutModeToml;
 use codex_config::config_toml::ToolsToml;
 use codex_config::loader::project_trust_key;
 use codex_config::permissions_toml::FilesystemPermissionToml;
@@ -79,6 +80,7 @@ use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_protocol::protocol::NetworkAccess;
 use codex_protocol::protocol::RealtimeVoice;
 use codex_protocol::protocol::SandboxPolicy;
+use codex_repo_context_scout::RepoContextScoutConfig;
 use serde::Deserialize;
 use tempfile::tempdir;
 
@@ -453,6 +455,30 @@ max_read_bytes = 2048
     assert_eq!(config.max_scan_files, Some(120));
     assert_eq!(config.max_scan_depth, Some(3));
     assert_eq!(config.max_read_bytes, Some(2048));
+}
+
+#[test]
+fn repo_context_scout_config_deserializes() {
+    let cfg: ConfigToml = toml::from_str(
+        r#"
+[repo_context_scout]
+mode = "tool"
+max_files = 123
+max_file_bytes = 4096
+max_anchors_per_file = 7
+max_output_tokens = 900
+max_candidates = 6
+"#,
+    )
+    .expect("TOML deserialization should succeed");
+
+    let config = cfg.repo_context_scout.expect("repo context scout config");
+    assert_eq!(config.mode, Some(RepoContextScoutModeToml::Tool));
+    assert_eq!(config.max_files, Some(123));
+    assert_eq!(config.max_file_bytes, Some(4096));
+    assert_eq!(config.max_anchors_per_file, Some(7));
+    assert_eq!(config.max_output_tokens, Some(900));
+    assert_eq!(config.max_candidates, Some(6));
 }
 
 #[test]
@@ -7123,6 +7149,7 @@ async fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             multi_agent_v2: MultiAgentV2Config::default(),
             desktop_automation: DesktopAutomationConfig::default(),
             first_moves: FirstMovesConfig::default(),
+            repo_context_scout: RepoContextScoutConfig::default(),
             features: Features::with_defaults().into(),
             suppress_unstable_features_warning: false,
             active_profile: Some("o3".to_string()),
@@ -7351,6 +7378,7 @@ async fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         multi_agent_v2: MultiAgentV2Config::default(),
         desktop_automation: DesktopAutomationConfig::default(),
         first_moves: FirstMovesConfig::default(),
+        repo_context_scout: RepoContextScoutConfig::default(),
         features: Features::with_defaults().into(),
         suppress_unstable_features_warning: false,
         active_profile: Some("gpt3".to_string()),
@@ -7511,6 +7539,7 @@ async fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         multi_agent_v2: MultiAgentV2Config::default(),
         desktop_automation: DesktopAutomationConfig::default(),
         first_moves: FirstMovesConfig::default(),
+        repo_context_scout: RepoContextScoutConfig::default(),
         features: Features::with_defaults().into(),
         suppress_unstable_features_warning: false,
         active_profile: Some("zdr".to_string()),
@@ -7656,6 +7685,7 @@ async fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         multi_agent_v2: MultiAgentV2Config::default(),
         desktop_automation: DesktopAutomationConfig::default(),
         first_moves: FirstMovesConfig::default(),
+        repo_context_scout: RepoContextScoutConfig::default(),
         features: Features::with_defaults().into(),
         suppress_unstable_features_warning: false,
         active_profile: Some("gpt5".to_string()),
