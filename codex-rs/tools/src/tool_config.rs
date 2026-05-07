@@ -106,6 +106,7 @@ pub struct ToolsConfig {
     pub desktop_automation_enabled: bool,
     pub desktop_automation_allow_input: bool,
     pub first_moves_enabled: bool,
+    pub context_ops_enabled: bool,
     pub collab_tools: bool,
     pub goal_tools: bool,
     pub multi_agent_v2: bool,
@@ -183,6 +184,7 @@ impl ToolsConfig {
             && features.enabled(Feature::ImageGeneration)
             && supports_image_generation(model_info);
         let include_desktop_automation = cfg!(windows) && features.enabled(Feature::ComputerUse);
+        let include_context_ops = features.enabled(Feature::ContextOps);
         let exec_permission_approvals_enabled = features.enabled(Feature::ExecPermissionApprovals);
         let request_permissions_tool_enabled = features.enabled(Feature::RequestPermissionsTool);
         let shell_command_backend =
@@ -248,6 +250,7 @@ impl ToolsConfig {
             desktop_automation_enabled: include_desktop_automation,
             desktop_automation_allow_input: include_desktop_automation,
             first_moves_enabled: false,
+            context_ops_enabled: include_context_ops,
             collab_tools: include_collab_tools,
             goal_tools: include_goal_tools,
             multi_agent_v2: include_multi_agent_v2,
@@ -322,6 +325,11 @@ impl ToolsConfig {
 
     pub fn with_first_moves_config(mut self, enabled: bool) -> Self {
         self.first_moves_enabled = enabled;
+        self
+    }
+
+    pub fn with_context_ops_config(mut self, enabled: bool) -> Self {
+        self.context_ops_enabled = enabled;
         self
     }
 

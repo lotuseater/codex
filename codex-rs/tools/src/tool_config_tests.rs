@@ -71,6 +71,38 @@ fn model_provided_unified_exec_requires_feature_flag() {
 }
 
 #[test]
+fn context_ops_requires_feature_flag() {
+    let model_info = model_info();
+    let mut features = Features::with_defaults();
+    let available_models = Vec::new();
+    let default_tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        image_generation_tool_auth_allowed: true,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        permission_profile: &PermissionProfile::Disabled,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+
+    features.enable(Feature::ContextOps);
+    let enabled_tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        image_generation_tool_auth_allowed: true,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        permission_profile: &PermissionProfile::Disabled,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+
+    assert_eq!(default_tools_config.context_ops_enabled, false);
+    assert_eq!(enabled_tools_config.context_ops_enabled, true);
+}
+
+#[test]
 fn unified_exec_can_be_enabled_for_restricted_token_workspace_write() {
     let model_info = model_info();
     let mut features = Features::with_defaults();

@@ -83,12 +83,12 @@ fn task_memory_input_items(items: &[ResponseItem]) -> Vec<TaskMemoryInputItem> {
             } if name == "update_plan" => {
                 Some(TaskMemoryInputItem::UpdatePlanCall(arguments.clone()))
             }
-            _ if let Some(TurnItem::UserMessage(user)) =
-                crate::event_mapping::parse_turn_item(item) =>
-            {
-                Some(TaskMemoryInputItem::UserMessage(user.message()))
-            }
-            _ => None,
+            _ => match crate::event_mapping::parse_turn_item(item) {
+                Some(TurnItem::UserMessage(user)) => {
+                    Some(TaskMemoryInputItem::UserMessage(user.message()))
+                }
+                _ => None,
+            },
         })
         .collect()
 }
@@ -146,7 +146,7 @@ mod tests {
             "C:\\repo",
         ));
 
-        assert!(build_task_memory(&[contextual.clone()]).is_none());
+        assert!(build_task_memory(std::slice::from_ref(&contextual)).is_none());
         assert_eq!(real_user_message_count(&[contextual]), 0);
     }
 

@@ -241,6 +241,10 @@ pub enum Feature {
     RemoteCompactionV2,
     /// Enable workspace dependency support.
     WorkspaceDependencies,
+    /// Enable compact context operation tools.
+    ContextOps,
+    /// Shadow safe shell discovery commands with compact context operations.
+    ContextOpsShadow,
 }
 
 impl Feature {
@@ -1173,6 +1177,18 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::WorkspaceDependencies,
         key: "workspace_dependencies",
         stage: Stage::Stable,
+        default_enabled: true,
+    },
+    FeatureSpec {
+        id: Feature::ContextOps,
+        key: "context_ops",
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::ContextOpsShadow,
+        key: "context_ops_shadow",
+        stage: Stage::UnderDevelopment,
         default_enabled: true,
     },
 ];

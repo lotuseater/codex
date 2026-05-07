@@ -18,7 +18,10 @@ use toml::Value as TomlValue;
 fn under_development_features_are_disabled_by_default() {
     for spec in crate::FEATURES {
         if matches!(spec.stage, Stage::UnderDevelopment) {
-            if spec.id == Feature::ToolSearchAlwaysDeferMcpTools {
+            if matches!(
+                spec.id,
+                Feature::ToolSearchAlwaysDeferMcpTools | Feature::ContextOpsShadow
+            ) {
                 continue;
             }
             assert_eq!(
@@ -38,7 +41,9 @@ fn default_enabled_features_are_stable() {
                 matches!(spec.stage, Stage::Stable | Stage::Removed)
                     || matches!(
                         spec.id,
-                        Feature::TerminalResizeReflow | Feature::ToolSearchAlwaysDeferMcpTools
+                        Feature::TerminalResizeReflow
+                            | Feature::ToolSearchAlwaysDeferMcpTools
+                            | Feature::ContextOpsShadow
                     ),
                 "feature `{}` is enabled by default but is not stable/removed ({:?})",
                 spec.key,
@@ -197,6 +202,16 @@ fn tool_search_always_defer_mcp_tools_is_enabled_by_default_for_local_token_savi
         Feature::ToolSearchAlwaysDeferMcpTools.default_enabled(),
         true
     );
+}
+
+#[test]
+fn context_ops_shadow_is_enabled_by_default_for_local_benchmarking() {
+    assert_eq!(
+        feature_for_key("context_ops_shadow"),
+        Some(Feature::ContextOpsShadow)
+    );
+    assert_eq!(Feature::ContextOpsShadow.stage(), Stage::UnderDevelopment);
+    assert_eq!(Feature::ContextOpsShadow.default_enabled(), true);
 }
 
 #[test]

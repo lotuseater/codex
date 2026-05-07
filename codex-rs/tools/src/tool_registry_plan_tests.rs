@@ -1245,6 +1245,43 @@ fn test_test_model_info_includes_sync_tool() {
 }
 
 #[test]
+fn context_ops_feature_includes_compact_context_tools() {
+    let model_info = model_info();
+    let mut features = Features::with_defaults();
+    features.enable(Feature::ContextOps);
+    let available_models = Vec::new();
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        image_generation_tool_auth_allowed: true,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        permission_profile: &PermissionProfile::Disabled,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+    let (tools, handlers) = build_specs(
+        &tools_config,
+        /*mcp_tools*/ None,
+        /*deferred_mcp_tools*/ None,
+        &[],
+    );
+
+    assert_contains_tool_names(
+        &tools,
+        &["file_outline", "git_worktree_summary", "search_text"],
+    );
+    assert!(find_tool(&tools, "file_outline").supports_parallel_tool_calls);
+    for tool_name in ["file_outline", "git_worktree_summary", "search_text"] {
+        assert!(
+            handlers.iter().any(|handler| handler.name.name == tool_name
+                && handler.kind == ToolHandlerKind::ContextOps),
+            "missing context ops handler for {tool_name}"
+        );
+    }
+}
+
+#[test]
 fn test_build_specs_mcp_tools_converted() {
     let model_info = model_info();
     let mut features = Features::with_defaults();

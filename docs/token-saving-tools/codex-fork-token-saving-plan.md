@@ -108,6 +108,9 @@ Current prototype status:
   found by indexed `cwd`/`updated_at` metadata before scanning JSONL files.
 - Returns `tokens_used` from indexed sessions, so session discovery can also
   identify the conversations spending the most tokens without reading full logs.
+- Adds repo skill `.codex/skills/codex-session-discovery/SKILL.md` so future
+  Codex sessions start from the indexed session path and DAB/live-terminal
+  checks instead of broad JSONL scans.
 - Scans known recent date folders and recently modified older session files, so
   active older sessions are not missed.
 - Uses bounded head/tail reads and returns only recent summaries unless full
@@ -418,6 +421,15 @@ Initial prototype:
   into the artifact-backed output lane; port `session_find` to the native thread
   store or DAB lookup so it avoids PowerShell/sqlite startup and only falls back
   to JSONL scans when indexed state is missing.
+- Canary stage 1 is the opt-in `features.context_ops` native tool set:
+  `file_outline`, `git_worktree_summary`, and `search_text`. It is read-only,
+  disabled by default, and intended for measured use before any automatic shell
+  replacement.
+- Shadow stage 1 is `features.context_ops_shadow`, default-enabled in this
+  fork. It keeps normal shell output model-visible, classifies exact read-only
+  shell discovery commands, runs the compact candidate in the background, and
+  writes `replacement_bench` JSONL plus artifacts under
+  `<codex_log_dir>/replacement-shadow/`.
 
 ## Priority 8: Replace Common Shell Operations With Better Primitives
 
@@ -456,25 +468,31 @@ Adopt in four stages:
 
 Recommended order after the other active build/code session is done:
 
-1. Patch MCP tool exposure so external Wizard first-moves is not direct-default
+1. Finish and canary the read-only `features.context_ops` native tools:
+   `file_outline`, `git_worktree_summary`, and `search_text`.
+2. Ship default-on observe-only `features.context_ops_shadow` for exact safe
+   shell patterns (`git status`/`git diff --stat`, capped `rg`, and whole-file
+   reads) so the next build collects replacement benchmarks without changing
+   model-visible behavior.
+3. Patch MCP tool exposure so external Wizard first-moves is not direct-default
    when native first-moves is available.
-2. Add hard timeout/fail-open around pre-LLM scouts and any external context
+4. Add hard timeout/fail-open around pre-LLM scouts and any external context
    provider.
-3. Add replacement classifier telemetry and the `replacement_bench` report
+5. Add replacement classifier telemetry and the `replacement_bench` report
    schema. This only observes and recommends; it does not change behavior.
-4. Add benchmark fixtures for raw shell/current behavior versus candidate
+6. Add benchmark fixtures for raw shell/current behavior versus candidate
    replacements on the five golden tasks.
-5. Add artifact store types and artifact read/search/list internal tools.
-6. Extend prompt elision to replace large older tool outputs with artifact
+7. Add artifact store types and artifact read/search/list internal tools.
+8. Extend prompt elision to replace large older tool outputs with artifact
    handles.
-7. Add context-plan telemetry with per-layer token estimates.
-8. Add native fast session/log discovery command based on
+9. Add context-plan telemetry with per-layer token estimates.
+10. Add native fast session/log discovery command based on
    `scripts/find-codex-sessions.ps1`.
-9. Add repo-map prototype for Rust symbols and changed-file review hints.
-10. Add scoped instruction shard loader.
-11. Add typed replacement operations for git summary, file index/search,
+11. Add repo-map prototype for Rust symbols and changed-file review hints.
+12. Add scoped instruction shard loader.
+13. Add typed replacement operations for git summary, file index/search,
     session discovery, and capped file slices in `recommend` or `shadow` mode.
-12. Canary only candidates whose `replacement_bench` records pass the quality
+14. Canary only candidates whose `replacement_bench` records pass the quality
     and token gates.
 
 ## Success Criteria

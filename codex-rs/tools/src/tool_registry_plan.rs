@@ -27,6 +27,7 @@ use crate::create_apply_patch_json_tool;
 use crate::create_close_agent_tool_v1;
 use crate::create_close_agent_tool_v2;
 use crate::create_code_mode_tool;
+use crate::create_context_ops_tools;
 use crate::create_create_goal_tool;
 use crate::create_desktop_automation_tools;
 use crate::create_first_moves_tools;
@@ -401,6 +402,18 @@ pub fn build_tool_registry_plan(
                     config.code_mode_enabled,
                 );
                 plan.register_handler(name, ToolHandlerKind::FirstMoves);
+            }
+        }
+
+        if config.context_ops_enabled {
+            for tool in create_context_ops_tools() {
+                let name = tool.name().to_string();
+                plan.push_spec(
+                    tool,
+                    /*supports_parallel_tool_calls*/ true,
+                    config.code_mode_enabled,
+                );
+                plan.register_handler(name, ToolHandlerKind::ContextOps);
             }
         }
 

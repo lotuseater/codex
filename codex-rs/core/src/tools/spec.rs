@@ -78,6 +78,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::CodeModeExecuteHandler;
     use crate::tools::handlers::CodeModeWaitHandler;
     use crate::tools::handlers::ContainerExecHandler;
+    use crate::tools::handlers::ContextOpsHandler;
     use crate::tools::handlers::CreateGoalHandler;
     use crate::tools::handlers::DesktopAutomationHandler;
     use crate::tools::handlers::DynamicToolHandler;
@@ -201,6 +202,9 @@ pub(crate) fn build_specs_with_discoverable_tools(
             }
             ToolHandlerKind::ContainerExec => {
                 builder.register_handler(Arc::new(ContainerExecHandler));
+            }
+            ToolHandlerKind::ContextOps => {
+                builder.register_handler(Arc::new(ContextOpsHandler::new(name)));
             }
             ToolHandlerKind::CreateGoal => {
                 builder.register_handler(Arc::new(CreateGoalHandler));

@@ -387,6 +387,16 @@ Phase 2: shadow replacements.
 - Compare required facts, token counts, output size, and wall time.
 - Keep baseline behavior model-visible.
 
+Current native stage:
+
+- `features.context_ops_shadow` is default-enabled in this fork.
+- It shadows exact safe shell discovery patterns only, leaving the real shell
+  output unchanged.
+- It writes `replacement_bench` JSONL records and full baseline/replacement
+  artifacts under `<codex_log_dir>/replacement-shadow/`.
+- Initial candidates are `git_worktree_summary`, `search_text`, and
+  `file_outline`.
+
 Phase 3: low-risk typed tools.
 
 - Implement `git_worktree_summary`, `diff_summary`, `project_file_index`,

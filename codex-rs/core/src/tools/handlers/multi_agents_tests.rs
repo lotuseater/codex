@@ -2444,7 +2444,7 @@ async fn multi_agent_v2_wait_agent_accepts_timeout_only_argument() {
 #[tokio::test]
 async fn multi_agent_v2_wait_agent_accepts_targeted_waits() {
     let (mut session, mut turn) = make_session_and_context().await;
-    let manager = thread_manager();
+    let manager = thread_manager().await;
     let root = manager
         .start_thread((*turn.config).clone())
         .await
@@ -2531,7 +2531,7 @@ async fn multi_agent_v2_wait_agent_accepts_targeted_waits() {
 #[tokio::test]
 async fn multi_agent_v2_wait_agent_waits_for_all_targeted_agents() {
     let (mut session, mut turn) = make_session_and_context().await;
-    let manager = thread_manager();
+    let manager = thread_manager().await;
     let root = manager
         .start_thread((*turn.config).clone())
         .await

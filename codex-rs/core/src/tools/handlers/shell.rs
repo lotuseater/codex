@@ -24,6 +24,7 @@ use crate::tools::handlers::implicit_granted_permissions;
 use crate::tools::handlers::normalize_and_validate_additional_permissions;
 use crate::tools::handlers::parse_arguments;
 use crate::tools::handlers::parse_arguments_with_base_path;
+use crate::tools::handlers::replacement_shadow;
 use crate::tools::handlers::resolve_workdir_base_path;
 use crate::tools::hook_names::HookToolName;
 use crate::tools::orchestrator::ToolOrchestrator;
@@ -698,7 +699,7 @@ impl ShellHandler {
 
         let req = ShellRequest {
             command: exec_params.command.clone(),
-            hook_command,
+            hook_command: hook_command.clone(),
             cwd: exec_params.cwd.clone(),
             timeout_ms: exec_params.expiration.timeout_ms(),
             env: exec_params.env.clone(),
@@ -750,6 +751,16 @@ impl ShellHandler {
             .map(|output| crate::tools::format_exec_output_str(output, turn.truncation_policy))
             .map(JsonValue::String);
         let content = emitter.finish(event_ctx, out).await?;
+        if turn.features.enabled(Feature::ContextOpsShadow) {
+            replacement_shadow::maybe_spawn_shell_shadow(replacement_shadow::ShellShadowRequest {
+                tool_name: tool_ctx.tool_name.clone(),
+                call_id: call_id.clone(),
+                command: hook_command,
+                cwd: exec_params.cwd.to_path_buf(),
+                baseline_model_visible_output: content.clone(),
+                log_dir: turn.config.log_dir.clone(),
+            });
+        }
         Ok(FunctionToolOutput {
             body: vec![
                 codex_protocol::models::FunctionCallOutputContentItem::InputText { text: content },
