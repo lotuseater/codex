@@ -341,7 +341,7 @@ fn tool_search_payloads_roundtrip_as_tool_search_outputs() {
             description: String::new(),
             strict: false,
             defer_loading: Some(true),
-            parameters: codex_tools::JsonSchema::object(
+            parameters: codex_tool_schema::JsonSchema::object(
                 /*properties*/ Default::default(),
                 /*required*/ None,
                 /*additional_properties*/ None,

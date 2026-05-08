@@ -1,4 +1,4 @@
-use crate::JsonSchema;
+use codex_tool_schema::JsonSchema;
 use serde_json::Value as JsonValue;
 
 /// Tool metadata and schemas that downstream crates can adapt into higher-level

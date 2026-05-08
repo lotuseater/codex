@@ -1,7 +1,7 @@
-use crate::AdditionalProperties;
-use crate::JsonSchema;
 use crate::ResponsesApiTool;
 use crate::ToolSpec;
+use codex_tool_schema::AdditionalProperties;
+use codex_tool_schema::JsonSchema;
 use std::collections::BTreeMap;
 
 pub const FILE_OUTLINE_TOOL_NAME: &str = "file_outline";

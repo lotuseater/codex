@@ -3,9 +3,9 @@
 //! These specs expose goal read/update primitives to the model while keeping
 //! usage accounting system-managed.
 
-use crate::JsonSchema;
 use crate::ResponsesApiTool;
 use crate::ToolSpec;
+use codex_tool_schema::JsonSchema;
 use serde_json::json;
 use std::collections::BTreeMap;
 

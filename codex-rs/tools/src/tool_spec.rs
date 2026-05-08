@@ -1,5 +1,4 @@
 use crate::FreeformTool;
-use crate::JsonSchema;
 use crate::LoadableToolSpec;
 use crate::ResponsesApiNamespace;
 use crate::ResponsesApiTool;
@@ -10,6 +9,7 @@ use codex_protocol::config_types::WebSearchMode;
 use codex_protocol::config_types::WebSearchUserLocation as ConfigWebSearchUserLocation;
 use codex_protocol::config_types::WebSearchUserLocationType;
 use codex_protocol::openai_models::WebSearchToolType;
+use codex_tool_schema::JsonSchema;
 use serde::Serialize;
 use serde_json::Value;
 

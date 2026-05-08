@@ -1,4 +1,3 @@
-use crate::JsonSchema;
 use crate::LoadableToolSpec;
 use crate::ResponsesApiNamespace;
 use crate::ResponsesApiNamespaceTool;
@@ -8,6 +7,7 @@ use crate::ToolSpec;
 use crate::default_namespace_description;
 use crate::mcp_tool_to_deferred_responses_api_tool;
 use codex_app_server_protocol::AppInfo;
+use codex_tool_schema::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;

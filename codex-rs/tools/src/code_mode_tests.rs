@@ -2,13 +2,13 @@ use super::augment_tool_spec_for_code_mode;
 use super::create_code_mode_tool;
 use super::create_wait_tool;
 use super::tool_spec_to_code_mode_tool_definition;
-use crate::AdditionalProperties;
 use crate::FreeformTool;
 use crate::FreeformToolFormat;
-use crate::JsonSchema;
 use crate::ResponsesApiTool;
 use crate::ToolName;
 use crate::ToolSpec;
+use codex_tool_schema::AdditionalProperties;
+use codex_tool_schema::JsonSchema;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -71,7 +71,7 @@ declare const tools: { lookup_order(args: { order_id: string; }): Promise<{ ok: 
 fn augment_tool_spec_for_code_mode_preserves_exec_tool_description() {
     assert_eq!(
         augment_tool_spec_for_code_mode(ToolSpec::Freeform(FreeformTool {
-            name: codex_code_mode::PUBLIC_TOOL_NAME.to_string(),
+            name: codex_code_mode_spec::PUBLIC_TOOL_NAME.to_string(),
             description: "Run code".to_string(),
             format: FreeformToolFormat {
                 r#type: "grammar".to_string(),
@@ -80,7 +80,7 @@ fn augment_tool_spec_for_code_mode_preserves_exec_tool_description() {
             },
         })),
         ToolSpec::Freeform(FreeformTool {
-            name: codex_code_mode::PUBLIC_TOOL_NAME.to_string(),
+            name: codex_code_mode_spec::PUBLIC_TOOL_NAME.to_string(),
             description: "Run code".to_string(),
             format: FreeformToolFormat {
                 r#type: "grammar".to_string(),
@@ -105,7 +105,7 @@ fn tool_spec_to_code_mode_tool_definition_returns_augmented_nested_tools() {
 
     assert_eq!(
         tool_spec_to_code_mode_tool_definition(&spec),
-        Some(codex_code_mode::ToolDefinition {
+        Some(codex_code_mode_spec::ToolDefinition {
             name: "apply_patch".to_string(),
             tool_name: ToolName::plain("apply_patch"),
             description: r#"Apply a patch
@@ -115,7 +115,7 @@ exec tool declaration:
 declare const tools: { apply_patch(input: string): Promise<unknown>; };
 ```"#
                 .to_string(),
-            kind: codex_code_mode::CodeModeToolKind::Freeform,
+            kind: codex_code_mode_spec::CodeModeToolKind::Freeform,
             input_schema: None,
             output_schema: None,
         })
@@ -143,11 +143,11 @@ fn create_wait_tool_matches_expected_spec() {
     assert_eq!(
         create_wait_tool(),
         ToolSpec::Function(ResponsesApiTool {
-            name: codex_code_mode::WAIT_TOOL_NAME.to_string(),
+            name: codex_code_mode_spec::WAIT_TOOL_NAME.to_string(),
             description: format!(
                 "Waits on a yielded `{}` cell and returns new output or completion.\n{}",
-                codex_code_mode::PUBLIC_TOOL_NAME,
-                codex_code_mode::build_wait_tool_description().trim()
+                codex_code_mode_spec::PUBLIC_TOOL_NAME,
+                codex_code_mode_spec::build_wait_tool_description().trim()
             ),
             strict: false,
             defer_loading: None,
@@ -184,11 +184,11 @@ fn create_wait_tool_matches_expected_spec() {
 
 #[test]
 fn create_code_mode_tool_matches_expected_spec() {
-    let enabled_tools = vec![codex_code_mode::ToolDefinition {
+    let enabled_tools = vec![codex_code_mode_spec::ToolDefinition {
         name: "update_plan".to_string(),
         tool_name: ToolName::plain("update_plan"),
         description: "Update the plan".to_string(),
-        kind: codex_code_mode::CodeModeToolKind::Function,
+        kind: codex_code_mode_spec::CodeModeToolKind::Function,
         input_schema: None,
         output_schema: None,
     }];
@@ -201,8 +201,8 @@ fn create_code_mode_tool_matches_expected_spec() {
             /*deferred_tools_available*/ false,
         ),
         ToolSpec::Freeform(FreeformTool {
-            name: codex_code_mode::PUBLIC_TOOL_NAME.to_string(),
-            description: codex_code_mode::build_exec_tool_description(
+            name: codex_code_mode_spec::PUBLIC_TOOL_NAME.to_string(),
+            description: codex_code_mode_spec::build_exec_tool_description(
                 &enabled_tools,
                 &BTreeMap::new(),
                 /*code_mode_only*/ true,

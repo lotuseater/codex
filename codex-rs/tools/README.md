@@ -4,12 +4,10 @@
 shared across multiple crates and does not need to stay coupled to
 `codex-core`.
 
-Today this crate is intentionally small. It currently owns the shared tool
-schema and Responses API tool primitives that no longer need to live in
+Today this crate is intentionally small. It currently owns shared tool
+Responses API primitives that no longer need to live in
 `core/src/tools/spec.rs` or `core/src/client_common.rs`:
 
-- `JsonSchema`
-- `AdditionalProperties`
 - `ToolDefinition`
 - `ToolSpec`
 - `ConfiguredToolSpec`
@@ -28,7 +26,6 @@ schema and Responses API tool primitives that no longer need to live in
   `request_user_input`, and CSV fanout/reporting
 - discoverable-tool models, client filtering, and `ToolSpec` builders for
   `tool_search` and `request_plugin_install`
-- `parse_tool_input_schema()`
 - `parse_dynamic_tool()`
 - `parse_mcp_tool()`
 - `create_tools_json_for_responses_api()`
@@ -40,6 +37,10 @@ schema and Responses API tool primitives that no longer need to live in
 - `mcp_tool_to_deferred_responses_api_tool()`
 - `augment_tool_spec_for_code_mode()`
 - `tool_spec_to_code_mode_tool_definition()`
+
+JSON Schema primitives and tool input schema parsing live in `codex-tool-schema`.
+Consumers should depend on that crate directly instead of importing those types
+through `codex-tools`.
 
 That extraction is the first step in a longer migration. The goal is not to
 move all of `core/src/tools` into this crate in one shot. Instead, the plan is
@@ -76,8 +77,9 @@ The expected migration shape is:
 4. Only extract higher-level tool infrastructure after the crate boundaries are
    clear and independently testable.
 
-That means it is normal for `codex-core` to temporarily re-export types or
-helpers from `codex-tools` during the transition.
+Avoid permanent compatibility re-exports: they keep old coupling in place and
+make compile-time improvements harder to see. If a temporary re-export is needed
+for a narrow migration, remove it before the slice is considered complete.
 
 ## Crate conventions
 

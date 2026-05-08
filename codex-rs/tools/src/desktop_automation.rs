@@ -1,7 +1,7 @@
-use crate::AdditionalProperties;
-use crate::JsonSchema;
 use crate::ResponsesApiTool;
 use crate::ToolSpec;
+use codex_tool_schema::AdditionalProperties;
+use codex_tool_schema::JsonSchema;
 use serde_json::json;
 use std::collections::BTreeMap;
 

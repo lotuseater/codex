@@ -1,5 +1,5 @@
 use super::ToolDefinition;
-use crate::JsonSchema;
+use codex_tool_schema::JsonSchema;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 

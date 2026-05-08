@@ -1,6 +1,6 @@
-use crate::JsonSchema;
 use crate::ResponsesApiTool;
 use crate::ToolSpec;
+use codex_tool_schema::JsonSchema;
 use std::collections::BTreeMap;
 
 pub fn create_list_mcp_resources_tool() -> ToolSpec {

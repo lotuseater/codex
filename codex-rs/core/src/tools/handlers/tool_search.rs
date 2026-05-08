@@ -239,7 +239,7 @@ mod tests {
                             description: "Create events desktop tool".to_string(),
                             strict: false,
                             defer_loading: Some(true),
-                            parameters: codex_tools::JsonSchema::object(
+                            parameters: codex_tool_schema::JsonSchema::object(
                                 Default::default(),
                                 /*required*/ None,
                                 Some(false.into()),
@@ -251,7 +251,7 @@ mod tests {
                             description: "List events desktop tool".to_string(),
                             strict: false,
                             defer_loading: Some(true),
-                            parameters: codex_tools::JsonSchema::object(
+                            parameters: codex_tool_schema::JsonSchema::object(
                                 Default::default(),
                                 /*required*/ None,
                                 Some(false.into()),
@@ -269,10 +269,10 @@ mod tests {
                             .to_string(),
                         strict: false,
                         defer_loading: Some(true),
-                        parameters: codex_tools::JsonSchema::object(
+                        parameters: codex_tool_schema::JsonSchema::object(
                             std::collections::BTreeMap::from([(
                                 "mode".to_string(),
-                                codex_tools::JsonSchema::string(/*description*/ None),
+                                codex_tool_schema::JsonSchema::string(/*description*/ None),
                             )]),
                             Some(vec!["mode".to_string()]),
                             Some(false.into()),

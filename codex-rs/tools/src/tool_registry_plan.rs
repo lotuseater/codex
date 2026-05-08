@@ -91,7 +91,7 @@ pub fn build_tool_registry_plan(
             .map(|(namespace, detail)| {
                 (
                     namespace.clone(),
-                    codex_code_mode::ToolNamespaceDescription {
+                    codex_code_mode_spec::ToolNamespaceDescription {
                         name: detail.name.clone(),
                         description: detail.description.clone().unwrap_or_default(),
                     },
@@ -128,7 +128,7 @@ pub fn build_tool_registry_plan(
             config.code_mode_enabled,
         );
         plan.register_handler(
-            codex_code_mode::PUBLIC_TOOL_NAME,
+            codex_code_mode_spec::PUBLIC_TOOL_NAME,
             ToolHandlerKind::CodeModeExecute,
         );
         plan.push_spec(
@@ -137,7 +137,7 @@ pub fn build_tool_registry_plan(
             config.code_mode_enabled,
         );
         plan.register_handler(
-            codex_code_mode::WAIT_TOOL_NAME,
+            codex_code_mode_spec::WAIT_TOOL_NAME,
             ToolHandlerKind::CodeModeWait,
         );
     }
@@ -678,9 +678,9 @@ pub fn build_tool_registry_plan(
 }
 
 fn compare_code_mode_tools(
-    left: &codex_code_mode::ToolDefinition,
-    right: &codex_code_mode::ToolDefinition,
-    namespace_descriptions: &BTreeMap<String, codex_code_mode::ToolNamespaceDescription>,
+    left: &codex_code_mode_spec::ToolDefinition,
+    right: &codex_code_mode_spec::ToolDefinition,
+    namespace_descriptions: &BTreeMap<String, codex_code_mode_spec::ToolNamespaceDescription>,
 ) -> std::cmp::Ordering {
     let left_namespace = code_mode_namespace_name(left, namespace_descriptions);
     let right_namespace = code_mode_namespace_name(right, namespace_descriptions);
@@ -692,8 +692,8 @@ fn compare_code_mode_tools(
 }
 
 fn code_mode_namespace_name<'a>(
-    tool: &codex_code_mode::ToolDefinition,
-    namespace_descriptions: &'a BTreeMap<String, codex_code_mode::ToolNamespaceDescription>,
+    tool: &codex_code_mode_spec::ToolDefinition,
+    namespace_descriptions: &'a BTreeMap<String, codex_code_mode_spec::ToolNamespaceDescription>,
 ) -> Option<&'a str> {
     tool.tool_name
         .namespace

@@ -1,7 +1,7 @@
 use super::mcp_call_tool_result_output_schema;
 use super::parse_mcp_tool;
-use crate::JsonSchema;
 use crate::ToolDefinition;
+use codex_tool_schema::JsonSchema;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 

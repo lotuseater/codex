@@ -25,6 +25,7 @@ members = [
     "install-context",
     "codex-backend-openapi-models",
     "code-mode",
+    "code-mode-spec",
     "cloud-requirements",
     "cloud-tasks",
     "cloud-tasks-client",
@@ -116,6 +117,7 @@ members = [
     "test-binary-support",
     "thread-manager-sample",
     "thread-store",
+    "tool-schema",
     "uds",
     "codex-experimental-api-macros",
     "plugin",
@@ -160,6 +162,7 @@ codex-cloud-requirements = { path = "cloud-requirements" }
 codex-cloud-tasks-client = { path = "cloud-tasks-client" }
 codex-cloud-tasks-mock-client = { path = "cloud-tasks-mock-client" }
 codex-code-mode = { path = "code-mode" }
+codex-code-mode-spec = { path = "code-mode-spec" }
 codex-config = { path = "config" }
 codex-connectors = { path = "connectors" }
 codex-context-ops-impl = { path = "context-ops-impl" }
@@ -225,6 +228,7 @@ codex-stdio-to-uds = { path = "stdio-to-uds" }
 codex-terminal-detection = { path = "terminal-detection" }
 codex-test-binary-support = { path = "test-binary-support" }
 codex-thread-store = { path = "thread-store" }
+codex-tool-schema = { path = "tool-schema" }
 codex-tools = { path = "tools" }
 codex-tui = { path = "tui" }
 codex-uds = { path = "uds" }

@@ -1897,7 +1897,7 @@ dependencies = [
  "codex-shell-command",
  "codex-state",
  "codex-thread-store",
- "codex-tools",
+ "codex-tool-schema",
  "codex-utils-absolute-path",
  "codex-utils-cargo-bin",
  "codex-utils-cli",
@@ -2352,6 +2352,7 @@ version = "0.0.0"
 dependencies = [
  "async-channel",
  "async-trait",
+ "codex-code-mode-spec",
  "codex-protocol",
  "deno_core_icudata",
  "pretty_assertions",
@@ -2361,6 +2362,16 @@ dependencies = [
  "tokio-util",
  "tracing",
  "v8",
+]
+
+[[package]]
+name = "codex-code-mode-spec"
+version = "0.0.0"
+dependencies = [
+ "codex-protocol",
+ "pretty_assertions",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2504,6 +2515,7 @@ dependencies = [
  "codex-terminal-detection",
  "codex-test-binary-support",
  "codex-thread-store",
+ "codex-tool-schema",
  "codex-tools",
  "codex-utils-absolute-path",
  "codex-utils-cache",
@@ -3772,13 +3784,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-tool-schema"
+version = "0.0.0"
+dependencies = [
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "codex-tools"
 version = "0.0.0"
 dependencies = [
  "codex-app-server-protocol",
- "codex-code-mode",
+ "codex-code-mode-spec",
  "codex-features",
  "codex-protocol",
+ "codex-tool-schema",
  "codex-utils-absolute-path",
  "codex-utils-pty",
  "pretty_assertions",

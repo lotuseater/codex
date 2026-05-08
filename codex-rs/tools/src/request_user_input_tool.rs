@@ -1,4 +1,3 @@
-use crate::JsonSchema;
 use crate::ResponsesApiTool;
 use crate::ToolSpec;
 use codex_features::Feature;
@@ -6,6 +5,7 @@ use codex_features::Features;
 use codex_protocol::config_types::ModeKind;
 use codex_protocol::config_types::TUI_VISIBLE_COLLABORATION_MODES;
 use codex_protocol::request_user_input::RequestUserInputArgs;
+use codex_tool_schema::JsonSchema;
 use std::collections::BTreeMap;
 
 pub const REQUEST_USER_INPUT_TOOL_NAME: &str = "request_user_input";

@@ -1,6 +1,6 @@
 use super::*;
-use crate::JsonSchema;
 use codex_app_server_protocol::AppInfo;
+use codex_tool_schema::JsonSchema;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use std::collections::BTreeMap;

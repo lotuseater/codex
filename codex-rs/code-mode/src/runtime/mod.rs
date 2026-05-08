@@ -9,14 +9,14 @@ use std::sync::OnceLock;
 use std::sync::mpsc as std_mpsc;
 use std::thread;
 
+use codex_code_mode_spec::EnabledToolMetadata;
+use codex_code_mode_spec::ToolDefinition;
+use codex_code_mode_spec::enabled_tool_metadata;
 use codex_protocol::ToolName;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use tokio::sync::mpsc;
 
-use crate::description::EnabledToolMetadata;
-use crate::description::ToolDefinition;
-use crate::description::enabled_tool_metadata;
 use crate::response::FunctionCallOutputContentItem;
 
 pub const DEFAULT_EXEC_YIELD_TIME_MS: u64 = 10_000;

@@ -1,8 +1,8 @@
 use crate::FreeformTool;
 use crate::FreeformToolFormat;
-use crate::JsonSchema;
 use crate::ResponsesApiTool;
 use crate::ToolSpec;
+use codex_tool_schema::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;

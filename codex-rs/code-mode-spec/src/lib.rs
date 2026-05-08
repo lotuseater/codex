@@ -4,8 +4,6 @@ use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 
-use crate::PUBLIC_TOOL_NAME;
-
 const MAX_JS_SAFE_INTEGER: u64 = (1_u64 << 53) - 1;
 const CODE_MODE_ONLY_PREFACE: &str =
     "Use `exec/wait` tool to run all other tools, do not attempt to use any other tools directly";
@@ -121,6 +119,8 @@ type CallToolResult<TStructured = { [key: string]: unknown }> = {
 };"#;
 
 pub const CODE_MODE_PRAGMA_PREFIX: &str = "// @exec:";
+pub const PUBLIC_TOOL_NAME: &str = "exec";
+pub const WAIT_TOOL_NAME: &str = "wait";
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -246,7 +246,7 @@ pub fn parse_exec_source(input: &str) -> Result<ParsedExecSource, String> {
 }
 
 pub fn is_code_mode_nested_tool(tool_name: &str) -> bool {
-    tool_name != crate::PUBLIC_TOOL_NAME && tool_name != crate::WAIT_TOOL_NAME
+    tool_name != PUBLIC_TOOL_NAME && tool_name != WAIT_TOOL_NAME
 }
 
 pub fn build_exec_tool_description(
