@@ -29,6 +29,7 @@ fn classify_shell_control_shadow(command: &str) -> Option<ReplacementCandidate> 
         .or_else(|| classify_file_excerpt_shell_control(command))
         .or_else(|| classify_rg_file_set_shell_control(command))
         .or_else(|| classify_file_inventory_shell_control(command))
+        .or_else(|| classify_run_check_shell_control(command))
         .or_else(|| classify_select_string_shell_control(command))
         .or_else(|| classify_directory_listing_shell_control(command))
         .or_else(|| {
@@ -707,6 +708,22 @@ fn classify_directory_listing_shell_control(command: &str) -> Option<Replacement
     .then_some(ReplacementCandidate::DirectoryListingCompact)
 }
 
+fn classify_run_check_shell_control(command: &str) -> Option<ReplacementCandidate> {
+    let primary = primary_shell_segment(command);
+    let tokens = shell_tokens(primary)?;
+    classify_run_check_digest_candidate(&tokens)
+}
+
+fn primary_shell_segment(command: &str) -> &str {
+    let mut end = command.len();
+    for marker in ["&&", "||", "|", ";", "\n", "\r"] {
+        if let Some(index) = command.find(marker) {
+            end = end.min(index);
+        }
+    }
+    command[..end].trim()
+}
+
 fn command_looks_like_check(command: &str) -> bool {
     let lower = command.to_ascii_lowercase();
     lower.contains("cargo test")
@@ -1092,12 +1109,26 @@ mod tests {
             classify_shell_replacement("grep -R replacement_shadow codex-rs | head -n 20"),
             Some(ReplacementCandidate::SelectStringDigest)
         );
+        assert_eq!(
+            classify_shell_replacement("cargo test 2>&1 | Select-String error"),
+            Some(ReplacementCandidate::RunCheckDigest)
+        );
+        assert_eq!(
+            classify_shell_replacement("cargo test 2>&1 | grep failed"),
+            Some(ReplacementCandidate::RunCheckDigest)
+        );
     }
 
     #[test]
     fn search_patterns_that_look_like_checks_stay_search_shadows() {
         assert_eq!(
             classify_shell_replacement("Select-String -Path *.rs -Pattern 'cargo test'"),
+            Some(ReplacementCandidate::SelectStringDigest)
+        );
+        assert_eq!(
+            classify_shell_replacement(
+                "Get-Content build.log | Select-String -Pattern 'cargo test'"
+            ),
             Some(ReplacementCandidate::SelectStringDigest)
         );
         assert_eq!(
