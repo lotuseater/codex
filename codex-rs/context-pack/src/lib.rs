@@ -33,7 +33,7 @@ pub fn render_graphify_scout_pack(request: &ContextPackRequest<'_>) -> Option<St
     if !should_render_context_pack(request.prompt) {
         return None;
     }
-    let mut files = repo_inventory(request.project_root);
+    let mut files = repo_inventory(request.project_root, request.prompt);
     if files.is_empty() {
         return None;
     }
@@ -197,25 +197,25 @@ fn should_render_context_pack(prompt: &str) -> bool {
     taskish && prompt_terms(prompt).len() >= 2
 }
 
-fn repo_inventory(root: &Path) -> Vec<FileCandidate> {
+fn repo_inventory(root: &Path, prompt: &str) -> Vec<FileCandidate> {
     WalkDir::new(root)
         .follow_links(false)
         .into_iter()
-        .filter_entry(|entry| should_visit_entry(root, entry))
+        .filter_entry(|entry| should_visit_entry(root, entry, prompt))
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().is_file())
         .filter_map(|entry| {
             let rel = entry.path().strip_prefix(root).ok()?;
             let path = normalize_slashes(rel.display().to_string());
             (!is_generated_path(&path)
-                && !is_low_value_pack_path(&path)
+                && !is_low_value_pack_path(&path, prompt)
                 && is_candidate_file(&path))
             .then_some(FileCandidate { path, score: 0 })
         })
         .collect()
 }
 
-fn should_visit_entry(root: &Path, entry: &DirEntry) -> bool {
+fn should_visit_entry(root: &Path, entry: &DirEntry, prompt: &str) -> bool {
     if entry.depth() == 0 || !entry.file_type().is_dir() {
         return true;
     }
@@ -223,7 +223,7 @@ fn should_visit_entry(root: &Path, entry: &DirEntry) -> bool {
         return false;
     };
     let path = normalize_slashes(rel.display().to_string());
-    !is_generated_path(&path) && !is_low_value_pack_path(&path)
+    !is_generated_path(&path) && !is_low_value_pack_path(&path, prompt)
 }
 
 fn path_prompt_score(path: &str, terms: &BTreeSet<String>) -> i64 {
@@ -387,12 +387,20 @@ fn is_generated_path(path: &str) -> bool {
     })
 }
 
-fn is_low_value_pack_path(path: &str) -> bool {
+fn is_low_value_pack_path(path: &str, prompt: &str) -> bool {
     let lower = path.to_ascii_lowercase();
-    lower.starts_with("reports/")
-        || lower.contains("/current_scout_cache/")
+    if lower == "reports" || lower.starts_with("reports/") {
+        return !prompt_explicitly_mentions_path(prompt, path);
+    }
+    lower.contains("/current_scout_cache/")
         || lower.contains("/op-compare-")
         || lower.starts_with("docs/_generated")
+}
+
+fn prompt_explicitly_mentions_path(prompt: &str, path: &str) -> bool {
+    let prompt = normalize_slashes(prompt).to_ascii_lowercase();
+    let path = normalize_slashes(path).to_ascii_lowercase();
+    prompt.contains(&path)
 }
 
 #[cfg(test)]
@@ -480,7 +488,7 @@ mod tests {
         )
         .expect("write generated");
 
-        let inventory = repo_inventory(temp.path());
+        let inventory = repo_inventory(temp.path(), "Find raremarker context pack routing");
         assert!(
             inventory
                 .iter()
@@ -491,6 +499,48 @@ mod tests {
         let pack = render_graphify_scout_pack(&request).expect("pack");
         assert!(!pack.contains("target/"));
         assert!(pack.contains("src/useful.rs"));
+    }
+
+    #[test]
+    fn preserves_explicitly_requested_report_file() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(temp.path().join("reports")).expect("mkdir reports");
+        fs::create_dir_all(temp.path().join("src")).expect("mkdir src");
+        fs::write(
+            temp.path()
+                .join("reports/codex-context-pack-canary-results-2026-05-08.md"),
+            "context pack canary results",
+        )
+        .expect("write report");
+        fs::write(temp.path().join("src/context_pack.rs"), "context pack").expect("write src");
+
+        let request = ContextPackRequest::new(
+            temp.path(),
+            "please inspect reports/codex-context-pack-canary-results-2026-05-08.md",
+        );
+        let pack = render_graphify_scout_pack(&request).expect("pack");
+
+        assert!(pack.contains("reports/codex-context-pack-canary-results-2026-05-08.md"));
+    }
+
+    #[test]
+    fn prunes_unmentioned_report_files() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(temp.path().join("reports")).expect("mkdir reports");
+        fs::create_dir_all(temp.path().join("src")).expect("mkdir src");
+        fs::write(
+            temp.path()
+                .join("reports/codex-context-pack-canary-results-2026-05-08.md"),
+            "context pack canary results",
+        )
+        .expect("write report");
+        fs::write(temp.path().join("src/context_pack.rs"), "context pack").expect("write src");
+
+        let request = ContextPackRequest::new(temp.path(), "please inspect context pack routing");
+        let pack = render_graphify_scout_pack(&request).expect("pack");
+
+        assert!(pack.contains("src/context_pack.rs"));
+        assert!(!pack.contains("reports/"));
     }
 
     #[test]
