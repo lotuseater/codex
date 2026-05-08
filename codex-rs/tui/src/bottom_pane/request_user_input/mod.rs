@@ -57,6 +57,7 @@ const UNANSWERED_CONFIRM_GO_BACK_DESC: &str = "Return to the first unanswered qu
 const UNANSWERED_CONFIRM_SUBMIT: &str = "Proceed";
 const UNANSWERED_CONFIRM_SUBMIT_DESC_SINGULAR: &str = "question";
 const UNANSWERED_CONFIRM_SUBMIT_DESC_PLURAL: &str = "questions";
+pub(crate) const REQUEST_USER_INPUT_VIEW_ID: &str = "request_user_input";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Focus {
@@ -720,9 +721,26 @@ impl RequestUserInputOverlay {
         }
     }
 
+    fn complete_with_answers(&mut self, answers: HashMap<String, ToolRequestUserInputAnswer>) {
+        self.confirm_unanswered = None;
+        self.app_event_tx.user_input_answer(
+            self.request.turn_id.clone(),
+            ToolRequestUserInputResponse {
+                answers: answers.clone(),
+            },
+        );
+        self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
+            history_cell::RequestUserInputResultCell {
+                questions: self.request.questions.clone(),
+                answers,
+                interrupted: false,
+            },
+        )));
+        self.advance_queue_or_complete();
+    }
+
     /// Build the response payload and dispatch it to the app.
     fn submit_answers(&mut self) {
-        self.confirm_unanswered = None;
         self.save_current_draft();
         let mut answers = HashMap::new();
         for (idx, question) in self.request.questions.iter().enumerate() {
@@ -755,20 +773,48 @@ impl RequestUserInputOverlay {
                 },
             );
         }
-        self.app_event_tx.user_input_answer(
-            self.request.turn_id.clone(),
-            ToolRequestUserInputResponse {
-                answers: answers.clone(),
-            },
-        );
-        self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
-            history_cell::RequestUserInputResultCell {
-                questions: self.request.questions.clone(),
-                answers,
-                interrupted: false,
-            },
-        )));
-        self.advance_queue_or_complete();
+        self.complete_with_answers(answers);
+    }
+
+    fn auto_loop_answer_for_question(
+        question: &ToolRequestUserInputQuestion,
+    ) -> Option<ToolRequestUserInputAnswer> {
+        if question.is_secret {
+            return None;
+        }
+
+        let has_options = question
+            .options
+            .as_ref()
+            .is_some_and(|options| !options.is_empty());
+        codex_agent_policy::auto_loop_request_user_input_answers(
+            question.is_secret,
+            question.is_other,
+            has_options,
+            OTHER_OPTION_LABEL,
+        )
+        .map(|answers| ToolRequestUserInputAnswer { answers })
+    }
+
+    fn auto_loop_answers(&self) -> Option<HashMap<String, ToolRequestUserInputAnswer>> {
+        if self.request.questions.is_empty() {
+            return None;
+        }
+        if self.answers.iter().any(|answer| {
+            answer.answer_committed || !answer.draft.text_with_pending().trim().is_empty()
+        }) || !self.composer.current_text_with_pending().trim().is_empty()
+        {
+            return None;
+        }
+
+        self.request
+            .questions
+            .iter()
+            .map(|question| {
+                Self::auto_loop_answer_for_question(question)
+                    .map(|answer| (question.id.clone(), answer))
+            })
+            .collect()
     }
 
     fn dismiss_resolved_request(&mut self, request: &ResolvedAppServerRequest) -> bool {
@@ -1005,6 +1051,25 @@ impl RequestUserInputOverlay {
 }
 
 impl BottomPaneView for RequestUserInputOverlay {
+    fn view_id(&self) -> Option<&'static str> {
+        Some(REQUEST_USER_INPUT_VIEW_ID)
+    }
+
+    fn auto_loop_prompt_signature(&self) -> Option<String> {
+        Some(format!(
+            "request_user_input:{}:{}",
+            self.request.turn_id, self.request.item_id
+        ))
+    }
+
+    fn try_auto_loop_prompt_action(&mut self) -> bool {
+        let Some(answers) = self.auto_loop_answers() else {
+            return false;
+        };
+        self.complete_with_answers(answers);
+        true
+    }
+
     fn prefer_esc_to_handle_key_event(&self) -> bool {
         true
     }
@@ -1698,6 +1763,89 @@ mod tests {
         assert_eq!(id, "turn-1");
         let answer = response.answers.get("q1").expect("answer missing");
         assert_eq!(answer.answers, Vec::<String>::new());
+    }
+
+    #[test]
+    fn auto_loop_selects_other_with_long_horizon_note() {
+        let (tx, mut rx) = test_sender();
+        let mut overlay = RequestUserInputOverlay::new(
+            request_event(
+                "turn-1",
+                vec![question_with_options_and_other("q1", "Pick one")],
+            ),
+            tx,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
+        );
+
+        assert_eq!(
+            overlay.auto_loop_prompt_signature(),
+            Some("request_user_input:turn-1:call-1".to_string())
+        );
+        assert!(overlay.try_auto_loop_prompt_action());
+
+        let event = rx.try_recv().expect("expected AppEvent");
+        let AppEvent::CodexOp(Op::UserInputAnswer { response, .. }) = event else {
+            panic!("expected UserInputAnswer");
+        };
+        let answer = response.answers.get("q1").expect("answer missing");
+        assert_eq!(
+            answer.answers,
+            vec![
+                "None of the above".to_string(),
+                format!(
+                    "user_note: {}",
+                    codex_agent_policy::AUTO_LOOP_MULTI_OPTION_NOTE
+                )
+            ]
+        );
+    }
+
+    #[test]
+    fn auto_loop_answers_multi_option_question_with_long_horizon_note_only() {
+        let (tx, mut rx) = test_sender();
+        let mut question = question_with_options_and_other("q1", "Pick one");
+        question.is_other = false;
+        let mut overlay = RequestUserInputOverlay::new(
+            request_event("turn-1", vec![question]),
+            tx,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
+        );
+
+        assert!(overlay.try_auto_loop_prompt_action());
+
+        let event = rx.try_recv().expect("expected AppEvent");
+        let AppEvent::CodexOp(Op::UserInputAnswer { response, .. }) = event else {
+            panic!("expected UserInputAnswer");
+        };
+        let answer = response.answers.get("q1").expect("answer missing");
+        assert_eq!(
+            answer.answers,
+            vec![format!(
+                "user_note: {}",
+                codex_agent_policy::AUTO_LOOP_MULTI_OPTION_NOTE
+            )]
+        );
+    }
+
+    #[test]
+    fn auto_loop_does_not_answer_secret_question() {
+        let (tx, mut rx) = test_sender();
+        let mut question = question_with_options_and_other("q1", "Pick one");
+        question.is_secret = true;
+        let mut overlay = RequestUserInputOverlay::new(
+            request_event("turn-1", vec![question]),
+            tx,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
+        );
+
+        assert!(!overlay.try_auto_loop_prompt_action());
+        assert!(rx.try_recv().is_err());
     }
 
     #[test]

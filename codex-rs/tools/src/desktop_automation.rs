@@ -39,6 +39,7 @@ pub fn create_desktop_automation_tools(allow_input: bool) -> Vec<ToolSpec> {
             "Capture a screenshot of a target window, or the primary screen when no target is supplied. Returns image content when the model supports images.",
             target_schema([
                 ("path", JsonSchema::string(Some("Optional PNG output path. Defaults to a temporary file.".to_string()))),
+                ("embed_image", JsonSchema::boolean(Some("Set false to save the screenshot path without embedding base64 image data.".to_string()))),
             ]),
         ),
         create_tool(
@@ -47,6 +48,7 @@ pub fn create_desktop_automation_tools(allow_input: bool) -> Vec<ToolSpec> {
             target_schema([
                 ("path", JsonSchema::string(Some("Optional PNG output path for the screenshot.".to_string()))),
                 ("screenshot", JsonSchema::boolean(Some("Set false to skip screenshot and return only text metadata.".to_string()))),
+                ("embed_image", JsonSchema::boolean(Some("Set false to save screenshot path without embedding base64 image data.".to_string()))),
                 ("max_elements", JsonSchema::integer(Some("Maximum UI Automation elements to inspect. Defaults to 120.".to_string()))),
             ]),
         ),
@@ -56,6 +58,7 @@ pub fn create_desktop_automation_tools(allow_input: bool) -> Vec<ToolSpec> {
             target_schema([
                 ("path", JsonSchema::string(Some("Optional PNG output path for the screenshot.".to_string()))),
                 ("screenshot", JsonSchema::boolean(Some("Set false to skip screenshot and return only UI Automation metadata.".to_string()))),
+                ("embed_image", JsonSchema::boolean(Some("Set false to save screenshot path without embedding base64 image data.".to_string()))),
                 ("max_elements", JsonSchema::integer(Some("Maximum UI Automation elements to return. Defaults to 80.".to_string()))),
             ]),
         ),
@@ -64,6 +67,13 @@ pub fn create_desktop_automation_tools(allow_input: bool) -> Vec<ToolSpec> {
             "Return visible UI Automation elements for a target window, including text, automation id, control type, and coordinates.",
             target_schema([
                 ("max_elements", JsonSchema::integer(Some("Maximum UI Automation elements to return. Defaults to 80.".to_string()))),
+            ]),
+        ),
+        create_tool(
+            "dab_terminal_tabs",
+            "List visible Windows Terminal tabs and current tab text for a target terminal window.",
+            target_schema([
+                ("max_elements", JsonSchema::integer(Some("Maximum UI Automation elements to inspect. Defaults to 300.".to_string()))),
             ]),
         ),
     ];
@@ -93,6 +103,30 @@ pub fn create_desktop_automation_tools(allow_input: bool) -> Vec<ToolSpec> {
                 ]),
             ),
             create_tool(
+                "dab_drag",
+                "Drag the foreground mouse between absolute screen coordinates. Inspect first and target a specific window when possible.",
+                target_schema_with_required(
+                    [
+                        ("x", JsonSchema::integer(Some("Start absolute screen X coordinate.".to_string()))),
+                        ("y", JsonSchema::integer(Some("Start absolute screen Y coordinate.".to_string()))),
+                        ("end_x", JsonSchema::integer(Some("End absolute screen X coordinate.".to_string()))),
+                        ("end_y", JsonSchema::integer(Some("End absolute screen Y coordinate.".to_string()))),
+                        ("duration_ms", JsonSchema::integer(Some("Optional drag duration in milliseconds. Defaults to 350.".to_string()))),
+                        ("steps", JsonSchema::integer(Some("Optional number of intermediate cursor steps. Defaults to 16.".to_string()))),
+                    ],
+                    &["x", "y", "end_x", "end_y"],
+                ),
+            ),
+            create_tool(
+                "dab_scroll",
+                "Scroll the foreground mouse wheel at optional absolute screen coordinates. Inspect first and target a specific window when possible.",
+                target_schema([
+                    ("x", JsonSchema::integer(Some("Optional absolute screen X coordinate to move to before scrolling.".to_string()))),
+                    ("y", JsonSchema::integer(Some("Optional absolute screen Y coordinate to move to before scrolling.".to_string()))),
+                    ("amount", JsonSchema::integer(Some("Mouse wheel delta. Negative scrolls down, positive scrolls up. Defaults to -120.".to_string()))),
+                ]),
+            ),
+            create_tool(
                 "dab_bg_click",
                 "Post a background click to a target window at absolute screen coordinates translated to client coordinates.",
                 target_schema([
@@ -105,6 +139,16 @@ pub fn create_desktop_automation_tools(allow_input: bool) -> Vec<ToolSpec> {
                 "Send Windows SendKeys text or key chords to a target window after bringing it foreground.",
                 target_schema([
                     ("keys", JsonSchema::string(Some("SendKeys payload, for example `hello`, `{ENTER}`, or `^l`.".to_string()))),
+                ]),
+            ),
+            create_tool(
+                "dab_terminal_focus",
+                "Focus a Windows Terminal window or tab by tab title substring, index, or visible content.",
+                target_schema([
+                    ("tab_title", JsonSchema::string(Some("Case-insensitive terminal tab title substring to focus.".to_string()))),
+                    ("index", JsonSchema::integer(Some("Zero-based terminal tab index to focus.".to_string()))),
+                    ("text", JsonSchema::string(Some("Visible terminal content substring to use as a focus hint.".to_string()))),
+                    ("max_elements", JsonSchema::integer(Some("Maximum UI Automation elements to inspect. Defaults to 300.".to_string()))),
                 ]),
             ),
         ]);
@@ -132,6 +176,13 @@ fn create_tool(name: &str, description: &str, parameters: JsonSchema) -> ToolSpe
 }
 
 fn target_schema<const N: usize>(extra: [(&'static str, JsonSchema); N]) -> JsonSchema {
+    target_schema_with_required(extra, &[])
+}
+
+fn target_schema_with_required<const N: usize>(
+    extra: [(&'static str, JsonSchema); N],
+    required: &[&str],
+) -> JsonSchema {
     let mut fields = BTreeMap::from([
         (
             "hwnd".to_string(),
@@ -149,7 +200,11 @@ fn target_schema<const N: usize>(extra: [(&'static str, JsonSchema); N]) -> Json
     for (name, schema) in extra {
         fields.insert(name.to_string(), schema);
     }
-    JsonSchema::object(fields, None, Some(AdditionalProperties::Boolean(false)))
+    JsonSchema::object(
+        fields,
+        (!required.is_empty()).then(|| required.iter().map(|item| (*item).to_string()).collect()),
+        Some(AdditionalProperties::Boolean(false)),
+    )
 }
 
 fn object_schema<const N: usize>(

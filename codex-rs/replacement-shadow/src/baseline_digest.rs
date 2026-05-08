@@ -1,11 +1,15 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::path::Path;
 
 use serde_json::Value;
 
 const DEFAULT_BASELINE_SUMMARY_LIMIT: usize = 80;
 const MAX_DIAGNOSTIC_LINES: usize = 40;
+const PROCESS_TOP_ROW_LIMIT: usize = 8;
+const INTERESTING_PROCESS_NEEDLES: &[&str] =
+    &["codex", "cargo", "rustc", "link", "powershell", "pwsh"];
 
 pub(super) fn render_changed_files_compact(
     operation: &str,
@@ -18,8 +22,10 @@ pub(super) fn render_changed_files_compact(
         .filter(|line| !line.is_empty() && !line.starts_with("warning:"))
         .map(ToString::to_string)
         .collect::<Vec<_>>();
-    let omitted = paths.len().saturating_sub(DEFAULT_BASELINE_SUMMARY_LIMIT);
+    let selected_paths = select_diverse_path_sample(&paths, DEFAULT_BASELINE_SUMMARY_LIMIT);
+    let omitted = paths.len().saturating_sub(selected_paths.len());
     let mut extension_counts = BTreeMap::new();
+    let mut group_counts = BTreeMap::new();
     for path in &paths {
         let extension = Path::new(path)
             .extension()
@@ -28,6 +34,7 @@ pub(super) fn render_changed_files_compact(
             .unwrap_or("(none)")
             .to_string();
         *extension_counts.entry(extension).or_default() += 1;
+        *group_counts.entry(path_group(path)).or_default() += 1;
     }
 
     let mut lines = vec![
@@ -37,19 +44,25 @@ pub(super) fn render_changed_files_compact(
     if !extension_counts.is_empty() {
         lines.push(format!("extensions: {}", render_counts(&extension_counts)));
     }
+    if !group_counts.is_empty() {
+        lines.push(format!(
+            "top_dirs: {}",
+            render_top_counts(&group_counts, 12)
+        ));
+    }
     if paths.is_empty() {
         lines.push("status: no_paths".to_string());
         return lines.join("\n");
     }
     lines.push(format!(
         "paths: {} shown, {omitted} omitted",
-        paths.len().min(DEFAULT_BASELINE_SUMMARY_LIMIT)
+        selected_paths.len()
     ));
     if omitted > 0 {
         lines.push("fallback_required: true".to_string());
         lines.push("fallback_reason: max_paths".to_string());
     }
-    lines.extend(paths.into_iter().take(DEFAULT_BASELINE_SUMMARY_LIMIT));
+    lines.extend(selected_paths);
     lines.join("\n")
 }
 
@@ -628,7 +641,6 @@ pub(super) fn render_process_table_compact(baseline_model_visible_output: &str) 
         .filter(|line| !line.trim_start().starts_with("---"))
         .map(ToString::to_string)
         .collect::<Vec<_>>();
-    let omitted = rows.len().saturating_sub(DEFAULT_BASELINE_SUMMARY_LIMIT);
     let mut process_counts = BTreeMap::new();
     for row in &rows {
         let trimmed = row.trim_start();
@@ -644,6 +656,8 @@ pub(super) fn render_process_table_compact(baseline_model_visible_output: &str) 
             *process_counts.entry(name.to_string()).or_default() += 1;
         }
     }
+    let selected_rows = select_process_rows(&rows);
+    let omitted = rows.len().saturating_sub(selected_rows.len());
     let mut lines = vec![
         "process_table_compact".to_string(),
         format!("rows_total: {}", rows.len()),
@@ -653,7 +667,7 @@ pub(super) fn render_process_table_compact(baseline_model_visible_output: &str) 
     }
     lines.push(format!(
         "rows: {} shown, {omitted} omitted",
-        rows.len().min(DEFAULT_BASELINE_SUMMARY_LIMIT)
+        selected_rows.len()
     ));
     lines.push("fallback_required: true".to_string());
     lines.push(format!(
@@ -667,9 +681,36 @@ pub(super) fn render_process_table_compact(baseline_model_visible_output: &str) 
     if rows.is_empty() {
         lines.push("status: no_process_rows".to_string());
     } else {
-        lines.extend(rows.into_iter().take(DEFAULT_BASELINE_SUMMARY_LIMIT));
+        lines.extend(selected_rows);
     }
     lines.join("\n")
+}
+
+fn select_process_rows(rows: &[String]) -> Vec<String> {
+    let mut selected = Vec::new();
+    let mut seen = BTreeSet::new();
+    for row in rows.iter().take(PROCESS_TOP_ROW_LIMIT) {
+        push_process_row(&mut selected, &mut seen, row);
+    }
+    for row in rows {
+        if process_row_is_interesting(row) {
+            push_process_row(&mut selected, &mut seen, row);
+        }
+    }
+    selected
+}
+
+fn process_row_is_interesting(row: &str) -> bool {
+    let lower = row.to_ascii_lowercase();
+    INTERESTING_PROCESS_NEEDLES
+        .iter()
+        .any(|needle| lower.contains(needle))
+}
+
+fn push_process_row(selected: &mut Vec<String>, seen: &mut BTreeSet<String>, row: &str) {
+    if seen.insert(row.to_string()) {
+        selected.push(row.to_string());
+    }
 }
 
 fn baseline_output_text(baseline_model_visible_output: &str) -> Cow<'_, str> {
@@ -725,6 +766,109 @@ fn select_string_path(line: &str) -> Option<&str> {
     Some(line[..colon].trim())
 }
 
+fn select_diverse_path_sample(paths: &[String], limit: usize) -> Vec<String> {
+    if limit == 0 {
+        return Vec::new();
+    }
+    let mut selected = Vec::new();
+    let mut selected_set = BTreeSet::new();
+    for path in paths.iter().filter(|path| important_repo_file(path)) {
+        selected.push(path.clone());
+        selected_set.insert(path.clone());
+        if selected.len() >= limit {
+            return selected;
+        }
+    }
+
+    let mut grouped = BTreeMap::<String, Vec<String>>::new();
+    for path in paths {
+        if selected_set.contains(path) {
+            continue;
+        }
+        grouped
+            .entry(path_group(path))
+            .or_default()
+            .push(path.clone());
+    }
+    let mut offsets = BTreeMap::<String, usize>::new();
+    while selected.len() < limit {
+        let mut advanced = false;
+        for group in grouped.keys().cloned().collect::<Vec<_>>() {
+            if selected.len() >= limit {
+                break;
+            }
+            let offset = offsets.get(&group).copied().unwrap_or_default();
+            let Some(path) = grouped.get(&group).and_then(|paths| paths.get(offset)) else {
+                continue;
+            };
+            selected.push(path.clone());
+            selected_set.insert(path.clone());
+            offsets.insert(group, offset + 1);
+            advanced = true;
+        }
+        if !advanced {
+            break;
+        }
+    }
+    selected
+}
+
+fn important_repo_file(path: &str) -> bool {
+    let lower = normalize_slashes(path).to_ascii_lowercase();
+    matches!(
+        lower.as_str(),
+        "agents.md"
+            | "build.rs"
+            | "cargo.lock"
+            | "cargo.toml"
+            | "cmakelists.txt"
+            | "package-lock.json"
+            | "package.json"
+            | "pnpm-lock.yaml"
+            | "pyproject.toml"
+            | "readme.md"
+            | "yarn.lock"
+    ) || lower.ends_with("/agents.md")
+        || lower.ends_with("/cargo.lock")
+        || lower.ends_with("/cargo.toml")
+        || lower.ends_with("/cmakelists.txt")
+        || lower.ends_with("/package-lock.json")
+        || lower.ends_with("/package.json")
+        || lower.ends_with("/pnpm-lock.yaml")
+        || lower.ends_with("/pyproject.toml")
+        || lower.ends_with("/readme.md")
+        || lower.ends_with("/yarn.lock")
+}
+
+fn path_group(path: &str) -> String {
+    let normalized = normalize_slashes(path);
+    let parts = normalized.split('/').collect::<Vec<_>>();
+    match parts.as_slice() {
+        [] | [_] => "(root)".to_string(),
+        [first, _] => (*first).to_string(),
+        [first, second, ..] => format!("{first}/{second}"),
+    }
+}
+
+fn render_top_counts(counts: &BTreeMap<String, usize>, limit: usize) -> String {
+    let mut items = counts.iter().collect::<Vec<_>>();
+    items.sort_by(|left, right| right.1.cmp(left.1).then_with(|| left.0.cmp(right.0)));
+    let omitted = items.len().saturating_sub(limit);
+    let mut parts = items
+        .into_iter()
+        .take(limit)
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect::<Vec<_>>();
+    if omitted > 0 {
+        parts.push(format!("...+{omitted}"));
+    }
+    parts.join(", ")
+}
+
+fn normalize_slashes(path: &str) -> String {
+    path.replace('\\', "/")
+}
+
 fn render_counts(counts: &BTreeMap<String, usize>) -> String {
     counts
         .iter()
@@ -773,7 +917,7 @@ mod tests {
                 "rg_file_set_digest",
                 r#"{"output":"src/lib.rs\nsrc/main.rs\n","metadata":{"exit_code":0,"duration_seconds":0.1}}"#,
             ),
-            "rg_file_set_digest\npaths_total: 2\nextensions: rs=2\npaths: 2 shown, 0 omitted\nsrc/lib.rs\nsrc/main.rs"
+            "rg_file_set_digest\npaths_total: 2\nextensions: rs=2\ntop_dirs: src=2\npaths: 2 shown, 0 omitted\nsrc/lib.rs\nsrc/main.rs"
         );
         assert_eq!(
             render_file_excerpt_digest("Exit code: 0\nWall time: 1s\nOutput:\nalpha\nbeta\n"),
@@ -802,7 +946,7 @@ mod tests {
                 "rg_file_set_digest",
                 "Exit code: 0\nWall time: 1s\nOutput:\nsrc/lib.rs\nsrc/main.rs\n"
             ),
-            "rg_file_set_digest\npaths_total: 2\nextensions: rs=2\npaths: 2 shown, 0 omitted\nsrc/lib.rs\nsrc/main.rs"
+            "rg_file_set_digest\npaths_total: 2\nextensions: rs=2\ntop_dirs: src=2\npaths: 2 shown, 0 omitted\nsrc/lib.rs\nsrc/main.rs"
         );
         assert_eq!(
             render_git_name_status_compact(
@@ -815,6 +959,28 @@ mod tests {
                 "Exit code: 0\nWall time: 1s\nOutput:\n10\t2\tsrc/lib.rs\n-\t-\tbin.dat\n"
             ),
             "git_numstat_compact\nfiles_total: 2\nadded_lines: 10\ndeleted_lines: 2\nbinary_files: 1\nfiles: 2 shown, 0 omitted\n10\t2\tsrc/lib.rs\n-\t-\tbin.dat"
+        );
+    }
+
+    #[test]
+    fn compact_path_lists_sample_across_directories_after_important_files() {
+        let paths = vec![
+            "AGENTS.md".to_string(),
+            "alpha/one.rs".to_string(),
+            "alpha/two.rs".to_string(),
+            "beta/one.rs".to_string(),
+            "beta/two.rs".to_string(),
+            "gamma/one.rs".to_string(),
+        ];
+
+        assert_eq!(
+            select_diverse_path_sample(&paths, 4),
+            vec![
+                "AGENTS.md".to_string(),
+                "alpha/one.rs".to_string(),
+                "beta/one.rs".to_string(),
+                "gamma/one.rs".to_string(),
+            ]
         );
     }
 
@@ -858,5 +1024,31 @@ mod tests {
         );
         assert!(processes.contains("process_table_compact"));
         assert!(processes.contains("fallback_reason: lossy_process_table"));
+    }
+
+    #[test]
+    fn process_table_compact_keeps_interesting_rows_after_top_sample() {
+        let mut output = String::from("Exit code: 0\nWall time: 1s\nOutput:\nName Id CPU\n");
+        for index in 0..40 {
+            output.push_str(&format!("chrome {index} 0.1\n"));
+        }
+        output.push_str("rustc 9001 80.0\n");
+        output.push_str("codex 9002 5.0\n");
+
+        let processes = render_process_table_compact(&output);
+
+        assert!(processes.contains("rustc 9001"));
+        assert!(processes.contains("codex 9002"));
+        assert!(processes.contains("fallback_reason: max_processes"));
+    }
+
+    #[test]
+    fn process_table_compact_keeps_small_generic_targeted_rows() {
+        let processes = render_process_table_compact(
+            "Exit code: 0\nWall time: 1s\nOutput:\nName Id CPU\nchrome 2301 120.0\nnode 2302 40.0\n",
+        );
+
+        assert!(processes.contains("chrome 2301"));
+        assert!(processes.contains("node 2302"));
     }
 }

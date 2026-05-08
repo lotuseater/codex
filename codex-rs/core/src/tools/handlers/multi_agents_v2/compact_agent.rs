@@ -34,6 +34,16 @@ impl ToolHandler for Handler {
             .agent_control
             .get_agent_metadata(agent_id)
             .unwrap_or_default();
+        if agent_id == session.conversation_id
+            && !matches!(
+                turn.session_source,
+                codex_protocol::protocol::SessionSource::SubAgent(_)
+            )
+        {
+            return Err(FunctionCallError::RespondToModel(
+                "root is not a spawned agent".to_string(),
+            ));
+        }
         if receiver_agent
             .agent_path
             .as_ref()

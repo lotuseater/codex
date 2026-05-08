@@ -976,6 +976,8 @@ async fn multi_agent_v2_spawn_prepends_context_pack_after_policy_passes() {
                 op,
                 Op::InterAgentCommunication { communication }
                     if communication.content.starts_with("<context_pack")
+                        && communication.content.contains("mode=\"exact\"")
+                        && communication.content.contains("EXACT_MATCH")
                         && communication.content.contains("src/context_pack.rs")
                         && communication.content.contains("FIRST_READS: src/context_pack.rs")
             )

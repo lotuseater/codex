@@ -898,9 +898,102 @@ async fn auto_loop_does_not_queue_while_turn_is_running() {
         chat.can_submit_auto_loop_message(),
         Err("a turn is still running")
     );
-    assert!(!chat.submit_auto_loop_message("go on".to_string()));
+    assert!(
+        !chat.submit_auto_loop_message("go on".to_string(), AutoLoopSubmissionContext::Periodic)
+    );
     assert!(chat.pending_steers.is_empty());
     assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
+}
+
+#[tokio::test]
+async fn auto_loop_answers_request_user_input_with_long_horizon_override() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+
+    chat.handle_request_user_input_now(ToolRequestUserInputParams {
+        thread_id: "thread-1".to_string(),
+        item_id: "call-1".to_string(),
+        turn_id: "turn-1".to_string(),
+        questions: vec![
+            ToolRequestUserInputQuestion {
+                id: "scope".to_string(),
+                header: "Scope".to_string(),
+                question: "Which scope should I use?".to_string(),
+                is_other: true,
+                is_secret: false,
+                options: Some(vec![ToolRequestUserInputOption {
+                    label: "Plan only".to_string(),
+                    description: "Update only Plan mode.".to_string(),
+                }]),
+            },
+            ToolRequestUserInputQuestion {
+                id: "notes".to_string(),
+                header: "Notes".to_string(),
+                question: "Anything else?".to_string(),
+                is_other: false,
+                is_secret: false,
+                options: None,
+            },
+            ToolRequestUserInputQuestion {
+                id: "tradeoff".to_string(),
+                header: "Tradeoff".to_string(),
+                question: "Which option should I choose?".to_string(),
+                is_other: false,
+                is_secret: false,
+                options: Some(vec![
+                    ToolRequestUserInputOption {
+                        label: "Fast".to_string(),
+                        description: "Optimize for speed.".to_string(),
+                    },
+                    ToolRequestUserInputOption {
+                        label: "Careful".to_string(),
+                        description: "Optimize for lower risk.".to_string(),
+                    },
+                ]),
+            },
+        ],
+    });
+    let _ = drain_insert_history(&mut rx);
+
+    assert!(chat.try_handle_auto_loop_prompt());
+    assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
+
+    let event = rx
+        .try_recv()
+        .expect("expected request_user_input answer event");
+    let AppEvent::CodexOp(Op::UserInputAnswer { id, response, .. }) = event else {
+        panic!("expected UserInputAnswer, got {event:?}");
+    };
+    assert_eq!(id, "turn-1");
+    assert_eq!(
+        response.answers.get("scope"),
+        Some(&ToolRequestUserInputAnswer {
+            answers: vec![
+                "None of the above".to_string(),
+                format!(
+                    "user_note: {}",
+                    codex_agent_policy::AUTO_LOOP_MULTI_OPTION_NOTE
+                )
+            ],
+        })
+    );
+    assert_eq!(
+        response.answers.get("notes"),
+        Some(&ToolRequestUserInputAnswer {
+            answers: vec![format!(
+                "user_note: {}",
+                codex_agent_policy::AUTO_LOOP_MULTI_OPTION_NOTE
+            )],
+        })
+    );
+    assert_eq!(
+        response.answers.get("tradeoff"),
+        Some(&ToolRequestUserInputAnswer {
+            answers: vec![format!(
+                "user_note: {}",
+                codex_agent_policy::AUTO_LOOP_MULTI_OPTION_NOTE
+            )],
+        })
+    );
 }
 
 #[tokio::test]

@@ -23,6 +23,7 @@ use ratatui::text::Span;
 
 const SUBAGENT_ACTIVITY_LEFT_INDENT: &str = "    ";
 const SUBAGENT_ACTIVITY_PREVIEW_GRAPHEMES: usize = 180;
+const SUBAGENT_ACTIVITY_PATH_PREVIEW_GRAPHEMES: usize = 72;
 
 pub(crate) fn subagent_activity_history_cell(
     thread_id: ThreadId,
@@ -99,7 +100,8 @@ fn subagent_activity_summary(item: &ThreadItem) -> Option<SubagentActivitySummar
             duration_ms,
             ..
         } => {
-            let mut details = preview_lines([command.as_str()]);
+            let mut details =
+                preview_command(command).map_or_else(Vec::new, |command| vec![Line::from(command)]);
             if let Some(summary) = command_result_summary(*exit_code, *duration_ms) {
                 details.push(summary.into());
             }
@@ -243,7 +245,7 @@ fn subagent_activity_summary(item: &ThreadItem) -> Option<SubagentActivitySummar
         }
         ThreadItem::ImageView { path, .. } => Some(SubagentActivitySummary {
             title: "Viewed image",
-            details: vec![path.display().to_string().into()],
+            details: vec![compact_path_core(&path.display().to_string()).into()],
         }),
         ThreadItem::ImageGeneration {
             status,
@@ -256,7 +258,7 @@ fn subagent_activity_summary(item: &ThreadItem) -> Option<SubagentActivitySummar
                 details.push(Line::from(vec!["Prompt: ".dim(), prompt.into()]));
             }
             if let Some(path) = saved_path {
-                details.push(path.display().to_string().into());
+                details.push(compact_path_core(&path.display().to_string()).into());
             }
             Some(SubagentActivitySummary {
                 title: "Image generation",
@@ -332,13 +334,18 @@ fn subagent_notification_summary(
         ServerNotification::ThreadTokenUsageUpdated(notification) => {
             let mut details = vec![
                 format!(
+                    "Context tokens: {}",
+                    notification.token_usage.last.total_tokens
+                )
+                .into(),
+                format!(
                     "Total tokens: {}",
                     notification.token_usage.total.total_tokens
                 )
                 .into(),
             ];
             if let Some(percent) = token_context_percent_used(
-                notification.token_usage.total.total_tokens,
+                notification.token_usage.last.total_tokens,
                 notification.token_usage.model_context_window,
             ) {
                 details.push(format!("Context: {percent}% used").into());
@@ -361,8 +368,126 @@ fn preview_lines<'a>(texts: impl IntoIterator<Item = &'a str>) -> Vec<Line<'stat
 }
 
 fn preview_text(text: &str) -> Option<String> {
-    let preview = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let preview = compact_activity_paths(text);
     (!preview.is_empty()).then(|| truncate_text(&preview, SUBAGENT_ACTIVITY_PREVIEW_GRAPHEMES))
+}
+
+fn preview_command(command: &str) -> Option<String> {
+    preview_text(&shorten_leading_executable_path(command))
+}
+
+fn compact_activity_paths(text: &str) -> String {
+    text.split_whitespace()
+        .map(compact_path_token)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn shorten_leading_executable_path(text: &str) -> String {
+    let trimmed = text.trim_start();
+    let leading_whitespace = &text[..text.len() - trimmed.len()];
+    if let Some(rest) = trimmed.strip_prefix('"')
+        && let Some(end_quote) = rest.find('"')
+    {
+        let leading_path = &rest[..end_quote];
+        if should_shorten_path(leading_path)
+            && let Some(file_name) = path_file_name(leading_path)
+        {
+            let executable = quote_if_needed(file_name);
+            return format!("{leading_whitespace}{executable}{}", &rest[end_quote + 1..]);
+        }
+    }
+
+    let first_token_end = trimmed.find(char::is_whitespace).unwrap_or(trimmed.len());
+    let first_token = &trimmed[..first_token_end];
+    if should_shorten_path(first_token)
+        && let Some(file_name) = path_file_name(first_token)
+    {
+        let executable = quote_if_needed(file_name);
+        return format!(
+            "{leading_whitespace}{executable}{}",
+            &trimmed[first_token_end..]
+        );
+    }
+
+    text.to_string()
+}
+
+fn compact_path_token(token: &str) -> String {
+    let prefix_len = token
+        .find(|c| !is_path_wrapper_prefix(c))
+        .unwrap_or(token.len());
+    let suffix_start = token
+        .rfind(|c| !is_path_wrapper_suffix(c))
+        .map(|index| {
+            index
+                + token[index..]
+                    .chars()
+                    .next()
+                    .map(char::len_utf8)
+                    .unwrap_or(0)
+        })
+        .unwrap_or(prefix_len);
+
+    if prefix_len >= suffix_start {
+        return token.to_string();
+    }
+
+    let prefix = &token[..prefix_len];
+    let core = &token[prefix_len..suffix_start];
+    let suffix = &token[suffix_start..];
+    let compacted = compact_path_core(core);
+    if compacted == core {
+        token.to_string()
+    } else {
+        format!("{prefix}{compacted}{suffix}")
+    }
+}
+
+fn compact_path_core(path: &str) -> String {
+    if !should_shorten_path(path) {
+        return path.to_string();
+    }
+
+    let Some(file_name) = path_file_name(path) else {
+        return truncate_text(path, SUBAGENT_ACTIVITY_PATH_PREVIEW_GRAPHEMES);
+    };
+    let separator = if path.rfind('\\') > path.rfind('/') {
+        '\\'
+    } else {
+        '/'
+    };
+    let compacted = format!("...{separator}{file_name}");
+    truncate_text(&compacted, SUBAGENT_ACTIVITY_PATH_PREVIEW_GRAPHEMES)
+}
+
+fn should_shorten_path(path: &str) -> bool {
+    path.chars().count() > SUBAGENT_ACTIVITY_PATH_PREVIEW_GRAPHEMES
+        && (path.contains('\\') || path.matches('/').count() >= 2)
+        && !path.starts_with("http://")
+        && !path.starts_with("https://")
+}
+
+fn path_file_name(path: &str) -> Option<&str> {
+    path.rsplit(['\\', '/'])
+        .next()
+        .filter(|name| !name.is_empty())
+}
+
+fn quote_if_needed(text: &str) -> String {
+    if text.chars().any(char::is_whitespace) {
+        format!("\"{text}\"")
+    } else {
+        text.to_string()
+    }
+}
+
+fn is_path_wrapper_prefix(c: char) -> bool {
+    matches!(c, '"' | '\'' | '`' | '(' | '[' | '{' | '<')
+}
+
+fn is_path_wrapper_suffix(c: char) -> bool {
+    matches!(c, '"' | '\'' | '`' | ')' | ']' | '}' | '>' | ',' | ';')
 }
 
 fn json_preview(value: &serde_json::Value) -> Option<String> {
@@ -397,7 +522,7 @@ fn file_change_lines(changes: &[FileUpdateChange]) -> Vec<Line<'static>> {
     let mut paths = changes
         .iter()
         .take(3)
-        .map(|change| change.path.as_str())
+        .map(|change| compact_path_core(change.path.as_str()))
         .collect::<Vec<_>>()
         .join(", ");
     if changes.len() > 3 {

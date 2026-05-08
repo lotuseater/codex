@@ -347,7 +347,7 @@ async fn run_resume_picker_with_launch_context(
     let is_remote = app_server.is_remote();
     let cwd_filter = picker_cwd_filter(
         config.cwd.as_path(),
-        /*show_all*/ false,
+        show_all,
         is_remote,
         app_server.remote_cwd_override(),
     );
@@ -392,7 +392,7 @@ pub async fn run_fork_picker_with_app_server(
     let is_remote = app_server.is_remote();
     let cwd_filter = picker_cwd_filter(
         config.cwd.as_path(),
-        /*show_all*/ false,
+        show_all,
         is_remote,
         app_server.remote_cwd_override(),
     );
@@ -3351,6 +3351,18 @@ mod tests {
             Some(ThreadListCwdFilter::One(String::from("/tmp/project")))
         );
         assert!(params.use_state_db_only);
+    }
+
+    #[test]
+    fn local_picker_cwd_filter_respects_show_all() {
+        let cwd_filter = picker_cwd_filter(
+            Path::new("/tmp/project"),
+            /*show_all*/ true,
+            /*is_remote*/ false,
+            /*remote_cwd_override*/ None,
+        );
+
+        assert_eq!(cwd_filter, None);
     }
 
     #[test]

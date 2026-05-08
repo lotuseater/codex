@@ -748,7 +748,7 @@ async fn run_pre_sampling_compact(
     if !pre_sampling_compacted {
         match sess
             .semantic_compact_decision(SemanticCompactInput {
-                feature_enabled: turn_context.features.enabled(Feature::SemanticAutoCompact),
+                feature_enabled: semantic_auto_compact_enabled(turn_context),
                 total_usage_tokens,
                 auto_compact_limit,
             })
@@ -937,6 +937,11 @@ fn format_compaction_phase(phase: CompactionPhase) -> &'static str {
 
 fn auto_compact_token_limit(turn_context: &TurnContext) -> i64 {
     auto_compact_token_limit_from_model_info(&turn_context.model_info)
+}
+
+pub(crate) fn semantic_auto_compact_enabled(turn_context: &TurnContext) -> bool {
+    turn_context.features.enabled(Feature::SemanticAutoCompact)
+        && turn_context.collaboration_mode.mode != ModeKind::Plan
 }
 
 fn auto_compact_token_limit_from_model_info(

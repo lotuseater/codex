@@ -181,6 +181,10 @@ pub struct ShadowRecord {
     pub repo_key: String,
     pub index_state: IndexState,
     pub selected_paths: Vec<String>,
+    #[serde(default)]
+    pub selected_changed_paths: Vec<String>,
+    #[serde(default)]
+    pub missed_changed_paths: Vec<String>,
     pub support_routes: Vec<SupportRoute>,
     pub packet_tokens: usize,
     pub changed_path_count: usize,

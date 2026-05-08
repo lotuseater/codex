@@ -1,7 +1,7 @@
 param(
     [string]$LogDir = (Join-Path $env:USERPROFILE '.codex\log\replacement-shadow'),
 
-    [datetime]$Since,
+    [datetimeoffset]$Since,
 
     [string]$OutMarkdown,
 
@@ -91,6 +91,12 @@ function ConvertTo-RecordTimestamp {
 
     if ($null -eq $Value) {
         return $null
+    }
+    if ($Value -is [datetimeoffset]) {
+        return $Value
+    }
+    if ($Value -is [datetime]) {
+        return [datetimeoffset]::new($Value)
     }
     try {
         return [datetimeoffset]::Parse([string]$Value)
@@ -191,9 +197,15 @@ function Get-Recommendation {
         [int]$GatePassCount
     )
 
-    $shadowOnly = @(
+    $removedRejected = @(
         'git_worktree_summary',
-        'git_status_compact',
+        'git_status_compact'
+    )
+    if ($removedRejected -contains $Operation) {
+        return 'removed_rejected'
+    }
+
+    $shadowOnly = @(
         'file_outline',
         'search_text',
         'diff_hunk_summary',
@@ -256,7 +268,7 @@ foreach ($file in $files) {
         }
 
         $timestamp = ConvertTo-RecordTimestamp (Get-Prop $raw @('timestamp'))
-        if ($PSBoundParameters.ContainsKey('Since') -and $null -ne $timestamp -and $timestamp -lt [datetimeoffset]$Since) {
+        if ($PSBoundParameters.ContainsKey('Since') -and $null -ne $timestamp -and $timestamp -lt $Since) {
             continue
         }
 
@@ -363,6 +375,7 @@ foreach ($file in $files) {
 
 $report = [pscustomobject]@{
     generated_at = [datetimeoffset]::Now.ToString('o')
+    since = if ($PSBoundParameters.ContainsKey('Since')) { $Since.ToString('o') } else { $null }
     log_dir = (Resolve-Path -LiteralPath $LogDir).Path
     thresholds = [pscustomobject]@{
         min_records = $MinRecords
@@ -387,6 +400,10 @@ function ConvertTo-MarkdownReport {
     [void]$lines.Add('')
     [void]$lines.Add(('Log dir: `{0}`' -f $Report.log_dir))
     [void]$lines.Add('')
+    if ($null -ne $Report.since) {
+        [void]$lines.Add("Since: $($Report.since)")
+        [void]$lines.Add('')
+    }
     [void]$lines.Add("Records: $($Report.record_count)")
     [void]$lines.Add('')
     [void]$lines.Add("Parse errors: $($Report.parse_error_count)")

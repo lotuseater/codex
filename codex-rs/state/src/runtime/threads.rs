@@ -1138,8 +1138,8 @@ pub(super) fn push_thread_filters<'a>(
         Some(cwd_filters) => {
             builder.push(" AND threads.cwd IN (");
             let mut separated = builder.separated(", ");
-            for cwd in cwd_filters {
-                separated.push_bind(cwd.display().to_string());
+            for cwd in cwd_filter_sql_values(cwd_filters) {
+                separated.push_bind(cwd);
             }
             separated.push_unseparated(")");
         }
@@ -1168,6 +1168,49 @@ pub(super) fn push_thread_filters<'a>(
         builder.push_bind(anchor_ts);
         builder.push(")");
     }
+}
+
+fn cwd_filter_sql_values(cwd_filters: &[PathBuf]) -> Vec<String> {
+    let mut values = Vec::new();
+    for cwd in cwd_filters {
+        let value = cwd.display().to_string();
+        push_unique_cwd_filter_value(&mut values, value.clone());
+        if let Some(stripped) = strip_windows_verbatim_path_prefix(&value) {
+            push_unique_cwd_filter_value(&mut values, stripped);
+        }
+        if let Some(verbatim) = add_windows_verbatim_path_prefix(&value) {
+            push_unique_cwd_filter_value(&mut values, verbatim);
+        }
+    }
+    values
+}
+
+fn push_unique_cwd_filter_value(values: &mut Vec<String>, value: String) {
+    if !values.iter().any(|existing| existing == &value) {
+        values.push(value);
+    }
+}
+
+fn strip_windows_verbatim_path_prefix(path: &str) -> Option<String> {
+    if let Some(stripped) = path.strip_prefix(r"\\?\UNC\") {
+        return Some(format!(r"\\{stripped}"));
+    }
+    path.strip_prefix(r"\\?\").map(ToString::to_string)
+}
+
+fn add_windows_verbatim_path_prefix(path: &str) -> Option<String> {
+    if let Some(stripped) = path.strip_prefix(r"\\") {
+        return (!stripped.starts_with(r"?\")).then(|| format!(r"\\?\UNC\{stripped}"));
+    }
+    is_windows_drive_absolute_path(path).then(|| format!(r"\\?\{path}"))
+}
+
+fn is_windows_drive_absolute_path(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    matches!(
+        bytes,
+        [drive, b':', b'\\' | b'/', ..] if drive.is_ascii_alphabetic()
+    )
 }
 
 pub(super) fn push_thread_order_and_limit(
@@ -1398,6 +1441,71 @@ mod tests {
             .expect("list with empty cwd filters should succeed");
 
         assert_eq!(page.items, Vec::new());
+    }
+
+    #[tokio::test]
+    async fn list_threads_matches_windows_verbatim_cwd_variants() {
+        let codex_home = unique_temp_dir();
+        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+            .await
+            .expect("state db should initialize");
+        let verbatim_id =
+            ThreadId::from_string("00000000-0000-0000-0000-000000000111").expect("valid thread id");
+        let normal_id =
+            ThreadId::from_string("00000000-0000-0000-0000-000000000112").expect("valid thread id");
+        let normal_cwd = PathBuf::from(r"C:\Users\Oleh\Documents\GitHub\open_ai\codex");
+        let verbatim_cwd = PathBuf::from(r"\\?\C:\Users\Oleh\Documents\GitHub\open_ai\codex");
+
+        for (thread_id, cwd, updated_at) in [
+            (verbatim_id, verbatim_cwd.clone(), 1_700_000_100),
+            (normal_id, normal_cwd.clone(), 1_700_000_200),
+        ] {
+            let mut metadata = test_thread_metadata(&codex_home, thread_id, cwd);
+            metadata.updated_at =
+                DateTime::<Utc>::from_timestamp(updated_at, 0).expect("valid timestamp");
+            runtime
+                .upsert_thread(&metadata)
+                .await
+                .expect("thread insert should succeed");
+        }
+
+        let page = runtime
+            .list_threads(
+                /*page_size*/ 10,
+                ThreadFilterOptions {
+                    archived_only: false,
+                    allowed_sources: &[],
+                    model_providers: None,
+                    cwd_filters: Some(std::slice::from_ref(&normal_cwd)),
+                    anchor: None,
+                    sort_key: SortKey::UpdatedAt,
+                    sort_direction: SortDirection::Desc,
+                    search_term: None,
+                },
+            )
+            .await
+            .expect("normal cwd filter should match both path forms");
+        let ids = page.items.iter().map(|item| item.id).collect::<Vec<_>>();
+        assert_eq!(ids, vec![normal_id, verbatim_id]);
+
+        let page = runtime
+            .list_threads(
+                /*page_size*/ 10,
+                ThreadFilterOptions {
+                    archived_only: false,
+                    allowed_sources: &[],
+                    model_providers: None,
+                    cwd_filters: Some(std::slice::from_ref(&verbatim_cwd)),
+                    anchor: None,
+                    sort_key: SortKey::UpdatedAt,
+                    sort_direction: SortDirection::Desc,
+                    search_term: None,
+                },
+            )
+            .await
+            .expect("verbatim cwd filter should match both path forms");
+        let ids = page.items.iter().map(|item| item.id).collect::<Vec<_>>();
+        assert_eq!(ids, vec![normal_id, verbatim_id]);
     }
 
     #[tokio::test]

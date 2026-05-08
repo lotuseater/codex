@@ -150,6 +150,12 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
         expected.insert(spec.name().to_string(), spec);
     }
 
+    if config.desktop_automation_enabled {
+        for spec in create_desktop_automation_tools(config.desktop_automation_allow_input) {
+            expected.insert(spec.name().to_string(), spec);
+        }
+    }
+
     assert_eq!(
         actual.keys().collect::<Vec<_>>(),
         expected.keys().collect::<Vec<_>>(),
@@ -679,7 +685,19 @@ fn desktop_automation_tools_respect_config() {
             .any(|tool| tool.name() == "dab_find_window"),
         cfg!(windows)
     );
+    assert_eq!(
+        enabled_tools
+            .iter()
+            .any(|tool| tool.name() == "dab_terminal_tabs"),
+        cfg!(windows)
+    );
     assert!(!enabled_tools.iter().any(|tool| tool.name() == "dab_click"));
+    assert!(!enabled_tools.iter().any(|tool| tool.name() == "dab_drag"));
+    assert!(
+        !enabled_tools
+            .iter()
+            .any(|tool| tool.name() == "dab_terminal_focus")
+    );
     assert_eq!(
         enabled_handlers
             .iter()
@@ -688,6 +706,7 @@ fn desktop_automation_tools_respect_config() {
     );
 
     let disabled_config = enabled_config
+        .clone()
         .with_desktop_automation_config(/*enabled*/ false, /*allow_input*/ false);
     let (disabled_tools, disabled_handlers) = build_specs(
         &disabled_config,
@@ -706,6 +725,26 @@ fn desktop_automation_tools_respect_config() {
             .iter()
             .any(|handler| handler.name.name.starts_with("dab_"))
     );
+
+    let input_tool_specs = create_desktop_automation_tools(/*allow_input*/ true);
+    if let Some(dab_drag) = input_tool_specs
+        .iter()
+        .find(|tool| tool.name() == "dab_drag")
+    {
+        let ToolSpec::Function(ResponsesApiTool { parameters, .. }) = dab_drag else {
+            panic!("dab_drag should be a function tool");
+        };
+        let (_, required) = expect_object_schema(parameters);
+        assert_eq!(
+            required,
+            Some(&vec![
+                "x".to_string(),
+                "y".to_string(),
+                "end_x".to_string(),
+                "end_y".to_string()
+            ])
+        );
+    }
 }
 
 #[test]
@@ -1399,12 +1438,9 @@ fn context_ops_feature_includes_compact_context_tools() {
         &[],
     );
 
-    assert_contains_tool_names(
-        &tools,
-        &["file_outline", "git_worktree_summary", "search_text"],
-    );
+    assert_contains_tool_names(&tools, &["file_outline", "search_text"]);
     assert!(find_tool(&tools, "file_outline").supports_parallel_tool_calls);
-    for tool_name in ["file_outline", "git_worktree_summary", "search_text"] {
+    for tool_name in ["file_outline", "search_text"] {
         assert!(
             handlers.iter().any(|handler| handler.name.name == tool_name
                 && handler.kind == ToolHandlerKind::ContextOps),

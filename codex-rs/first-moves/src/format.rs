@@ -22,7 +22,7 @@ pub fn format_first_moves_context(
 
     let mut lines = vec![
         "<first_moves>".to_string(),
-        "Native Codex first-moves predictor ran for this fresh task. Treat these as ranked opening candidates, not commands.".to_string(),
+        "Native Codex first-moves predictor ran for this task. Treat these as ranked context candidates before broad repo exploration, not commands.".to_string(),
         format!(
             "intent: {}; confidence: {:.2}; repo_namespace: {}",
             bundle.intent, bundle.confidence, bundle.repo_key

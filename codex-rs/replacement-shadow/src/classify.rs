@@ -30,6 +30,7 @@ fn classify_shell_control_shadow(command: &str) -> Option<ReplacementCandidate> 
         .or_else(|| classify_rg_file_set_shell_control(command))
         .or_else(|| classify_file_inventory_shell_control(command))
         .or_else(|| classify_run_check_shell_control(command))
+        .or_else(|| classify_process_table_shell_control(command))
         .or_else(|| classify_select_string_shell_control(command))
         .or_else(|| classify_directory_listing_shell_control(command))
         .or_else(|| {
@@ -627,6 +628,58 @@ fn classify_file_excerpt_shell_control(command: &str) -> Option<ReplacementCandi
     .then_some(ReplacementCandidate::FileExcerptDigest)
 }
 
+fn classify_process_table_shell_control(command: &str) -> Option<ReplacementCandidate> {
+    let lower = command.to_ascii_lowercase();
+    if !lower.contains('|') || !contains_search_filter(&lower) {
+        return None;
+    }
+    let head = lower.split('|').next()?.rsplit(';').next()?.trim_start();
+    let process_command = command_segment_starts_with(
+        head,
+        &[
+            "get-process",
+            "get-process.exe",
+            "gps",
+            "ps",
+            "tasklist",
+            "tasklist.exe",
+        ],
+    ) || ((command_segment_starts_with(
+        head,
+        &[
+            "get-ciminstance",
+            "get-ciminstance.exe",
+            "gcim",
+            "get-wmiobject",
+            "get-wmiobject.exe",
+            "gwmi",
+        ],
+    )) && head.contains("win32_process"));
+
+    process_command.then_some(ReplacementCandidate::ProcessTableCompact)
+}
+
+fn contains_search_filter(lower: &str) -> bool {
+    lower.contains("| rg ")
+        || lower.contains("|rg ")
+        || lower.contains("| select-string")
+        || lower.contains("|select-string")
+        || lower.contains("| sls ")
+        || lower.contains("|sls ")
+        || lower.contains("| grep ")
+        || lower.contains("|grep ")
+        || lower.contains("| findstr ")
+        || lower.contains("|findstr ")
+}
+
+fn command_segment_starts_with(segment: &str, commands: &[&str]) -> bool {
+    commands.iter().any(|command| {
+        segment == *command
+            || segment.starts_with(&format!("{command} "))
+            || segment.starts_with(&format!("{command}\t"))
+    })
+}
+
 fn classify_rg_file_set_shell_control(command: &str) -> Option<ReplacementCandidate> {
     let lower = command.to_ascii_lowercase();
     (lower.contains("rg --files")
@@ -1117,6 +1170,22 @@ mod tests {
             classify_shell_replacement("cargo test 2>&1 | grep failed"),
             Some(ReplacementCandidate::RunCheckDigest)
         );
+        assert_eq!(
+            classify_shell_replacement("Get-Process | Select-String codex"),
+            Some(ReplacementCandidate::ProcessTableCompact)
+        );
+        assert_eq!(
+            classify_shell_replacement("tasklist | findstr rustc"),
+            Some(ReplacementCandidate::ProcessTableCompact)
+        );
+        assert_eq!(
+            classify_shell_replacement("ps aux | grep codex"),
+            Some(ReplacementCandidate::ProcessTableCompact)
+        );
+        assert_eq!(
+            classify_shell_replacement("Get-CimInstance Win32_Process | Select-String codex"),
+            Some(ReplacementCandidate::ProcessTableCompact)
+        );
     }
 
     #[test]
@@ -1133,6 +1202,14 @@ mod tests {
         );
         assert_eq!(
             classify_shell_replacement("grep -R 'go test' codex-rs"),
+            Some(ReplacementCandidate::SelectStringDigest)
+        );
+        assert_eq!(
+            classify_shell_replacement("Select-String -Pattern Get-Process src/lib.rs"),
+            Some(ReplacementCandidate::SelectStringDigest)
+        );
+        assert_eq!(
+            classify_shell_replacement("Stop-Process -Name codex | Select-String codex"),
             Some(ReplacementCandidate::SelectStringDigest)
         );
     }

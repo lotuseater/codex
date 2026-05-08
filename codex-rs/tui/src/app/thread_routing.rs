@@ -879,7 +879,7 @@ impl App {
                 self.update_agent_token_context_percent_used(
                     thread_id,
                     crate::multi_agents::token_context_percent_used(
-                        notification.token_usage.total.total_tokens,
+                        notification.token_usage.last.total_tokens,
                         notification.token_usage.model_context_window,
                     ),
                 );

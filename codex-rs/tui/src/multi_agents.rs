@@ -208,7 +208,7 @@ pub(crate) fn spawn_request_summary(item: &ThreadItem) -> Option<SpawnRequestSum
 }
 
 pub(crate) fn token_context_percent_used(
-    total_tokens: i64,
+    context_tokens: i64,
     model_context_window: Option<i64>,
 ) -> Option<i64> {
     let model_context_window = model_context_window?;
@@ -216,7 +216,7 @@ pub(crate) fn token_context_percent_used(
         return None;
     }
     Some(
-        ((total_tokens.max(0) as f64 / model_context_window as f64) * 100.0)
+        ((context_tokens.max(0) as f64 / model_context_window as f64) * 100.0)
             .clamp(0.0, 100.0)
             .round() as i64,
     )
@@ -1078,7 +1078,7 @@ mod tests {
             robie_id,
             &ThreadItem::CommandExecution {
                 id: "exec-1".to_string(),
-                command: "rg multi_agent codex-rs/tui/src".to_string(),
+                command: r#""C:\Users\Oleh\Documents\GitHub\PowerShell\src\powershell-win-core\bin\Release\net11.0\win7-x64\publish\pwsh.exe" -Command 'git diff -- C:\Users\Oleh\Documents\GitHub\open_ai\codex\codex-rs\core\src\tools\handlers\multi_agents_v2\spawn.rs'"#.to_string(),
                 cwd: codex_utils_absolute_path::AbsolutePathBuf::try_from(
                     std::env::current_dir().expect("current directory"),
                 )
@@ -1087,7 +1087,10 @@ mod tests {
                 source: codex_app_server_protocol::CommandExecutionSource::Agent,
                 status: CommandExecutionStatus::Completed,
                 command_actions: Vec::new(),
-                aggregated_output: Some("codex-rs/tui/src/multi_agents.rs:1:hit".to_string()),
+                aggregated_output: Some(
+                    r#"C:\Users\Oleh\Documents\GitHub\open_ai\codex\codex-rs\tui\src\multi_agents.rs:1:hit"#
+                        .to_string(),
+                ),
                 exit_code: Some(0),
                 duration_ms: Some(42),
             },
@@ -1095,7 +1098,13 @@ mod tests {
         )
         .expect("subagent command renders");
 
-        assert_snapshot!("subagent_activity_indented", cell_to_text(&cell));
+        let rendered = cell_to_text(&cell);
+        assert!(rendered.contains("pwsh.exe -Command"));
+        assert!(!rendered.contains("powershell-win-core"));
+        assert!(!rendered.contains("C:\\Users\\Oleh\\Documents\\GitHub\\open_ai\\codex"));
+        assert!(rendered.contains("...\\spawn.rs"));
+        assert!(rendered.contains("...\\multi_agents.rs:1:hit"));
+        assert_snapshot!("subagent_activity_indented", rendered);
     }
 
     #[test]
@@ -1144,6 +1153,15 @@ mod tests {
                 .map(cell_to_text)
                 .collect::<Vec<_>>()
                 .join("\n\n")
+        );
+    }
+
+    #[test]
+    fn token_context_percent_uses_current_context_tokens() {
+        assert_eq!(token_context_percent_used(8_213, Some(258_400)), Some(3));
+        assert_eq!(
+            token_context_percent_used(796_051, Some(258_400)),
+            Some(100)
         );
     }
 

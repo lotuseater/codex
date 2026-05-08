@@ -16,19 +16,17 @@ pub(crate) fn rank_files(
     let changed_paths = changed
         .paths
         .iter()
-        .map(|path| path.path.as_str())
+        .map(|path| path.path.clone())
         .collect::<BTreeSet<_>>();
-    let review_or_fix = terms
-        .iter()
-        .any(|term| matches!(term.as_str(), "review" | "fix" | "test" | "build" | "bug"));
+    let changed_focused = is_changed_focused(prompt, &terms);
     let mut candidates = index
         .files
         .iter()
         .filter_map(|file| {
             let mut score = 0.0;
             let mut reasons = Vec::new();
-            if changed_paths.contains(file.path.as_str()) {
-                score += if review_or_fix { 8.0 } else { 5.0 };
+            if changed_paths.contains(&file.path) {
+                score += if changed_focused { 8.0 } else { 5.0 };
                 reasons.push("changed".to_string());
             }
             for term in &terms {
@@ -45,7 +43,7 @@ pub(crate) fn rank_files(
                     reasons.push(format!("anchor:{term}"));
                 }
             }
-            if review_or_fix && is_test_or_build_path(&file.path) {
+            if changed_focused && is_test_or_build_path(&file.path) {
                 score += 1.5;
                 reasons.push("verification_area".to_string());
             }
@@ -68,8 +66,12 @@ pub(crate) fn rank_files(
             .total_cmp(&left.score)
             .then_with(|| left.path.cmp(&right.path))
     });
-    candidates.truncate(config.max_candidates);
-    candidates
+    if !changed_focused {
+        candidates.truncate(config.max_candidates);
+        return candidates;
+    }
+
+    select_changed_first(candidates, changed, &changed_paths, config.max_candidates)
 }
 
 pub(crate) fn support_routes_for_prompt(
@@ -150,6 +152,70 @@ fn is_test_or_build_path(path: &str) -> bool {
         || lower.ends_with("package.json")
         || lower.starts_with("scripts/")
         || lower.contains("/scripts/")
+}
+
+fn is_changed_focused(prompt: &str, terms: &[String]) -> bool {
+    let lower = prompt.to_ascii_lowercase();
+    terms.iter().any(|term| {
+        matches!(
+            term.as_str(),
+            "review"
+                | "fix"
+                | "test"
+                | "build"
+                | "bug"
+                | "change"
+                | "changes"
+                | "patch"
+                | "refactor"
+                | "update"
+                | "improve"
+        )
+    }) || lower.contains("implement")
+}
+
+fn select_changed_first(
+    candidates: Vec<ScoutCandidate>,
+    changed: &ChangedAreas,
+    changed_paths: &BTreeSet<String>,
+    max_candidates: usize,
+) -> Vec<ScoutCandidate> {
+    let mut selected = Vec::new();
+    let mut selected_paths = BTreeSet::new();
+    for candidate in candidates
+        .iter()
+        .filter(|candidate| changed_paths.contains(&candidate.path))
+    {
+        if selected.len() >= max_candidates {
+            break;
+        }
+        selected_paths.insert(candidate.path.clone());
+        selected.push(candidate.clone());
+    }
+    for changed_path in &changed.paths {
+        if selected.len() >= max_candidates {
+            break;
+        }
+        if selected_paths.contains(&changed_path.path) {
+            continue;
+        }
+        selected_paths.insert(changed_path.path.clone());
+        selected.push(ScoutCandidate {
+            path: changed_path.path.clone(),
+            score: 7.0,
+            reasons: vec!["changed".to_string(), "not_indexed".to_string()],
+            anchors: Vec::new(),
+        });
+    }
+    for candidate in candidates {
+        if selected.len() >= max_candidates {
+            break;
+        }
+        if selected_paths.insert(candidate.path.clone()) {
+            selected.push(candidate);
+        }
+    }
+    selected
 }
 
 const STOP_WORDS: &[&str] = &[

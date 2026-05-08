@@ -487,7 +487,7 @@ async fn explicit_review_suppresses_self_review_reminder() {
     chat.handle_codex_event(Event {
         id: "review-start".into(),
         msg: EventMsg::EnteredReviewMode(ReviewRequest {
-            target: ReviewTarget::UncommittedChanges,
+            target: codex_protocol::protocol::ReviewTarget::UncommittedChanges,
             user_facing_hint: None,
         }),
     });

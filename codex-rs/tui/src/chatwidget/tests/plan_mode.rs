@@ -180,6 +180,147 @@ async fn plan_implementation_popup_yes_emits_submit_message_event() {
 }
 
 #[tokio::test]
+async fn auto_loop_accepts_plan_implementation_prompt_with_yes() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
+    chat.open_plan_implementation_prompt();
+
+    assert_eq!(
+        chat.auto_loop_prompt_signature(),
+        Some(plan_implementation::PLAN_IMPLEMENTATION_VIEW_ID.to_string())
+    );
+    assert!(chat.try_handle_auto_loop_prompt());
+
+    let event = rx.try_recv().expect("expected AppEvent");
+    let AppEvent::SubmitUserMessageWithMode {
+        text,
+        collaboration_mode,
+    } = event
+    else {
+        panic!("expected SubmitUserMessageWithMode, got {event:?}");
+    };
+    assert_eq!(
+        text,
+        plan_implementation::PLAN_IMPLEMENTATION_CODING_MESSAGE
+    );
+    assert_eq!(collaboration_mode.mode, Some(ModeKind::Default));
+}
+
+#[tokio::test]
+async fn auto_loop_periodic_go_on_submits_plan_mode_continuation() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
+    chat.thread_id = Some(ThreadId::new());
+
+    assert!(
+        chat.submit_auto_loop_message("go on".to_string(), AutoLoopSubmissionContext::Periodic)
+    );
+
+    match next_submit_op(&mut op_rx) {
+        Op::UserTurn {
+            items,
+            collaboration_mode:
+                Some(CollaborationMode {
+                    mode: ModeKind::Plan,
+                    ..
+                }),
+            personality: None,
+            ..
+        } => {
+            let [UserInput::Text { text, .. }] = items.as_slice() else {
+                panic!("expected one text item, got {items:?}");
+            };
+            assert!(text.contains("Automatic periodic loop continuation: go on"));
+            assert!(text.contains("loop_followup_gain"));
+            assert!(text.contains("list_agents"));
+            assert!(text.contains("After plan self-review produces the revised or final plan"));
+        }
+        other => panic!("expected plan-mode auto-loop UserTurn, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn auto_loop_custom_periodic_message_keeps_direct_submission() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
+    chat.thread_id = Some(ThreadId::new());
+
+    assert!(chat.submit_auto_loop_message(
+        "run the configured smoke".to_string(),
+        AutoLoopSubmissionContext::Periodic
+    ));
+
+    match next_submit_op(&mut op_rx) {
+        Op::UserTurn {
+            items,
+            collaboration_mode:
+                Some(CollaborationMode {
+                    mode: ModeKind::Default,
+                    ..
+                }),
+            personality: None,
+            ..
+        } => {
+            assert_eq!(
+                items,
+                vec![UserInput::Text {
+                    text: "run the configured smoke".to_string(),
+                    text_elements: Vec::new(),
+                }]
+            );
+        }
+        other => panic!("expected direct auto-loop UserTurn, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn auto_loop_accepts_revised_plan_prompt_after_plan_self_review() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
+    chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
+    let plan_mask = collaboration_modes::mask_for_kind(chat.model_catalog.as_ref(), ModeKind::Plan)
+        .expect("expected plan collaboration mask");
+    chat.set_collaboration_mask(plan_mask);
+
+    chat.on_task_started();
+    chat.on_plan_delta("- Step 1\n- Step 2\n".to_string());
+    chat.on_plan_item_completed("- Step 1\n- Step 2\n".to_string());
+    chat.on_task_complete(
+        /*last_agent_message*/ None, /*duration_ms*/ None, /*from_replay*/ false,
+    );
+    match next_submit_op(&mut op_rx) {
+        Op::UserTurn { items, .. } => {
+            let [UserInput::Text { text, .. }] = items.as_slice() else {
+                panic!("expected one text item, got {items:?}");
+            };
+            assert!(text.contains("Self-review the plan below before implementation."));
+        }
+        other => panic!("expected plan self-review user turn, got {other:?}"),
+    }
+
+    chat.on_task_started();
+    chat.on_plan_item_completed("- Step 1\n- Step 2\n- Verify\n".to_string());
+    chat.on_task_complete(
+        /*last_agent_message*/ None, /*duration_ms*/ None, /*from_replay*/ false,
+    );
+
+    assert_eq!(
+        chat.auto_loop_prompt_signature(),
+        Some(plan_implementation::PLAN_IMPLEMENTATION_VIEW_ID.to_string())
+    );
+    assert!(chat.try_handle_auto_loop_prompt());
+
+    let AppEvent::SubmitUserMessageWithMode {
+        text,
+        collaboration_mode,
+    } = next_submit_user_message_with_mode_event(&mut rx)
+    else {
+        panic!("expected SubmitUserMessageWithMode event");
+    };
+    assert_eq!(
+        text,
+        plan_implementation::PLAN_IMPLEMENTATION_CODING_MESSAGE
+    );
+    assert_eq!(collaboration_mode.mode, Some(ModeKind::Default));
+}
+
+#[tokio::test]
 async fn plan_implementation_popup_clear_context_emits_clear_submit_event() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
     let plan_markdown = "- Step 1\n- Step 2\n";
@@ -1003,6 +1144,56 @@ async fn plan_implementation_popup_shows_after_proposed_plan_output() {
     assert!(
         popup.contains(PLAN_IMPLEMENTATION_TITLE),
         "expected plan popup after proposed plan self-review, got {popup:?}"
+    );
+}
+
+#[tokio::test]
+async fn plan_implementation_popup_uses_original_plan_when_self_review_returns_no_plan_item() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
+    chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
+    let plan_mask = collaboration_modes::mask_for_kind(chat.model_catalog.as_ref(), ModeKind::Plan)
+        .expect("expected plan collaboration mask");
+    chat.set_collaboration_mask(plan_mask);
+
+    let original_plan = "- Step 1\n- Verify\n";
+    chat.on_task_started();
+    chat.on_plan_item_completed(original_plan.to_string());
+    chat.on_task_complete(
+        /*last_agent_message*/ None, /*duration_ms*/ None, /*from_replay*/ false,
+    );
+    match next_submit_op(&mut op_rx) {
+        Op::UserTurn { items, .. } => {
+            let [UserInput::Text { text, .. }] = items.as_slice() else {
+                panic!("expected one text item, got {items:?}");
+            };
+            assert!(text.contains("Self-review the plan below before implementation."));
+        }
+        other => panic!("expected plan self-review user turn, got {other:?}"),
+    }
+
+    chat.on_task_started();
+    complete_assistant_message(
+        &mut chat,
+        "msg-plan-review",
+        "The plan is already implementation-ready.",
+        Some(MessagePhase::FinalAnswer),
+    );
+    chat.on_task_complete(
+        /*last_agent_message*/ None, /*duration_ms*/ None, /*from_replay*/ false,
+    );
+
+    let popup = render_bottom_popup(&chat, /*width*/ 80);
+    assert!(
+        popup.contains(PLAN_IMPLEMENTATION_TITLE),
+        "expected plan popup after self-review without a replacement plan, got {popup:?}"
+    );
+
+    chat.handle_key_event(KeyEvent::from(KeyCode::Down));
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+    let text = next_clear_ui_and_submit_user_message_text(&mut rx);
+    assert!(
+        text.contains(original_plan),
+        "expected clear-context implementation to keep the reviewed plan, got {text:?}"
     );
 }
 
@@ -2109,4 +2300,38 @@ async fn plan_update_renders_history_cell() {
     assert!(blob.contains("Explore codebase"));
     assert!(blob.contains("Implement feature"));
     assert!(blob.contains("Write tests"));
+}
+
+fn next_submit_user_message_with_mode_event(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
+) -> AppEvent {
+    loop {
+        match rx.try_recv() {
+            Ok(event @ AppEvent::SubmitUserMessageWithMode { .. }) => return event,
+            Ok(_) => continue,
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {
+                panic!("expected SubmitUserMessageWithMode event but queue was empty")
+            }
+            Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                panic!("expected SubmitUserMessageWithMode event but channel closed")
+            }
+        }
+    }
+}
+
+fn next_clear_ui_and_submit_user_message_text(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
+) -> String {
+    loop {
+        match rx.try_recv() {
+            Ok(AppEvent::ClearUiAndSubmitUserMessage { text }) => return text,
+            Ok(_) => continue,
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {
+                panic!("expected ClearUiAndSubmitUserMessage event but queue was empty")
+            }
+            Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                panic!("expected ClearUiAndSubmitUserMessage event but channel closed")
+            }
+        }
+    }
 }

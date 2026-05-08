@@ -84,6 +84,7 @@ use crate::text_formatting::proper_join;
 use crate::token_usage::TokenUsage;
 use crate::token_usage::TokenUsageInfo;
 use crate::version::CODEX_CLI_VERSION;
+pub(crate) use codex_agent_policy::AutoLoopSubmissionContext;
 use codex_app_server_protocol::AddCreditsNudgeCreditType;
 use codex_app_server_protocol::AddCreditsNudgeEmailStatus;
 use codex_app_server_protocol::AppInfo;
@@ -345,6 +346,7 @@ mod plugins;
 use self::plugins::PluginsCacheState;
 mod plan_implementation;
 use self::plan_implementation::PLAN_IMPLEMENTATION_TITLE;
+use self::plan_implementation::PLAN_IMPLEMENTATION_VIEW_ID;
 mod realtime;
 use self::realtime::RealtimeConversationUiState;
 mod reasoning_shortcuts;
@@ -2500,10 +2502,14 @@ impl ChatWidget {
         self.saw_plan_item_this_turn = false;
         self.plan_completed_this_turn = false;
         self.had_work_activity = false;
+        let awaiting_plan_self_review_revision =
+            self.plan_self_review == PlanSelfReview::AwaitingRevision;
         if self.plan_self_review == PlanSelfReview::ReviewedCurrentPlan {
             self.plan_self_review = PlanSelfReview::Idle;
         }
-        self.latest_proposed_plan_markdown = None;
+        if !awaiting_plan_self_review_revision {
+            self.latest_proposed_plan_markdown = None;
+        }
         self.plan_delta_buffer.clear();
         self.plan_item_active = false;
         self.self_review_tracker.reset_turn();
@@ -2728,6 +2734,14 @@ impl ChatWidget {
         match self.plan_self_review {
             PlanSelfReview::Idle => {}
             PlanSelfReview::AwaitingRevision => {
+                if !self.saw_plan_item_this_turn
+                    && self
+                        .latest_proposed_plan_markdown
+                        .as_deref()
+                        .is_some_and(|plan| !plan.trim().is_empty())
+                {
+                    self.saw_plan_item_this_turn = true;
+                }
                 self.plan_self_review = PlanSelfReview::ReviewedCurrentPlan;
                 return false;
             }
@@ -10787,9 +10801,47 @@ impl ChatWidget {
         Ok(())
     }
 
-    pub(crate) fn submit_auto_loop_message(&mut self, text: String) -> bool {
-        if text.trim().is_empty() || self.can_submit_auto_loop_message().is_err() {
+    pub(crate) fn auto_loop_prompt_signature(&self) -> Option<String> {
+        if self.bottom_pane.active_view_id() == Some(PLAN_IMPLEMENTATION_VIEW_ID) {
+            return Some(PLAN_IMPLEMENTATION_VIEW_ID.to_string());
+        }
+        self.bottom_pane.auto_loop_prompt_signature()
+    }
+
+    pub(crate) fn try_handle_auto_loop_prompt(&mut self) -> bool {
+        if self.bottom_pane.active_view_id() == Some(PLAN_IMPLEMENTATION_VIEW_ID) {
+            if self
+                .bottom_pane
+                .selected_index_for_active_view(PLAN_IMPLEMENTATION_VIEW_ID)
+                != Some(0)
+            {
+                return false;
+            }
+            return self.bottom_pane.auto_select_active_view_number('1');
+        }
+        self.bottom_pane.try_auto_loop_prompt_action()
+    }
+
+    pub(crate) fn submit_auto_loop_message(
+        &mut self,
+        text: String,
+        context: AutoLoopSubmissionContext,
+    ) -> bool {
+        if text.trim().is_empty() {
             return false;
+        }
+        if self.can_submit_auto_loop_message().is_err() {
+            return false;
+        }
+        if codex_agent_policy::auto_loop_should_plan_first(&text, context)
+            && let Some(plan_mask) =
+                collaboration_modes::mask_for_kind(self.model_catalog.as_ref(), ModeKind::Plan)
+        {
+            self.submit_user_message_with_mode(
+                codex_agent_policy::auto_loop_plan_first_message(&text, context),
+                plan_mask,
+            );
+            return true;
         }
         let (accepted, _) = self.submit_user_message_with_history_and_shell_escape_policy(
             UserMessage {
@@ -11257,6 +11309,57 @@ impl ChatWidget {
 
     pub(crate) fn thread_id(&self) -> Option<ThreadId> {
         self.thread_id
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_thread_id_for_test(&mut self, thread_id: Option<ThreadId>) {
+        self.thread_id = thread_id;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn handle_codex_event(&mut self, event: codex_protocol::protocol::Event) {
+        match event.msg {
+            codex_protocol::protocol::EventMsg::TurnComplete(event) => {
+                self.handle_turn_completed_notification(
+                    TurnCompletedNotification {
+                        thread_id: self.thread_id.map(|id| id.to_string()).unwrap_or_default(),
+                        turn: Turn {
+                            id: event.turn_id,
+                            items_view: codex_app_server_protocol::TurnItemsView::NotLoaded,
+                            items: Vec::new(),
+                            status: TurnStatus::Completed,
+                            error: None,
+                            started_at: None,
+                            completed_at: event.completed_at,
+                            duration_ms: event.duration_ms,
+                        },
+                    },
+                    /*replay_kind*/ None,
+                );
+            }
+            codex_protocol::protocol::EventMsg::EnteredReviewMode(review) => {
+                self.enter_review_mode_with_hint(
+                    review
+                        .user_facing_hint
+                        .unwrap_or_else(|| match review.target {
+                            codex_protocol::protocol::ReviewTarget::UncommittedChanges => {
+                                "current changes".to_string()
+                            }
+                            codex_protocol::protocol::ReviewTarget::BaseBranch { .. } => {
+                                "base branch".to_string()
+                            }
+                            codex_protocol::protocol::ReviewTarget::Commit { .. } => {
+                                "commit".to_string()
+                            }
+                            codex_protocol::protocol::ReviewTarget::Custom { .. } => {
+                                "custom review".to_string()
+                            }
+                        }),
+                    /*from_replay*/ false,
+                );
+            }
+            _ => {}
+        }
     }
 
     pub(crate) fn thread_name(&self) -> Option<String> {

@@ -5833,6 +5833,42 @@ async fn build_settings_update_items_emits_realtime_start_when_session_becomes_l
 }
 
 #[tokio::test]
+async fn build_settings_update_items_repeats_multi_agent_v2_hint_when_entering_plan_mode() {
+    let (session, previous_context) =
+        make_multi_agent_v2_usage_hint_test_session(/*enable_multi_agent_v2*/ true).await;
+    let previous_context = Arc::new(previous_context);
+    let mut current_context = previous_context
+        .with_model(
+            previous_context.model_info.slug.clone(),
+            &session.services.models_manager,
+        )
+        .await;
+    current_context.collaboration_mode = CollaborationMode {
+        mode: ModeKind::Plan,
+        settings: Settings {
+            model: current_context.model_info.slug.clone(),
+            reasoning_effort: current_context.reasoning_effort,
+            developer_instructions: Some("Plan guidance.".to_string()),
+        },
+    };
+
+    let update_items = session
+        .build_settings_update_items(
+            Some(&previous_context.to_turn_context_item()),
+            &current_context,
+        )
+        .await;
+
+    let developer_messages = developer_message_texts(&update_items);
+    assert!(
+        developer_messages
+            .iter()
+            .any(|message| message.as_slice() == ["Root guidance."]),
+        "expected plan entry update to repeat root multi-agent v2 hint, got {developer_messages:?}"
+    );
+}
+
+#[tokio::test]
 async fn build_settings_update_items_emits_realtime_end_when_session_stops_being_live() {
     let (session, mut previous_context) = make_session_and_context().await;
     previous_context.realtime_active = true;

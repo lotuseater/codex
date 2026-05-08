@@ -36,6 +36,7 @@ use crate::git::current_git_head;
 use crate::git::git_root;
 use crate::git::read_changed_areas;
 use crate::index::build_index;
+use crate::index::is_skipped_path;
 use crate::index::load_index;
 use crate::index::save_index;
 use crate::index::with_changed_overlay;
@@ -59,7 +60,8 @@ pub fn run_scout(request: ScoutRequest<'_>) -> Result<ScoutBundle> {
         return Err(ScoutError::InvalidProjectRoot(project_root));
     };
 
-    let changed = read_changed_areas(project_root.as_path());
+    let mut changed = read_changed_areas(project_root.as_path());
+    changed.paths.retain(|path| !is_skipped_path(&path.path));
     let current_head = current_git_head(project_root.as_path());
     let index_state = if !had_index {
         IndexState::Cold
@@ -114,23 +116,30 @@ pub fn run_shadow(request: ScoutRequest<'_>) -> Result<()> {
         git_root(request.project_root).unwrap_or_else(|_| request.project_root.to_path_buf());
     let cache = CachePaths::new(request.codex_home, project_root.as_path())?;
     let record = match result {
-        Ok(bundle) => ShadowRecord {
-            timestamp_unix: started_at_unix,
-            trigger: request.trigger,
-            prompt_hash,
-            repo_key: bundle.repo_key,
-            index_state: bundle.status.index_state,
-            selected_paths: bundle
+        Ok(bundle) => {
+            let selected_paths = bundle
                 .candidates
                 .iter()
                 .map(|candidate| candidate.path.clone())
-                .collect(),
-            support_routes: bundle.support_routes,
-            packet_tokens: bundle.packet_tokens,
-            changed_path_count: bundle.status.changed_paths.len(),
-            fallback_reason: None,
-            verdict: "recorded".to_string(),
-        },
+                .collect::<Vec<_>>();
+            let (selected_changed_paths, missed_changed_paths) =
+                changed_path_coverage(&bundle.status.changed_paths, &selected_paths);
+            ShadowRecord {
+                timestamp_unix: started_at_unix,
+                trigger: request.trigger,
+                prompt_hash,
+                repo_key: bundle.repo_key,
+                index_state: bundle.status.index_state,
+                selected_paths,
+                selected_changed_paths,
+                missed_changed_paths,
+                support_routes: bundle.support_routes,
+                packet_tokens: bundle.packet_tokens,
+                changed_path_count: bundle.status.changed_paths.len(),
+                fallback_reason: None,
+                verdict: "recorded".to_string(),
+            }
+        }
         Err(err) => ShadowRecord {
             timestamp_unix: started_at_unix,
             trigger: request.trigger,
@@ -138,6 +147,8 @@ pub fn run_shadow(request: ScoutRequest<'_>) -> Result<()> {
             repo_key: cache.repo_key.clone(),
             index_state: IndexState::Cold,
             selected_paths: Vec::new(),
+            selected_changed_paths: Vec::new(),
+            missed_changed_paths: Vec::new(),
             support_routes: Vec::new(),
             packet_tokens: 0,
             changed_path_count: 0,
@@ -146,6 +157,26 @@ pub fn run_shadow(request: ScoutRequest<'_>) -> Result<()> {
         },
     };
     append_shadow_record(cache.shadow.as_path(), &record)
+}
+
+fn changed_path_coverage(
+    changed_paths: &[ChangedPath],
+    selected_paths: &[String],
+) -> (Vec<String>, Vec<String>) {
+    let selected = selected_paths
+        .iter()
+        .cloned()
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut selected_changed_paths = Vec::new();
+    let mut missed_changed_paths = Vec::new();
+    for changed_path in changed_paths {
+        if selected.contains(&changed_path.path) {
+            selected_changed_paths.push(changed_path.path.clone());
+        } else {
+            missed_changed_paths.push(changed_path.path.clone());
+        }
+    }
+    (selected_changed_paths, missed_changed_paths)
 }
 
 pub fn approx_tokens(text: &str) -> usize {

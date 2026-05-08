@@ -1620,14 +1620,28 @@ impl Session {
         };
         let shell = self.user_shell();
         let exec_policy = self.services.exec_policy.current();
-        crate::context_manager::updates::build_settings_update_items(
+        let mut items = crate::context_manager::updates::build_settings_update_items(
             reference_context_item,
             previous_turn_settings.as_ref(),
             current_context,
             shell.as_ref(),
             exec_policy.as_ref(),
             self.features.enabled(Feature::Personality),
-        )
+        );
+        let previous_mode = reference_context_item
+            .and_then(|item| item.collaboration_mode.as_ref().map(|mode| mode.mode));
+        if current_context.collaboration_mode.mode == ModeKind::Plan
+            && previous_mode != Some(ModeKind::Plan)
+            && let Some(usage_hint_text) =
+                multi_agents::usage_hint_text(current_context, &current_context.session_source)
+            && let Some(usage_hint_message) =
+                crate::context_manager::updates::build_developer_update_item(vec![
+                    usage_hint_text.to_string(),
+                ])
+        {
+            items.push(usage_hint_message);
+        }
+        items
     }
 
     /// Persist the event to rollout and send it to clients.

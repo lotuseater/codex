@@ -140,8 +140,8 @@ app_test_support = { path = "app-server/tests/common" }
 codex-analytics = { path = "analytics" }
 codex-agent-graph-store = { path = "agent-graph-store" }
 codex-agent-identity = { path = "agent-identity" }
-codex-ansi-escape = { path = "ansi-escape" }
 codex-agent-policy = { path = "agent-policy" }
+codex-ansi-escape = { path = "ansi-escape" }
 codex-api = { path = "codex-api" }
 codex-aws-auth = { path = "aws-auth" }
 codex-app-server = { path = "app-server" }
@@ -165,8 +165,8 @@ codex-code-mode = { path = "code-mode" }
 codex-code-mode-spec = { path = "code-mode-spec" }
 codex-config = { path = "config" }
 codex-connectors = { path = "connectors" }
-codex-context-ops-impl = { path = "context-ops-impl" }
 codex-context-pack = { path = "context-pack" }
+codex-context-ops-impl = { path = "context-ops-impl" }
 codex-core = { path = "core" }
 codex-core-api = { path = "core-api" }
 codex-core-plugins = { path = "core-plugins" }

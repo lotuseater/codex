@@ -47,6 +47,16 @@ impl ToolHandler for Handler {
             )
             .await)
             .unwrap_or_default();
+        if restart_target.thread_id == session.conversation_id
+            && !matches!(
+                turn.session_source,
+                codex_protocol::protocol::SessionSource::SubAgent(_)
+            )
+        {
+            return Err(FunctionCallError::RespondToModel(
+                "root is not a spawned agent".to_string(),
+            ));
+        }
         if receiver_agent
             .agent_path
             .as_ref()

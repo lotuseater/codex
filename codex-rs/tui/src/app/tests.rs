@@ -1320,6 +1320,35 @@ async fn token_usage_update_refreshes_status_line_with_runtime_context_window() 
 }
 
 #[tokio::test]
+async fn token_usage_update_tracks_agent_current_context_not_cumulative_total() {
+    let mut app = make_test_app().await;
+    let agent_thread_id = ThreadId::new();
+    app.agent_navigation.upsert(
+        agent_thread_id,
+        Some("Epicurus".to_string()),
+        Some("explorer".to_string()),
+        /*is_closed*/ false,
+    );
+
+    app.handle_thread_event_now(ThreadBufferedEvent::Notification(
+        token_usage_notification_with_totals(
+            agent_thread_id,
+            "turn-1",
+            796_051,
+            8_213,
+            Some(258_400),
+        ),
+    ));
+
+    assert_eq!(
+        app.agent_navigation
+            .get(&agent_thread_id)
+            .map(|entry| entry.token_context_percent_used),
+        Some(Some(3))
+    );
+}
+
+#[tokio::test]
 async fn open_agent_picker_keeps_missing_threads_for_replay() -> Result<()> {
     let mut app = Box::pin(make_test_app()).await;
     let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(
@@ -3977,6 +4006,11 @@ async fn make_test_app() -> App {
         pending_app_server_requests: PendingAppServerRequests::default(),
         pending_plugin_enabled_writes: HashMap::new(),
         pending_hook_enabled_writes: HashMap::new(),
+        auto_loop: AutoLoopState::new(AutoLoopSettings::new(
+            /*enabled*/ false,
+            Duration::from_secs(300),
+            "go on".to_string(),
+        )),
     }
 }
 
@@ -4290,19 +4324,35 @@ fn token_usage_notification(
     turn_id: &str,
     model_context_window: Option<i64>,
 ) -> ServerNotification {
+    token_usage_notification_with_totals(
+        thread_id,
+        turn_id,
+        /*total_tokens*/ 10,
+        /*last_tokens*/ 10,
+        model_context_window,
+    )
+}
+
+fn token_usage_notification_with_totals(
+    thread_id: ThreadId,
+    turn_id: &str,
+    total_tokens: i64,
+    last_tokens: i64,
+    model_context_window: Option<i64>,
+) -> ServerNotification {
     ServerNotification::ThreadTokenUsageUpdated(ThreadTokenUsageUpdatedNotification {
         thread_id: thread_id.to_string(),
         turn_id: turn_id.to_string(),
         token_usage: ThreadTokenUsage {
             total: TokenUsageBreakdown {
-                total_tokens: 10,
+                total_tokens,
                 input_tokens: 4,
                 cached_input_tokens: 1,
                 output_tokens: 5,
                 reasoning_output_tokens: 0,
             },
             last: TokenUsageBreakdown {
-                total_tokens: 10,
+                total_tokens: last_tokens,
                 input_tokens: 4,
                 cached_input_tokens: 1,
                 output_tokens: 5,
@@ -4455,23 +4505,32 @@ async fn feedback_submission_for_inactive_thread_replays_into_origin_thread() {
 }
 
 #[tokio::test]
-async fn auto_loop_after_self_review_submits_configured_message() {
+async fn auto_loop_after_self_review_submits_plan_mode_continuation() {
     let (mut app, _app_event_rx, mut op_rx) = make_test_app_with_channels().await;
     app.auto_loop.settings.enabled = true;
     app.auto_loop.settings.message = "resume after review".to_string();
-    app.chat_widget.thread_id = Some(ThreadId::new());
+    app.chat_widget
+        .set_thread_id_for_test(Some(ThreadId::new()));
 
     assert!(app.handle_auto_loop_after_self_review());
 
     match next_user_turn_op(&mut op_rx) {
-        Op::UserTurn { items, .. } => {
-            assert_eq!(
-                items,
-                vec![UserInput::Text {
-                    text: "resume after review".to_string(),
-                    text_elements: Vec::new(),
-                }]
-            );
+        Op::UserTurn {
+            items,
+            collaboration_mode:
+                Some(CollaborationMode {
+                    mode: ModeKind::Plan,
+                    ..
+                }),
+            ..
+        } => {
+            let [UserInput::Text { text, .. }] = items.as_slice() else {
+                panic!("expected one text item, got {items:?}");
+            };
+            assert!(text.contains("Automatic post-self-review loop continuation"));
+            assert!(text.contains("resume after review"));
+            assert!(text.contains("loop_followup_gain"));
+            assert!(text.contains("After plan self-review produces the revised or final plan"));
         }
         other => panic!("expected UserTurn op, got {other:?}"),
     }

@@ -13,8 +13,8 @@ async fn renders_in_bottom_right_context() {
         limit_id: None,
         limit_name: None,
         primary: Some(RateLimitWindow {
-            used_percent: 25.0,
-            window_minutes: Some(300),
+            used_percent: 25,
+            window_duration_mins: Some(300),
             resets_at: Some((now + ChronoDuration::minutes(150)).timestamp()),
         }),
         secondary: None,
@@ -40,8 +40,8 @@ async fn combines_with_side_context_label() {
         limit_id: None,
         limit_name: None,
         primary: Some(RateLimitWindow {
-            used_percent: 25.0,
-            window_minutes: Some(300),
+            used_percent: 25,
+            window_duration_mins: Some(300),
             resets_at: Some((now + ChronoDuration::minutes(150)).timestamp()),
         }),
         secondary: None,
@@ -68,8 +68,8 @@ async fn compact_clear_removes_stale_token_percent() {
         limit_id: None,
         limit_name: None,
         primary: Some(RateLimitWindow {
-            used_percent: 25.0,
-            window_minutes: Some(300),
+            used_percent: 25,
+            window_duration_mins: Some(300),
             resets_at: Some((now + ChronoDuration::minutes(150)).timestamp()),
         }),
         secondary: None,

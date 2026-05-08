@@ -7,6 +7,9 @@ use codex_login::CodexAuth;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::built_in_model_providers;
 use codex_models_manager::bundled_models_response;
+use codex_protocol::config_types::CollaborationMode;
+use codex_protocol::config_types::ModeKind;
+use codex_protocol::config_types::Settings;
 use codex_protocol::items::TurnItem;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::openai_models::ModelInfo;
@@ -94,6 +97,25 @@ fn disabled_permission_user_turn(text: impl Into<String>, cwd: PathBuf, model: S
         collaboration_mode: None,
         personality: None,
     }
+}
+
+fn disabled_permission_plan_turn(text: impl Into<String>, cwd: PathBuf, model: String) -> Op {
+    let mut op = disabled_permission_user_turn(text, cwd, model.clone());
+    let Op::UserTurn {
+        collaboration_mode, ..
+    } = &mut op
+    else {
+        unreachable!("disabled_permission_user_turn always returns Op::UserTurn");
+    };
+    *collaboration_mode = Some(CollaborationMode {
+        mode: ModeKind::Plan,
+        settings: Settings {
+            model,
+            reasoning_effort: None,
+            developer_instructions: None,
+        },
+    });
+    op
 }
 
 fn auto_summary(summary: &str) -> String {
@@ -1621,6 +1643,105 @@ async fn auto_compact_starts_after_turn_started() {
     .await;
 
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn semantic_auto_compact_defers_during_plan_mode() {
+    skip_if_no_network!();
+
+    let server = start_mock_server().await;
+    let first_plan_user = "PLAN_MODE_FIRST_ITERATION";
+    let second_plan_user = "PLAN_MODE_REVIEW_ITERATION";
+    let implementation_user = "DEFAULT_MODE_IMPLEMENTATION";
+
+    let request_log = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_assistant_message("m1", "FIRST_PLAN"),
+                ev_completed_with_tokens("r1", /*total_tokens*/ 800),
+            ]),
+            sse(vec![
+                ev_assistant_message("m2", "REVISED_PLAN"),
+                ev_completed_with_tokens("r2", /*total_tokens*/ 20),
+            ]),
+            sse(vec![
+                ev_assistant_message("m3", AUTO_SUMMARY_TEXT),
+                ev_completed_with_tokens("r3", /*total_tokens*/ 20),
+            ]),
+            sse(vec![
+                ev_assistant_message("m4", FINAL_REPLY),
+                ev_completed_with_tokens("r4", /*total_tokens*/ 20),
+            ]),
+        ],
+    )
+    .await;
+
+    let model_provider = non_openai_model_provider(&server);
+    let mut builder = test_codex().with_config(move |config| {
+        config.model_provider = model_provider;
+        set_test_compact_prompt(config);
+        config.model_auto_compact_token_limit = Some(1_000);
+    });
+    let test = builder.build(&server).await.unwrap();
+    let model = test.session_configured.model.clone();
+
+    for user in [first_plan_user, second_plan_user] {
+        test.codex
+            .submit(disabled_permission_plan_turn(
+                user,
+                test.cwd.path().to_path_buf(),
+                model.clone(),
+            ))
+            .await
+            .unwrap();
+        wait_for_event(&test.codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    }
+
+    let plan_phase_requests: Vec<String> = request_log
+        .requests()
+        .into_iter()
+        .map(|request| request.body_json().to_string())
+        .collect();
+    assert_eq!(
+        plan_phase_requests.len(),
+        2,
+        "semantic auto-compact should not run between Plan-mode iterations"
+    );
+    assert!(plan_phase_requests[0].contains(first_plan_user));
+    assert!(plan_phase_requests[1].contains(second_plan_user));
+    assert!(
+        plan_phase_requests
+            .iter()
+            .all(|body| !body_contains_text(body, SUMMARIZATION_PROMPT)),
+        "Plan-mode requests should not be semantic compaction requests"
+    );
+
+    test.codex
+        .submit(disabled_permission_user_turn(
+            implementation_user,
+            test.cwd.path().to_path_buf(),
+            model,
+        ))
+        .await
+        .unwrap();
+    wait_for_event(&test.codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+
+    let requests: Vec<String> = request_log
+        .requests()
+        .into_iter()
+        .map(|request| request.body_json().to_string())
+        .collect();
+    assert_eq!(
+        requests.len(),
+        4,
+        "semantic auto-compact should run once the next non-Plan turn starts"
+    );
+    assert!(
+        body_contains_text(&requests[2], SUMMARIZATION_PROMPT),
+        "third request should be deferred semantic compaction"
+    );
+    assert!(requests[3].contains(implementation_user));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

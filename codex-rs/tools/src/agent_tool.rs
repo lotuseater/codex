@@ -9,15 +9,22 @@ use std::collections::BTreeMap;
 const SPAWN_AGENT_INHERITED_MODEL_GUIDANCE: &str = "Spawned agents inherit your current model by default. Omit `model` to use that preferred default; set `model` only when an explicit override is needed.";
 const SPAWN_AGENT_MODEL_OVERRIDE_DESCRIPTION: &str = "Optional model override for the new agent. Leave unset to inherit the same model as the parent, which is the preferred default. Only set this when the user explicitly asks for a different model or the task clearly requires one.";
 const SPAWN_AGENT_V2_DEFAULT_USAGE_HINT: &str = r#"### MultiAgentV2 delegation guidance
-- Decide during planning whether the immediate critical path stays local and which bounded sidecar tasks can run in parallel.
-- Spawn only concrete, self-contained work that materially advances the user's task. Keep urgent blockers local when your next step depends on them.
-- Give every spawned agent a compact context contract in `message`: `CONTEXT_AREA`, `DO_NOT_INSPECT`, `FIRST_READS`, `TOOL_HINTS`, `TOKEN_TIP`, `VERIFICATION`, and `HANDOFF`.
+- Decide during planning whether the immediate critical path stays local, reuses an existing agent, or can be split into bounded sidecar tasks that run in parallel.
+- Include an `Agent ROI Estimate` in every plan: new_agent_cost=3, reuse_cost=1, parallel_gain=0-3, context_gain=0-3, repeat_gain=0-4, loop_followup_gain=0-3, risk_penalty=0-3, net = gains + loop_followup_gain - cost - risk. In loop mode, automatic continuation normally adds loop_followup_gain=2, or 3 when a relevant idle/reusable agent or repeated operations are likely. Spawn or reuse only when net >= 2 and no hard keep-local rule applies.
+- When loop mode auto-submits a continuation such as `go on`, use that Plan-mode iteration to decide what work to give idle relevant agents. After plan self-review produces the revised or final plan, auto-loop may accept the implementation prompt automatically unless a blocker or user-choice prompt remains.
+- Before spawning for exploration, run the cheapest available routing step yourself: `first_moves_predict` when exposed, deferred/MCP first-moves via `tool_search` when needed, then repo navigation indexes or established local knowledge-base tools. If those ranked reads answer the routing question, keep the work local.
+- Spawn only concrete, self-contained work that materially advances the user's task. Keep urgent blockers local when your next step depends on them, and do not spawn an agent just for broad raw repo exploration unless first-moves/context scouting is insufficient.
+- Keep work local for simple exploration, exact file/symbol lookup, first-moves-sufficient routing, git commit/push/tag/rebase/merge, deploy or wrapper promotion, and immediate critical-path blockers.
+- Give every spawned agent a compact context contract in `message`: `CONTEXT_AREA`, `DO_NOT_INSPECT`, `SCOUT_EVIDENCE`, `WHY_AGENT / ROI`, `FIRST_READS`, `TOOL_HINTS`, `TOKEN_TIP`, `VERIFICATION`, and `HANDOFF`.
+- For `agent_type = "explorer"` or any scout/mapper/read-only exploration task, include `SCOUT_EVIDENCE` naming the first_moves/context-scout result you already inspected and `WHY_AGENT / ROI` explaining independent parallel value, reuse check, positive net estimate, plus token/time budget. A raw `rg` pattern containing words like `first_moves` or `repo_context_scout` is not scout evidence.
+- In `FIRST_READS`, name exact files when known and tell the agent to read them directly without calling `first_moves_predict`; for broad or uncertain context, tell the agent to call `first_moves_predict` or the repo's equivalent context scout before raw `rg`, `find`, or file sweeps.
 - Use `TOOL_HINTS` to encourage automation: for repeated checks or edits, tell agents to write a small script or use an existing harness when it will be faster, more reliable, or token-saving.
 - Use stable, descriptive `task_name` values so agents can be listed, resumed, reviewed, and restored by path.
 - Prefer `fork_turns = "none"` or a small recent-turn count when the message carries enough context; use `fork_turns = "all"` only when the child truly needs full prior conversation.
-- Choose each spawned agent's model and reasoning effort deliberately. Prefer quality and inherit the current model/effort unless the task is simple, bounded, and low risk enough for lower effort or a simpler model; raise effort/model quality for ambiguous, risky, code-changing, or verification-heavy work.
+- Choose each spawned agent's model and reasoning effort deliberately. Prefer quality and total token effectiveness, not just lower per-token cost: weaker models can spend more tokens through extra exploration, retries, or missed context. Inherit the current model/effort unless the task is simple, bounded, and low risk enough for lower effort or a simpler model; raise effort/model quality for ambiguous, risky, code-changing, or verification-heavy work.
 - For code changes, assign disjoint write scopes and tell agents they are not alone in the codebase and must not revert others' work.
-- Supervise agents with `list_agents`, `wait_agent`, `send_message`, `followup_task`, `compact_agent`, `restart_agent`, `resume_agent`, and `close_agent`; use `followup_task` to adjust model/effort for later turns, `compact_agent` for useful but drifting/token-heavy idle agents, and `restart_agent` for stuck or stale agents after checking evidence.
+- Supervise agents with `list_agents`, `wait_agent`, `send_message`, `followup_task`, `compact_agent`, `restart_agent`, `resume_agent`, and `close_agent`; call `list_agents` before spawning related follow-up work, use `followup_task` to reuse same-context agents and adjust model/effort, `compact_agent` for useful but drifting/token-heavy idle agents, and `restart_agent` for stuck or stale agents after checking evidence.
+- Keep useful completed agents around through plan-completion self-review, follow-up planning, and active loop iterations; close them only when loop mode is off, no follow-up is expected, they are stale/wrong, or thread slots are needed.
 - Ask agents to report reusable automation that should be promoted into a durable script, skill, or Codex code change."#;
 
 #[derive(Debug, Clone)]
@@ -195,7 +202,7 @@ pub fn create_followup_task_tool() -> ToolSpec {
 
     ToolSpec::Function(ResponsesApiTool {
         name: "followup_task".to_string(),
-        description: "Send a message to an existing non-root target agent and trigger a turn in that target. If the target is currently mid-turn, the message is queued and will be used to start the target's next turn, after the current turn completes."
+        description: "Send a message to an existing non-root target agent and trigger a turn in that target. Prefer this for same-context follow-up work after checking list_agents, because reusing a relevant agent is usually cheaper than spawning a replacement. If the target is currently mid-turn, the message is queued and will be used to start the target's next turn, after the current turn completes."
             .to_string(),
         strict: false,
         defer_loading: None,
@@ -264,7 +271,7 @@ pub fn create_compact_agent_tool() -> ToolSpec {
 
     ToolSpec::Function(ResponsesApiTool {
         name: "compact_agent".to_string(),
-        description: "Request context compaction for a live non-root MultiAgentV2 subagent. Use this for useful agents that are idle or waiting but have accumulated too much context; if the agent is actively running, wait or restart instead.".to_string(),
+        description: "Request context compaction for a live non-root MultiAgentV2 subagent. Use this for useful agents that are idle or waiting but have accumulated too much context, especially before related follow-up work; if the agent is actively running, wait or restart instead.".to_string(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::object(
@@ -356,7 +363,7 @@ pub fn create_list_agents_tool() -> ToolSpec {
     ToolSpec::Function(ResponsesApiTool {
         name: "list_agents".to_string(),
         description:
-            "List live agents in the current root thread tree. Optionally filter by task-path prefix."
+            "List live agents in the current root thread tree. Check this before spawning related follow-up work so a useful existing or resumable agent can be reused instead. Optionally filter by task-path prefix."
                 .to_string(),
         strict: false,
         defer_loading: None,
@@ -373,7 +380,7 @@ pub fn create_close_agent_tool_v1() -> ToolSpec {
 
     ToolSpec::Function(ResponsesApiTool {
         name: "close_agent".to_string(),
-        description: "Close an agent and any open descendants when they are no longer needed, and return the target agent's previous status before shutdown was requested. Don't keep agents open for too long if they are not needed anymore.".to_string(),
+        description: "Close an agent and any open descendants when they are no longer needed, and return the target agent's previous status before shutdown was requested. Keep useful completed agents through plan-completion self-review and follow-up planning; close them when no follow-up is expected or thread slots are needed.".to_string(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::object(properties, Some(vec!["target".to_string()]), Some(false.into())),
@@ -391,7 +398,7 @@ pub fn create_close_agent_tool_v2() -> ToolSpec {
 
     ToolSpec::Function(ResponsesApiTool {
         name: "close_agent".to_string(),
-        description: "Close an agent and any open descendants when they are no longer needed, and return the target agent's previous status before shutdown was requested. Don't keep agents open for too long if they are not needed anymore.".to_string(),
+        description: "Close an agent and any open descendants when they are no longer needed, and return the target agent's previous status before shutdown was requested. Keep useful completed agents through plan-completion self-review and follow-up planning; close them when no follow-up is expected or thread slots are needed.".to_string(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::object(properties, Some(vec!["target".to_string()]), Some(false.into())),
@@ -831,7 +838,7 @@ fn spawn_agent_tool_description_v2(
         {agent_role_guidance}
         Spawns an agent to work on the specified task. If your current task is `/root/task1` and you spawn_agent with task_name "task_3" the agent will have canonical task name `/root/task1/task_3`.
 You are then able to refer to this agent as `task_3` or `/root/task1/task_3` interchangeably. However an agent `/root/task2/task_3` would only be able to communicate with this agent via its canonical name `/root/task1/task_3`.
-The spawned agent will have the same tools as you and the ability to spawn its own subagents.
+The spawned agent will have the same configured tools, skills, MCP/app surfaces, and local caches as you unless its role or environment explicitly restricts them, and it can spawn its own subagents.
 The spawned agent inherits your current permission mode. You may choose its model and reasoning effort for the task; prefer quality and inherit the current model/effort unless a simpler bounded task is clearly safe for lower effort or a simpler model.
 It will be able to send you and other running agents messages, and its final answer will be provided to you when it finishes.
 The new agent's canonical task name will be provided to it along with the message.

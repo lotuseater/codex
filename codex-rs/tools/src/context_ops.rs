@@ -5,7 +5,6 @@ use codex_tool_schema::JsonSchema;
 use std::collections::BTreeMap;
 
 pub const FILE_OUTLINE_TOOL_NAME: &str = "file_outline";
-pub const GIT_WORKTREE_SUMMARY_TOOL_NAME: &str = "git_worktree_summary";
 pub const SEARCH_TEXT_TOOL_NAME: &str = "search_text";
 
 pub fn create_context_ops_tools() -> Vec<ToolSpec> {
@@ -38,29 +37,6 @@ pub fn create_context_ops_tools() -> Vec<ToolSpec> {
             ),
         ),
         create_tool(
-            GIT_WORKTREE_SUMMARY_TOOL_NAME,
-            "Summarize git worktree changes compactly. Use instead of broad raw git status/diff output when a high-level change map is enough.",
-            object_schema(
-                [
-                    (
-                        "workdir",
-                        JsonSchema::string(Some(
-                            "Repository or subdirectory to inspect. Defaults to the current working directory."
-                                .to_string(),
-                        )),
-                    ),
-                    (
-                        "limit",
-                        JsonSchema::integer(Some(
-                            "Maximum changed paths to list. Defaults to 80 and is capped at 500."
-                                .to_string(),
-                        )),
-                    ),
-                ],
-                None,
-            ),
-        ),
-        create_tool(
             SEARCH_TEXT_TOOL_NAME,
             "Search text with capped grouped results. Use instead of broad raw rg output when finding likely files or examples.",
             object_schema(
@@ -82,6 +58,16 @@ pub fn create_context_ops_tools() -> Vec<ToolSpec> {
                             "Optional rg glob filter, for example '*.rs' or 'codex-rs/core/**'."
                                 .to_string(),
                         )),
+                    ),
+                    (
+                        "globs",
+                        JsonSchema::array(
+                            JsonSchema::string(/*description*/ None),
+                            Some(
+                                "Optional additional rg glob filters, preserving repeated --glob filters."
+                                    .to_string(),
+                            ),
+                        ),
                     ),
                     (
                         "paths",

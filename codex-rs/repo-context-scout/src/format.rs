@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use crate::approx_tokens;
 use crate::types::ChangedAreas;
 use crate::types::IndexState;
@@ -15,19 +17,31 @@ pub(crate) fn format_packet(
     prompt: &str,
     config: &RepoContextScoutConfig,
 ) -> String {
+    let selected_paths = candidates
+        .iter()
+        .map(|candidate| candidate.path.as_str())
+        .collect::<BTreeSet<_>>();
+    let selected_changed_count = changed
+        .paths
+        .iter()
+        .filter(|path| selected_paths.contains(path.path.as_str()))
+        .count();
+    let missed_changed_count = changed.paths.len().saturating_sub(selected_changed_count);
     let mut lines = vec![
         "<repo_context_scout>".to_string(),
         "role: bounded repo-state scout; use as path hints, not proof".to_string(),
         format!(
-            "index_state: {:?}; indexed_files: {}; changed_paths: {}",
+            "index_state: {:?}; indexed_files: {}; changed_paths: {}; selected_reads: {}; selected_changed: {}; missed_changed: {}",
             index_state,
             index.files.len(),
-            changed.paths.len()
+            changed.paths.len(),
+            candidates.len(),
+            selected_changed_count,
+            missed_changed_count
         ),
-        format!("project_root: {}", index.project_root.display()),
         format!(
             "task_prompt_digest: {}",
-            prompt.chars().take(180).collect::<String>()
+            prompt.chars().take(140).collect::<String>()
         ),
     ];
     if let Some(head) = index.git_head.as_deref() {
@@ -39,7 +53,7 @@ pub(crate) fn format_packet(
     if index.file_limit_reached {
         lines.push("warning: file inventory hit max_files; scout may be incomplete".to_string());
     }
-    if !changed.paths.is_empty() {
+    if candidates.is_empty() && !changed.paths.is_empty() {
         lines.push("changed_paths:".to_string());
         for changed_path in changed.paths.iter().take(16) {
             lines.push(format!("- {} {}", changed_path.status, changed_path.path));
@@ -53,18 +67,18 @@ pub(crate) fn format_packet(
     }
     if !candidates.is_empty() {
         lines.push("recommended_reads:".to_string());
-        for candidate in candidates {
+        for (index, candidate) in candidates.iter().enumerate() {
             lines.push(format!(
                 "- {} ({:.1}) - {}",
                 candidate.path,
                 candidate.score,
                 candidate.reasons.join(", ")
             ));
-            if !candidate.anchors.is_empty() {
+            if index < 8 && !candidate.anchors.is_empty() {
                 let anchors = candidate
                     .anchors
                     .iter()
-                    .take(3)
+                    .take(1)
                     .map(|anchor| format!("L{} {}", anchor.line, anchor.text))
                     .collect::<Vec<_>>()
                     .join("; ");

@@ -9,6 +9,7 @@ use walkdir::WalkDir;
 // context-reducer-lab's 2026-05-08 real Codex canaries showed better routing
 // for fresh root turns and spawn_agent prompts.
 const DEFAULT_PATH_BUDGET: usize = 16;
+const EXACT_MATCH_LIMIT: usize = 3;
 const MAX_CONTENT_SCORE_FILES: usize = 256;
 const MAX_READ_BYTES: usize = 32_000;
 
@@ -30,11 +31,30 @@ impl<'a> ContextPackRequest<'a> {
 }
 
 pub fn render_graphify_scout_pack(request: &ContextPackRequest<'_>) -> Option<String> {
-    if !should_render_context_pack(request.prompt) {
+    let has_explicit_file_hint = prompt_has_candidate_extension(request.prompt);
+    if (!has_explicit_file_hint && prompt_terms(request.prompt).len() < 2)
+        || has_context_pack_or_scout(request.prompt)
+    {
+        return None;
+    }
+    if !has_explicit_file_hint && !should_render_context_pack(request.prompt) {
         return None;
     }
     let mut files = repo_inventory(request.project_root, request.prompt);
     if files.is_empty() {
+        return None;
+    }
+    if has_explicit_file_hint {
+        let explicit_paths = resolve_explicit_paths(
+            &files,
+            request.prompt,
+            request.path_budget.max(1).min(EXACT_MATCH_LIMIT),
+        );
+        if !explicit_paths.is_empty() {
+            return Some(render_exact_pack(&explicit_paths));
+        }
+    }
+    if !should_render_context_pack(request.prompt) {
         return None;
     }
     let terms = prompt_terms(request.prompt);
@@ -66,7 +86,7 @@ pub fn render_graphify_scout_pack(request: &ContextPackRequest<'_>) -> Option<St
     if selected.is_empty() {
         return None;
     }
-    Some(render_pack(&selected))
+    Some(render_scout_pack(&selected))
 }
 
 pub fn prepend_context_pack_to_message(
@@ -74,7 +94,7 @@ pub fn prepend_context_pack_to_message(
     message: &str,
     path_budget: usize,
 ) -> String {
-    if has_context_pack(message) {
+    if has_context_pack_or_scout(message) {
         return message.to_string();
     }
     let request = ContextPackRequest {
@@ -99,6 +119,10 @@ pub fn has_context_pack_or_scout(message: &str) -> bool {
 pub fn has_scout_context(message: &str) -> bool {
     let lower = message.to_ascii_lowercase();
     lower.contains("scout_evidence:")
+        || lower.contains("scout_hint:")
+        || lower.contains("scout_hint (")
+        || lower.contains("exact_match:")
+        || lower.contains("exact_match (")
         || lower.contains("first_moves_evidence:")
         || lower.contains("routing_evidence:")
         || lower.contains("context_scout_evidence:")
@@ -143,19 +167,135 @@ fn contains_any(section: &str, terms: &[&str]) -> bool {
     terms.iter().any(|term| section.contains(term))
 }
 
-fn render_pack(paths: &[String]) -> String {
+const TRIGGER_WORDS: &[&str] = &[
+    "implement",
+    "fix",
+    "review",
+    "debug",
+    "test",
+    "tests",
+    "verify",
+    "validate",
+    "ensure",
+    "confirm",
+    "convert",
+    "refactor",
+    "remove",
+    "delete",
+    "wire",
+    "trace",
+    "audit",
+    "port",
+    "rewrite",
+    "rename",
+    "move",
+    "split",
+    "merge",
+    "fold",
+    "extract",
+    "introduce",
+    "drop",
+    "clean",
+    "prune",
+    "purge",
+    "sync",
+    "align",
+    "mirror",
+    "build",
+    "compile",
+    "rebuild",
+    "integrate",
+    "bootstrap",
+    "installer",
+    "identify",
+    "find",
+    "inspect",
+    "explore",
+    "show",
+    "list",
+    "check",
+    "tell",
+    "explain",
+    "describe",
+    "summarize",
+    "summarise",
+    "outline",
+    "compare",
+    "scan",
+    "study",
+    "analyze",
+    "analyse",
+    "diagnose",
+    "investigate",
+];
+
+const CODE_NOUNS: &[&str] = &[
+    "facade", "kernel", "pipeline", "workflow", "module", "function", "class", "method", "symbol",
+    "hook", "codebase", "repo", "project",
+];
+
+const PHRASE_TRIGGERS: &[&str] = &[
+    "where is",
+    "where should",
+    "where does",
+    "where do ",
+    "what is the",
+    "what does",
+    "what do ",
+    "which files",
+    "what files",
+    "how does",
+    "how do ",
+    "how is ",
+    "how are ",
+    "why does",
+    "why do ",
+    "why is",
+    "when does",
+    "when do ",
+    "spawn_agent",
+    "fresh turn",
+    "context pack",
+    "context-pack",
+    "look at",
+    "walk through",
+];
+
+fn render_scout_pack(paths: &[String]) -> String {
     let mut lines = vec![
-        "<context_pack variant=\"graphify_scout_pack\" source=\"context-reducer-lab-2026-05-08-canary\">".to_string(),
-        "SCOUT_EVIDENCE:".to_string(),
+        "<context_pack variant=\"graphify_scout_pack\" source=\"context-reducer-lab-2026-05-08-canary\" mode=\"scout\">".to_string(),
+        "SCOUT_HINT (candidate paths from a static term-matching heuristic):".to_string(),
     ];
     for path in paths {
         lines.push(format!("- {path}"));
     }
-    lines.push("FIRST_READS: read the listed paths first when they fit the task.".to_string());
+    lines.push(
+        "USAGE: open these only if existing context is insufficient; do not pre-emptively read every listed path.".to_string(),
+    );
     lines.push(
         "FRESHNESS: derived from current repo scan; read exact files before editing.".to_string(),
     );
-    lines.push("VERIFICATION: treat these paths as first reads, not answers.".to_string());
+    lines.push("VERIFICATION: treat these paths as orientation hints, not answers.".to_string());
+    lines.push("</context_pack>".to_string());
+    lines.join("\n")
+}
+
+fn render_exact_pack(paths: &[String]) -> String {
+    let mut lines = vec![
+        "<context_pack variant=\"graphify_scout_pack\" source=\"context-reducer-lab-2026-05-08-canary\" mode=\"exact\">".to_string(),
+        "EXACT_MATCH (user named this path in the prompt):".to_string(),
+    ];
+    for path in paths {
+        lines.push(format!("- {path}"));
+    }
+    lines.push(
+        "USAGE: open the named path if needed; do not expand this into broad repo discovery."
+            .to_string(),
+    );
+    lines.push(
+        "FRESHNESS: derived from current repo scan; read exact files before editing.".to_string(),
+    );
+    lines.push("VERIFICATION: treat these paths as orientation hints, not answers.".to_string());
     lines.push("</context_pack>".to_string());
     lines.join("\n")
 }
@@ -166,35 +306,204 @@ struct FileCandidate {
     score: i64,
 }
 
+fn resolve_explicit_paths(files: &[FileCandidate], prompt: &str, limit: usize) -> Vec<String> {
+    if limit == 0 {
+        return Vec::new();
+    }
+    let mut selected = BTreeSet::new();
+    for token in explicit_file_tokens(prompt) {
+        if token.contains('/') {
+            for file in files {
+                if file.path.eq_ignore_ascii_case(&token) {
+                    selected.insert(file.path.clone());
+                    if selected.len() >= limit {
+                        return selected.into_iter().collect();
+                    }
+                }
+            }
+        } else {
+            let mut basename_matches = files
+                .iter()
+                .filter(|file| path_basename(&file.path).eq_ignore_ascii_case(&token))
+                .map(|file| file.path.clone())
+                .collect::<Vec<_>>();
+            basename_matches.sort();
+            for path in basename_matches {
+                selected.insert(path);
+                if selected.len() >= limit {
+                    return selected.into_iter().collect();
+                }
+            }
+        }
+    }
+    selected.into_iter().collect()
+}
+
+fn explicit_file_tokens(prompt: &str) -> Vec<String> {
+    prompt_path_tokens(prompt)
+        .into_iter()
+        .filter(|token| has_candidate_extension_token(token))
+        .collect()
+}
+
+fn prompt_path_tokens(prompt: &str) -> Vec<String> {
+    prompt
+        .split(|ch: char| {
+            !(ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | '/' | '\\'))
+        })
+        .filter_map(clean_path_token)
+        .collect()
+}
+
+fn clean_path_token(raw: &str) -> Option<String> {
+    let mut token = normalize_slashes(raw.trim_matches(|ch: char| {
+        matches!(
+            ch,
+            '"' | '\'' | '`' | '<' | '>' | '(' | ')' | '[' | ']' | '{' | '}' | ',' | ';' | ':'
+        )
+    }));
+    while let Some(stripped) = token.strip_prefix("./") {
+        token = stripped.to_string();
+    }
+    token = token.trim_start_matches('/').to_string();
+    if !has_candidate_extension_token(&token) {
+        token = token.trim_end_matches('.').to_string();
+    }
+    (!token.is_empty() && token.len() >= 3).then_some(token)
+}
+
+fn has_candidate_extension_token(token: &str) -> bool {
+    language_for_path(token) != "unknown"
+}
+
+fn path_basename(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or(path)
+}
+
 fn should_render_context_pack(prompt: &str) -> bool {
     let lower = prompt.to_ascii_lowercase();
-    let taskish = [
-        "implement",
-        "fix",
-        "review",
-        "debug",
-        "test",
-        "identify",
-        "find",
-        "inspect",
-        "where",
-        "which files",
-        "what files",
-        "map",
-        "explore",
+    let terms = prompt_terms(prompt);
+    if terms.len() < 2 || has_context_pack_or_scout(prompt) {
+        return false;
+    }
+    if is_docs_or_report_broad_task(&lower)
+        || is_broad_common_search_prompt(&lower)
+        || is_weak_single_symbol_prompt(prompt)
+    {
+        return false;
+    }
+    if is_explicit_repo_routing_prompt(prompt)
+        || prompt_has_candidate_extension(prompt)
+        || prompt_has_directory_path(prompt)
+        || contains_any(&lower, PHRASE_TRIGGERS)
+    {
+        return true;
+    }
+    let words = prompt_words(prompt);
+    let has_trigger_word = TRIGGER_WORDS.iter().any(|word| words.contains(*word));
+    let has_code_noun = CODE_NOUNS.iter().any(|word| words.contains(*word));
+    has_trigger_word && (terms.len() >= 3 || has_code_noun)
+}
+
+fn prompt_words(prompt: &str) -> BTreeSet<String> {
+    prompt
+        .split(|ch: char| !ch.is_ascii_alphanumeric())
+        .filter(|token| token.len() >= 2)
+        .map(str::to_ascii_lowercase)
+        .collect()
+}
+
+fn prompt_has_candidate_extension(prompt: &str) -> bool {
+    !explicit_file_tokens(prompt).is_empty()
+}
+
+fn prompt_has_directory_path(prompt: &str) -> bool {
+    prompt_path_tokens(prompt).into_iter().any(|token| {
+        token.contains('/') && token.split('/').filter(|part| !part.is_empty()).count() >= 2
+    })
+}
+
+fn is_docs_or_report_broad_task(lower: &str) -> bool {
+    let words = prompt_words(lower);
+    let mentions_docs = contains_any(
+        lower,
+        &[
+            "docs",
+            "documentation",
+            "report",
+            "reports",
+            "markdown",
+            "prose",
+        ],
+    );
+    let task = contains_any(
+        lower,
+        &[
+            "summarize",
+            "summarise",
+            "compare",
+            "review",
+            "explain",
+            "describe",
+            "report on",
+            "report about",
+        ],
+    );
+    let codeish_word = [
+        "code",
         "codebase",
         "repo",
         "project",
-        "integrate",
-        "bootstrap",
-        "installer",
-        "spawn_agent",
-        "fresh turn",
-        "context pack",
+        "implementation",
+        "function",
+        "symbol",
     ]
     .iter()
-    .any(|needle| lower.contains(needle));
-    taskish && prompt_terms(prompt).len() >= 2
+    .any(|word| words.contains(*word));
+    let codeish_path = contains_any(lower, &["src/", "tests/", ".rs", ".py", ".cpp"]);
+    let codeish = codeish_word || codeish_path;
+    mentions_docs && task && !codeish
+}
+
+fn is_broad_common_search_prompt(lower: &str) -> bool {
+    let broad = contains_any(
+        lower,
+        &[
+            "search broadly",
+            "broad search",
+            "search the repo for",
+            "search the project for",
+        ],
+    );
+    let common = contains_any(
+        lower,
+        &[
+            "config", "error", "test", "todo", "readme", "use", "mod", "file", "data",
+        ],
+    );
+    broad && common
+}
+
+fn is_weak_single_symbol_prompt(prompt: &str) -> bool {
+    let lower = prompt.to_ascii_lowercase();
+    if !contains_any(
+        &lower,
+        &["tell me about ", "what is ", "what does ", "describe "],
+    ) {
+        return false;
+    }
+    let tokens = prompt
+        .split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
+        .filter(|token| !token.is_empty())
+        .collect::<Vec<_>>();
+    if tokens.len() > 4 {
+        return false;
+    }
+    let symbolish = tokens
+        .iter()
+        .filter(|token| token.contains('_') || token.chars().any(|ch| ch.is_ascii_uppercase()))
+        .count();
+    symbolish == 1
 }
 
 fn repo_inventory(root: &Path, prompt: &str) -> Vec<FileCandidate> {
@@ -261,6 +570,16 @@ fn operational_path_boost(prompt: &str, path: &str) -> i64 {
     if prompt.contains("context pack") || prompt.contains("context-pack") {
         if path.contains("context_pack") || path.contains("context-pack") {
             boost += 400;
+        }
+    }
+    if prompt.contains("first moves") || prompt.contains("first_moves") {
+        if path.contains("first_moves") {
+            boost += 250;
+        }
+    }
+    if prompt.contains("hook") {
+        if path.contains("/hooks/") || path.contains("_hook.py") || path.contains("_hook.ps1") {
+            boost += 350;
         }
     }
     if prompt.contains("fresh root")
@@ -442,8 +761,20 @@ mod tests {
         let packed = prepend_context_pack_to_message(temp.path(), message, 16);
 
         assert!(packed.starts_with("<context_pack"));
-        assert!(packed.contains("FIRST_READS: read the listed paths first"));
+        let pack_prefix = packed.split("\n\n").next().expect("pack prefix");
+        assert!(pack_prefix.contains("mode=\"exact\""));
+        assert!(pack_prefix.contains("USAGE:"));
+        assert!(!pack_prefix.contains("FIRST_READS"));
         assert!(packed.ends_with(message));
+    }
+
+    #[test]
+    fn preserves_existing_scout_hint_message() {
+        let message = "SCOUT_HINT (candidate paths from a static term-matching heuristic):\n- src/lib.rs\n\nDo the task.";
+        assert_eq!(
+            prepend_context_pack_to_message(Path::new("."), message, 16),
+            message
+        );
     }
 
     #[test]
@@ -462,10 +793,106 @@ mod tests {
         let pack = render_graphify_scout_pack(&request).expect("pack");
         assert!(pack.contains("src/session/turn.rs"));
         assert!(pack.contains("<context_pack"));
-        assert!(pack.contains("SCOUT_EVIDENCE:"));
-        assert!(pack.contains("FIRST_READS:"));
+        assert!(pack.contains("mode=\"scout\""));
+        assert!(pack.contains("SCOUT_HINT"));
+        assert!(pack.contains("USAGE:"));
+        assert!(!pack.contains("FIRST_READS:"));
         assert!(pack.contains("FRESHNESS:"));
         assert!(pack.contains("VERIFICATION:"));
+    }
+
+    #[test]
+    fn skips_substring_false_positive_prompt() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(temp.path().join("src")).expect("mkdir");
+        fs::write(temp.path().join("src/login_flow.rs"), "fn login() {}").expect("write");
+
+        let request = ContextPackRequest::new(temp.path(), "the contest result was inconclusive");
+        assert!(render_graphify_scout_pack(&request).is_none());
+    }
+
+    #[test]
+    fn skips_docs_report_summary_without_explicit_path() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(temp.path().join("docs")).expect("mkdir docs");
+        fs::create_dir_all(temp.path().join("src")).expect("mkdir src");
+        fs::write(temp.path().join("docs/report.md"), "summary").expect("write docs");
+        fs::write(temp.path().join("src/report.rs"), "fn report() {}").expect("write src");
+
+        let request =
+            ContextPackRequest::new(temp.path(), "Summarize the docs and compare reports");
+        assert!(render_graphify_scout_pack(&request).is_none());
+    }
+
+    #[test]
+    fn skips_broad_common_search_prompt() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(temp.path().join("src")).expect("mkdir src");
+        fs::write(temp.path().join("src/config.rs"), "fn config() {}").expect("write");
+
+        let request =
+            ContextPackRequest::new(temp.path(), "Search broadly for config in this repo");
+        assert!(render_graphify_scout_pack(&request).is_none());
+    }
+
+    #[test]
+    fn skips_weak_single_symbol_prompt() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(temp.path().join("src")).expect("mkdir src");
+        fs::write(
+            temp.path().join("src/pipeline.rs"),
+            "fn run_pipeline_kernel_mode() {}",
+        )
+        .expect("write");
+
+        let request =
+            ContextPackRequest::new(temp.path(), "tell me about run_pipeline_kernel_mode");
+        assert!(render_graphify_scout_pack(&request).is_none());
+    }
+
+    #[test]
+    fn renders_exact_pack_for_repo_relative_path() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(temp.path().join("codex-rs/context-pack/src")).expect("mkdir");
+        fs::write(
+            temp.path().join("codex-rs/context-pack/src/lib.rs"),
+            "pub fn render() {}",
+        )
+        .expect("write");
+        fs::create_dir_all(temp.path().join("codex-rs/core/src")).expect("mkdir core");
+        fs::write(
+            temp.path().join("codex-rs/core/src/lib.rs"),
+            "pub fn core() {}",
+        )
+        .expect("write core");
+
+        let request = ContextPackRequest::new(
+            temp.path(),
+            "what does codex-rs/context-pack/src/lib.rs do?",
+        );
+        let pack = render_graphify_scout_pack(&request).expect("pack");
+        assert!(pack.contains("mode=\"exact\""));
+        assert!(pack.contains("EXACT_MATCH"));
+        assert!(pack.contains("codex-rs/context-pack/src/lib.rs"));
+        assert!(!pack.contains("codex-rs/core/src/lib.rs"));
+        assert!(!pack.contains("SCOUT_HINT"));
+    }
+
+    #[test]
+    fn renders_exact_pack_for_duplicate_basename() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(temp.path().join("core")).expect("mkdir core");
+        fs::create_dir_all(temp.path().join("src")).expect("mkdir src");
+        fs::write(temp.path().join("core/pipeline_runner.cpp"), "// core").expect("write core");
+        fs::write(temp.path().join("src/pipeline_runner.cpp"), "// src").expect("write src");
+        fs::write(temp.path().join("src/helper.cpp"), "// helper").expect("write helper");
+
+        let request = ContextPackRequest::new(temp.path(), "summarise pipeline_runner.cpp");
+        let pack = render_graphify_scout_pack(&request).expect("pack");
+        assert!(pack.contains("mode=\"exact\""));
+        assert!(pack.contains("core/pipeline_runner.cpp"));
+        assert!(pack.contains("src/pipeline_runner.cpp"));
+        assert!(!pack.contains("src/helper.cpp"));
     }
 
     #[test]
@@ -554,9 +981,7 @@ mod tests {
             "repomix-output/",
         ] {
             assert!(
-                inventory
-                    .iter()
-                    .all(|file| !file.path.contains(ignored)),
+                inventory.iter().all(|file| !file.path.contains(ignored)),
                 "inventory should not contain {ignored}; got {:?}",
                 inventory.iter().map(|f| &f.path).collect::<Vec<_>>()
             );
@@ -604,6 +1029,8 @@ mod tests {
         );
         let pack = render_graphify_scout_pack(&request).expect("pack");
 
+        assert!(pack.contains("mode=\"exact\""));
+        assert!(pack.contains("EXACT_MATCH"));
         assert!(pack.contains("reports/codex-context-pack-canary-results-2026-05-08.md"));
     }
 

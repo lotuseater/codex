@@ -1,3 +1,5 @@
+use crate::shadow::ShadowPredictInput;
+use crate::shadow::record_shadow_prediction;
 use crate::storage::PathLearning;
 use crate::storage::load_learning;
 use crate::storage::normalize_path_text;
@@ -54,10 +56,10 @@ const SOURCE_EXTENSIONS: &[&str] = &[
 ];
 
 #[derive(Debug, Clone)]
-struct Candidate {
-    rel_path: String,
-    name: String,
-    path_terms: HashSet<String>,
+pub(crate) struct Candidate {
+    pub(crate) rel_path: String,
+    pub(crate) name: String,
+    pub(crate) path_terms: HashSet<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,70 +89,6 @@ impl Intent {
             Self::General => "general",
         }
     }
-}
-
-pub async fn predict(request: PredictRequest<'_>) -> Result<FirstMovesBundle> {
-    let config = request.config.clone();
-    let project_root = resolve_repo_root(request.project_root);
-    let storage = storage_for(&project_root, request.codex_home);
-    let repo_key = storage.repo_key.clone();
-    let intent = detect_intent(request.prompt);
-    let prompt_terms = tokenize(request.prompt);
-    let already_loaded = already_loaded_paths(&request.already_loaded_paths);
-    let learning = load_learning(&storage).await;
-    let mut notes = vec![format!(
-        "native predictor scanned repo namespace {repo_key}"
-    )];
-    if storage.repo_db_exists {
-        notes.push("repo .first_moves.db detected and read for learning".to_string());
-    }
-
-    let candidates = scan_candidates(&project_root, &config);
-    notes.push(format!("candidate files scanned: {}", candidates.len()));
-    let mut moves = score_candidates(
-        request.prompt,
-        &prompt_terms,
-        &already_loaded,
-        &learning,
-        intent,
-        candidates,
-    );
-    moves.extend(search_hints(request.prompt, intent));
-    moves.sort_by(|left, right| {
-        right
-            .confidence
-            .partial_cmp(&left.confidence)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    moves.truncate(config.max_candidates);
-    add_excerpts(&mut moves, &project_root, &config);
-
-    let confidence = moves.first().map_or(0.0, |entry| entry.confidence);
-    let bundle = FirstMovesBundle {
-        confidence,
-        intent: intent.as_str().to_string(),
-        project_root,
-        repo_key,
-        storage,
-        moves,
-        notes,
-    };
-
-    if request.record_prediction
-        && let Err(err) = record_prediction(
-            &bundle.storage,
-            request.session_id,
-            request.prompt,
-            &bundle.intent,
-            bundle.confidence,
-            &bundle.moves,
-        )
-        .await
-    {
-        tracing::warn!("failed to record first-moves prediction: {err}");
-    }
-
-    Ok(bundle)
 }
 
 pub fn is_whole_repo_exploration_prompt(prompt: &str) -> bool {
@@ -197,6 +135,85 @@ pub fn is_whole_repo_exploration_prompt(prompt: &str) -> bool {
     ]
     .iter()
     .any(|term| lower.contains(term))
+}
+
+pub async fn predict(request: PredictRequest<'_>) -> Result<FirstMovesBundle> {
+    let config = request.config.clone();
+    let project_root = resolve_repo_root(request.project_root);
+    let storage = storage_for(&project_root, request.codex_home);
+    let repo_key = storage.repo_key.clone();
+    let intent = detect_intent(request.prompt);
+    let prompt_terms = tokenize(request.prompt);
+    let already_loaded = already_loaded_paths(&request.already_loaded_paths);
+    let learning = load_learning(&storage).await;
+    let mut notes = vec![format!(
+        "native predictor scanned repo namespace {repo_key}"
+    )];
+    if storage.repo_db_exists {
+        notes.push("repo .first_moves.db detected and read for learning".to_string());
+    }
+
+    let candidates = scan_candidates(&project_root, &config);
+    notes.push(format!("candidate files scanned: {}", candidates.len()));
+    let mut moves = score_candidates(
+        request.prompt,
+        &prompt_terms,
+        &already_loaded,
+        &learning,
+        intent,
+        candidates.clone(),
+    );
+    moves.extend(search_hints(request.prompt, intent));
+    moves.sort_by(|left, right| {
+        right
+            .confidence
+            .partial_cmp(&left.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    moves.truncate(config.max_candidates);
+    add_excerpts(&mut moves, &project_root, &config);
+
+    let confidence = moves.first().map_or(0.0, |entry| entry.confidence);
+    let bundle = FirstMovesBundle {
+        confidence,
+        intent: intent.as_str().to_string(),
+        project_root,
+        repo_key,
+        storage,
+        moves,
+        notes,
+    };
+
+    if request.record_prediction
+        && let Err(err) = record_prediction(
+            &bundle.storage,
+            request.session_id,
+            request.prompt,
+            &bundle.intent,
+            bundle.confidence,
+            &bundle.moves,
+        )
+        .await
+    {
+        tracing::warn!("failed to record first-moves prediction: {err}");
+    }
+    if request.record_prediction
+        && let Err(err) = record_shadow_prediction(ShadowPredictInput {
+            codex_home: request.codex_home,
+            prompt: request.prompt,
+            session_id: request.session_id,
+            config: &config,
+            storage: &bundle.storage,
+            candidates: &candidates,
+            prompt_terms: &prompt_terms,
+            already_loaded: &already_loaded,
+            native_moves: &bundle.moves,
+        })
+    {
+        tracing::debug!("failed to record first-moves shadow prediction: {err}");
+    }
+
+    Ok(bundle)
 }
 
 fn scan_candidates(project_root: &Path, config: &FirstMovesConfig) -> Vec<Candidate> {
@@ -353,6 +370,10 @@ fn baseline_score(candidate: &Candidate) -> f64 {
     } else {
         0.04
     }
+}
+
+pub(crate) fn repo_structure_score(candidate: &Candidate) -> f64 {
+    baseline_score(candidate)
 }
 
 fn intent_boost(intent: Intent, rel: &str) -> Option<(f64, &'static str)> {
@@ -681,5 +702,36 @@ mod tests {
                 .iter()
                 .any(|entry| entry.path == Some(PathBuf::from("Cargo.toml")))
         );
+    }
+
+    #[tokio::test]
+    async fn record_prediction_writes_shadow_without_changing_bundle() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let project = temp.path().join("repo");
+        let codex_home = temp.path().join("codex-home");
+        std::fs::create_dir_all(project.join("src")).expect("src dir");
+        std::fs::write(project.join("src/lib.rs"), "pub fn target() {}\n").expect("lib");
+
+        let bundle = predict(PredictRequest {
+            project_root: &project,
+            codex_home: &codex_home,
+            prompt: "inspect src/lib.rs",
+            session_id: Some("session"),
+            config: FirstMovesConfig::default(),
+            already_loaded_paths: Vec::new(),
+            record_prediction: true,
+        })
+        .await
+        .expect("prediction");
+
+        assert_eq!(bundle.moves[0].path, Some(PathBuf::from("src/lib.rs")));
+        let shadow_path = codex_home
+            .join("first-moves-shadow")
+            .join(&bundle.repo_key)
+            .join("shadow.jsonl");
+        let shadow = std::fs::read_to_string(shadow_path).expect("shadow jsonl");
+        assert!(shadow.contains("\"type\":\"first_moves_shadow\""));
+        assert!(shadow.contains("\"path_lexical\""));
+        assert!(shadow.contains("\"content_seeded_component_merge\""));
     }
 }

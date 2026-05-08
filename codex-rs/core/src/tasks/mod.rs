@@ -31,6 +31,7 @@ use crate::session::checkpoint_policy::SemanticCompactDecision;
 use crate::session::checkpoint_policy::SemanticCompactInput;
 use crate::session::session::Session;
 use crate::session::turn::run_auto_compact;
+use crate::session::turn::semantic_auto_compact_enabled;
 use crate::session::turn_context::TurnContext;
 use crate::state::ActiveTurn;
 use crate::state::RunningTask;
@@ -868,7 +869,7 @@ impl Session {
         } else {
             match self
                 .semantic_compact_decision(SemanticCompactInput {
-                    feature_enabled: turn_context.features.enabled(Feature::SemanticAutoCompact),
+                    feature_enabled: semantic_auto_compact_enabled(turn_context),
                     total_usage_tokens,
                     auto_compact_limit,
                 })

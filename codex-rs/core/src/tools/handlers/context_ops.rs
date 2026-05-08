@@ -1,10 +1,8 @@
 mod execution;
 pub(crate) mod file_outline;
-pub(crate) mod git_worktree_summary;
 pub(crate) mod search_text;
 
 use codex_tools::FILE_OUTLINE_TOOL_NAME;
-use codex_tools::GIT_WORKTREE_SUMMARY_TOOL_NAME;
 use codex_tools::SEARCH_TEXT_TOOL_NAME;
 use codex_tools::ToolName;
 
@@ -48,9 +46,6 @@ impl ToolHandler for ContextOpsHandler {
 
         match invocation.tool_name.name.as_str() {
             FILE_OUTLINE_TOOL_NAME => file_outline::handle(invocation, arguments.as_str()).await,
-            GIT_WORKTREE_SUMMARY_TOOL_NAME => {
-                git_worktree_summary::handle(invocation, arguments.as_str()).await
-            }
             SEARCH_TEXT_TOOL_NAME => search_text::handle(invocation, arguments.as_str()).await,
             other => Err(FunctionCallError::RespondToModel(format!(
                 "unknown context ops tool: {other}"

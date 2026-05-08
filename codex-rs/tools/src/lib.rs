@@ -58,7 +58,6 @@ pub use code_mode::create_wait_tool;
 pub use code_mode::tool_spec_to_code_mode_tool_definition;
 pub use codex_protocol::ToolName;
 pub use context_ops::FILE_OUTLINE_TOOL_NAME;
-pub use context_ops::GIT_WORKTREE_SUMMARY_TOOL_NAME;
 pub use context_ops::SEARCH_TEXT_TOOL_NAME;
 pub use context_ops::create_context_ops_tools;
 pub use desktop_automation::create_desktop_automation_tools;

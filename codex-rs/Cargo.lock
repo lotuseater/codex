@@ -3820,6 +3820,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "clap",
+ "codex-agent-policy",
  "codex-ansi-escape",
  "codex-app-server-client",
  "codex-app-server-protocol",

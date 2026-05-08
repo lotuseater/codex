@@ -21,8 +21,12 @@ pub const DAB_ELEMENT_MAP_TOOL: &str = "dab_element_map";
 pub const DAB_NAVIGATE_TOOL: &str = "dab_navigate";
 pub const DAB_SMART_CLICK_TOOL: &str = "dab_smart_click";
 pub const DAB_CLICK_TOOL: &str = "dab_click";
+pub const DAB_DRAG_TOOL: &str = "dab_drag";
+pub const DAB_SCROLL_TOOL: &str = "dab_scroll";
 pub const DAB_BG_CLICK_TOOL: &str = "dab_bg_click";
 pub const DAB_SEND_KEYS_TOOL: &str = "dab_send_keys";
+pub const DAB_TERMINAL_TABS_TOOL: &str = "dab_terminal_tabs";
+pub const DAB_TERMINAL_FOCUS_TOOL: &str = "dab_terminal_focus";
 
 pub const DAB_TOOL_NAMES: &[&str] = &[
     AUTOMATION_HARNESS_DETECT_TOOL,
@@ -32,11 +36,15 @@ pub const DAB_TOOL_NAMES: &[&str] = &[
     DAB_OCR_TOOL,
     DAB_VISUAL_SCAN_TOOL,
     DAB_ELEMENT_MAP_TOOL,
+    DAB_TERMINAL_TABS_TOOL,
     DAB_NAVIGATE_TOOL,
     DAB_SMART_CLICK_TOOL,
     DAB_CLICK_TOOL,
+    DAB_DRAG_TOOL,
+    DAB_SCROLL_TOOL,
     DAB_BG_CLICK_TOOL,
     DAB_SEND_KEYS_TOOL,
+    DAB_TERMINAL_FOCUS_TOOL,
 ];
 
 #[derive(Debug, Error)]
@@ -88,8 +96,11 @@ pub fn is_mutating_tool(tool_name: &str) -> bool {
         DAB_NAVIGATE_TOOL
             | DAB_SMART_CLICK_TOOL
             | DAB_CLICK_TOOL
+            | DAB_DRAG_TOOL
+            | DAB_SCROLL_TOOL
             | DAB_BG_CLICK_TOOL
             | DAB_SEND_KEYS_TOOL
+            | DAB_TERMINAL_FOCUS_TOOL
     )
 }
 

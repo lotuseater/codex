@@ -131,6 +131,16 @@ pub(crate) trait BottomPaneView: Renderable {
         false
     }
 
+    /// Stable key for a prompt that loop mode can answer after it has been idle.
+    fn auto_loop_prompt_signature(&self) -> Option<String> {
+        None
+    }
+
+    /// Try to let loop mode answer the active prompt.
+    fn try_auto_loop_prompt_action(&mut self) -> bool {
+        false
+    }
+
     /// Return the next time-based redraw this view needs while it is active.
     fn next_frame_delay(&self) -> Option<std::time::Duration> {
         None

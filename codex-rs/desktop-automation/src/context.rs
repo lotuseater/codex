@@ -54,7 +54,7 @@ fn desktop_automation_context_for_prompt_with_availability(
     );
     if config.allow_input {
         lines.push(
-            "Use dab_smart_click, dab_send_keys, dab_navigate, or coordinate clicks only after inspection identifies the target window or element.".to_string(),
+            "Use dab_smart_click, dab_send_keys, dab_navigate, dab_drag, dab_scroll, dab_terminal_tabs, dab_terminal_focus, or coordinate clicks only after inspection identifies the target window or element.".to_string(),
         );
     } else {
         lines.push("Input DAB tools are disabled; keep automation read-only.".to_string());
@@ -101,11 +101,15 @@ fn looks_like_desktop_automation_prompt(prompt: &str) -> bool {
         "notepad",
         "ocr",
         "paint",
+        "powershell",
         "screenshot",
         "send keys",
+        "terminal",
         "ui automation",
         "visual",
+        "vs code",
         "window",
+        "youtube",
     ]
     .iter()
     .any(|needle| lower.contains(needle))
@@ -129,6 +133,8 @@ mod tests {
         assert!(context.contains("automation_harness_detect"));
         assert!(context.contains("dab_visual_scan"));
         assert!(context.contains("dab_smart_click"));
+        assert!(context.contains("dab_drag"));
+        assert!(context.contains("dab_terminal_focus"));
     }
 
     #[test]

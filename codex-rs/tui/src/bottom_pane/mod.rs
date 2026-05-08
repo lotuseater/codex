@@ -42,6 +42,7 @@ use codex_protocol::user_input::TextElement;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
+use crossterm::event::KeyModifiers;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::text::Line;
@@ -1194,7 +1195,6 @@ impl BottomPane {
         !self.view_stack.is_empty()
     }
 
-    #[cfg(test)]
     pub(crate) fn active_view_id(&self) -> Option<&'static str> {
         self.view_stack.last().and_then(|view| view.view_id())
     }
@@ -1218,6 +1218,38 @@ impl BottomPane {
     /// running and some are not.
     pub(crate) fn no_modal_or_popup_active(&self) -> bool {
         self.can_launch_external_editor()
+    }
+
+    pub(crate) fn auto_loop_prompt_signature(&self) -> Option<String> {
+        self.active_view()
+            .and_then(|view| view.auto_loop_prompt_signature())
+    }
+
+    pub(crate) fn try_auto_loop_prompt_action(&mut self) -> bool {
+        let Some((handled, complete, completion)) = self.view_stack.last_mut().map(|view| {
+            let handled = view.try_auto_loop_prompt_action();
+            (handled, view.is_complete(), view.completion())
+        }) else {
+            return false;
+        };
+        if !handled {
+            return false;
+        }
+        if complete {
+            self.pop_active_view_with_completion(completion);
+        }
+        self.request_redraw();
+        true
+    }
+
+    pub(crate) fn auto_select_active_view_number(&mut self, number: char) -> bool {
+        if self.view_stack.is_empty() {
+            return false;
+        }
+        let before_len = self.view_stack.len();
+        let before_view_id = self.active_view_id();
+        self.handle_key_event(KeyEvent::new(KeyCode::Char(number), KeyModifiers::NONE));
+        self.view_stack.len() != before_len || self.active_view_id() != before_view_id
     }
 
     pub(crate) fn show_view(&mut self, view: Box<dyn BottomPaneView>) {

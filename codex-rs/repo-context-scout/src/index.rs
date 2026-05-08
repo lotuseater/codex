@@ -127,6 +127,9 @@ fn read_file_record(
 }
 
 fn anchors_for_text(language: &str, text: &str, limit: usize) -> Vec<Anchor> {
+    if language == "cpp" {
+        return cpp_anchors_for_text(text, limit);
+    }
     let mut anchors = Vec::new();
     for (idx, line) in text.lines().enumerate() {
         let trimmed = line.trim();
@@ -161,6 +164,10 @@ fn anchors_for_text(language: &str, text: &str, limit: usize) -> Vec<Anchor> {
                 ],
             ),
             "python" => starts_any(trimmed, &["def ", "class "]),
+            "powershell" => starts_any(
+                trimmed,
+                &["function ", "param(", "class ", "using ", "Import-Module"],
+            ),
             "markdown" => trimmed.starts_with('#'),
             "toml" => trimmed.starts_with('['),
             _ => false,
@@ -176,6 +183,48 @@ fn anchors_for_text(language: &str, text: &str, limit: usize) -> Vec<Anchor> {
         }
     }
     anchors
+}
+
+fn cpp_anchors_for_text(text: &str, limit: usize) -> Vec<Anchor> {
+    let mut anchors = Vec::new();
+    let mut brace_depth = 0usize;
+    for (idx, line) in text.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let keep = starts_any(
+            trimmed,
+            &["#include", "namespace ", "class ", "struct ", "enum "],
+        ) || (brace_depth <= 1 && looks_like_cpp_function(trimmed));
+        if keep {
+            anchors.push(Anchor {
+                line: idx + 1,
+                text: trimmed.chars().take(160).collect(),
+            });
+            if anchors.len() >= limit {
+                break;
+            }
+        }
+        brace_depth = update_brace_depth(brace_depth, trimmed);
+    }
+    anchors
+}
+
+fn looks_like_cpp_function(line: &str) -> bool {
+    if !line.contains('(') || !line.contains(')') {
+        return false;
+    }
+    if starts_any(line, &["if ", "for ", "while ", "switch ", "return "]) {
+        return false;
+    }
+    line.ends_with('{') || line.ends_with(';')
+}
+
+fn update_brace_depth(depth: usize, line: &str) -> usize {
+    let opens = line.chars().filter(|ch| *ch == '{').count();
+    let closes = line.chars().filter(|ch| *ch == '}').count();
+    depth.saturating_add(opens).saturating_sub(closes)
 }
 
 fn starts_any(text: &str, prefixes: &[&str]) -> bool {
@@ -198,12 +247,14 @@ pub(crate) fn is_skipped_path(relative: &str) -> bool {
                 | ".cache"
                 | ".pytest_cache"
                 | "__pycache__"
+                | "_deps"
                 | ".venv"
                 | "logs"
+                | "build_standalone"
                 | "graphify-out"
                 | "repomix-output"
                 | ".gsd"
-        )
+        ) || part.starts_with("cmake-build")
     })
 }
 
@@ -230,6 +281,18 @@ fn language_for_path(path: &str) -> &'static str {
         "javascript"
     } else if lower.ends_with(".py") {
         "python"
+    } else if lower.ends_with(".ps1") || lower.ends_with(".psm1") || lower.ends_with(".psd1") {
+        "powershell"
+    } else if lower.ends_with(".c")
+        || lower.ends_with(".cc")
+        || lower.ends_with(".cpp")
+        || lower.ends_with(".cxx")
+        || lower.ends_with(".h")
+        || lower.ends_with(".hpp")
+        || lower.ends_with(".hh")
+        || lower.ends_with(".hxx")
+    {
+        "cpp"
     } else if lower.ends_with(".md") || lower.ends_with(".markdown") {
         "markdown"
     } else if lower.ends_with(".toml") {

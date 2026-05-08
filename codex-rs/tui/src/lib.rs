@@ -623,20 +623,9 @@ async fn lookup_latest_session_target_with_app_server(
             config,
             cwd_filter,
             include_non_interactive,
-            /*use_state_db_only*/ true,
+            /*use_state_db_only*/ false,
         ))
         .await?;
-    if response.data.is_empty() && response.next_cursor.is_none() {
-        response = app_server
-            .thread_list(latest_session_lookup_params(
-                app_server.is_remote(),
-                config,
-                cwd_filter,
-                include_non_interactive,
-                /*use_state_db_only*/ false,
-            ))
-            .await?;
-    }
     Ok(response
         .data
         .into_iter()

@@ -1,0 +1,9 @@
+---
+source: tui/src/multi_agents.rs
+assertion_line: 1107
+expression: rendered
+---
+    • Robie [worker] (gpt-5.5, high, 17% used): Command finished
+      └ pwsh.exe -Command 'git diff -- ...\spawn.rs'
+        Exit 0 in 42ms
+        Output: ...\multi_agents.rs:1:hit

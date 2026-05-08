@@ -25,6 +25,10 @@ param(
 
     [int]$CleanTestArtifactsBelowGB = 5,
 
+    [double]$DiskRequiredGB = 5,
+
+    [double]$DiskWarnGB = 8,
+
     [switch]$UseSccache,
 
     [switch]$ResetReleaseCacheOnProfileChange
@@ -352,8 +356,8 @@ function Get-BuildPlan {
 function Test-AndFreeDiskSpace {
     param(
         [string]$RepoRoot,
-        [int]$RequiredGB = 5,
-        [int]$WarnGB = 8
+        [double]$RequiredGB = 5,
+        [double]$WarnGB = 8
     )
 
     $codexRs = Join-Path $RepoRoot "codex-rs"
@@ -365,7 +369,11 @@ function Test-AndFreeDiskSpace {
         # cache anyway, it is not useful to the deploy lane.
         @{ Path = (Join-Path $tgtRelease "incremental"); Reason = "release/incremental (shared release lane keeps incremental disabled)" },
         @{ Path = (Join-Path $tgt "debug"); Reason = "target/debug (debug builds are disabled for this checkout)" },
-        @{ Path = (Join-Path $tgt "dev-small"); Reason = "target/dev-small (non-release profile artifacts)" }
+        @{ Path = (Join-Path $tgt "dev-small"); Reason = "target/dev-small (non-release profile artifacts)" },
+        @{ Path = (Join-Path $tgt "review-check-core"); Reason = "target/review-check-core (disposable review verification artifacts)" },
+        @{ Path = (Join-Path $tgt "review-check"); Reason = "target/review-check (disposable review verification artifacts)" },
+        @{ Path = (Join-Path $tgt "policy-check"); Reason = "target/policy-check (disposable policy verification artifacts)" },
+        @{ Path = (Join-Path $tgt "agent-policy-verify"); Reason = "target/agent-policy-verify (disposable policy verification artifacts)" }
     )
 
     $freeGB = [math]::Round((Get-PSDrive C).Free / 1GB, 2)
@@ -457,7 +465,17 @@ function Remove-GeneratedPathFast {
         return $false
     }
     $item = Get-Item -LiteralPath $Path -Force
-    if (-not $PSCmdlet.ShouldProcess($item.FullName, $Action)) {
+    $shouldProcess = $true
+    try {
+        $shouldProcess = $PSCmdlet.ShouldProcess($item.FullName, $Action)
+    }
+    catch {
+        if ($WhatIfPreference) {
+            Write-Host ("What if: {0} {1}" -f $Action, $item.FullName)
+            return $false
+        }
+    }
+    if (-not $shouldProcess) {
         return $false
     }
 
@@ -618,6 +636,10 @@ function Invoke-SafeLocalCleanup {
 
     $cleanup += Invoke-GeneratedPathCleanup -Path (Join-Path $targetRoot "debug") -Root $targetRoot -Reason "target/debug (debug builds are disabled for this checkout)"
     $cleanup += Invoke-GeneratedPathCleanup -Path (Join-Path $targetRoot "dev-small") -Root $targetRoot -Reason "target/dev-small (non-release profile artifacts)"
+    $cleanup += Invoke-GeneratedPathCleanup -Path (Join-Path $targetRoot "review-check-core") -Root $targetRoot -Reason "target/review-check-core (disposable review verification artifacts)"
+    $cleanup += Invoke-GeneratedPathCleanup -Path (Join-Path $targetRoot "review-check") -Root $targetRoot -Reason "target/review-check (disposable review verification artifacts)"
+    $cleanup += Invoke-GeneratedPathCleanup -Path (Join-Path $targetRoot "policy-check") -Root $targetRoot -Reason "target/policy-check (disposable policy verification artifacts)"
+    $cleanup += Invoke-GeneratedPathCleanup -Path (Join-Path $targetRoot "agent-policy-verify") -Root $targetRoot -Reason "target/agent-policy-verify (disposable policy verification artifacts)"
     $cleanup += Invoke-GeneratedPathCleanup -Path (Join-Path $releaseRoot "incremental") -Root $releaseRoot -Reason "release/incremental (shared release lane keeps incremental disabled)"
 
     $pdbCleanup = Invoke-ReleasePdbCleanup -RepoRoot $RepoRoot
@@ -698,6 +720,10 @@ function Invoke-CrossModeCleanup {
 
     if ($ActiveMode -in @("FastRelease", "LowMemRelease", "FullRelease")) {
         $dropTargets += @{ Path = (Join-Path $tgt "dev-small"); Reason = "target/dev-small (other-profile artifacts)" }
+        $dropTargets += @{ Path = (Join-Path $tgt "review-check-core"); Reason = "target/review-check-core (disposable review verification artifacts)" }
+        $dropTargets += @{ Path = (Join-Path $tgt "review-check"); Reason = "target/review-check (disposable review verification artifacts)" }
+        $dropTargets += @{ Path = (Join-Path $tgt "policy-check"); Reason = "target/policy-check (disposable policy verification artifacts)" }
+        $dropTargets += @{ Path = (Join-Path $tgt "agent-policy-verify"); Reason = "target/agent-policy-verify (disposable policy verification artifacts)" }
     }
 
     foreach ($entry in $dropTargets) {
@@ -1416,7 +1442,7 @@ if ($profileState["stamp_exists"] -and -not $profileState["matches"]) {
 #      build, so the user catches "WIZARD_CODEX_CACHE_BRIDGE_PY missing"
 #      style problems in 1 second instead of 30 minutes from now.
 Invoke-CrossModeCleanup -RepoRoot $RepoRoot -ActiveMode $Mode
-Test-AndFreeDiskSpace -RepoRoot $RepoRoot -RequiredGB 5 -WarnGB 8
+Test-AndFreeDiskSpace -RepoRoot $RepoRoot -RequiredGB $DiskRequiredGB -WarnGB $DiskWarnGB
 if ($envPath) {
     Test-WrapperEnvSanity -WrapperEnvPath $envPath
 }
