@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
+use walkdir::DirEntry;
 use walkdir::WalkDir;
 
 // Graphify/Aider-style repo-map narrowing, promoted after
@@ -200,6 +201,7 @@ fn repo_inventory(root: &Path) -> Vec<FileCandidate> {
     WalkDir::new(root)
         .follow_links(false)
         .into_iter()
+        .filter_entry(|entry| should_visit_entry(root, entry))
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().is_file())
         .filter_map(|entry| {
@@ -211,6 +213,17 @@ fn repo_inventory(root: &Path) -> Vec<FileCandidate> {
             .then_some(FileCandidate { path, score: 0 })
         })
         .collect()
+}
+
+fn should_visit_entry(root: &Path, entry: &DirEntry) -> bool {
+    if entry.depth() == 0 || !entry.file_type().is_dir() {
+        return true;
+    }
+    let Ok(rel) = entry.path().strip_prefix(root) else {
+        return false;
+    };
+    let path = normalize_slashes(rel.display().to_string());
+    !is_generated_path(&path) && !is_low_value_pack_path(&path)
 }
 
 fn path_prompt_score(path: &str, terms: &BTreeSet<String>) -> i64 {
@@ -453,6 +466,31 @@ mod tests {
         let pack = render_graphify_scout_pack(&request).expect("pack");
         assert!(pack.contains("src/file255.rs"));
         assert!(!pack.contains("src/file299.rs"));
+    }
+
+    #[test]
+    fn prunes_generated_directories_before_scoring() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(temp.path().join("src")).expect("mkdir src");
+        fs::create_dir_all(temp.path().join("target/generated")).expect("mkdir target");
+        fs::write(temp.path().join("src/useful.rs"), "context pack routing").expect("write src");
+        fs::write(
+            temp.path().join("target/generated/raremarker.rs"),
+            "raremarker context pack routing target",
+        )
+        .expect("write generated");
+
+        let inventory = repo_inventory(temp.path());
+        assert!(
+            inventory
+                .iter()
+                .all(|file| !file.path.starts_with("target/"))
+        );
+
+        let request = ContextPackRequest::new(temp.path(), "Find raremarker context pack routing");
+        let pack = render_graphify_scout_pack(&request).expect("pack");
+        assert!(!pack.contains("target/"));
+        assert!(pack.contains("src/useful.rs"));
     }
 
     #[test]

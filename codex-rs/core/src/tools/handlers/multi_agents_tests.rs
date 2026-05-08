@@ -983,6 +983,74 @@ async fn multi_agent_v2_spawn_prepends_context_pack_after_policy_passes() {
 }
 
 #[tokio::test]
+async fn multi_agent_v2_spawn_skips_context_pack_in_restricted_sandbox() {
+    let (mut session, mut turn) = make_session_and_context().await;
+    let temp_dir = tempfile::tempdir().expect("temp dir");
+    let src_dir = temp_dir.path().join("src");
+    std::fs::create_dir_all(&src_dir).expect("create src dir");
+    std::fs::write(
+        src_dir.join("context_pack.rs"),
+        "context pack spawn_agent FIRST_READS routing",
+    )
+    .expect("write context pack fixture");
+
+    turn.cwd = temp_dir.abs();
+    turn.permission_profile = PermissionProfile::read_only();
+    let mut config = (*turn.config).clone();
+    config.cwd = turn.cwd.clone();
+    config
+        .features
+        .enable(Feature::MultiAgentV2)
+        .expect("test config should allow feature update");
+    turn.config = Arc::new(config);
+
+    let manager = thread_manager().await;
+    let root = manager
+        .start_thread((*turn.config).clone())
+        .await
+        .expect("root thread should start");
+    session.services.agent_control = manager.agent_control();
+    session.conversation_id = root.thread_id;
+
+    let session = Arc::new(session);
+    let turn = Arc::new(turn);
+    let original_message = "CONTEXT_AREA: src only\nWHY_AGENT / ROI: independent sidecar implementation with net >= 2 and a 10k token budget while root updates tests\nFIRST_READS: src/context_pack.rs\nTOOL_HINTS: targeted reads only\nVERIFICATION: report file only";
+    SpawnAgentHandlerV2
+        .handle(invocation(
+            session.clone(),
+            turn.clone(),
+            "spawn_agent",
+            function_payload(json!({
+                "task_name": "restricted_context_pack_worker",
+                "agent_type": "worker",
+                "message": original_message
+            })),
+        ))
+        .await
+        .expect("spawn_agent should succeed");
+
+    let child_thread_id = session
+        .services
+        .agent_control
+        .resolve_agent_reference(
+            session.conversation_id,
+            &turn.session_source,
+            "restricted_context_pack_worker",
+        )
+        .await
+        .expect("relative path should resolve");
+    assert!(manager.captured_ops().iter().any(|(id, op)| {
+        *id == child_thread_id
+            && matches!(
+                op,
+                Op::InterAgentCommunication { communication }
+                    if communication.content == original_message
+                        && !communication.content.starts_with("<context_pack")
+            )
+    }));
+}
+
+#[tokio::test]
 async fn spawn_agent_errors_when_manager_dropped() {
     let (session, turn) = make_session_and_context().await;
     let invocation = invocation(

@@ -13,6 +13,7 @@ use codex_context_pack::prepend_context_pack_to_message;
 use codex_first_moves::is_whole_repo_exploration_prompt;
 use codex_protocol::AgentPath;
 use codex_protocol::openai_models::ReasoningEffort;
+use codex_protocol::permissions::FileSystemSandboxKind;
 use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::Op;
 
@@ -54,7 +55,7 @@ impl ToolHandler for Handler {
 
         reject_unscouted_exploration_spawn(turn.as_ref(), &args, role_name)?;
 
-        if turn.config.first_moves.enabled() && turn.config.first_moves.inject_context {
+        if should_prepend_context_pack(turn.as_ref()) {
             args.message = prepend_context_pack_to_message(&turn.cwd, &args.message, 16);
         }
 
@@ -288,6 +289,23 @@ impl SpawnAgentArgs {
 
         Ok(Some(SpawnAgentForkMode::LastNTurns(last_n_turns)))
     }
+}
+
+fn should_prepend_context_pack(turn: &TurnContext) -> bool {
+    if !turn.config.first_moves.enabled() || !turn.config.first_moves.inject_context {
+        return false;
+    }
+    if turn
+        .environments
+        .primary()
+        .is_some_and(|environment| environment.environment.is_remote())
+    {
+        return false;
+    }
+    !matches!(
+        turn.file_system_sandbox_policy().kind,
+        FileSystemSandboxKind::Restricted | FileSystemSandboxKind::ExternalSandbox
+    )
 }
 
 fn reject_unscouted_exploration_spawn(
