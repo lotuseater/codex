@@ -9174,6 +9174,42 @@ smart_approvals = true
     Ok(())
 }
 
+#[test]
+fn multi_agent_v2_default_hints_gate_exploration_with_first_moves() {
+    let config = MultiAgentV2Config::default();
+    let root_hint = config
+        .root_agent_usage_hint_text
+        .as_deref()
+        .expect("root hint should be configured by default");
+    let subagent_hint = config
+        .subagent_usage_hint_text
+        .as_deref()
+        .expect("subagent hint should be configured by default");
+
+    assert!(root_hint.contains("first_moves_predict"));
+    assert!(root_hint.contains("Agent ROI Estimate"));
+    assert!(root_hint.contains("net >= 2"));
+    assert!(root_hint.contains("reuse_cost=1"));
+    assert!(root_hint.contains("loop_followup_gain=0-3"));
+    assert!(root_hint.contains("automatic continuation is normally 2"));
+    assert!(root_hint.contains("implementation prompt may be accepted automatically"));
+    assert!(root_hint.contains("git commit/push/tag/rebase/merge"));
+    assert!(root_hint.contains("Do not spawn an agent just to do a broad opening survey"));
+    assert!(root_hint.contains("SCOUT_EVIDENCE"));
+    assert!(root_hint.contains("WHY_AGENT / ROI"));
+    assert!(root_hint.contains("do not call first_moves_predict"));
+    assert!(root_hint.contains("plan-completion self-review"));
+    assert!(root_hint.contains("raw `rg` search"));
+    assert!(root_hint.contains("weaker model can be less token-effective"));
+    assert!(root_hint.contains("active loop iterations"));
+    assert!(subagent_hint.contains("first_moves_predict"));
+    assert!(subagent_hint.contains("SCOUT_EVIDENCE"));
+    assert!(subagent_hint.contains("WHY_AGENT / ROI"));
+    assert!(subagent_hint.contains("skip first_moves_predict"));
+    assert!(subagent_hint.contains("Root owns finalization"));
+    assert!(subagent_hint.contains("configured tools, skills, MCP/app surfaces"));
+}
+
 #[tokio::test]
 async fn multi_agent_v2_config_from_feature_table() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;

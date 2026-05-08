@@ -111,11 +111,12 @@ plan content should be human and agent digestible. The final plan must be plan-o
 
 * A clear title
 * A brief summary section
+* A `Delegation`, `Work Split`, or `Agent ROI Estimate` section or line: either name the intended agent/work split and which subtasks should be spawned, reused, or resumed, or state that the task is local-only because spawning or reusing an agent is expected to lose on tokens, latency, review cost, coupling, or simplicity. In loop-driven continuations, include `loop_followup_gain` and prefer reusing idle relevant agents when the net estimate is positive.
 * Important changes or additions to public APIs/interfaces/types
 * Test cases and scenarios
 * Explicit assumptions and defaults chosen where needed
 
-When possible, prefer a compact structure with 3-5 short sections, usually: Summary, Key Changes or Implementation Changes, Test Plan, and Assumptions. Do not include a separate Scope section unless scope boundaries are genuinely important to avoid mistakes.
+When possible, prefer a compact structure with 4-6 short sections, usually: Summary, Agent ROI Estimate or Delegation, Key Changes or Implementation Changes, Test Plan, and Assumptions. Do not include a separate Scope section unless scope boundaries are genuinely important to avoid mistakes.
 
 Prefer grouped implementation bullets by subsystem or behavior over file-by-file inventories. Mention files only when needed to disambiguate a non-obvious change, and avoid naming more than 3 paths unless extra specificity is necessary to prevent mistakes. Prefer behavior-level descriptions over symbol-by-symbol removal lists. For v1 feature-addition plans, do not invent detailed schema, validation, precedence, fallback, or wire-shape policy unless the request establishes it or it is needed to prevent a concrete implementation mistake; prefer the intended capability and minimum interface/behavior changes.
 

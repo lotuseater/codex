@@ -34,3 +34,25 @@ fn default_mode_instructions_replace_mode_names_placeholder() {
         default_instructions.contains("ask the user directly with a concise plain-text question")
     );
 }
+
+#[test]
+fn plan_mode_instructions_require_visible_delegation_decision() {
+    let plan_instructions = plan_preset()
+        .developer_instructions
+        .expect("plan preset should include instructions")
+        .expect("plan instructions should be set");
+
+    assert!(
+        plan_instructions
+            .contains("A `Delegation`, `Work Split`, or `Agent ROI Estimate` section or line"),
+        "plan instructions should require every proposed plan to show the agent ROI/delegation decision"
+    );
+    assert!(
+        plan_instructions.contains("expected to lose on tokens"),
+        "plan instructions should require a local-only ROI reason when no agents are intended"
+    );
+    assert!(
+        plan_instructions.contains("loop_followup_gain"),
+        "plan instructions should make loop continuations part of agent ROI"
+    );
+}
