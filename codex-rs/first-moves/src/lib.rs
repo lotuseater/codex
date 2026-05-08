@@ -5,6 +5,7 @@ mod types;
 
 pub use format::format_first_moves_context;
 pub use format::is_legacy_first_moves_context;
+pub use predict::is_whole_repo_exploration_prompt;
 pub use predict::predict;
 pub use storage::record_tool_use_hit;
 pub use storage::stats;

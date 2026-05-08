@@ -153,6 +153,52 @@ pub async fn predict(request: PredictRequest<'_>) -> Result<FirstMovesBundle> {
     Ok(bundle)
 }
 
+pub fn is_whole_repo_exploration_prompt(prompt: &str) -> bool {
+    let lower = prompt.to_ascii_lowercase();
+    if lower.trim_start().starts_with('/') {
+        return false;
+    }
+
+    let asks_to_explore = [
+        "study",
+        "explore",
+        "inspect",
+        "investigate",
+        "understand",
+        "analyze",
+        "analyse",
+        "review",
+        "audit",
+        "explain",
+        "describe",
+        "map",
+        "read through",
+        "look through",
+        "look at",
+    ]
+    .iter()
+    .any(|term| lower.contains(term));
+    if !asks_to_explore {
+        return false;
+    }
+
+    [
+        "repo",
+        "repository",
+        "codebase",
+        "project",
+        "workspace",
+        "whole tree",
+        "entire tree",
+        "whole code",
+        "entire code",
+        "all files",
+        "broad",
+    ]
+    .iter()
+    .any(|term| lower.contains(term))
+}
+
 fn scan_candidates(project_root: &Path, config: &FirstMovesConfig) -> Vec<Candidate> {
     let mut candidates = Vec::new();
     for entry in WalkDir::new(project_root)
@@ -560,6 +606,20 @@ mod tests {
     use super::*;
     use crate::format_first_moves_context;
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn whole_repo_exploration_prompt_detection_is_specific() {
+        assert!(is_whole_repo_exploration_prompt("study the repo"));
+        assert!(is_whole_repo_exploration_prompt(
+            "please review this codebase"
+        ));
+        assert!(is_whole_repo_exploration_prompt(
+            "explore the whole project"
+        ));
+        assert!(!is_whole_repo_exploration_prompt("study src/foo.cpp"));
+        assert!(!is_whole_repo_exploration_prompt("fix the build"));
+        assert!(!is_whole_repo_exploration_prompt("/review"));
+    }
 
     #[tokio::test]
     async fn explicit_path_mentions_rank_first_and_agents_is_skipped() {
