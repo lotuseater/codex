@@ -14,23 +14,26 @@ pub(super) fn classify_shell_replacement(command: &str) -> Option<ReplacementCan
         .or_else(|| classify_rg_files_candidate(&tokens))
         .or_else(|| classify_rg_candidate(&tokens))
         .or_else(|| classify_file_outline_candidate(&tokens))
-        .or_else(|| classify_run_check_digest_candidate(&tokens))
         .or_else(|| classify_file_excerpt_digest_candidate(&tokens))
         .or_else(|| classify_select_string_digest_candidate(&tokens))
+        .or_else(|| classify_generic_search_digest_candidate(&tokens))
+        .or_else(|| classify_run_check_digest_candidate(&tokens))
         .or_else(|| classify_rg_expansion_candidate(&tokens))
+        .or_else(|| classify_file_inventory_candidate(&tokens))
         .or_else(|| classify_directory_listing_candidate(&tokens))
         .or_else(|| classify_process_table_candidate(&tokens))
 }
 
 fn classify_shell_control_shadow(command: &str) -> Option<ReplacementCandidate> {
-    if command_looks_like_check(command) {
-        return Some(ReplacementCandidate::RunCheckDigest);
-    }
     classify_git_filtered_diff_shell_control(command)
         .or_else(|| classify_file_excerpt_shell_control(command))
         .or_else(|| classify_rg_file_set_shell_control(command))
+        .or_else(|| classify_file_inventory_shell_control(command))
         .or_else(|| classify_select_string_shell_control(command))
         .or_else(|| classify_directory_listing_shell_control(command))
+        .or_else(|| {
+            command_looks_like_check(command).then_some(ReplacementCandidate::RunCheckDigest)
+        })
 }
 
 pub(super) fn classify_promoted_replacement(command: &str) -> Option<ReplacementCandidate> {
@@ -92,6 +95,7 @@ fn classify_git_candidate(tokens: &[String]) -> Option<ReplacementCandidate> {
             Some(ReplacementCandidate::DiffHunkSummary)
         }
         "show" | "log" => Some(ReplacementCandidate::GitHistoryDigest),
+        "ls-files" => Some(ReplacementCandidate::DirectoryListingCompact),
         _ => None,
     }
 }
@@ -364,11 +368,11 @@ fn classify_file_outline_candidate(tokens: &[String]) -> Option<ReplacementCandi
 }
 
 fn classify_run_check_digest_candidate(tokens: &[String]) -> Option<ReplacementCandidate> {
-    if command_looks_like_check(&tokens.join(" ")) {
+    let command = tokens.first()?.to_ascii_lowercase();
+    if command_allows_embedded_check_scan(&command) && command_looks_like_check(&tokens.join(" ")) {
         return Some(ReplacementCandidate::RunCheckDigest);
     }
 
-    let command = tokens.first()?.to_ascii_lowercase();
     let is_check = match command.as_str() {
         "cargo" => tokens.get(1).is_some_and(|subcommand| {
             matches!(
@@ -376,21 +380,96 @@ fn classify_run_check_digest_candidate(tokens: &[String]) -> Option<ReplacementC
                 "test" | "check" | "build" | "clippy" | "fmt"
             )
         }),
+        "git" => tokens
+            .windows(2)
+            .any(|pair| pair[0] == "diff" && pair[1] == "--check"),
         "just" => tokens.get(1).is_some_and(|recipe| {
             matches!(
                 recipe.as_str(),
                 "fmt" | "fix" | "test" | "nextest" | "argument-comment-lint"
             )
         }),
-        "pytest" | "python" | "npm" | "pnpm" | "yarn" => tokens
+        "pytest" => true,
+        "python" | "python.exe" | "py" => tokens
             .iter()
-            .any(|token| matches!(token.as_str(), "test" | "pytest")),
+            .any(|token| matches!(token.as_str(), "test" | "pytest" | "py_compile")),
+        "npm" | "pnpm" | "yarn" => tokens.iter().any(|token| {
+            matches!(
+                token.as_str(),
+                "test" | "build" | "lint" | "typecheck" | "check"
+            )
+        }),
+        "go" => tokens
+            .get(1)
+            .is_some_and(|subcommand| matches!(subcommand.as_str(), "test" | "build" | "vet")),
+        "dotnet" => tokens
+            .get(1)
+            .is_some_and(|subcommand| matches!(subcommand.as_str(), "test" | "build")),
+        "mvn" | "mvn.cmd" | "mvnw" | "mvnw.cmd" => tokens.iter().any(|token| {
+            matches!(
+                token.as_str(),
+                "test" | "verify" | "package" | "install" | "compile"
+            )
+        }),
+        "gradle" | "gradle.bat" | "gradlew" | "gradlew.bat" => tokens
+            .iter()
+            .any(|token| matches!(token.as_str(), "test" | "build" | "check" | "assemble")),
+        "make" | "mingw32-make" | "nmake" => tokens
+            .iter()
+            .any(|token| matches!(token.as_str(), "test" | "check" | "build" | "all")),
+        "cmake" => tokens.iter().any(|token| token == "--build"),
+        "ctest" | "ninja" | "msbuild" | "msbuild.exe" | "xcodebuild" => true,
+        "invoke-bounded" => {
+            let has_build_tool = tokens.iter().any(|token| {
+                let lower = token.to_ascii_lowercase();
+                matches!(
+                    lower.as_str(),
+                    "cargo"
+                        | "cmake"
+                        | "ctest"
+                        | "npm"
+                        | "pnpm"
+                        | "yarn"
+                        | "go"
+                        | "dotnet"
+                        | "mvn"
+                        | "gradle"
+                        | "gradlew"
+                        | "make"
+                        | "ninja"
+                        | "msbuild"
+                        | "xcodebuild"
+                )
+            });
+            let has_check_arg = tokens.iter().any(|token| {
+                token.contains("--build")
+                    || matches!(
+                        token.to_ascii_lowercase().as_str(),
+                        "test" | "check" | "build" | "lint" | "verify"
+                    )
+            });
+            has_build_tool && has_check_arg
+        }
         "powershell" | "powershell.exe" | "pwsh" | "pwsh.exe" => tokens
             .iter()
             .any(|token| token.ends_with("build-local-codex.ps1")),
         _ => false,
     };
     is_check.then_some(ReplacementCandidate::RunCheckDigest)
+}
+
+fn command_allows_embedded_check_scan(command: &str) -> bool {
+    matches!(
+        command,
+        "powershell"
+            | "powershell.exe"
+            | "pwsh"
+            | "pwsh.exe"
+            | "cmd"
+            | "cmd.exe"
+            | "invoke-bounded"
+            | "start-process"
+    )
 }
 
 fn classify_file_excerpt_digest_candidate(tokens: &[String]) -> Option<ReplacementCandidate> {
@@ -422,6 +501,18 @@ fn classify_select_string_digest_candidate(tokens: &[String]) -> Option<Replacem
         "select-string" | "select-string.exe" | "sls"
     )
     .then_some(ReplacementCandidate::SelectStringDigest)
+}
+
+fn classify_generic_search_digest_candidate(tokens: &[String]) -> Option<ReplacementCandidate> {
+    let command = tokens.first()?.to_ascii_lowercase();
+    if matches!(
+        command.as_str(),
+        "grep" | "grep.exe" | "findstr" | "findstr.exe"
+    ) {
+        return Some(ReplacementCandidate::SelectStringDigest);
+    }
+    (command == "git" && tokens.get(1).is_some_and(|subcommand| subcommand == "grep"))
+        .then_some(ReplacementCandidate::SelectStringDigest)
 }
 
 fn classify_rg_expansion_candidate(tokens: &[String]) -> Option<ReplacementCandidate> {
@@ -459,6 +550,27 @@ fn classify_directory_listing_candidate(tokens: &[String]) -> Option<Replacement
         "get-childitem" | "get-childitem.exe" | "gci" | "ls" | "dir"
     )
     .then_some(ReplacementCandidate::DirectoryListingCompact)
+}
+
+fn classify_file_inventory_candidate(tokens: &[String]) -> Option<ReplacementCandidate> {
+    let command = tokens.first()?.to_ascii_lowercase();
+    match command.as_str() {
+        "git"
+            if tokens
+                .get(1)
+                .is_some_and(|subcommand| subcommand == "ls-files") =>
+        {
+            Some(ReplacementCandidate::DirectoryListingCompact)
+        }
+        "find" | "find.exe" => tokens
+            .iter()
+            .any(|token| token == "-type" || token == "-name" || token == "-maxdepth")
+            .then_some(ReplacementCandidate::DirectoryListingCompact),
+        "fd" | "fd.exe" | "fdfind" | "fdfind.exe" | "tree" | "tree.exe" => {
+            Some(ReplacementCandidate::DirectoryListingCompact)
+        }
+        _ => None,
+    }
 }
 
 fn classify_process_table_candidate(tokens: &[String]) -> Option<ReplacementCandidate> {
@@ -499,12 +611,17 @@ fn classify_file_excerpt_shell_control(command: &str) -> Option<ReplacementCandi
         && (lower.starts_with("cat ")
             || lower.starts_with("type ")
             || lower.starts_with("gc ")
-            || lower.starts_with("get-content "))
+            || lower.starts_with("get-content ")
+            || lower.contains(" get-content ")
+            || lower.contains("; get-content ")
+            || lower.contains(" gc ")
+            || lower.contains("; gc "))
         && (lower.contains("| head")
             || lower.contains("|head")
             || lower.contains("| tail")
             || lower.contains("|tail")
             || lower.contains("select-object -first")
+            || lower.contains("select-object -skip")
             || lower.contains("select-object -last")))
     .then_some(ReplacementCandidate::FileExcerptDigest)
 }
@@ -524,8 +641,45 @@ fn classify_rg_file_set_shell_control(command: &str) -> Option<ReplacementCandid
 
 fn classify_select_string_shell_control(command: &str) -> Option<ReplacementCandidate> {
     let lower = command.to_ascii_lowercase();
-    (lower.contains("select-string") || lower.contains("| sls ") || lower.contains("|sls "))
-        .then_some(ReplacementCandidate::SelectStringDigest)
+    (lower.contains("select-string")
+        || lower.contains("| sls ")
+        || lower.contains("|sls ")
+        || lower.starts_with("grep ")
+        || lower.contains("; grep ")
+        || lower.contains("| grep ")
+        || lower.contains("|grep ")
+        || lower.starts_with("findstr ")
+        || lower.contains("; findstr ")
+        || lower.contains("| findstr ")
+        || lower.contains("|findstr ")
+        || lower.contains("git grep "))
+    .then_some(ReplacementCandidate::SelectStringDigest)
+}
+
+fn classify_file_inventory_shell_control(command: &str) -> Option<ReplacementCandidate> {
+    let lower = command.to_ascii_lowercase();
+    (lower.contains('|')
+        && (lower.starts_with("git ls-files")
+            || lower.contains("; git ls-files")
+            || lower.starts_with("find ")
+            || lower.contains("; find ")
+            || lower.starts_with("fd ")
+            || lower.contains("; fd ")
+            || lower.starts_with("fdfind ")
+            || lower.contains("; fdfind ")
+            || lower.starts_with("tree ")
+            || lower == "tree"
+            || lower.contains("; tree "))
+        && (lower.contains("| head")
+            || lower.contains("|head")
+            || lower.contains("| tail")
+            || lower.contains("|tail")
+            || lower.contains("select-object -first")
+            || lower.contains("select-object -skip")
+            || lower.contains("select-object -last")
+            || lower.contains("| sort")
+            || lower.contains("|sort")))
+    .then_some(ReplacementCandidate::DirectoryListingCompact)
 }
 
 fn classify_directory_listing_shell_control(command: &str) -> Option<ReplacementCandidate> {
@@ -536,12 +690,19 @@ fn classify_directory_listing_shell_control(command: &str) -> Option<Replacement
             || lower.starts_with("dir ")
             || lower == "dir"
             || lower.starts_with("gci ")
-            || lower.starts_with("get-childitem "))
+            || lower.starts_with("get-childitem ")
+            || lower.contains(" get-childitem ")
+            || lower.contains("; get-childitem ")
+            || lower.contains(" gci ")
+            || lower.contains("; gci "))
         && (lower.contains("| head")
             || lower.contains("|head")
             || lower.contains("| tail")
             || lower.contains("|tail")
+            || lower.contains("format-table")
+            || lower.contains("format-list")
             || lower.contains("select-object -first")
+            || lower.contains("select-object -skip")
             || lower.contains("select-object -last")))
     .then_some(ReplacementCandidate::DirectoryListingCompact)
 }
@@ -552,14 +713,40 @@ fn command_looks_like_check(command: &str) -> bool {
         || lower.contains("cargo check")
         || lower.contains("cargo build")
         || lower.contains("cargo clippy")
+        || lower.contains("cargo fmt")
+        || lower.contains("git diff --check")
         || lower.contains("just fmt")
         || lower.contains("just fix")
         || lower.contains("just test")
+        || lower.contains("cmake --build")
+        || lower.contains("ctest")
+        || lower.contains("get-winevent")
+        || lower.contains("py_compile")
         || lower.contains("pytest")
         || lower.contains("npm test")
         || lower.contains("pnpm test")
         || lower.contains("yarn test")
         || lower.contains("build-local-codex.ps1")
+        || lower.contains("npm run build")
+        || lower.contains("npm run lint")
+        || lower.contains("pnpm build")
+        || lower.contains("pnpm run build")
+        || lower.contains("pnpm lint")
+        || lower.contains("yarn build")
+        || lower.contains("yarn lint")
+        || lower.contains("go test")
+        || lower.contains("go build")
+        || lower.contains("dotnet test")
+        || lower.contains("dotnet build")
+        || lower.contains("mvn test")
+        || lower.contains("mvn verify")
+        || lower.contains("gradle test")
+        || lower.contains("gradlew test")
+        || lower.contains("make test")
+        || lower.contains("make check")
+        || lower.contains("msbuild")
+        || lower.contains("ninja")
+        || lower.contains("xcodebuild")
 }
 
 #[cfg(test)]
@@ -585,6 +772,10 @@ mod tests {
         assert_eq!(
             classify_shell_replacement("git diff -- codex-rs/core/src/tools/mod.rs"),
             Some(ReplacementCandidate::DiffHunkSummary)
+        );
+        assert_eq!(
+            classify_shell_replacement("git ls-files codex-rs/replacement-shadow"),
+            Some(ReplacementCandidate::DirectoryListingCompact)
         );
     }
 
@@ -703,6 +894,46 @@ mod tests {
             ),
             Some(ReplacementCandidate::RunCheckDigest)
         );
+        assert_eq!(
+            classify_shell_replacement("git diff --check"),
+            Some(ReplacementCandidate::RunCheckDigest)
+        );
+        assert_eq!(
+            classify_shell_replacement(
+                "Invoke-Bounded -FilePath cmake -ArgumentList @('--build','build','--target','wizard_team_app')"
+            ),
+            Some(ReplacementCandidate::RunCheckDigest)
+        );
+        assert_eq!(
+            classify_shell_replacement("ctest --test-dir build --output-on-failure"),
+            Some(ReplacementCandidate::RunCheckDigest)
+        );
+        assert_eq!(
+            classify_shell_replacement("python -m py_compile src/app.py"),
+            Some(ReplacementCandidate::RunCheckDigest)
+        );
+        assert_eq!(
+            classify_shell_replacement("npm run build"),
+            Some(ReplacementCandidate::RunCheckDigest)
+        );
+        assert_eq!(
+            classify_shell_replacement("go test ./..."),
+            Some(ReplacementCandidate::RunCheckDigest)
+        );
+        assert_eq!(
+            classify_shell_replacement("dotnet test MySolution.sln"),
+            Some(ReplacementCandidate::RunCheckDigest)
+        );
+        assert_eq!(
+            classify_shell_replacement("make check"),
+            Some(ReplacementCandidate::RunCheckDigest)
+        );
+        assert_eq!(
+            classify_shell_replacement(
+                "Get-WinEvent -FilterHashtable @{LogName='Application'} | Select-Object -First 20"
+            ),
+            Some(ReplacementCandidate::RunCheckDigest)
+        );
     }
 
     #[test]
@@ -750,6 +981,18 @@ mod tests {
             Some(ReplacementCandidate::SelectStringDigest)
         );
         assert_eq!(
+            classify_shell_replacement("grep -R replacement_shadow codex-rs"),
+            Some(ReplacementCandidate::SelectStringDigest)
+        );
+        assert_eq!(
+            classify_shell_replacement("findstr /S /N replacement_shadow *.rs"),
+            Some(ReplacementCandidate::SelectStringDigest)
+        );
+        assert_eq!(
+            classify_shell_replacement("git grep -n replacement_shadow -- codex-rs"),
+            Some(ReplacementCandidate::SelectStringDigest)
+        );
+        assert_eq!(
             classify_shell_replacement("rg --count replacement_shadow codex-rs/core"),
             Some(ReplacementCandidate::RgCountDigest)
         );
@@ -778,6 +1021,18 @@ mod tests {
             Some(ReplacementCandidate::DirectoryListingCompact)
         );
         assert_eq!(
+            classify_shell_replacement("find . -type f -name '*.rs'"),
+            Some(ReplacementCandidate::DirectoryListingCompact)
+        );
+        assert_eq!(
+            classify_shell_replacement("fd replacement codex-rs"),
+            Some(ReplacementCandidate::DirectoryListingCompact)
+        );
+        assert_eq!(
+            classify_shell_replacement("tree -L 2 codex-rs"),
+            Some(ReplacementCandidate::DirectoryListingCompact)
+        );
+        assert_eq!(
             classify_shell_replacement("Get-Process"),
             Some(ReplacementCandidate::ProcessTableCompact)
         );
@@ -802,15 +1057,51 @@ mod tests {
             Some(ReplacementCandidate::FileExcerptDigest)
         );
         assert_eq!(
+            classify_shell_replacement(
+                "$i=1; Get-Content -Path scripts\\build-local-codex.ps1 | Select-Object -Skip 20 -First 40"
+            ),
+            Some(ReplacementCandidate::FileExcerptDigest)
+        );
+        assert_eq!(
             classify_shell_replacement("rg --files codex-rs/core | head -n 20"),
             Some(ReplacementCandidate::RgFilesCompact)
+        );
+        assert_eq!(
+            classify_shell_replacement("git ls-files codex-rs | head -n 40"),
+            Some(ReplacementCandidate::DirectoryListingCompact)
+        );
+        assert_eq!(
+            classify_shell_replacement("find . -type f | sort | head -n 40"),
+            Some(ReplacementCandidate::DirectoryListingCompact)
         );
         assert_eq!(
             classify_shell_replacement("Get-ChildItem codex-rs | Select-Object -First 20"),
             Some(ReplacementCandidate::DirectoryListingCompact)
         );
         assert_eq!(
+            classify_shell_replacement(
+                "$root='reports'; Get-ChildItem $root -Recurse | Select-Object -First 20"
+            ),
+            Some(ReplacementCandidate::DirectoryListingCompact)
+        );
+        assert_eq!(
             classify_shell_replacement("Get-ChildItem codex-rs | Select-String replacement_shadow"),
+            Some(ReplacementCandidate::SelectStringDigest)
+        );
+        assert_eq!(
+            classify_shell_replacement("grep -R replacement_shadow codex-rs | head -n 20"),
+            Some(ReplacementCandidate::SelectStringDigest)
+        );
+    }
+
+    #[test]
+    fn search_patterns_that_look_like_checks_stay_search_shadows() {
+        assert_eq!(
+            classify_shell_replacement("Select-String -Path *.rs -Pattern 'cargo test'"),
+            Some(ReplacementCandidate::SelectStringDigest)
+        );
+        assert_eq!(
+            classify_shell_replacement("grep -R 'go test' codex-rs"),
             Some(ReplacementCandidate::SelectStringDigest)
         );
     }
