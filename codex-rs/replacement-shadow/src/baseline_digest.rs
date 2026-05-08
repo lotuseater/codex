@@ -7,60 +7,6 @@ use serde_json::Value;
 const DEFAULT_BASELINE_SUMMARY_LIMIT: usize = 80;
 const MAX_DIAGNOSTIC_LINES: usize = 40;
 
-pub(super) fn render_git_status_compact(baseline_model_visible_output: &str) -> String {
-    let output = baseline_output_text(baseline_model_visible_output);
-    let mut branch = None;
-    let mut warnings = 0usize;
-    let mut status_counts: BTreeMap<String, usize> = BTreeMap::new();
-    let mut paths = Vec::new();
-    for line in output
-        .lines()
-        .map(str::trim_end)
-        .filter(|line| !line.is_empty())
-    {
-        if line.starts_with("warning:") {
-            warnings += 1;
-            continue;
-        }
-        if line.starts_with("##") {
-            branch = Some(line.to_string());
-            continue;
-        }
-        let status = normalized_status(line.get(..2).unwrap_or("??"));
-        *status_counts.entry(status).or_default() += 1;
-        paths.push(line.to_string());
-    }
-
-    let omitted = paths.len().saturating_sub(DEFAULT_BASELINE_SUMMARY_LIMIT);
-    let mut lines = vec![
-        "git_status_compact".to_string(),
-        format!("changed_paths: {}", paths.len()),
-    ];
-    if let Some(branch) = branch {
-        lines.push(format!("branch: {branch}"));
-    }
-    if warnings > 0 {
-        lines.push(format!("warnings_omitted: {warnings}"));
-    }
-    if !status_counts.is_empty() {
-        lines.push(format!("status_counts: {}", render_counts(&status_counts)));
-    }
-    if paths.is_empty() {
-        lines.push("status: clean".to_string());
-        return lines.join("\n");
-    }
-    lines.push(format!(
-        "paths: {} shown, {omitted} omitted",
-        paths.len().min(DEFAULT_BASELINE_SUMMARY_LIMIT)
-    ));
-    if omitted > 0 {
-        lines.push("fallback_required: true".to_string());
-        lines.push("fallback_reason: max_paths".to_string());
-    }
-    lines.extend(paths.into_iter().take(DEFAULT_BASELINE_SUMMARY_LIMIT));
-    lines.join("\n")
-}
-
 pub(super) fn render_changed_files_compact(
     operation: &str,
     baseline_model_visible_output: &str,
@@ -787,15 +733,6 @@ fn render_counts(counts: &BTreeMap<String, usize>) -> String {
         .join(", ")
 }
 
-fn normalized_status(status: &str) -> String {
-    let trimmed = status.trim();
-    if trimmed.is_empty() {
-        status.to_string()
-    } else {
-        trimmed.to_string()
-    }
-}
-
 fn is_diagnostic_line(line: &str) -> bool {
     let lower = line.to_ascii_lowercase();
     lower.contains("error:")
@@ -815,12 +752,6 @@ mod tests {
 
     #[test]
     fn renders_status_and_diff_summaries() {
-        let baseline =
-            "Exit code: 0\nWall time: 1s\nOutput:\n## main\n M src/lib.rs\n?? README.md\n";
-        assert_eq!(
-            render_git_status_compact(baseline),
-            "git_status_compact\nchanged_paths: 2\nbranch: ## main\nstatus_counts: ??=1, M=1\npaths: 2 shown, 0 omitted\n M src/lib.rs\n?? README.md"
-        );
         assert_eq!(
             render_git_diffstat_compact(
                 "Exit code: 0\nWall time: 1s\nOutput:\n src/lib.rs | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)\n"

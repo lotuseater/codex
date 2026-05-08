@@ -76,9 +76,6 @@ fn classify_git_candidate(tokens: &[String]) -> Option<ReplacementCandidate> {
     }
 
     match tokens.get(index).map(String::as_str)? {
-        "status" if git_status_args_are_shadowable(&tokens[index + 1..]) => {
-            Some(ReplacementCandidate::GitStatusCompact)
-        }
         "diff" if git_diff_stat_args_are_shadowable(&tokens[index + 1..]) => {
             Some(ReplacementCandidate::GitDiffStatCompact)
         }
@@ -116,23 +113,6 @@ fn classify_promoted_git_diff_candidate(tokens: &[String]) -> Option<Replacement
         }
         _ => None,
     }
-}
-
-fn git_status_args_are_shadowable(args: &[String]) -> bool {
-    !args.is_empty()
-        && args.iter().all(|arg| {
-            matches!(
-                arg.as_str(),
-                "--short"
-                    | "-s"
-                    | "--branch"
-                    | "-b"
-                    | "--porcelain"
-                    | "--porcelain=v1"
-                    | "--untracked-files=all"
-                    | "-uall"
-            )
-        })
 }
 
 fn git_diff_stat_args_are_shadowable(args: &[String]) -> bool {
@@ -212,7 +192,7 @@ fn classify_rg_candidate(tokens: &[String]) -> Option<ReplacementCandidate> {
 
     let mut pattern = None;
     let mut paths = Vec::new();
-    let mut glob = None;
+    let mut globs = Vec::new();
     let mut index = 1;
     while let Some(token) = tokens.get(index) {
         if token == "--" {
@@ -222,7 +202,7 @@ fn classify_rg_candidate(tokens: &[String]) -> Option<ReplacementCandidate> {
             break;
         }
         if token.starts_with('-') {
-            match parse_rg_option(tokens, &mut index, &mut pattern, &mut glob) {
+            match parse_rg_option(tokens, &mut index, &mut pattern, &mut globs) {
                 RgOptionParse::Continue => {}
                 RgOptionParse::Reject => return None,
             }
@@ -237,7 +217,7 @@ fn classify_rg_candidate(tokens: &[String]) -> Option<ReplacementCandidate> {
     pattern.and_then(|pattern| {
         (!pattern.trim().is_empty()).then_some(ReplacementCandidate::SearchText {
             pattern,
-            glob,
+            globs,
             paths,
         })
     })
@@ -252,7 +232,7 @@ fn parse_rg_option(
     tokens: &[String],
     index: &mut usize,
     pattern: &mut Option<String>,
-    glob: &mut Option<String>,
+    globs: &mut Vec<String>,
 ) -> RgOptionParse {
     let Some(token) = tokens.get(*index) else {
         return RgOptionParse::Reject;
@@ -284,7 +264,7 @@ fn parse_rg_option(
         "-g" | "--glob" => {
             *index += 1;
             if let Some(value) = tokens.get(*index) {
-                *glob = Some(value.clone());
+                globs.push(value.clone());
                 RgOptionParse::Continue
             } else {
                 RgOptionParse::Reject
@@ -311,7 +291,9 @@ fn parse_rg_option(
             RgOptionParse::Continue
         }
         _ if token.starts_with("--glob=") => {
-            *glob = token.strip_prefix("--glob=").map(ToString::to_string);
+            if let Some(value) = token.strip_prefix("--glob=") {
+                globs.push(value.to_string());
+            }
             RgOptionParse::Continue
         }
         _ if token.starts_with("--max-count=")
@@ -587,10 +569,7 @@ mod tests {
 
     #[test]
     fn classifies_git_summary_commands() {
-        assert_eq!(
-            classify_shell_replacement("git status --short"),
-            Some(ReplacementCandidate::GitStatusCompact)
-        );
+        assert_eq!(classify_shell_replacement("git status --short"), None);
         assert_eq!(
             classify_shell_replacement("git diff --stat"),
             Some(ReplacementCandidate::GitDiffStatCompact)
@@ -648,7 +627,7 @@ mod tests {
             classify_shell_replacement("rg -n --glob '*.rs' context_ops codex-rs/core"),
             Some(ReplacementCandidate::SearchText {
                 pattern: "context_ops".to_string(),
-                glob: Some("*.rs".to_string()),
+                globs: vec!["*.rs".to_string()],
                 paths: vec!["codex-rs/core".to_string()]
             })
         );
@@ -658,7 +637,7 @@ mod tests {
             ),
             Some(ReplacementCandidate::SearchText {
                 pattern: "bias_numeric_series\\(".to_string(),
-                glob: None,
+                globs: Vec::new(),
                 paths: vec!["c_core/src/c_core_analysis_bias_facades.cpp".to_string()]
             })
         );
@@ -674,7 +653,7 @@ mod tests {
             classify_shell_replacement("rg context_ops -g '*.rs' codex-rs/core"),
             Some(ReplacementCandidate::SearchText {
                 pattern: "context_ops".to_string(),
-                glob: Some("*.rs".to_string()),
+                globs: vec!["*.rs".to_string()],
                 paths: vec!["codex-rs/core".to_string()]
             })
         );
@@ -682,7 +661,21 @@ mod tests {
             classify_shell_replacement("rg context_ops --max-count 3 codex-rs/core"),
             Some(ReplacementCandidate::SearchText {
                 pattern: "context_ops".to_string(),
-                glob: None,
+                globs: Vec::new(),
+                paths: vec!["codex-rs/core".to_string()]
+            })
+        );
+    }
+
+    #[test]
+    fn classifies_rg_search_with_repeated_globs() {
+        assert_eq!(
+            classify_shell_replacement(
+                "rg -n --glob '*.rs' --glob '!target/**' context_ops codex-rs/core"
+            ),
+            Some(ReplacementCandidate::SearchText {
+                pattern: "context_ops".to_string(),
+                globs: vec!["*.rs".to_string(), "!target/**".to_string()],
                 paths: vec!["codex-rs/core".to_string()]
             })
         );
@@ -831,6 +824,34 @@ mod tests {
         assert_eq!(classify_promoted_replacement("git diff --numstat"), None);
         assert_eq!(
             classify_promoted_replacement("rg --count replacement_shadow codex-rs/core"),
+            None
+        );
+        assert_eq!(
+            classify_promoted_replacement("rg -l replacement_shadow codex-rs/core"),
+            None
+        );
+        assert_eq!(
+            classify_promoted_replacement("rg --json replacement_shadow codex-rs/core"),
+            None
+        );
+        assert_eq!(
+            classify_promoted_replacement("rg --files -g '*.rs' codex-rs/core"),
+            None
+        );
+        assert_eq!(
+            classify_promoted_replacement("Select-String -Path *.rs -Pattern replacement_shadow"),
+            None
+        );
+        assert_eq!(
+            classify_promoted_replacement("Get-ChildItem -Recurse codex-rs/core/src/tools"),
+            None
+        );
+        assert_eq!(
+            classify_promoted_replacement("git log --stat -- codex-rs/core"),
+            None
+        );
+        assert_eq!(
+            classify_promoted_replacement("git diff -- codex-rs/core | rg replacement_shadow"),
             None
         );
         assert_eq!(classify_promoted_replacement("Get-Process"), None);

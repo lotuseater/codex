@@ -2419,6 +2419,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-context-ops-impl"
+version = "0.0.0"
+dependencies = [
+ "pretty_assertions",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "codex-core"
 version = "0.0.0"
 dependencies = [
@@ -2441,6 +2450,7 @@ dependencies = [
  "codex-code-mode",
  "codex-config",
  "codex-connectors",
+ "codex-context-ops-impl",
  "codex-core-plugins",
  "codex-core-skills",
  "codex-desktop-automation",
@@ -2462,6 +2472,7 @@ dependencies = [
  "codex-otel",
  "codex-plugin",
  "codex-protocol",
+ "codex-replacement-shadow",
  "codex-repo-context-scout",
  "codex-response-debug-context",
  "codex-rmcp-client",
@@ -3416,6 +3427,15 @@ dependencies = [
  "serde",
  "tempfile",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "codex-replacement-shadow"
+version = "0.0.0"
+dependencies = [
+ "pretty_assertions",
+ "serde_json",
+ "shlex",
 ]
 
 [[package]]

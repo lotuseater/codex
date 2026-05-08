@@ -32,6 +32,7 @@ members = [
     "collaboration-mode-templates",
     "connectors",
     "config",
+    "context-ops-impl",
     "desktop-automation",
     "device-key",
     "shell-command",
@@ -67,6 +68,7 @@ members = [
     "operation-cache",
     "process-hardening",
     "protocol",
+    "replacement-shadow",
     "realtime-webrtc",
     "reasoning-logic",
     "rollout",
@@ -157,6 +159,7 @@ codex-cloud-tasks-mock-client = { path = "cloud-tasks-mock-client" }
 codex-code-mode = { path = "code-mode" }
 codex-config = { path = "config" }
 codex-connectors = { path = "connectors" }
+codex-context-ops-impl = { path = "context-ops-impl" }
 codex-core = { path = "core" }
 codex-core-api = { path = "core-api" }
 codex-core-plugins = { path = "core-plugins" }
@@ -198,6 +201,7 @@ codex-model-provider = { path = "model-provider" }
 codex-operation-cache = { path = "operation-cache" }
 codex-process-hardening = { path = "process-hardening" }
 codex-protocol = { path = "protocol" }
+codex-replacement-shadow = { path = "replacement-shadow" }
 codex-realtime-webrtc = { path = "realtime-webrtc" }
 codex-reasoning-logic = { path = "reasoning-logic" }
 codex-responses-api-proxy = { path = "responses-api-proxy" }

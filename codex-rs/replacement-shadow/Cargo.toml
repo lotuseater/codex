@@ -1,0 +1,15 @@
+[package]
+edition.workspace = true
+license.workspace = true
+name = "codex-replacement-shadow"
+version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde_json = { workspace = true }
+shlex = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }

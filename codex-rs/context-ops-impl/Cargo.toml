@@ -1,0 +1,15 @@
+[package]
+edition.workspace = true
+license.workspace = true
+name = "codex-context-ops-impl"
+version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["fs", "io-util", "process", "rt"] }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }

@@ -1,20 +1,19 @@
 use chrono::Utc;
+use codex_replacement_shadow::ReplacementCandidate;
+use codex_replacement_shadow::classify_promoted_replacement;
+use codex_replacement_shadow::classify_shell_replacement;
+use codex_replacement_shadow::estimate_tokens;
+use codex_replacement_shadow::render_replacement_output;
+use codex_replacement_shadow::should_replace_model_output;
 use serde::Serialize;
 use std::path::Path;
 use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;
 use tokio::time::Instant;
 
-use super::context_ops;
-
-mod baseline_digest;
-mod classify;
-
 const DEFAULT_MAX_FILES: usize = 50;
 const DEFAULT_MAX_MATCHES_PER_FILE: usize = 5;
 const DEFAULT_MAX_OUTLINE_ITEMS: usize = 200;
-const MIN_REPLACE_SAVED_PERCENT: f64 = 30.0;
-const MIN_REPLACE_SAVED_TOKENS: isize = 32;
 
 pub(crate) struct ShellShadowRequest {
     pub(crate) tool_name: String,
@@ -23,163 +22,6 @@ pub(crate) struct ShellShadowRequest {
     pub(crate) cwd: PathBuf,
     pub(crate) baseline_model_visible_output: String,
     pub(crate) log_dir: PathBuf,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum ReplacementCandidate {
-    GitDiffStatCompact,
-    GitStatusCompact,
-    GitChangedFiles,
-    RgFilesCompact,
-    DiffHunkSummary,
-    RunCheckDigest,
-    FileExcerptDigest,
-    SelectStringDigest,
-    RgCountDigest,
-    RgFileSetDigest,
-    RgJsonDigest,
-    GitNameStatusCompact,
-    GitNumstatCompact,
-    GitFilteredDiffDigest,
-    GitHistoryDigest,
-    DirectoryListingCompact,
-    ProcessTableCompact,
-    SearchText {
-        pattern: String,
-        glob: Option<String>,
-        paths: Vec<String>,
-    },
-    FileOutline {
-        path: PathBuf,
-    },
-}
-
-impl ReplacementCandidate {
-    fn name(&self) -> &'static str {
-        match self {
-            Self::GitDiffStatCompact => "git_diffstat_compact",
-            Self::GitStatusCompact => "git_status_compact",
-            Self::GitChangedFiles => "git_changed_files",
-            Self::RgFilesCompact => "rg_files_compact",
-            Self::DiffHunkSummary => "diff_hunk_summary",
-            Self::RunCheckDigest => "run_check_digest",
-            Self::FileExcerptDigest => "file_excerpt_digest",
-            Self::SelectStringDigest => "select_string_digest",
-            Self::RgCountDigest => "rg_count_digest",
-            Self::RgFileSetDigest => "rg_file_set_digest",
-            Self::RgJsonDigest => "rg_json_digest",
-            Self::GitNameStatusCompact => "git_name_status_compact",
-            Self::GitNumstatCompact => "git_numstat_compact",
-            Self::GitFilteredDiffDigest => "git_filtered_diff_digest",
-            Self::GitHistoryDigest => "git_history_digest",
-            Self::DirectoryListingCompact => "directory_listing_compact",
-            Self::ProcessTableCompact => "process_table_compact",
-            Self::SearchText { .. } => "search_text",
-            Self::FileOutline { .. } => "file_outline",
-        }
-    }
-
-    fn strategy(&self) -> &'static str {
-        match self {
-            Self::SearchText { .. } | Self::FileOutline { .. } => "context_op_rerun",
-            Self::GitDiffStatCompact
-            | Self::GitStatusCompact
-            | Self::GitChangedFiles
-            | Self::RgFilesCompact
-            | Self::DiffHunkSummary
-            | Self::RunCheckDigest
-            | Self::FileExcerptDigest
-            | Self::SelectStringDigest
-            | Self::RgCountDigest
-            | Self::RgFileSetDigest
-            | Self::RgJsonDigest
-            | Self::GitNameStatusCompact
-            | Self::GitNumstatCompact
-            | Self::GitFilteredDiffDigest
-            | Self::GitHistoryDigest
-            | Self::DirectoryListingCompact
-            | Self::ProcessTableCompact => "baseline_digest",
-        }
-    }
-
-    async fn run(&self, cwd: &Path, baseline_model_visible_output: &str) -> Result<String, String> {
-        match self {
-            Self::GitStatusCompact => Ok(baseline_digest::render_git_status_compact(
-                baseline_model_visible_output,
-            )),
-            Self::GitDiffStatCompact => Ok(baseline_digest::render_git_diffstat_compact(
-                baseline_model_visible_output,
-            )),
-            Self::GitChangedFiles => Ok(baseline_digest::render_changed_files_compact(
-                "git_changed_files",
-                baseline_model_visible_output,
-            )),
-            Self::RgFilesCompact => Ok(baseline_digest::render_changed_files_compact(
-                "rg_files_compact",
-                baseline_model_visible_output,
-            )),
-            Self::DiffHunkSummary => Ok(baseline_digest::render_diff_hunk_summary(
-                baseline_model_visible_output,
-            )),
-            Self::RunCheckDigest => Ok(baseline_digest::render_run_check_digest(
-                baseline_model_visible_output,
-            )),
-            Self::FileExcerptDigest => Ok(baseline_digest::render_file_excerpt_digest(
-                baseline_model_visible_output,
-            )),
-            Self::SelectStringDigest => Ok(baseline_digest::render_select_string_digest(
-                baseline_model_visible_output,
-            )),
-            Self::RgCountDigest => Ok(baseline_digest::render_rg_count_digest(
-                baseline_model_visible_output,
-            )),
-            Self::RgFileSetDigest => Ok(baseline_digest::render_changed_files_compact(
-                "rg_file_set_digest",
-                baseline_model_visible_output,
-            )),
-            Self::RgJsonDigest => Ok(baseline_digest::render_rg_json_digest(
-                baseline_model_visible_output,
-            )),
-            Self::GitNameStatusCompact => Ok(baseline_digest::render_git_name_status_compact(
-                baseline_model_visible_output,
-            )),
-            Self::GitNumstatCompact => Ok(baseline_digest::render_git_numstat_compact(
-                baseline_model_visible_output,
-            )),
-            Self::GitFilteredDiffDigest => Ok(baseline_digest::render_git_filtered_diff_digest(
-                baseline_model_visible_output,
-            )),
-            Self::GitHistoryDigest => Ok(baseline_digest::render_git_history_digest(
-                baseline_model_visible_output,
-            )),
-            Self::DirectoryListingCompact => Ok(baseline_digest::render_directory_listing_compact(
-                baseline_model_visible_output,
-            )),
-            Self::ProcessTableCompact => Ok(baseline_digest::render_process_table_compact(
-                baseline_model_visible_output,
-            )),
-            Self::SearchText {
-                pattern,
-                glob,
-                paths,
-            } => context_ops::search_text::search_text(
-                cwd,
-                pattern,
-                glob.as_deref(),
-                paths,
-                DEFAULT_MAX_FILES,
-                DEFAULT_MAX_MATCHES_PER_FILE,
-            )
-            .await
-            .map_err(|err| err.to_string()),
-            Self::FileOutline { path } => {
-                let path = resolve_optional_workdir(cwd, Some(path.as_path()));
-                context_ops::file_outline::file_outline(path.as_path(), DEFAULT_MAX_OUTLINE_ITEMS)
-                    .await
-                    .map_err(|err| err.to_string())
-            }
-        }
-    }
 }
 
 #[derive(Debug, Serialize)]
@@ -210,7 +52,7 @@ struct ReplacementBenchRecord {
 }
 
 pub(crate) fn maybe_spawn_shell_shadow(request: ShellShadowRequest) {
-    let Some(candidate) = classify::classify_shell_replacement(&request.command) else {
+    let Some(candidate) = classify_shell_replacement(&request.command) else {
         return;
     };
 
@@ -226,9 +68,8 @@ pub(crate) async fn maybe_compact_shell_output(
     cwd: &Path,
     baseline_model_visible_output: &str,
 ) -> Option<String> {
-    let candidate = classify::classify_promoted_replacement(command)?;
-    let candidate_output = candidate
-        .run(cwd, baseline_model_visible_output)
+    let candidate = classify_promoted_replacement(command)?;
+    let candidate_output = run_candidate(&candidate, cwd, baseline_model_visible_output)
         .await
         .ok()?;
     if candidate_output.contains("fallback_required: true") {
@@ -267,12 +108,12 @@ async fn run_shell_shadow(
 
     let baseline_tokens = estimate_tokens(&request.baseline_model_visible_output);
     let candidate_name = candidate.name();
-    let candidate_output = candidate
-        .run(
-            request.cwd.as_path(),
-            request.baseline_model_visible_output.as_str(),
-        )
-        .await;
+    let candidate_output = run_candidate(
+        &candidate,
+        request.cwd.as_path(),
+        request.baseline_model_visible_output.as_str(),
+    )
+    .await;
     let wall_time_ms = started.elapsed().as_millis();
     let (
         replacement_artifact_path,
@@ -367,6 +208,38 @@ async fn run_shell_shadow(
     .await
 }
 
+async fn run_candidate(
+    candidate: &ReplacementCandidate,
+    cwd: &Path,
+    baseline_model_visible_output: &str,
+) -> Result<String, String> {
+    match candidate {
+        ReplacementCandidate::SearchText {
+            pattern,
+            globs,
+            paths,
+        } => codex_context_ops_impl::search_text(
+            cwd,
+            pattern,
+            globs,
+            paths,
+            DEFAULT_MAX_FILES,
+            DEFAULT_MAX_MATCHES_PER_FILE,
+        )
+        .await
+        .map_err(|err| err.to_string()),
+        ReplacementCandidate::FileOutline { path } => {
+            let path = resolve_optional_workdir(cwd, Some(path.as_path()));
+            codex_context_ops_impl::file_outline(path.as_path(), DEFAULT_MAX_OUTLINE_ITEMS)
+                .await
+                .map_err(|err| err.to_string())
+        }
+        _ => candidate
+            .render_baseline_digest(baseline_model_visible_output)
+            .ok_or_else(|| format!("{} cannot render from baseline", candidate.name())),
+    }
+}
+
 async fn append_jsonl<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
     let mut file = tokio::fs::OpenOptions::new()
         .create(true)
@@ -392,30 +265,6 @@ fn resolve_optional_workdir(cwd: &Path, workdir: Option<&Path>) -> PathBuf {
     }
 }
 
-fn estimate_tokens(text: &str) -> usize {
-    text.len().div_ceil(4).max(1)
-}
-
-fn render_replacement_output(command: &str, operation: &str, replacement_output: &str) -> String {
-    format!(
-        "context_ops_replace: {operation}\nraw_command: {command}\nraw_output: omitted; rerun the raw command if exact output is needed.\n{replacement_output}"
-    )
-}
-
-fn should_replace_model_output(
-    baseline_model_visible_output: &str,
-    replacement_model_visible_output: &str,
-) -> bool {
-    let baseline_tokens = estimate_tokens(baseline_model_visible_output);
-    let replacement_tokens = estimate_tokens(replacement_model_visible_output);
-    let saved_tokens = baseline_tokens as isize - replacement_tokens as isize;
-    if saved_tokens < MIN_REPLACE_SAVED_TOKENS {
-        return false;
-    }
-    let saved_percent = saved_tokens as f64 / baseline_tokens as f64 * 100.0;
-    saved_percent >= MIN_REPLACE_SAVED_PERCENT
-}
-
 fn sanitize_for_filename(value: &str) -> String {
     let mut sanitized = String::new();
     for ch in value.chars().take(64) {
@@ -429,55 +278,5 @@ fn sanitize_for_filename(value: &str) -> String {
         "call".to_string()
     } else {
         sanitized
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use pretty_assertions::assert_eq;
-
-    #[test]
-    fn estimates_tokens_without_zero() {
-        assert_eq!(estimate_tokens(""), 1);
-        assert_eq!(estimate_tokens("12345"), 2);
-    }
-
-    #[test]
-    fn replacement_requires_meaningful_token_savings() {
-        assert!(should_replace_model_output(
-            "x".repeat(1_000).as_str(),
-            "context_ops_replace\nsmall"
-        ));
-        assert!(!should_replace_model_output("tiny", "larger replacement"));
-        assert!(!should_replace_model_output(
-            "x".repeat(1_000).as_str(),
-            "y".repeat(760).as_str()
-        ));
-    }
-
-    #[test]
-    fn reports_shadow_strategy_for_rerun_and_baseline_candidates() {
-        assert_eq!(
-            ReplacementCandidate::SearchText {
-                pattern: "needle".to_string(),
-                glob: None,
-                paths: Vec::new()
-            }
-            .strategy(),
-            "context_op_rerun"
-        );
-        assert_eq!(
-            ReplacementCandidate::GitStatusCompact.strategy(),
-            "baseline_digest"
-        );
-        assert_eq!(
-            ReplacementCandidate::GitDiffStatCompact.strategy(),
-            "baseline_digest"
-        );
-        assert_eq!(
-            ReplacementCandidate::GitFilteredDiffDigest.strategy(),
-            "baseline_digest"
-        );
     }
 }
