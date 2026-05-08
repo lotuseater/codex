@@ -19,7 +19,8 @@ mod imp {
     use base64::engine::general_purpose::STANDARD;
     use std::process::Stdio;
     use std::time::Duration;
-    use tokio::io::AsyncWriteExt;
+    use std::time::SystemTime;
+    use std::time::UNIX_EPOCH;
     use tokio::process::Command;
     use tokio::time::timeout;
 
@@ -32,30 +33,33 @@ mod imp {
         let input_json = serde_json::to_vec(&input)
             .map_err(|err| DesktopAutomationError::Bridge(err.to_string()))?;
         let input_b64 = STANDARD.encode(input_json);
-        let mut child = Command::new("powershell.exe")
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let script_path =
+            std::env::temp_dir().join(format!("codex-dab-{}-{timestamp}.ps1", std::process::id()));
+        std::fs::write(&script_path, BRIDGE_SCRIPT).map_err(DesktopAutomationError::Spawn)?;
+        let child = Command::new("powershell.exe")
             .args([
                 "-NoLogo",
                 "-NoProfile",
                 "-NonInteractive",
                 "-ExecutionPolicy",
                 "Bypass",
-                "-Command",
-                "-",
             ])
+            .arg("-File")
+            .arg(&script_path)
             .env("CODEX_DAB_TOOL", tool_name)
             .env("CODEX_DAB_INPUT_B64", input_b64)
-            .stdin(Stdio::piped())
+            .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(DesktopAutomationError::Spawn)?;
-
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin
-                .write_all(BRIDGE_SCRIPT.as_bytes())
-                .await
-                .map_err(DesktopAutomationError::Spawn)?;
-        }
+            .map_err(|err| {
+                let _ = std::fs::remove_file(&script_path);
+                DesktopAutomationError::Spawn(err)
+            })?;
 
         let output = match timeout(
             Duration::from_secs(BRIDGE_TIMEOUT_SECONDS),
@@ -63,27 +67,115 @@ mod imp {
         )
         .await
         {
-            Ok(result) => result.map_err(DesktopAutomationError::Spawn)?,
-            Err(_) => return Err(DesktopAutomationError::Timeout(BRIDGE_TIMEOUT_SECONDS)),
+            Ok(result) => match result {
+                Ok(output) => output,
+                Err(err) => {
+                    let _ = std::fs::remove_file(&script_path);
+                    return Err(DesktopAutomationError::Spawn(err));
+                }
+            },
+            Err(_) => {
+                let _ = std::fs::remove_file(&script_path);
+                return Err(DesktopAutomationError::Timeout(BRIDGE_TIMEOUT_SECONDS));
+            }
         };
+        let _ = std::fs::remove_file(&script_path);
 
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         if !output.status.success() {
-            return Err(DesktopAutomationError::Bridge(if stderr.is_empty() {
-                stdout
-            } else {
-                stderr
-            }));
+            return Err(DesktopAutomationError::Bridge(format!(
+                "desktop automation bridge failed for `{tool_name}` with status {:?}; stdout: {}; stderr: {}",
+                output.status.code(),
+                output_part(&stdout),
+                output_part(&stderr)
+            )));
         }
 
-        let value: Value =
-            serde_json::from_str(&stdout).map_err(DesktopAutomationError::InvalidJson)?;
+        let value = parse_bridge_stdout(tool_name, output.status.code(), &stdout, &stderr)?;
         let image_url = value
             .get("image_url")
             .and_then(Value::as_str)
             .map(str::to_string);
         Ok(DesktopAutomationResult::with_image(value, image_url))
+    }
+
+    fn parse_bridge_stdout(
+        tool_name: &str,
+        status_code: Option<i32>,
+        stdout: &str,
+        stderr: &str,
+    ) -> Result<Value, DesktopAutomationError> {
+        if stdout.is_empty() {
+            return Err(DesktopAutomationError::Bridge(format!(
+                "desktop automation bridge returned no JSON for `{tool_name}` with status {status_code:?}; stderr: {}",
+                output_part(stderr)
+            )));
+        }
+
+        serde_json::from_str(stdout).map_err(DesktopAutomationError::InvalidJson)
+    }
+
+    fn output_part(text: &str) -> &str {
+        if text.is_empty() { "<empty>" } else { text }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn parse_bridge_stdout_reports_empty_output() {
+            let err = parse_bridge_stdout("dab_find_window", Some(0), "", "").unwrap_err();
+
+            assert!(matches!(
+                err,
+                DesktopAutomationError::Bridge(message)
+                    if message == "desktop automation bridge returned no JSON for `dab_find_window` with status Some(0); stderr: <empty>"
+            ));
+        }
+
+        #[test]
+        fn parse_bridge_stdout_includes_stderr_for_empty_output() {
+            let err =
+                parse_bridge_stdout("dab_find_window", Some(0), "", "process failed").unwrap_err();
+
+            assert!(matches!(
+                err,
+                DesktopAutomationError::Bridge(message)
+                    if message == "desktop automation bridge returned no JSON for `dab_find_window` with status Some(0); stderr: process failed"
+            ));
+        }
+
+        #[test]
+        fn bridge_script_guards_targeted_foreground_actions() {
+            assert!(BRIDGE_SCRIPT.contains(
+                "'dab_click' {\n            $hasTarget = Test-HasTarget $ArgsObj\n            $window = if ($hasTarget) { Resolve-TargetWindow $ArgsObj } else { $null }\n            if ($hasTarget -and $null -eq $window) { Write-DabResult ([pscustomobject]@{ ok = $false; error = 'target window not found' }); break }"
+            ));
+            assert!(BRIDGE_SCRIPT.contains(
+                "'dab_send_keys' {\n            $hasTarget = Test-HasTarget $ArgsObj\n            $window = if ($hasTarget) { Resolve-TargetWindow $ArgsObj } else { $null }\n            if ($hasTarget -and $null -eq $window) { Write-DabResult ([pscustomobject]@{ ok = $false; error = 'target window not found' }); break }"
+            ));
+        }
+
+        #[test]
+        fn execute_dab_find_window_live_canary_when_enabled() {
+            if std::env::var_os("CODEX_DAB_LIVE_TEST").is_none() {
+                return;
+            }
+
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("create live DAB test runtime");
+            let result = runtime.block_on(async {
+                execute_dab_tool("dab_find_window", serde_json::json!({ "limit": 5 }))
+                    .await
+                    .expect("dab_find_window should return JSON")
+            });
+
+            assert!(result.ok);
+            assert!(result.output.get("windows").is_some_and(Value::is_array));
+        }
     }
 
     const BRIDGE_SCRIPT: &str = r#"
@@ -141,15 +233,15 @@ function Get-WindowTitle([IntPtr]$hwnd) {
 function Get-WindowInfo([IntPtr]$hwnd) {
     $rect = New-Object CodexDabNative+RECT
     [void][CodexDabNative]::GetWindowRect($hwnd, [ref]$rect)
-    $pid = [uint32]0
-    [void][CodexDabNative]::GetWindowThreadProcessId($hwnd, [ref]$pid)
+    $processIdValue = [uint32]0
+    [void][CodexDabNative]::GetWindowThreadProcessId($hwnd, [ref]$processIdValue)
     $processName = $null
-    try { $processName = (Get-Process -Id $pid -ErrorAction Stop).ProcessName } catch {}
+    try { $processName = (Get-Process -Id $processIdValue -ErrorAction Stop).ProcessName } catch {}
     [pscustomobject]@{
         hwnd = ('0x{0:x}' -f $hwnd.ToInt64())
         hwnd_decimal = $hwnd.ToInt64()
         title = Get-WindowTitle $hwnd
-        process_id = [int]$pid
+        process_id = [int]$processIdValue
         process_name = $processName
         visible = [CodexDabNative]::IsWindowVisible($hwnd)
         rect = [pscustomobject]@{
@@ -362,7 +454,9 @@ try {
             Write-DabResult ([pscustomobject]@{ ok = $true; window = $window; elements = Get-Elements $window.hwnd $max; screenshot = $shot; image_url = if ($shot) { $shot.image_url } else { $null } })
         }
         'dab_click' {
-            $window = Resolve-TargetWindow $ArgsObj
+            $hasTarget = Test-HasTarget $ArgsObj
+            $window = if ($hasTarget) { Resolve-TargetWindow $ArgsObj } else { $null }
+            if ($hasTarget -and $null -eq $window) { Write-DabResult ([pscustomobject]@{ ok = $false; error = 'target window not found' }); break }
             if ($window) { [void][CodexDabNative]::SetForegroundWindow((Get-Hwnd $window.hwnd)); Start-Sleep -Milliseconds 80 }
             Invoke-ForegroundClick $ArgsObj.x $ArgsObj.y
             Write-DabResult ([pscustomobject]@{ ok = $true; window = $window; clicked = @{ x = [int]$ArgsObj.x; y = [int]$ArgsObj.y; mode = 'foreground' } })
@@ -392,7 +486,9 @@ try {
             Write-DabResult ([pscustomobject]@{ ok = $true; window = $window; matched = $match; clicked = @{ x = $x; y = $y; mode = 'smart' } })
         }
         'dab_send_keys' {
-            $window = Resolve-TargetWindow $ArgsObj
+            $hasTarget = Test-HasTarget $ArgsObj
+            $window = if ($hasTarget) { Resolve-TargetWindow $ArgsObj } else { $null }
+            if ($hasTarget -and $null -eq $window) { Write-DabResult ([pscustomobject]@{ ok = $false; error = 'target window not found' }); break }
             if ($window) { [void][CodexDabNative]::SetForegroundWindow((Get-Hwnd $window.hwnd)); Start-Sleep -Milliseconds 120 }
             $shell = New-Object -ComObject WScript.Shell
             $shell.SendKeys([string]$ArgsObj.keys)
