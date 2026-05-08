@@ -103,6 +103,56 @@ async fn thread_manager() -> ThreadManager {
     .await
 }
 
+async fn make_multi_agent_v2_root() -> (
+    ThreadManager,
+    Arc<crate::session::session::Session>,
+    Arc<TurnContext>,
+    ThreadId,
+) {
+    let (mut session, mut turn) = make_session_and_context().await;
+    let manager = thread_manager().await;
+    let root = manager
+        .start_thread((*turn.config).clone())
+        .await
+        .expect("root thread should start");
+    session.services.agent_control = manager.agent_control();
+    session.conversation_id = root.thread_id;
+    let mut config = (*turn.config).clone();
+    config
+        .features
+        .enable(Feature::MultiAgentV2)
+        .expect("test config should allow feature update");
+    turn.config = Arc::new(config);
+
+    (manager, Arc::new(session), Arc::new(turn), root.thread_id)
+}
+
+async fn spawn_v2_worker(
+    session: &Arc<crate::session::session::Session>,
+    turn: &Arc<TurnContext>,
+    task_name: &str,
+) -> ThreadId {
+    SpawnAgentHandlerV2
+        .handle(invocation(
+            session.clone(),
+            turn.clone(),
+            "spawn_agent",
+            function_payload(json!({
+                "message": "inspect this repo",
+                "task_name": task_name
+            })),
+        ))
+        .await
+        .expect("spawn_agent should succeed");
+
+    session
+        .services
+        .agent_control
+        .resolve_agent_reference(session.conversation_id, &turn.session_source, task_name)
+        .await
+        .expect("worker path should resolve")
+}
+
 async fn install_role_with_model_override(turn: &mut TurnContext) -> String {
     let role_name = "fork-context-role".to_string();
     tokio::fs::create_dir_all(&turn.config.codex_home)
@@ -629,6 +679,307 @@ async fn multi_agent_v2_spawn_rejects_legacy_items_field() {
         panic!("legacy items field should surface as a model-facing error");
     };
     assert!(message.contains("unknown field `items`"));
+}
+
+#[tokio::test]
+async fn multi_agent_v2_spawn_blocks_unscouted_exploration_agent() {
+    let (session, turn) = make_session_and_context().await;
+
+    let invocation = invocation(
+        Arc::new(session),
+        Arc::new(turn),
+        "spawn_agent",
+        function_payload(json!({
+            "task_name": "repo_mapper",
+            "agent_type": "explorer",
+            "message": "CONTEXT_AREA: whole repo\nFIRST_READS: git status --porcelain=v1 --branch; rg -n \"TODO|FIXME\" .\nTOOL_HINTS: Use rg.\nTOKEN_TIP: stay narrow\nVERIFICATION: report files only"
+        })),
+    );
+    let Err(err) = SpawnAgentHandlerV2.handle(invocation).await else {
+        panic!("unscouted exploration spawn should be rejected");
+    };
+    let FunctionCallError::RespondToModel(message) = err else {
+        panic!("unscouted exploration should surface as a model-facing error");
+    };
+    assert!(message.contains("spawn_agent blocked"));
+    assert!(message.contains("first_moves_predict"));
+}
+
+#[tokio::test]
+async fn multi_agent_v2_spawn_does_not_count_rg_pattern_as_scout_evidence() {
+    let (session, turn) = make_session_and_context().await;
+
+    let invocation = invocation(
+        Arc::new(session),
+        Arc::new(turn),
+        "spawn_agent",
+        function_payload(json!({
+            "task_name": "docs_candidate_map",
+            "agent_type": "explorer",
+            "message": "CONTEXT_AREA: docs/token-saving-tools only\nFIRST_READS: rg -n \"first_moves|repo_context_scout|artifact\" docs/token-saving-tools; read README.md\nWHY_AGENT: independent parallel docs scan with a 20k token budget while root keeps implementation local\nTOOL_HINTS: Use rg and targeted reads.\nTOKEN_TIP: summarize only\nVERIFICATION: report docs read only"
+        })),
+    );
+    let Err(err) = SpawnAgentHandlerV2.handle(invocation).await else {
+        panic!("rg patterns containing scout names should not satisfy scout evidence");
+    };
+    let FunctionCallError::RespondToModel(message) = err else {
+        panic!("unscouted exploration should surface as a model-facing error");
+    };
+    assert!(message.contains("SCOUT_EVIDENCE"));
+    assert!(message.contains("WHY_AGENT"));
+}
+
+#[tokio::test]
+async fn multi_agent_v2_spawn_does_not_count_rg_scout_evidence_section() {
+    let (session, turn) = make_session_and_context().await;
+
+    let invocation = invocation(
+        Arc::new(session),
+        Arc::new(turn),
+        "spawn_agent",
+        function_payload(json!({
+            "task_name": "docs_candidate_map",
+            "agent_type": "explorer",
+            "message": "CONTEXT_AREA: docs/token-saving-tools only\nSCOUT_EVIDENCE: rg -n \"first_moves|repo_context_scout|artifact\" docs/token-saving-tools\nWHY_AGENT: independent parallel docs scan with a 20k token budget while root keeps implementation local\nFIRST_READS: read README.md\nTOOL_HINTS: Use targeted reads.\nTOKEN_TIP: summarize only\nVERIFICATION: report docs read only"
+        })),
+    );
+    let Err(err) = SpawnAgentHandlerV2.handle(invocation).await else {
+        panic!("raw rg in scout evidence should not satisfy the explorer contract");
+    };
+    let FunctionCallError::RespondToModel(message) = err else {
+        panic!("unscouted exploration should surface as a model-facing error");
+    };
+    assert!(message.contains("SCOUT_EVIDENCE"));
+    assert!(message.contains("WHY_AGENT"));
+}
+
+#[tokio::test]
+async fn multi_agent_v2_spawn_blocks_explorer_without_parallel_budget_reason() {
+    let (session, turn) = make_session_and_context().await;
+
+    let invocation = invocation(
+        Arc::new(session),
+        Arc::new(turn),
+        "spawn_agent",
+        function_payload(json!({
+            "task_name": "repo_mapper",
+            "agent_type": "explorer",
+            "message": "CONTEXT_AREA: whole repo\nSCOUT_EVIDENCE: first_moves_predict returned codex-rs/core/src/tools/handlers/multi_agents_v2/spawn.rs\nFIRST_READS: first_moves_predict output only\nTOOL_HINTS: Use cache-aware tools.\nTOKEN_TIP: stop if first_moves is enough\nVERIFICATION: report files only"
+        })),
+    );
+    let Err(err) = SpawnAgentHandlerV2.handle(invocation).await else {
+        panic!("explorer without WHY_AGENT should be rejected");
+    };
+    let FunctionCallError::RespondToModel(message) = err else {
+        panic!("unbudgeted exploration should surface as a model-facing error");
+    };
+    assert!(message.contains("WHY_AGENT"));
+}
+
+#[tokio::test]
+async fn multi_agent_v2_spawn_allows_budgeted_exploration_after_first_moves_contract() {
+    let (session, turn) = make_session_and_context().await;
+
+    let invocation = invocation(
+        Arc::new(session),
+        Arc::new(turn),
+        "spawn_agent",
+        function_payload(json!({
+            "task_name": "repo_mapper",
+            "agent_type": "explorer",
+            "message": "CONTEXT_AREA: whole repo\nSCOUT_EVIDENCE: first_moves_predict returned codex-rs/core/src/tools/handlers/multi_agents_v2/spawn.rs with high confidence\nWHY_AGENT / ROI: reuse check found no relevant existing agent; independent parallel verification with loop_followup_gain=2, net >= 2, and a 15k token budget while root keeps the implementation path local\nFIRST_READS: first_moves_predict output only\nTOOL_HINTS: Use cache-aware tools.\nTOKEN_TIP: stop if first_moves is enough\nVERIFICATION: report files only"
+        })),
+    );
+    let Err(err) = SpawnAgentHandlerV2.handle(invocation).await else {
+        panic!("spawn should continue past the exploration guard");
+    };
+    let FunctionCallError::RespondToModel(message) = err else {
+        panic!("manager error should surface as a model-facing error");
+    };
+    assert_eq!(message, "collab manager unavailable");
+}
+
+#[tokio::test]
+async fn multi_agent_v2_spawn_blocks_git_finalization_tasks() {
+    let (session, turn) = make_session_and_context().await;
+
+    let invocation = invocation(
+        Arc::new(session),
+        Arc::new(turn),
+        "spawn_agent",
+        function_payload(json!({
+            "task_name": "git_pusher",
+            "message": "CONTEXT_AREA: repo root\nWHY_AGENT / ROI: independent sidecar finalization with net >= 2 and 5k token budget\nFIRST_READS: git status --porcelain=v1 --branch\nVERIFICATION: git push origin local-codex-customizations"
+        })),
+    );
+    let Err(err) = SpawnAgentHandlerV2.handle(invocation).await else {
+        panic!("git finalization should stay in the root agent");
+    };
+    let FunctionCallError::RespondToModel(message) = err else {
+        panic!("git finalization should surface as a model-facing error");
+    };
+    assert!(message.contains("git finalization"));
+    assert!(message.contains("root agent"));
+}
+
+#[tokio::test]
+async fn multi_agent_v2_spawn_allows_read_only_git_inspection() {
+    let (session, turn) = make_session_and_context().await;
+
+    let invocation = invocation(
+        Arc::new(session),
+        Arc::new(turn),
+        "spawn_agent",
+        function_payload(json!({
+            "task_name": "git_diff_reader",
+            "agent_type": "worker",
+            "message": "CONTEXT_AREA: current diff only\nWHY_AGENT / ROI: reuse check found no relevant existing agent; independent sidecar git diff review with net >= 2 and 8k token budget while root continues implementation\nFIRST_READS: git diff -- codex-rs/core/src/config/mod.rs\nTOOL_HINTS: read-only git inspection only\nTOKEN_TIP: do not broaden beyond this diff\nVERIFICATION: report findings only"
+        })),
+    );
+    let Err(err) = SpawnAgentHandlerV2.handle(invocation).await else {
+        panic!("spawn should continue past read-only git inspection guard");
+    };
+    let FunctionCallError::RespondToModel(message) = err else {
+        panic!("manager error should surface as a model-facing error");
+    };
+    assert_eq!(message, "collab manager unavailable");
+}
+
+#[tokio::test]
+async fn multi_agent_v2_spawn_blocks_exact_read_only_explorer_without_positive_roi() {
+    let (session, turn) = make_session_and_context().await;
+
+    let invocation = invocation(
+        Arc::new(session),
+        Arc::new(turn),
+        "spawn_agent",
+        function_payload(json!({
+            "task_name": "config_reader",
+            "agent_type": "explorer",
+            "message": "CONTEXT_AREA: codex-rs/core/src/config/mod.rs only\nFIRST_READS: codex-rs/core/src/config/mod.rs\nTOOL_HINTS: targeted read only\nTOKEN_TIP: stay narrow\nVERIFICATION: summarize the file"
+        })),
+    );
+    let Err(err) = SpawnAgentHandlerV2.handle(invocation).await else {
+        panic!("simple exact read-only explorer should be rejected");
+    };
+    let FunctionCallError::RespondToModel(message) = err else {
+        panic!("exact read-only rejection should surface as a model-facing error");
+    };
+    assert!(message.contains("simple read-only exploration"));
+    assert!(message.contains("Agent ROI Estimate"));
+}
+
+#[tokio::test]
+async fn multi_agent_v2_spawn_allows_exact_read_only_explorer_with_positive_roi() {
+    let (session, turn) = make_session_and_context().await;
+
+    let invocation = invocation(
+        Arc::new(session),
+        Arc::new(turn),
+        "spawn_agent",
+        function_payload(json!({
+            "task_name": "config_reader",
+            "agent_type": "explorer",
+            "message": "CONTEXT_AREA: codex-rs/core/src/config/mod.rs and codex-rs/tools/src/agent_tool.rs only\nWHY_AGENT / ROI: reuse check found no relevant existing agent; independent sidecar exact-read comparison with repeat_gain=4, loop_followup_gain=3, context_gain=2, risk_penalty=1, net >= 2, and a 12k token budget stop condition\nFIRST_READS: codex-rs/core/src/config/mod.rs; codex-rs/tools/src/agent_tool.rs\nTOOL_HINTS: targeted reads only; do not call first_moves_predict\nTOKEN_TIP: compare only the requested guidance\nVERIFICATION: report matching guidance gaps only"
+        })),
+    );
+    let Err(err) = SpawnAgentHandlerV2.handle(invocation).await else {
+        panic!("spawn should continue past exact-read ROI guard");
+    };
+    let FunctionCallError::RespondToModel(message) = err else {
+        panic!("manager error should surface as a model-facing error");
+    };
+    assert_eq!(message, "collab manager unavailable");
+}
+
+#[tokio::test]
+async fn multi_agent_v2_spawn_allows_bounded_worker_with_exact_first_reads() {
+    let (session, turn) = make_session_and_context().await;
+
+    let invocation = invocation(
+        Arc::new(session),
+        Arc::new(turn),
+        "spawn_agent",
+        function_payload(json!({
+            "task_name": "config_hint_patch",
+            "agent_type": "worker",
+            "message": "CONTEXT_AREA: codex-rs/core/src/config/mod.rs only\nWHY_AGENT / ROI: reuse check found no relevant existing agent; independent sidecar implementation with net >= 2 and 10k token budget while root updates tests\nFIRST_READS: codex-rs/core/src/config/mod.rs\nTOOL_HINTS: apply a bounded patch only\nTOKEN_TIP: do not call first_moves_predict for this exact file\nVERIFICATION: cargo test filter for config hints"
+        })),
+    );
+    let Err(err) = SpawnAgentHandlerV2.handle(invocation).await else {
+        panic!("spawn should continue past exact first-read worker guard");
+    };
+    let FunctionCallError::RespondToModel(message) = err else {
+        panic!("manager error should surface as a model-facing error");
+    };
+    assert_eq!(message, "collab manager unavailable");
+}
+
+#[tokio::test]
+async fn multi_agent_v2_spawn_prepends_context_pack_after_policy_passes() {
+    let (mut session, mut turn) = make_session_and_context().await;
+    let temp_dir = tempfile::tempdir().expect("temp dir");
+    let src_dir = temp_dir.path().join("src");
+    std::fs::create_dir_all(&src_dir).expect("create src dir");
+    std::fs::write(
+        src_dir.join("context_pack.rs"),
+        "context pack spawn_agent FIRST_READS routing",
+    )
+    .expect("write context pack fixture");
+
+    turn.cwd = temp_dir.abs();
+    let mut config = (*turn.config).clone();
+    config.cwd = turn.cwd.clone();
+    config
+        .features
+        .enable(Feature::MultiAgentV2)
+        .expect("test config should allow feature update");
+    turn.config = Arc::new(config);
+
+    let manager = thread_manager().await;
+    let root = manager
+        .start_thread((*turn.config).clone())
+        .await
+        .expect("root thread should start");
+    session.services.agent_control = manager.agent_control();
+    session.conversation_id = root.thread_id;
+
+    let session = Arc::new(session);
+    let turn = Arc::new(turn);
+    SpawnAgentHandlerV2
+        .handle(invocation(
+            session.clone(),
+            turn.clone(),
+            "spawn_agent",
+            function_payload(json!({
+                "task_name": "context_pack_worker",
+                "agent_type": "worker",
+                "message": "CONTEXT_AREA: src only\nWHY_AGENT / ROI: independent sidecar implementation with net >= 2 and a 10k token budget while root updates tests\nFIRST_READS: src/context_pack.rs\nTOOL_HINTS: targeted reads only\nVERIFICATION: report file only"
+            })),
+        ))
+        .await
+        .expect("spawn_agent should succeed");
+
+    let child_thread_id = session
+        .services
+        .agent_control
+        .resolve_agent_reference(
+            session.conversation_id,
+            &turn.session_source,
+            "context_pack_worker",
+        )
+        .await
+        .expect("relative path should resolve");
+    assert!(manager.captured_ops().iter().any(|(id, op)| {
+        *id == child_thread_id
+            && matches!(
+                op,
+                Op::InterAgentCommunication { communication }
+                    if communication.content.starts_with("<context_pack")
+                        && communication.content.contains("src/context_pack.rs")
+                        && communication.content.contains("FIRST_READS: src/context_pack.rs")
+            )
+    }));
 }
 
 #[tokio::test]
@@ -3452,6 +3803,67 @@ async fn multi_agent_v2_compact_agent_accepts_idle_task_name_target() {
 }
 
 #[tokio::test]
+async fn multi_agent_v2_compact_agent_rejects_root_target_and_id() {
+    let (manager, session, turn, root_thread_id) = make_multi_agent_v2_root().await;
+
+    for target in ["/root".to_string(), root_thread_id.to_string()] {
+        let err = CompactAgentHandlerV2
+            .handle(invocation(
+                session.clone(),
+                turn.clone(),
+                "compact_agent",
+                function_payload(json!({"target": target})),
+            ))
+            .await
+            .expect_err("compact_agent should reject root targets");
+        assert_eq!(
+            err,
+            FunctionCallError::RespondToModel("root is not a spawned agent".to_string())
+        );
+    }
+
+    assert!(
+        manager
+            .captured_ops()
+            .into_iter()
+            .all(|(id, op)| id != root_thread_id || !matches!(op, Op::Compact))
+    );
+}
+
+#[tokio::test]
+async fn multi_agent_v2_compact_agent_rejects_running_target_without_compacting() {
+    let (manager, session, turn, _) = make_multi_agent_v2_root().await;
+    let agent_id = spawn_v2_worker(&session, &turn, "worker").await;
+    assert!(matches!(
+        manager.agent_control().get_status(agent_id).await,
+        AgentStatus::Running | AgentStatus::PendingInit
+    ));
+
+    let err = CompactAgentHandlerV2
+        .handle(invocation(
+            session,
+            turn,
+            "compact_agent",
+            function_payload(json!({"target": "worker"})),
+        ))
+        .await
+        .expect_err("compact_agent should reject running workers");
+    assert_eq!(
+        err,
+        FunctionCallError::RespondToModel(
+            "agent is currently running; wait for it to stop before compacting, or use restart_agent if it is stuck"
+                .to_string(),
+        )
+    );
+    assert!(
+        manager
+            .captured_ops()
+            .into_iter()
+            .all(|(id, op)| id != agent_id || !matches!(op, Op::Compact))
+    );
+}
+
+#[tokio::test]
 async fn multi_agent_v2_restart_agent_resumes_with_optional_model_effort_and_message() {
     let (mut session, mut turn) = make_session_and_context().await;
     let manager = thread_manager().await;
@@ -3545,6 +3957,68 @@ async fn multi_agent_v2_restart_agent_resumes_with_optional_model_effort_and_mes
                 && communication.content == "continue with automation where useful"
                 && communication.trigger_turn
     )));
+}
+
+#[tokio::test]
+async fn multi_agent_v2_restart_agent_rejects_root_target_and_id() {
+    let (manager, session, turn, root_thread_id) = make_multi_agent_v2_root().await;
+
+    for target in ["/root".to_string(), root_thread_id.to_string()] {
+        let err = RestartAgentHandlerV2
+            .handle(invocation(
+                session.clone(),
+                turn.clone(),
+                "restart_agent",
+                function_payload(json!({
+                    "target": target,
+                    "message": "restart"
+                })),
+            ))
+            .await
+            .expect_err("restart_agent should reject root targets");
+        assert_eq!(
+            err,
+            FunctionCallError::RespondToModel("root is not a spawned agent".to_string())
+        );
+    }
+
+    assert!(
+        manager
+            .captured_ops()
+            .into_iter()
+            .all(|(id, op)| id != root_thread_id || !matches!(op, Op::Shutdown { .. }))
+    );
+}
+
+#[tokio::test]
+async fn multi_agent_v2_restart_agent_rejects_empty_message_without_restart() {
+    let (manager, session, turn, _) = make_multi_agent_v2_root().await;
+    let agent_id = spawn_v2_worker(&session, &turn, "worker").await;
+    let ops_before = manager.captured_ops();
+
+    let err = RestartAgentHandlerV2
+        .handle(invocation(
+            session,
+            turn,
+            "restart_agent",
+            function_payload(json!({
+                "target": "worker",
+                "message": "   "
+            })),
+        ))
+        .await
+        .expect_err("restart_agent should reject empty message overrides");
+    assert_eq!(
+        err,
+        FunctionCallError::RespondToModel(
+            "restart_agent message must not be empty when provided".to_string()
+        )
+    );
+    assert_eq!(manager.captured_ops(), ops_before);
+    assert_ne!(
+        manager.agent_control().get_status(agent_id).await,
+        AgentStatus::NotFound
+    );
 }
 
 #[tokio::test]

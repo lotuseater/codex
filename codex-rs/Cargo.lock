@@ -1783,6 +1783,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-agent-policy"
+version = "0.0.0"
+dependencies = [
+ "pretty_assertions",
+]
+
+[[package]]
 name = "codex-analytics"
 version = "0.0.0"
 dependencies = [
@@ -2428,6 +2435,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-context-pack"
+version = "0.0.0"
+dependencies = [
+ "tempfile",
+ "walkdir",
+]
+
+[[package]]
 name = "codex-core"
 version = "0.0.0"
 dependencies = [
@@ -2442,6 +2457,7 @@ dependencies = [
  "chrono",
  "clap",
  "codex-agent-graph-store",
+ "codex-agent-policy",
  "codex-analytics",
  "codex-api",
  "codex-app-server-protocol",
@@ -2451,6 +2467,7 @@ dependencies = [
  "codex-config",
  "codex-connectors",
  "codex-context-ops-impl",
+ "codex-context-pack",
  "codex-core-plugins",
  "codex-core-skills",
  "codex-desktop-automation",

@@ -5,7 +5,12 @@ use crate::agent::control::render_input_preview;
 use crate::agent::next_thread_spawn_depth;
 use crate::agent::role::DEFAULT_ROLE_NAME;
 use crate::agent::role::apply_role_to_config;
+use crate::session::turn_context::TurnContext;
 use crate::turn_timing::now_unix_timestamp_ms;
+use codex_agent_policy::SpawnPolicyInput;
+use codex_agent_policy::evaluate_spawn_policy;
+use codex_context_pack::prepend_context_pack_to_message;
+use codex_first_moves::is_whole_repo_exploration_prompt;
 use codex_protocol::AgentPath;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::protocol::InterAgentCommunication;
@@ -37,7 +42,7 @@ impl ToolHandler for Handler {
             ..
         } = invocation;
         let arguments = function_arguments(payload)?;
-        let args: SpawnAgentArgs = parse_arguments(&arguments)?;
+        let mut args: SpawnAgentArgs = parse_arguments(&arguments)?;
         let fork_mode = args.fork_mode()?;
         let requested_model = args.model.clone();
         let requested_reasoning_effort = args.reasoning_effort;
@@ -46,6 +51,12 @@ impl ToolHandler for Handler {
             .as_deref()
             .map(str::trim)
             .filter(|role| !role.is_empty());
+
+        reject_unscouted_exploration_spawn(turn.as_ref(), &args, role_name)?;
+
+        if turn.config.first_moves.enabled() && turn.config.first_moves.inject_context {
+            args.message = prepend_context_pack_to_message(&turn.cwd, &args.message, 16);
+        }
 
         let initial_operation = parse_collab_input(Some(args.message), /*items*/ None)?;
         let prompt = render_input_preview(&initial_operation);
@@ -277,6 +288,21 @@ impl SpawnAgentArgs {
 
         Ok(Some(SpawnAgentForkMode::LastNTurns(last_n_turns)))
     }
+}
+
+fn reject_unscouted_exploration_spawn(
+    turn: &TurnContext,
+    args: &SpawnAgentArgs,
+    role_name: Option<&str>,
+) -> Result<(), FunctionCallError> {
+    evaluate_spawn_policy(SpawnPolicyInput {
+        role_name,
+        task_name: &args.task_name,
+        message: &args.message,
+        first_moves_enabled: turn.config.first_moves.enabled(),
+        whole_repo_exploration_prompt: is_whole_repo_exploration_prompt(&args.message),
+    })
+    .map_err(|rejection| FunctionCallError::RespondToModel(rejection.message().to_string()))
 }
 
 #[derive(Debug, Serialize)]

@@ -1,0 +1,14 @@
+[package]
+name = "codex-context-pack"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+walkdir = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
