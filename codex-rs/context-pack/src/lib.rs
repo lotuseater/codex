@@ -364,11 +364,17 @@ fn is_generated_path(path: &str) -> bool {
         matches!(
             *part,
             ".git"
+                | ".hg"
+                | ".svn"
                 | ".cache"
                 | ".gsd"
                 | ".gradle"
                 | ".idea"
+                | ".mypy_cache"
                 | ".next"
+                | ".pytest_cache"
+                | ".ruff_cache"
+                | ".tox"
                 | ".turbo"
                 | ".venv"
                 | "__pycache__"
@@ -378,11 +384,16 @@ fn is_generated_path(path: &str) -> bool {
                 | "bazel-testlogs"
                 | "build"
                 | "build_standalone"
+                | "coverage"
                 | "dist"
+                | "graphify-out"
+                | "htmlcov"
                 | "logs"
                 | "node_modules"
                 | "out"
+                | "repomix-output"
                 | "target"
+                | "venv"
         ) || part.starts_with("cmake-build")
     })
 }
@@ -499,6 +510,79 @@ mod tests {
         let pack = render_graphify_scout_pack(&request).expect("pack");
         assert!(!pack.contains("target/"));
         assert!(pack.contains("src/useful.rs"));
+    }
+
+    #[test]
+    fn prunes_python_tooling_and_vcs_metadata_dirs() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(temp.path().join("src")).expect("mkdir src");
+        for ignored in [
+            ".pytest_cache",
+            ".mypy_cache",
+            ".ruff_cache",
+            ".tox",
+            ".hg",
+            ".svn",
+            "coverage",
+            "htmlcov",
+            "venv",
+            "graphify-out",
+            "repomix-output",
+        ] {
+            let dir = temp.path().join(ignored);
+            fs::create_dir_all(&dir).expect("mkdir ignored");
+            fs::write(dir.join("noise.py"), "raremarker noise").expect("write");
+        }
+        fs::write(
+            temp.path().join("src/payload.py"),
+            "raremarker context pack",
+        )
+        .expect("write src");
+
+        let inventory = repo_inventory(temp.path(), "Find raremarker payload");
+        for ignored in [
+            ".pytest_cache/",
+            ".mypy_cache/",
+            ".ruff_cache/",
+            ".tox/",
+            ".hg/",
+            ".svn/",
+            "coverage/",
+            "htmlcov/",
+            "venv/",
+            "graphify-out/",
+            "repomix-output/",
+        ] {
+            assert!(
+                inventory
+                    .iter()
+                    .all(|file| !file.path.contains(ignored)),
+                "inventory should not contain {ignored}; got {:?}",
+                inventory.iter().map(|f| &f.path).collect::<Vec<_>>()
+            );
+        }
+
+        let request = ContextPackRequest::new(temp.path(), "Find raremarker payload");
+        let pack = render_graphify_scout_pack(&request).expect("pack");
+        assert!(pack.contains("src/payload.py"));
+        for ignored in [
+            ".pytest_cache",
+            ".mypy_cache",
+            ".ruff_cache",
+            ".tox",
+            ".hg",
+            ".svn",
+            "/coverage/",
+            "htmlcov",
+            "venv/",
+            "graphify-out",
+            "repomix-output",
+        ] {
+            assert!(
+                !pack.contains(ignored),
+                "pack should not contain {ignored}: {pack}"
+            );
+        }
     }
 
     #[test]
