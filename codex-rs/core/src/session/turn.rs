@@ -79,6 +79,7 @@ use codex_hooks::HookEvent;
 use codex_hooks::HookEventAfterAgent;
 use codex_hooks::HookPayload;
 use codex_hooks::HookResult;
+use codex_protocol::config_types::ContextBudgetMode;
 use codex_protocol::config_types::ModeKind;
 use codex_protocol::config_types::ServiceTier;
 use codex_protocol::error::CodexErr;
@@ -153,8 +154,7 @@ pub(crate) async fn run_turn(
         return None;
     }
 
-    let model_info = turn_context.model_info.clone();
-    let auto_compact_limit = auto_compact_token_limit_from_model_info(&model_info);
+    let auto_compact_limit = auto_compact_token_limit(&turn_context);
     let mut client_session =
         prewarmed_client_session.unwrap_or_else(|| sess.services.model_client.new_session());
     // TODO(ccunningham): Pre-turn compaction runs before context updates and the
@@ -935,8 +935,26 @@ fn format_compaction_phase(phase: CompactionPhase) -> &'static str {
     }
 }
 
-fn auto_compact_token_limit(turn_context: &TurnContext) -> i64 {
-    auto_compact_token_limit_from_model_info(&turn_context.model_info)
+pub(crate) fn auto_compact_token_limit(turn_context: &TurnContext) -> i64 {
+    auto_compact_token_limit_for_mode(
+        &turn_context.model_info,
+        turn_context.model_context_window(),
+        turn_context.config.context_budget_mode,
+    )
+}
+
+fn auto_compact_token_limit_for_mode(
+    model_info: &codex_protocol::openai_models::ModelInfo,
+    model_context_window: Option<i64>,
+    context_budget_mode: ContextBudgetMode,
+) -> i64 {
+    let limit = auto_compact_token_limit_from_model_info(model_info);
+    if context_budget_mode != ContextBudgetMode::Slow {
+        return limit;
+    }
+    model_context_window
+        .map(|context_window| limit.min(context_window.saturating_mul(3) / 4))
+        .unwrap_or(limit)
 }
 
 pub(crate) fn semantic_auto_compact_enabled(turn_context: &TurnContext) -> bool {
@@ -955,6 +973,36 @@ fn auto_compact_token_limit_from_model_info(
                 .map(|window| window.saturating_mul(4) / 5)
         })
         .unwrap_or(i64::MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use codex_models_manager::model_info::model_info_from_slug;
+
+    #[test]
+    fn slow_context_budget_triggers_auto_compact_at_seventy_five_percent() {
+        let mut model_info = model_info_from_slug("gpt-test");
+        model_info.context_window = Some(100_000);
+        model_info.effective_context_window_percent = 80;
+
+        assert_eq!(
+            auto_compact_token_limit_for_mode(&model_info, Some(80_000), ContextBudgetMode::Slow,),
+            60_000
+        );
+    }
+
+    #[test]
+    fn slow_context_budget_preserves_lower_auto_compact_limit() {
+        let mut model_info = model_info_from_slug("gpt-test");
+        model_info.context_window = Some(100_000);
+        model_info.auto_compact_token_limit = Some(50_000);
+
+        assert_eq!(
+            auto_compact_token_limit_for_mode(&model_info, Some(80_000), ContextBudgetMode::Slow,),
+            50_000
+        );
+    }
 }
 
 pub(super) fn collect_explicit_app_ids_from_skill_items(

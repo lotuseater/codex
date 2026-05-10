@@ -1865,6 +1865,7 @@ async fn update_feature_flags_enabling_guardian_selects_auto_review() -> Result<
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: None,
             collaboration_mode: None,
             personality: None,
         })
@@ -1955,6 +1956,7 @@ async fn update_feature_flags_disabling_guardian_clears_review_policy_and_restor
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: None,
             collaboration_mode: None,
             personality: None,
         })
@@ -2033,6 +2035,7 @@ async fn update_feature_flags_enabling_guardian_overrides_explicit_manual_review
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: None,
             collaboration_mode: None,
             personality: None,
         })
@@ -2090,6 +2093,7 @@ async fn update_feature_flags_disabling_guardian_clears_manual_review_policy_wit
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: None,
             collaboration_mode: None,
             personality: None,
         })
@@ -2149,6 +2153,7 @@ async fn update_feature_flags_enabling_guardian_in_profile_sets_profile_auto_rev
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: None,
             collaboration_mode: None,
             personality: None,
         })
@@ -2236,6 +2241,7 @@ guardian_approval = true
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: None,
             collaboration_mode: None,
             personality: None,
         })

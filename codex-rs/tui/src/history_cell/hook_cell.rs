@@ -9,7 +9,8 @@
 //! 2. Runs that outlive the reveal delay become visible and may be coalesced with adjacent runs.
 //! 3. Visible quiet successes linger briefly so they do not disappear in the same frame they were
 //!    first drawn.
-//! 4. Completed runs only persist when they have output or a non-success status.
+//! 4. Completed runs only persist when they have output or a status that changes the visible
+//!    conversation outcome.
 use super::HistoryCell;
 use super::plain_lines;
 use crate::motion::MotionMode;
@@ -153,15 +154,16 @@ impl HookCell {
 
     /// Splits durable completed runs from ephemeral active-cell bookkeeping.
     ///
-    /// Quiet successes are left behind so they can disappear from the active cell, while failures,
-    /// blocked/stopped hooks, and hooks with emitted output become a persistent history cell.
+    /// Quiet successes and non-blocking tool-hook failures are dropped so they can disappear from
+    /// the active cell, while blocked/stopped hooks and hooks with emitted output become a
+    /// persistent history cell.
     pub(crate) fn take_completed_persistent_runs(&mut self) -> Option<Self> {
         let mut completed = Vec::new();
         let mut remaining = Vec::new();
         for run in self.runs.drain(..) {
-            if run.state.has_persistent_output() {
+            if run.has_persistent_output() {
                 completed.push(run);
-            } else {
+            } else if run.state.is_active() {
                 remaining.push(run);
             }
         }
@@ -243,7 +245,7 @@ impl HookCell {
     ///
     /// This is used for replay/restoration paths where the final run summary is already known.
     pub(crate) fn add_completed_run(&mut self, run: HookRunSummary) {
-        if hook_run_is_quiet_success(&run) {
+        if hook_run_is_quiet_completion(&run) {
             return;
         }
         let HookRunSummary {
@@ -416,6 +418,18 @@ impl HookRunCell {
             })
     }
 
+    /// Returns true for completed runs that should survive outside the active cell.
+    fn has_persistent_output(&self) -> bool {
+        match &self.state {
+            HookRunState::Completed { status, entries } => {
+                completed_hook_should_persist(self.event_name, *status, entries)
+            }
+            HookRunState::PendingReveal { .. }
+            | HookRunState::VisibleRunning { .. }
+            | HookRunState::QuietLinger { .. } => false,
+        }
+    }
+
     /// Appends the lines for a single, ungrouped hook run.
     fn push_display_lines(&self, lines: &mut Vec<Line<'static>>, animations_enabled: bool) {
         let label = hook_event_label(self.event_name);
@@ -485,18 +499,6 @@ impl HookRunState {
             | HookRunState::QuietLinger { .. }
             | HookRunState::Completed { .. } => true,
             HookRunState::PendingReveal { .. } => false,
-        }
-    }
-
-    /// Returns true for completed runs that should survive outside the active cell.
-    fn has_persistent_output(&self) -> bool {
-        match self {
-            HookRunState::Completed { status, entries } => {
-                *status != HookRunStatus::Completed || !entries.is_empty()
-            }
-            HookRunState::PendingReveal { .. }
-            | HookRunState::VisibleRunning { .. }
-            | HookRunState::QuietLinger { .. } => false,
         }
     }
 
@@ -682,6 +684,26 @@ pub(crate) fn new_completed_hook_cell(run: HookRunSummary, animations_enabled: b
 /// Returns true for hook completions that should be invisible in history.
 fn hook_run_is_quiet_success(run: &HookRunSummary) -> bool {
     run.status == HookRunStatus::Completed && run.entries.is_empty()
+}
+
+fn hook_run_is_quiet_completion(run: &HookRunSummary) -> bool {
+    !completed_hook_should_persist(run.event_name, run.status, &run.entries)
+}
+
+fn completed_hook_should_persist(
+    event_name: HookEventName,
+    status: HookRunStatus,
+    entries: &[HookOutputEntry],
+) -> bool {
+    match status {
+        HookRunStatus::Completed => !entries.is_empty(),
+        HookRunStatus::Failed => !matches!(
+            event_name,
+            HookEventName::PreToolUse | HookEventName::PostToolUse
+        ),
+        HookRunStatus::Blocked | HookRunStatus::Stopped => true,
+        HookRunStatus::Running => false,
+    }
 }
 
 fn hook_completed_bullet(status: HookRunStatus, entries: &[HookOutputEntry]) -> Span<'static> {

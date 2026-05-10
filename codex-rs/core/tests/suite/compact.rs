@@ -8,6 +8,7 @@ use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::built_in_model_providers;
 use codex_models_manager::bundled_models_response;
 use codex_protocol::config_types::CollaborationMode;
+use codex_protocol::config_types::ContextBudgetMode;
 use codex_protocol::config_types::ModeKind;
 use codex_protocol::config_types::Settings;
 use codex_protocol::items::TurnItem;
@@ -94,6 +95,7 @@ fn disabled_permission_user_turn(text: impl Into<String>, cwd: PathBuf, model: S
         effort: None,
         summary: None,
         service_tier: None,
+        context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Standard),
         collaboration_mode: None,
         personality: None,
     }
@@ -2881,6 +2883,70 @@ async fn auto_compact_clamps_config_limit_to_context_window() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn auto_compact_uses_slow_context_budget_after_turn() {
+    skip_if_no_network!();
+
+    let server = start_mock_server().await;
+
+    let context_window = 100;
+    let config_limit = 200;
+    let over_slow_limit_tokens = 80;
+
+    let first_turn = sse(vec![
+        ev_assistant_message("m1", FIRST_REPLY),
+        ev_completed_with_tokens("r1", over_slow_limit_tokens),
+    ]);
+    let auto_summary_payload = auto_summary(AUTO_SUMMARY_TEXT);
+    let auto_compact_turn = sse(vec![
+        ev_assistant_message("m2", &auto_summary_payload),
+        ev_completed_with_tokens("r2", /*total_tokens*/ 10),
+    ]);
+    let post_auto_compact_turn = sse(vec![ev_completed_with_tokens(
+        "r3", /*total_tokens*/ 10,
+    )]);
+
+    let first_turn_mock = mount_sse_once(&server, first_turn).await;
+    let auto_compact_mock = mount_sse_once(&server, auto_compact_turn).await;
+    mount_sse_once(&server, post_auto_compact_turn).await;
+
+    let model_provider = non_openai_model_provider(&server);
+    let mut builder = test_codex().with_config(move |config| {
+        config.model_provider = model_provider;
+        set_test_compact_prompt(config);
+        config.context_budget_mode = ContextBudgetMode::Slow;
+        config.model_context_window = Some(context_window);
+        config.model_auto_compact_token_limit = Some(config_limit);
+    });
+    let codex = builder.build(&server).await.unwrap();
+
+    codex.submit_turn("SLOW_BUDGET_OVER_LIMIT").await.unwrap();
+    codex
+        .submit_turn("FOLLOW_UP_AFTER_SLOW_BUDGET")
+        .await
+        .unwrap();
+
+    assert!(
+        first_turn_mock.single_request().input().iter().any(|item| {
+            item.get("type").and_then(|value| value.as_str()) == Some("message")
+                && item
+                    .get("content")
+                    .and_then(|content| content.as_array())
+                    .and_then(|entries| entries.first())
+                    .and_then(|entry| entry.get("text"))
+                    .and_then(|value| value.as_str())
+                    == Some("SLOW_BUDGET_OVER_LIMIT")
+        }),
+        "first request should contain the slow-budget over-limit user input"
+    );
+
+    let auto_compact_body = auto_compact_mock.single_request().body_json().to_string();
+    assert!(
+        body_contains_text(&auto_compact_body, SUMMARIZATION_PROMPT),
+        "auto compact should use the Slow-mode post-turn limit"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn auto_compact_counts_encrypted_reasoning_before_last_user() {
     skip_if_no_network!();
 
@@ -3157,6 +3223,7 @@ async fn snapshot_request_shape_pre_turn_compaction_including_incoming_user_mess
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: None,
             collaboration_mode: None,
             personality: None,
         })

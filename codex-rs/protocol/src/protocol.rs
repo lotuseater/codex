@@ -19,6 +19,7 @@ use crate::ThreadId;
 use crate::approvals::ElicitationRequestEvent;
 use crate::config_types::ApprovalsReviewer;
 use crate::config_types::CollaborationMode;
+use crate::config_types::ContextBudgetMode;
 use crate::config_types::ModeKind;
 use crate::config_types::Personality;
 use crate::config_types::ReasoningSummary as ReasoningSummaryConfig;
@@ -511,6 +512,10 @@ pub enum Op {
         #[serde(skip_serializing_if = "Option::is_none")]
         service_tier: Option<Option<String>>,
 
+        /// Updated local context-budget behavior for future turns.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        context_budget_mode: Option<ContextBudgetMode>,
+
         /// EXPERIMENTAL - set a pre-set collaboration mode.
         /// Takes precedence over model, effort, and developer instructions if set.
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -571,6 +576,12 @@ pub enum Op {
         /// session preference.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         service_tier: Option<Option<String>>,
+
+        /// Optional local context-budget behavior override for this turn.
+        ///
+        /// When omitted, the session keeps the current setting.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        context_budget_mode: Option<ContextBudgetMode>,
 
         // The JSON schema to use for the final assistant message
         final_output_json_schema: Option<Value>,
@@ -648,6 +659,10 @@ pub enum Op {
         /// preference, or `None` to leave the existing value unchanged.
         #[serde(skip_serializing_if = "Option::is_none")]
         service_tier: Option<Option<String>>,
+
+        /// Updated local context-budget behavior for future turns.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        context_budget_mode: Option<ContextBudgetMode>,
 
         /// EXPERIMENTAL - set a pre-set collaboration mode.
         /// Takes precedence over model, effort, and developer instructions if set.
@@ -5167,6 +5182,44 @@ mod tests {
                 responsesapi_client_metadata: None,
             }
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn user_turn_context_budget_mode_is_optional_for_backcompat() -> Result<()> {
+        let user_turn = |context_budget_mode| Op::UserTurn {
+            environments: None,
+            items: Vec::new(),
+            cwd: test_path_buf("/tmp/project"),
+            approval_policy: AskForApproval::Never,
+            approvals_reviewer: None,
+            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            permission_profile: None,
+            model: "gpt-5.4".to_string(),
+            effort: None,
+            summary: None,
+            service_tier: None,
+            context_budget_mode,
+            final_output_json_schema: None,
+            collaboration_mode: None,
+            personality: None,
+        };
+
+        let omitted_json = serde_json::to_value(user_turn(None))?;
+        assert_eq!(omitted_json.get("context_budget_mode"), None);
+        assert_eq!(serde_json::from_value::<Op>(omitted_json)?, user_turn(None));
+
+        let slow_json = serde_json::to_value(user_turn(Some(ContextBudgetMode::Slow)))?;
+        assert_eq!(slow_json.get("context_budget_mode"), Some(&json!("slow")));
+        let Op::UserTurn {
+            context_budget_mode,
+            ..
+        } = serde_json::from_value::<Op>(slow_json)?
+        else {
+            panic!("expected user turn");
+        };
+        assert_eq!(context_budget_mode, Some(ContextBudgetMode::Slow));
 
         Ok(())
     }

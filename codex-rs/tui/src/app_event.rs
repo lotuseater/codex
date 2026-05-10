@@ -43,6 +43,7 @@ use codex_config::types::ApprovalsReviewer;
 use codex_features::Feature;
 use codex_plugin::PluginCapabilitySummary;
 use codex_protocol::config_types::CollaborationModeMask;
+use codex_protocol::config_types::ContextBudgetMode;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ServiceTier;
 use codex_protocol::models::PermissionProfile;
@@ -586,6 +587,11 @@ pub(crate) enum AppEvent {
     /// Persist the selected service tier to the appropriate config.
     PersistServiceTierSelection {
         service_tier: Option<ServiceTier>,
+    },
+
+    /// Persist the selected context-budget mode to the appropriate config.
+    PersistContextBudgetModeSelection {
+        mode: ContextBudgetMode,
     },
 
     /// Open the device picker for a realtime microphone or speaker.

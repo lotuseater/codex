@@ -88,10 +88,10 @@ impl SpawnPolicyRejection {
                 "spawn_agent blocked: this task looks like git finalization, deploy promotion, or wrapper promotion. Keep commit/push/tag/rebase/merge/deploy/promotion actions in the root agent after reviewing agent output; subagents may inspect git state but should not own irreversible finalization."
             }
             Self::ExactReadOnlyExplorerWithoutPositiveRoi => {
-                "spawn_agent blocked: this looks like simple read-only exploration over exact files or symbols without a positive Agent ROI Estimate. Read exact files locally or reuse an existing relevant agent; retry only if WHY_AGENT / ROI shows net >= 2, a reuse check, expected repeated operations or context savings, and a token/time budget."
+                "spawn_agent blocked: this looks like simple bounded read-only exploration without a positive Agent ROI Estimate. Read exact files locally or reuse an existing relevant agent; retry with agent_type=\"helper\" or an existing agent only if WHY_AGENT / ROI shows net >= 2, a reuse check, expected repeated operations or context savings, and a token/time budget."
             }
             Self::ExplorationWithoutScoutOrRoi => {
-                "spawn_agent blocked: this looks like an exploration/scouting agent without enough first_moves/context-scout evidence or positive Agent ROI justification. Run `first_moves_predict` locally first (or load it with `tool_search`), inspect the high-confidence candidates, then keep the work local if that is enough. If a separate explorer is still useful, retry with `SCOUT_EVIDENCE` naming the completed scout, `WHY_AGENT / ROI` showing independent parallel value, reuse check, net >= 2, token/time budget or stop condition, and `FIRST_READS` starting from scout output or a strictly exact file list that avoids raw broad `rg`/`find` sweeps."
+                "spawn_agent blocked: this looks like exploration/scouting without enough first_moves/context-scout evidence or positive Agent ROI justification. Run `first_moves_predict` locally first (or load it with `tool_search`), inspect the high-confidence candidates, then keep the work local if that is enough. If a separate helper/explorer is still useful, retry with `SCOUT_EVIDENCE` naming the completed scout, `WHY_AGENT / ROI` showing independent parallel value, reuse check, net >= 2, token/time budget or stop condition, and `FIRST_READS` starting from scout output or a strictly bounded exact file/diff/test list that avoids raw broad `rg`/`find` sweeps."
             }
         }
     }
@@ -117,6 +117,9 @@ pub fn evaluate_spawn_policy(input: SpawnPolicyInput<'_>) -> Result<(), SpawnPol
     let marked_explorer = input
         .role_name
         .is_some_and(|role| role.to_ascii_lowercase().contains("explor"));
+    let marked_helper = input
+        .role_name
+        .is_some_and(|role| role.eq_ignore_ascii_case("helper"));
     let exploration_role = marked_explorer
         || [
             "explor", "scout", "survey", "mapper", "map_", "mapping", "reader", "triage",
@@ -129,8 +132,9 @@ pub fn evaluate_spawn_policy(input: SpawnPolicyInput<'_>) -> Result<(), SpawnPol
     }
 
     let exact_first_reads = first_reads_are_exact_local_reads(input.message);
+    let bounded_first_reads = exact_first_reads || first_reads_are_bounded_read_only(input.message);
     let has_positive_roi = has_positive_agent_roi_contract(input.message);
-    if exploration_role && exact_first_reads && !has_positive_roi {
+    if (exploration_role || marked_helper) && bounded_first_reads && !has_positive_roi {
         return Err(SpawnPolicyRejection::ExactReadOnlyExplorerWithoutPositiveRoi);
     }
 
@@ -142,13 +146,18 @@ pub fn evaluate_spawn_policy(input: SpawnPolicyInput<'_>) -> Result<(), SpawnPol
     let has_scout_routing =
         has_explicit_scout_evidence || first_reads_starts_with_scout(input.message);
     let shell_first_reads = first_reads_contains_raw_reader(input.message);
-    let scout_required = !exact_first_reads || !has_positive_roi;
+    let broad_context_area = has_broad_context_area(input.message);
+    let scout_required = !bounded_first_reads || !has_positive_roi;
     let exploration_contract_required = marked_explorer
         || input.whole_repo_exploration_prompt
+        || broad_context_area
         || (exploration_role && shell_first_reads);
+    let helper_contract_required = marked_helper && (broad_context_area || shell_first_reads);
 
     if (marked_explorer && scout_required && !has_explicit_scout_evidence)
         || (exploration_contract_required
+            && ((!has_scout_routing && scout_required) || !has_positive_roi))
+        || (helper_contract_required
             && ((!has_scout_routing && scout_required) || !has_positive_roi))
     {
         return Err(SpawnPolicyRejection::ExplorationWithoutScoutOrRoi);
@@ -157,10 +166,33 @@ pub fn evaluate_spawn_policy(input: SpawnPolicyInput<'_>) -> Result<(), SpawnPol
     Ok(())
 }
 
-fn is_continuation_message(message: &str) -> bool {
+pub fn is_continuation_message(message: &str) -> bool {
     let normalized = normalize_continuation_message(message);
+    if is_normalized_continuation_message(&normalized) {
+        return true;
+    }
+
+    let Some(automatic_prompt) = normalized.strip_prefix("automatic ") else {
+        return false;
+    };
+    let Some((trigger_and_original, _)) = automatic_prompt.split_once(" loop mode is on") else {
+        return false;
+    };
+    for trigger in [
+        "periodic loop continuation",
+        "post self review loop continuation",
+    ] {
+        if let Some(original) = trigger_and_original.strip_prefix(trigger) {
+            return is_normalized_continuation_message(original.trim());
+        }
+    }
+
+    false
+}
+
+fn is_normalized_continuation_message(normalized: &str) -> bool {
     matches!(
-        normalized.as_str(),
+        normalized,
         "go on"
             | "please go on"
             | "go on please"
@@ -195,6 +227,31 @@ fn normalize_continuation_message(message: &str) -> String {
         }
     }
     normalized.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+#[cfg(test)]
+mod continuation_message_tests {
+    use super::*;
+
+    #[test]
+    fn recognizes_short_continuation_messages() {
+        for message in [
+            "go on",
+            "please continue",
+            "resume",
+            "finish it",
+            "go ahead",
+        ] {
+            assert!(is_continuation_message(message));
+        }
+    }
+
+    #[test]
+    fn recognizes_auto_loop_plan_first_wrapper() {
+        let prompt = auto_loop_plan_first_message("go on", AutoLoopSubmissionContext::Periodic);
+
+        assert!(is_continuation_message(&prompt));
+    }
 }
 
 fn looks_like_root_owned_finalization(lower: &str) -> bool {
@@ -373,6 +430,10 @@ fn has_positive_agent_roi_contract(message: &str) -> bool {
 }
 
 fn has_positive_roi_claim(section: &str) -> bool {
+    let compact = section
+        .chars()
+        .filter(|ch| !ch.is_whitespace())
+        .collect::<String>();
     contains_any(
         section,
         &[
@@ -382,8 +443,21 @@ fn has_positive_roi_claim(section: &str) -> bool {
             "positive roi",
             "roi positive",
         ],
+    ) || contains_any(
+        compact.as_str(),
+        &[
+            "net>=2", "net=>2", "net=2", "net=+2", "net:+2", "net=3", "net=+3", "net:+3", "net=4",
+            "net=+4", "net:+4", "net=5", "net=+5", "net:+5", "net=6", "net=+6", "net:+6", "net=7",
+            "net=+7", "net:+7", "net=8", "net=+8", "net:+8", "net=9", "net=+9", "net:+9",
+        ],
     ) || (contains_any(section, &["net:", "net ="])
-        && contains_any(section, &["+2", "+3", "+4", "+5", " 2", " 3", " 4", " 5"]))
+        && contains_any(
+            section,
+            &[
+                "+2", "+3", "+4", "+5", "+6", "+7", "+8", "+9", " 2", " 3", " 4", " 5", " 6", " 7",
+                " 8", " 9",
+            ],
+        ))
 }
 
 fn contract_section<'a>(lower: &'a str, label: &str) -> Option<&'a str> {
@@ -465,6 +539,68 @@ fn first_reads_are_exact_local_reads(message: &str) -> bool {
             "glob ",
         ],
     )
+}
+
+fn first_reads_are_bounded_read_only(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    let Some(first_reads) = contract_section(&lower, "first_reads:") else {
+        return false;
+    };
+    let first_reads = trim_contract_prefix(first_reads);
+    let bounded_command = contains_bounded_read_only_command(first_reads)
+        || first_reads
+            .split(['\n', ';'])
+            .map(trim_contract_prefix)
+            .any(contains_bounded_read_only_command);
+    bounded_command
+        && !contains_any(
+            first_reads,
+            &[
+                "whole repo",
+                "entire repo",
+                "all files",
+                "all directories",
+                "rg ",
+                "grep ",
+                "find ",
+                "glob ",
+            ],
+        )
+}
+
+fn contains_bounded_read_only_command(section: &str) -> bool {
+    contains_any(
+        section,
+        &[
+            "git diff -- ",
+            "git diff --stat -- ",
+            "git status --short",
+            "git status --porcelain",
+            "cargo test -p ",
+            "cargo test --release -p ",
+        ],
+    )
+}
+
+fn has_broad_context_area(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    contract_section(&lower, "context_area:")
+        .map(trim_contract_prefix)
+        .is_some_and(|section| {
+            contains_any(
+                section,
+                &[
+                    "whole repo",
+                    "entire repo",
+                    "all files",
+                    "all directories",
+                    "whole tree",
+                    "entire tree",
+                    "codebase",
+                    "workspace",
+                ],
+            )
+        })
 }
 
 fn contains_any(section: &str, terms: &[&str]) -> bool {
@@ -627,6 +763,76 @@ mod tests {
                 whole_repo_exploration_prompt: false,
             }),
             Ok(())
+        );
+    }
+
+    #[test]
+    fn spawn_policy_allows_budgeted_helper_for_bounded_diff_review() {
+        assert_eq!(
+            evaluate_spawn_policy(SpawnPolicyInput {
+                role_name: Some("helper"),
+                task_name: "helper_review",
+                message: "CONTEXT_AREA: current diff only\nWHY_AGENT / ROI: reuse check found no relevant existing helper; independent helper diff review with net = 2 and an 8k token budget while root keeps implementation local\nFIRST_READS: git diff -- codex-rs/agent-policy/src/lib.rs\nTOOL_HINTS: path-scoped git diff only\nTOKEN_TIP: do not broaden beyond this diff\nVERIFICATION: report findings only",
+                first_moves_enabled: true,
+                whole_repo_exploration_prompt: false,
+            }),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn spawn_policy_allows_budgeted_helper_for_short_git_status() {
+        assert_eq!(
+            evaluate_spawn_policy(SpawnPolicyInput {
+                role_name: Some("helper"),
+                task_name: "helper_status",
+                message: "CONTEXT_AREA: repo root status only\nWHY_AGENT / ROI: reuse check found no relevant existing helper; independent helper status check with net: +3 and a 2k token budget while root keeps implementation local\nFIRST_READS: git status --short\nTOOL_HINTS: read-only status only\nTOKEN_TIP: stop after status\nVERIFICATION: report dirty files only",
+                first_moves_enabled: true,
+                whole_repo_exploration_prompt: false,
+            }),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn spawn_policy_blocks_helper_broad_raw_scan_without_scout() {
+        assert_eq!(
+            evaluate_spawn_policy(SpawnPolicyInput {
+                role_name: Some("helper"),
+                task_name: "helper_repo_scan",
+                message: "CONTEXT_AREA: whole repo\nWHY_AGENT / ROI: reuse check found no relevant existing helper; independent helper scan with net >= 2 and a 15k token budget while root keeps implementation local\nFIRST_READS: rg -n \"TODO|FIXME\" .\nTOOL_HINTS: use rg\nTOKEN_TIP: summarize only\nVERIFICATION: report findings",
+                first_moves_enabled: true,
+                whole_repo_exploration_prompt: false,
+            }),
+            Err(SpawnPolicyRejection::ExplorationWithoutScoutOrRoi)
+        );
+    }
+
+    #[test]
+    fn spawn_policy_allows_budgeted_helper_after_first_moves_scout() {
+        assert_eq!(
+            evaluate_spawn_policy(SpawnPolicyInput {
+                role_name: Some("helper"),
+                task_name: "helper_repo_check",
+                message: "CONTEXT_AREA: whole repo\nSCOUT_EVIDENCE: first_moves_predict returned codex-rs/agent-policy/src/lib.rs with high confidence\nWHY_AGENT / ROI: reuse check found no relevant existing helper; independent helper verification with loop_followup_gain=3, net=+3, and a 12k token budget while root keeps implementation local\nFIRST_READS: first_moves_predict output only\nTOOL_HINTS: use optimized context tools before shell search\nTOKEN_TIP: stop if the scout is enough\nVERIFICATION: report policy files only",
+                first_moves_enabled: true,
+                whole_repo_exploration_prompt: false,
+            }),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn spawn_policy_requires_roi_for_bounded_helper() {
+        assert_eq!(
+            evaluate_spawn_policy(SpawnPolicyInput {
+                role_name: Some("helper"),
+                task_name: "helper_review",
+                message: "CONTEXT_AREA: current diff only\nFIRST_READS: git diff -- codex-rs/agent-policy/src/lib.rs\nTOOL_HINTS: path-scoped git diff only\nTOKEN_TIP: do not broaden beyond this diff\nVERIFICATION: report findings only",
+                first_moves_enabled: true,
+                whole_repo_exploration_prompt: false,
+            }),
+            Err(SpawnPolicyRejection::ExactReadOnlyExplorerWithoutPositiveRoi)
         );
     }
 }

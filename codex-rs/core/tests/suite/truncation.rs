@@ -529,6 +529,7 @@ async fn mcp_image_output_preserves_image_and_no_text_summary() -> Result<()> {
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Standard),
             collaboration_mode: None,
             personality: None,
         })

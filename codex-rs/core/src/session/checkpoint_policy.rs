@@ -31,11 +31,13 @@ pub(crate) struct SemanticCompactTurnInput<'a> {
     pub(crate) token_usage: &'a TokenUsage,
     pub(crate) tool_calls: u64,
     pub(crate) git_commit_observed: bool,
+    pub(crate) is_continuation_turn: bool,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct SemanticCompactState {
     regular_turns_since_last_compact: u32,
+    continuation_turns_since_last_compact: u32,
     work_tokens_since_last_compact: i64,
     tool_calls_since_last_compact: u64,
     git_commit_observed_since_last_compact: bool,
@@ -46,6 +48,10 @@ impl SemanticCompactState {
     pub(crate) fn record_regular_turn_finished(&mut self, input: SemanticCompactTurnInput<'_>) {
         self.regular_turns_since_last_compact =
             self.regular_turns_since_last_compact.saturating_add(1);
+        if input.is_continuation_turn {
+            self.continuation_turns_since_last_compact =
+                self.continuation_turns_since_last_compact.saturating_add(1);
+        }
         self.work_tokens_since_last_compact = self
             .work_tokens_since_last_compact
             .saturating_add(turn_work_tokens(input.token_usage));
@@ -58,6 +64,7 @@ impl SemanticCompactState {
 
     pub(crate) fn record_compaction_finished(&mut self) {
         self.regular_turns_since_last_compact = 0;
+        self.continuation_turns_since_last_compact = 0;
         self.work_tokens_since_last_compact = 0;
         self.tool_calls_since_last_compact = 0;
         self.git_commit_observed_since_last_compact = false;
@@ -74,7 +81,7 @@ impl SemanticCompactState {
         }
 
         if input.total_usage_tokens >= early_pressure_threshold(input.auto_compact_limit)
-            || (self.regular_turns_since_last_compact >= MIN_CONTINUATION_TURNS
+            || (self.continuation_turns_since_last_compact >= MIN_CONTINUATION_TURNS
                 && input.total_usage_tokens >= MIN_SEMANTIC_TOKENS)
             || (self.regular_turns_since_last_compact >= WORK_CHECKPOINT_TURNS
                 && self.work_tokens_since_last_compact >= WORK_CHECKPOINT_TOKENS
@@ -115,6 +122,14 @@ mod tests {
         }
     }
 
+    fn input_with_limit(total_usage_tokens: i64, auto_compact_limit: i64) -> SemanticCompactInput {
+        SemanticCompactInput {
+            feature_enabled: true,
+            total_usage_tokens,
+            auto_compact_limit,
+        }
+    }
+
     fn finished_turn(
         token_usage: &TokenUsage,
         tool_calls: u64,
@@ -124,6 +139,20 @@ mod tests {
             token_usage,
             tool_calls,
             git_commit_observed,
+            is_continuation_turn: false,
+        }
+    }
+
+    fn finished_continuation_turn(
+        token_usage: &TokenUsage,
+        tool_calls: u64,
+        git_commit_observed: bool,
+    ) -> SemanticCompactTurnInput<'_> {
+        SemanticCompactTurnInput {
+            token_usage,
+            tool_calls,
+            git_commit_observed,
+            is_continuation_turn: true,
         }
     }
 
@@ -131,7 +160,11 @@ mod tests {
     fn semantic_compact_decision_is_feature_gated() {
         let mut state = SemanticCompactState::default();
         for _ in 0..MIN_CONTINUATION_TURNS {
-            state.record_regular_turn_finished(finished_turn(&TokenUsage::default(), 0, false));
+            state.record_regular_turn_finished(finished_continuation_turn(
+                &TokenUsage::default(),
+                0,
+                false,
+            ));
         }
 
         assert_eq!(
@@ -147,14 +180,31 @@ mod tests {
     fn semantic_compact_triggers_after_long_continuation() {
         let mut state = SemanticCompactState::default();
         for _ in 0..MIN_CONTINUATION_TURNS {
+            state.record_regular_turn_finished(finished_continuation_turn(
+                &TokenUsage::default(),
+                0,
+                false,
+            ));
+        }
+
+        assert_eq!(
+            state.decide(input_with_limit(MIN_SEMANTIC_TOKENS, 200_000)),
+            SemanticCompactDecision::Compact {
+                reason: CompactionReason::SemanticCheckpoint,
+            }
+        );
+    }
+
+    #[test]
+    fn semantic_compact_does_not_count_regular_turns_as_continuation() {
+        let mut state = SemanticCompactState::default();
+        for _ in 0..MIN_CONTINUATION_TURNS {
             state.record_regular_turn_finished(finished_turn(&TokenUsage::default(), 0, false));
         }
 
         assert_eq!(
-            state.decide(input(MIN_SEMANTIC_TOKENS)),
-            SemanticCompactDecision::Compact {
-                reason: CompactionReason::SemanticCheckpoint,
-            }
+            state.decide(input_with_limit(MIN_SEMANTIC_TOKENS, 200_000)),
+            SemanticCompactDecision::Skip
         );
     }
 
@@ -174,7 +224,11 @@ mod tests {
     fn semantic_compact_leaves_hard_limit_to_existing_path() {
         let mut state = SemanticCompactState::default();
         for _ in 0..MIN_CONTINUATION_TURNS {
-            state.record_regular_turn_finished(finished_turn(&TokenUsage::default(), 0, false));
+            state.record_regular_turn_finished(finished_continuation_turn(
+                &TokenUsage::default(),
+                0,
+                false,
+            ));
         }
 
         assert_eq!(state.decide(input(100_000)), SemanticCompactDecision::Skip);
@@ -184,7 +238,11 @@ mod tests {
     fn semantic_compact_cooldown_resets_after_compaction() {
         let mut state = SemanticCompactState::default();
         for _ in 0..MIN_CONTINUATION_TURNS {
-            state.record_regular_turn_finished(finished_turn(&TokenUsage::default(), 0, false));
+            state.record_regular_turn_finished(finished_continuation_turn(
+                &TokenUsage::default(),
+                0,
+                false,
+            ));
         }
         state.record_compaction_finished();
 
@@ -194,7 +252,11 @@ mod tests {
         );
 
         for _ in 0..COOLDOWN_TURNS {
-            state.record_regular_turn_finished(finished_turn(&TokenUsage::default(), 0, false));
+            state.record_regular_turn_finished(finished_continuation_turn(
+                &TokenUsage::default(),
+                0,
+                false,
+            ));
         }
 
         assert_eq!(

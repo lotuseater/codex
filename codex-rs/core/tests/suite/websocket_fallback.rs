@@ -168,6 +168,7 @@ async fn websocket_fallback_hides_first_websocket_retry_stream_error() -> Result
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Standard),
             collaboration_mode: None,
             personality: None,
         })

@@ -186,7 +186,7 @@ pub fn approx_tokens(text: &str) -> usize {
 pub(crate) fn short_hash(value: &str) -> String {
     let mut hasher = Sha1::new();
     hasher.update(value.as_bytes());
-    let digest = format!("{:x}", hasher.finalize());
+    let digest = hex::encode(hasher.finalize());
     digest.chars().take(12).collect()
 }
 

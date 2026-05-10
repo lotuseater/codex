@@ -1104,6 +1104,7 @@ impl App {
                                         /*effort*/ None,
                                         /*summary*/ None,
                                         /*service_tier*/ None,
+                                        /*context_budget_mode*/ None,
                                         /*collaboration_mode*/ None,
                                         /*personality*/ None,
                                     ),
@@ -1129,6 +1130,7 @@ impl App {
                                         /*effort*/ None,
                                         /*summary*/ None,
                                         /*service_tier*/ None,
+                                        /*context_budget_mode*/ None,
                                         /*collaboration_mode*/ None,
                                         /*personality*/ None,
                                     ),
@@ -1318,6 +1320,45 @@ impl App {
                         } else {
                             self.chat_widget.add_error_message(format!(
                                 "Failed to save default Fast mode: {err}"
+                            ));
+                        }
+                    }
+                }
+            }
+            AppEvent::PersistContextBudgetModeSelection { mode } => {
+                self.refresh_status_line();
+                let profile = self.active_profile.as_deref();
+                self.config.context_budget_mode = mode;
+                match ConfigEditsBuilder::new(&self.config.codex_home)
+                    .with_profile(profile)
+                    .set_context_budget_mode(mode)
+                    .apply()
+                    .await
+                {
+                    Ok(()) => {
+                        let status =
+                            if mode == codex_protocol::config_types::ContextBudgetMode::Slow {
+                                "on"
+                            } else {
+                                "off"
+                            };
+                        let mut message = format!("Slow mode set to {status}");
+                        if let Some(profile) = profile {
+                            message.push_str(" for ");
+                            message.push_str(profile);
+                            message.push_str(" profile");
+                        }
+                        self.chat_widget.add_info_message(message, /*hint*/ None);
+                    }
+                    Err(err) => {
+                        tracing::error!(error = %err, "failed to persist slow mode selection");
+                        if let Some(profile) = profile {
+                            self.chat_widget.add_error_message(format!(
+                                "Failed to save Slow mode for profile `{profile}`: {err}"
+                            ));
+                        } else {
+                            self.chat_widget.add_error_message(format!(
+                                "Failed to save default Slow mode: {err}"
                             ));
                         }
                     }
@@ -1863,9 +1904,8 @@ impl App {
                 use_theme_colors,
             } => {
                 let ids = items.iter().map(ToString::to_string).collect::<Vec<_>>();
-                let items_edit = crate::legacy_core::config::edit::status_line_items_edit(&ids);
-                let colors_edit =
-                    crate::legacy_core::config::edit::status_line_use_colors_edit(use_theme_colors);
+                let items_edit = codex_config::edit::status_line_items_edit(&ids);
+                let colors_edit = codex_config::edit::status_line_use_colors_edit(use_theme_colors);
                 let apply_result = ConfigEditsBuilder::new(&self.config.codex_home)
                     .with_edits([items_edit, colors_edit])
                     .apply()
@@ -1897,7 +1937,7 @@ impl App {
             }
             AppEvent::TerminalTitleSetup { items } => {
                 let ids = items.iter().map(ToString::to_string).collect::<Vec<_>>();
-                let edit = crate::legacy_core::config::edit::terminal_title_items_edit(&ids);
+                let edit = codex_config::edit::terminal_title_items_edit(&ids);
                 let apply_result = ConfigEditsBuilder::new(&self.config.codex_home)
                     .with_edits([edit])
                     .apply()
@@ -1923,7 +1963,7 @@ impl App {
                 self.chat_widget.cancel_terminal_title_setup();
             }
             AppEvent::SyntaxThemeSelected { name } => {
-                let edit = crate::legacy_core::config::edit::syntax_theme_edit(&name);
+                let edit = codex_config::edit::syntax_theme_edit(&name);
                 let apply_result = ConfigEditsBuilder::new(&self.config.codex_home)
                     .with_edits([edit])
                     .apply()
@@ -2034,8 +2074,7 @@ impl App {
             }
         };
 
-        let edit =
-            crate::legacy_core::config::edit::keymap_bindings_edit(&context, &action, &bindings);
+        let edit = codex_config::edit::keymap_bindings_edit(&context, &action, &bindings);
         match ConfigEditsBuilder::new(&self.config.codex_home)
             .with_edits([edit])
             .apply()
@@ -2080,7 +2119,7 @@ impl App {
             }
         };
 
-        let edit = crate::legacy_core::config::edit::keymap_binding_clear_edit(&context, &action);
+        let edit = codex_config::edit::keymap_binding_clear_edit(&context, &action);
         match ConfigEditsBuilder::new(&self.config.codex_home)
             .with_edits([edit])
             .apply()

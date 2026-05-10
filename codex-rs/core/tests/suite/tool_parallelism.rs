@@ -53,6 +53,7 @@ async fn run_turn(test: &TestCodex, prompt: &str) -> anyhow::Result<()> {
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Standard),
             collaboration_mode: None,
             personality: None,
         })
@@ -374,6 +375,7 @@ async fn shell_tools_start_before_response_completed_when_stream_delayed() -> an
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Standard),
             collaboration_mode: None,
             personality: None,
         })

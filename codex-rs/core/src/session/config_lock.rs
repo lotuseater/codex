@@ -113,6 +113,7 @@ fn save_session_resolved_fields(sc: &SessionConfiguration, lock_config: &mut Con
         .service_tier
         .as_deref()
         .and_then(codex_protocol::config_types::ServiceTier::from_request_value);
+    lock_config.context_budget_mode = Some(sc.context_budget_mode);
     lock_config.instructions = Some(sc.base_instructions.clone());
     lock_config.developer_instructions = sc.developer_instructions.clone();
     lock_config.compact_prompt = sc.compact_prompt.clone();

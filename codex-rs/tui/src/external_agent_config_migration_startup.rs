@@ -4,11 +4,11 @@ use crate::external_agent_config_migration::run_external_agent_config_migration_
 use crate::legacy_core::config::Config;
 use crate::legacy_core::config::ConfigBuilder;
 use crate::legacy_core::config::ConfigOverrides;
-use crate::legacy_core::config::edit::ConfigEdit;
-use crate::legacy_core::config::edit::ConfigEditsBuilder;
 use crate::tui;
 use codex_app_server_protocol::ExternalAgentConfigDetectParams;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItem;
+use codex_config::edit::ConfigEdit;
+use codex_config::edit::ConfigEditsBuilder;
 use codex_features::Feature;
 use color_eyre::eyre::Result;
 use color_eyre::eyre::WrapErr;

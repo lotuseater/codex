@@ -103,6 +103,7 @@ use codex_app_server_protocol::UserInput;
 use codex_otel::TelemetryAuthMode;
 use codex_protocol::ThreadId;
 use codex_protocol::approvals::GuardianAssessmentEvent;
+use codex_protocol::config_types::ContextBudgetMode;
 use codex_protocol::models::ActivePermissionProfile;
 use codex_protocol::models::ActivePermissionProfileModification;
 use codex_protocol::models::PermissionProfile;
@@ -530,6 +531,7 @@ impl AppServerSession {
         effort: Option<codex_protocol::openai_models::ReasoningEffort>,
         summary: Option<codex_protocol::config_types::ReasoningSummary>,
         service_tier: Option<Option<String>>,
+        context_budget_mode: ContextBudgetMode,
         collaboration_mode: Option<codex_protocol::config_types::CollaborationMode>,
         personality: Option<codex_protocol::config_types::Personality>,
         output_schema: Option<serde_json::Value>,
@@ -556,6 +558,7 @@ impl AppServerSession {
                     permissions,
                     model: Some(model),
                     service_tier,
+                    context_budget_mode: Some(context_budget_mode),
                     effort,
                     summary,
                     personality,

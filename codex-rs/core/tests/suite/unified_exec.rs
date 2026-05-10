@@ -204,6 +204,7 @@ async fn submit_unified_exec_turn(
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Standard),
             collaboration_mode: None,
             personality: None,
         })
@@ -289,6 +290,7 @@ async fn unified_exec_intercepts_apply_patch_exec_command() -> Result<()> {
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Standard),
             collaboration_mode: None,
             personality: None,
         })
@@ -2157,6 +2159,7 @@ async fn unified_exec_keeps_long_running_session_after_turn_end() -> Result<()> 
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Standard),
             collaboration_mode: None,
             personality: None,
         })
@@ -2252,6 +2255,7 @@ async fn unified_exec_interrupt_preserves_long_running_session() -> Result<()> {
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Standard),
             collaboration_mode: None,
             personality: None,
         })
@@ -2727,6 +2731,7 @@ async fn unified_exec_runs_under_sandbox() -> Result<()> {
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Standard),
             collaboration_mode: None,
             personality: None,
         })
@@ -2845,6 +2850,7 @@ async fn unified_exec_enforces_glob_deny_read_policy() -> Result<()> {
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Standard),
             collaboration_mode: None,
             personality: None,
         })
@@ -2975,6 +2981,7 @@ async fn unified_exec_python_prompt_under_seatbelt() -> Result<()> {
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Standard),
             collaboration_mode: None,
             personality: None,
         })

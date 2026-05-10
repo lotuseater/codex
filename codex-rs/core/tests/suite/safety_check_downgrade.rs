@@ -53,6 +53,7 @@ fn disabled_text_turn(test: &TestCodex, text: &str) -> Op {
         effort: test.config.model_reasoning_effort,
         summary: None,
         service_tier: None,
+        context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Standard),
         collaboration_mode: None,
         personality: None,
     }

@@ -167,7 +167,7 @@ impl RemoteExecutorConfig {
         hasher.update(b"\0");
         hasher.update(registration_id.as_bytes());
         let digest = hasher.finalize();
-        format!("codex-exec-server-{digest:x}")
+        format!("codex-exec-server-{}", hex::encode(digest))
     }
 }
 

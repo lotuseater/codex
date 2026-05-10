@@ -70,6 +70,8 @@ fn spawn_agent_tool_v2_requires_task_name_and_lists_visible_models() {
     assert!(description.contains("net >= 2"));
     assert!(description.contains("loop_followup_gain=0-3"));
     assert!(description.contains("auto-loop may accept the implementation prompt automatically"));
+    assert!(description.contains("stable `helper` agent task name"));
+    assert!(description.contains("Spawn a fresh helper only when reuse is unavailable"));
     assert!(description.contains("git commit/push/tag/rebase/merge"));
     assert!(description.contains("exact files"));
     assert!(description.contains("first_moves_predict"));

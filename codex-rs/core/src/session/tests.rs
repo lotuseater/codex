@@ -1797,6 +1797,7 @@ async fn fork_startup_context_then_first_turn_diff_snapshot() -> anyhow::Result<
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: None,
             collaboration_mode: Some(collaboration_mode),
             personality: None,
         })
@@ -2440,6 +2441,7 @@ async fn set_rate_limits_retains_previous_credits() {
         developer_instructions: config.developer_instructions.clone(),
         user_instructions: config.user_instructions.clone(),
         service_tier: None,
+        context_budget_mode: config.context_budget_mode,
         personality: config.personality,
         base_instructions: config
             .base_instructions
@@ -2544,6 +2546,7 @@ async fn set_rate_limits_updates_plan_type_when_present() {
         developer_instructions: config.developer_instructions.clone(),
         user_instructions: config.user_instructions.clone(),
         service_tier: None,
+        context_budget_mode: config.context_budget_mode,
         personality: config.personality,
         base_instructions: config
             .base_instructions
@@ -3021,6 +3024,7 @@ pub(crate) async fn make_session_configuration_for_tests() -> SessionConfigurati
         developer_instructions: config.developer_instructions.clone(),
         user_instructions: config.user_instructions.clone(),
         service_tier: None,
+        context_budget_mode: config.context_budget_mode,
         personality: config.personality,
         base_instructions: config
             .base_instructions
@@ -3545,6 +3549,7 @@ async fn session_new_fails_when_zsh_fork_enabled_without_zsh_path() {
         developer_instructions: config.developer_instructions.clone(),
         user_instructions: config.user_instructions.clone(),
         service_tier: None,
+        context_budget_mode: config.context_budget_mode,
         personality: config.personality,
         base_instructions: config
             .base_instructions
@@ -3659,6 +3664,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         developer_instructions: config.developer_instructions.clone(),
         user_instructions: config.user_instructions.clone(),
         service_tier: None,
+        context_budget_mode: config.context_budget_mode,
         personality: config.personality,
         base_instructions: config
             .base_instructions
@@ -3885,6 +3891,7 @@ async fn make_session_with_config_and_rx(
         developer_instructions: config.developer_instructions.clone(),
         user_instructions: config.user_instructions.clone(),
         service_tier: None,
+        context_budget_mode: config.context_budget_mode,
         personality: config.personality,
         base_instructions: config
             .base_instructions
@@ -3993,6 +4000,7 @@ async fn make_session_with_history_source_and_agent_control_and_rx(
         developer_instructions: config.developer_instructions.clone(),
         user_instructions: config.user_instructions.clone(),
         service_tier: None,
+        context_budget_mode: config.context_budget_mode,
         personality: config.personality,
         base_instructions: config
             .base_instructions
@@ -4627,6 +4635,7 @@ fn op_kind_distinguishes_turn_ops() {
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: None,
             collaboration_mode: None,
             personality: None,
         }
@@ -4660,6 +4669,7 @@ fn op_kind_distinguishes_turn_ops() {
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: None,
             collaboration_mode: None,
             personality: None,
         }
@@ -4669,7 +4679,7 @@ fn op_kind_distinguishes_turn_ops() {
 }
 
 #[tokio::test]
-async fn user_turn_updates_approvals_reviewer() {
+async fn user_turn_context_budget_mode_explicit_update_changes_session() {
     let (session, turn_context, _rx) = make_session_and_context_with_rx().await;
     let config = session.get_config().await;
 
@@ -4691,6 +4701,7 @@ async fn user_turn_updates_approvals_reviewer() {
             effort: config.model_reasoning_effort,
             summary: config.model_reasoning_summary,
             service_tier: None,
+            context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Slow),
             final_output_json_schema: None,
             collaboration_mode: None,
             personality: config.personality,
@@ -4702,6 +4713,55 @@ async fn user_turn_updates_approvals_reviewer() {
     assert_eq!(
         state.session_configuration.approvals_reviewer,
         codex_config::types::ApprovalsReviewer::AutoReview
+    );
+    assert_eq!(
+        state.session_configuration.context_budget_mode,
+        codex_protocol::config_types::ContextBudgetMode::Slow
+    );
+}
+
+#[tokio::test]
+async fn user_turn_context_budget_mode_omission_preserves_session_setting() {
+    let (session, turn_context, _rx) = make_session_and_context_with_rx().await;
+    let config = session.get_config().await;
+    session
+        .update_settings(SessionSettingsUpdate {
+            context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Slow),
+            ..Default::default()
+        })
+        .await
+        .expect("slow context-budget update should apply");
+
+    handlers::user_input_or_turn(
+        &session,
+        "sub-1".to_string(),
+        Op::UserTurn {
+            environments: None,
+            items: vec![UserInput::Text {
+                text: "hello".to_string(),
+                text_elements: Vec::new(),
+            }],
+            cwd: config.cwd.to_path_buf(),
+            approval_policy: config.permissions.approval_policy.value(),
+            approvals_reviewer: None,
+            sandbox_policy: config.legacy_sandbox_policy(),
+            permission_profile: None,
+            model: turn_context.model_info.slug.clone(),
+            effort: config.model_reasoning_effort,
+            summary: config.model_reasoning_summary,
+            service_tier: None,
+            context_budget_mode: None,
+            final_output_json_schema: None,
+            collaboration_mode: None,
+            personality: config.personality,
+        },
+    )
+    .await;
+
+    let state = session.state.lock().await;
+    assert_eq!(
+        state.session_configuration.context_budget_mode,
+        codex_protocol::config_types::ContextBudgetMode::Slow
     );
 }
 
@@ -5344,6 +5404,7 @@ where
         developer_instructions: config.developer_instructions.clone(),
         user_instructions: config.user_instructions.clone(),
         service_tier: None,
+        context_budget_mode: config.context_budget_mode,
         personality: config.personality,
         base_instructions: config
             .base_instructions

@@ -757,6 +757,7 @@ impl TestCodex {
                 effort: None,
                 summary: None,
                 service_tier,
+                context_budget_mode: Some(self.config.context_budget_mode),
                 collaboration_mode: None,
                 personality: None,
             })

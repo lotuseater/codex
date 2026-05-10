@@ -706,7 +706,6 @@ fn desktop_automation_tools_respect_config() {
     );
 
     let disabled_config = enabled_config
-        .clone()
         .with_desktop_automation_config(/*enabled*/ false, /*allow_input*/ false);
     let (disabled_tools, disabled_handlers) = build_specs(
         &disabled_config,

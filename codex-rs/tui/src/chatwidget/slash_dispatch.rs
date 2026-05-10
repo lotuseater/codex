@@ -192,6 +192,9 @@ impl ChatWidget {
             SlashCommand::Fast => {
                 self.toggle_fast_mode_from_ui();
             }
+            SlashCommand::Slow => {
+                self.toggle_slow_mode_from_ui();
+            }
             SlashCommand::Realtime => {
                 if !self.realtime_conversation_enabled() {
                     return;
@@ -598,6 +601,27 @@ impl ChatWidget {
                     }
                 }
             }
+            SlashCommand::Slow => {
+                match trimmed.to_ascii_lowercase().as_str() {
+                    "on" => self.set_context_budget_mode_selection(ContextBudgetMode::Slow),
+                    "off" => self.set_context_budget_mode_selection(ContextBudgetMode::Standard),
+                    "status" => {
+                        let status =
+                            if self.current_context_budget_mode() == ContextBudgetMode::Slow {
+                                "on"
+                            } else {
+                                "off"
+                            };
+                        self.add_info_message(
+                            format!("Slow mode is {status}."),
+                            /*hint*/ None,
+                        );
+                    }
+                    _ => {
+                        self.add_error_message("Usage: /slow [on|off|status]".to_string());
+                    }
+                }
+            }
             SlashCommand::Ide => {
                 self.handle_ide_command_args(trimmed);
             }
@@ -943,6 +967,7 @@ impl ChatWidget {
         }
         match cmd {
             SlashCommand::Fast
+            | SlashCommand::Slow
             | SlashCommand::Ide
             | SlashCommand::Status
             | SlashCommand::DebugConfig

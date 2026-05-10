@@ -350,14 +350,14 @@ pub(crate) fn normalize_path_text(path: &str) -> String {
 pub(crate) fn short_hash(value: &str) -> String {
     let mut hasher = Sha1::new();
     hasher.update(value.as_bytes());
-    let digest = format!("{:x}", hasher.finalize());
+    let digest = hex::encode(hasher.finalize());
     digest.chars().take(12).collect()
 }
 
 fn sha256_hex(value: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(value.as_bytes());
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 fn normalize_root(project_root: &Path) -> PathBuf {

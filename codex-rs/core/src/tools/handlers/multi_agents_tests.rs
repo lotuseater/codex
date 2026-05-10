@@ -26,6 +26,7 @@ use codex_model_provider::create_model_provider;
 use codex_model_provider_info::built_in_model_providers;
 use codex_protocol::AgentPath;
 use codex_protocol::ThreadId;
+use codex_protocol::config_types::ContextBudgetMode;
 use codex_protocol::config_types::ShellEnvironmentPolicy;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
@@ -913,6 +914,54 @@ async fn multi_agent_v2_spawn_allows_bounded_worker_with_exact_first_reads() {
         panic!("manager error should surface as a model-facing error");
     };
     assert_eq!(message, "collab manager unavailable");
+}
+
+#[tokio::test]
+async fn multi_agent_v2_spawn_allows_bounded_helper_with_path_scoped_diff() {
+    let (session, turn) = make_session_and_context().await;
+
+    let invocation = invocation(
+        Arc::new(session),
+        Arc::new(turn),
+        "spawn_agent",
+        function_payload(json!({
+            "task_name": "helper_review",
+            "agent_type": "helper",
+            "fork_turns": "none",
+            "message": "CONTEXT_AREA: current diff only\nWHY_AGENT / ROI: reuse check found no relevant existing helper; independent helper diff review with net = 2 and an 8k token budget while root keeps implementation local\nFIRST_READS: git diff -- codex-rs/agent-policy/src/lib.rs\nTOOL_HINTS: path-scoped git diff only\nTOKEN_TIP: do not broaden beyond this diff\nVERIFICATION: report findings only"
+        })),
+    );
+    let Err(err) = SpawnAgentHandlerV2.handle(invocation).await else {
+        panic!("spawn should continue past bounded helper guard");
+    };
+    let FunctionCallError::RespondToModel(message) = err else {
+        panic!("manager error should surface as a model-facing error");
+    };
+    assert_eq!(message, "collab manager unavailable");
+}
+
+#[tokio::test]
+async fn multi_agent_v2_spawn_blocks_helper_broad_raw_scan_without_scout() {
+    let (session, turn) = make_session_and_context().await;
+
+    let invocation = invocation(
+        Arc::new(session),
+        Arc::new(turn),
+        "spawn_agent",
+        function_payload(json!({
+            "task_name": "helper_repo_scan",
+            "agent_type": "helper",
+            "message": "CONTEXT_AREA: whole repo\nWHY_AGENT / ROI: reuse check found no relevant existing helper; independent helper scan with net >= 2 and a 15k token budget while root keeps implementation local\nFIRST_READS: rg -n \"TODO|FIXME\" .\nTOOL_HINTS: use rg\nTOKEN_TIP: summarize only\nVERIFICATION: report findings"
+        })),
+    );
+    let Err(err) = SpawnAgentHandlerV2.handle(invocation).await else {
+        panic!("broad raw helper scan should be rejected");
+    };
+    let FunctionCallError::RespondToModel(message) = err else {
+        panic!("unscouted helper scan should surface as a model-facing error");
+    };
+    assert!(message.contains("spawn_agent blocked"));
+    assert!(message.contains("first_moves_predict"));
 }
 
 #[tokio::test]
@@ -4013,6 +4062,7 @@ async fn multi_agent_v2_restart_agent_resumes_with_optional_model_effort_and_mes
         Op::OverrideTurnContext {
             model: Some(model),
             effort: Some(effort),
+            context_budget_mode: None,
             ..
         } if *id == agent_id
             && model == &requested_model
@@ -4457,6 +4507,7 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
     expected.model_reasoning_summary = Some(turn.reasoning_summary);
     expected.developer_instructions = turn.developer_instructions.clone();
     expected.compact_prompt = turn.compact_prompt.clone();
+    expected.context_budget_mode = ContextBudgetMode::Slow;
     expected.permissions.shell_environment_policy = turn.shell_environment_policy.clone();
     expected.codex_linux_sandbox_exe = turn.codex_linux_sandbox_exe.clone();
     expected.cwd = turn.cwd.clone();
@@ -4486,6 +4537,7 @@ async fn build_agent_spawn_config_preserves_base_user_instructions() {
     let config = build_agent_spawn_config(&base_instructions, &turn).expect("spawn config");
 
     assert_eq!(config.user_instructions, base_config.user_instructions);
+    assert_eq!(config.context_budget_mode, ContextBudgetMode::Slow);
 }
 
 #[tokio::test]
@@ -4508,6 +4560,7 @@ async fn build_agent_resume_config_clears_base_instructions() {
     expected.model_reasoning_summary = Some(turn.reasoning_summary);
     expected.developer_instructions = turn.developer_instructions.clone();
     expected.compact_prompt = turn.compact_prompt.clone();
+    expected.context_budget_mode = ContextBudgetMode::Slow;
     expected.permissions.shell_environment_policy = turn.shell_environment_policy.clone();
     expected.codex_linux_sandbox_exe = turn.codex_linux_sandbox_exe.clone();
     expected.cwd = turn.cwd.clone();

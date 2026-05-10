@@ -113,6 +113,7 @@ async fn permissions_message_added_on_override_change() -> Result<()> {
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: None,
             collaboration_mode: None,
             personality: None,
         })
@@ -246,6 +247,7 @@ async fn permissions_message_omitted_when_disabled() -> Result<()> {
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: None,
             collaboration_mode: None,
             personality: None,
         })
@@ -335,6 +337,7 @@ async fn resume_replays_permissions_messages() -> Result<()> {
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: None,
             collaboration_mode: None,
             personality: None,
         })
@@ -441,6 +444,7 @@ async fn resume_and_fork_append_permissions_messages() -> Result<()> {
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: None,
             collaboration_mode: None,
             personality: None,
         })

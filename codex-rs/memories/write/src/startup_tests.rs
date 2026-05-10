@@ -254,6 +254,7 @@ async fn memories_startup_phase1_uses_live_thread_service_tier() -> anyhow::Resu
             effort: None,
             summary: None,
             service_tier: Some(Some(ServiceTier::Fast.request_value().to_string())),
+            context_budget_mode: None,
             collaboration_mode: None,
             personality: None,
         })

@@ -586,7 +586,7 @@ fn sha_256_prefix(value: &Value) -> Result<String> {
     let mut hasher = Sha256::new();
     hasher.update(serialized.as_bytes());
     let digest = hasher.finalize();
-    let hex = format!("{digest:x}");
+    let hex = hex::encode(digest);
     let truncated = &hex[..16];
     Ok(truncated.to_string())
 }

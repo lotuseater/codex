@@ -419,6 +419,7 @@ async fn mcp_call_marks_thread_memory_mode_polluted_when_configured() -> Result<
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Standard),
             collaboration_mode: None,
             personality: None,
         })

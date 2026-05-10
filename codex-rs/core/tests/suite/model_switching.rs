@@ -54,6 +54,7 @@ fn read_only_user_turn(test: &TestCodex, items: Vec<UserInput>, model: String) -
         effort: test.config.model_reasoning_effort,
         summary: None,
         service_tier: None,
+        context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Standard),
         collaboration_mode: None,
         personality: None,
     }
@@ -167,6 +168,7 @@ async fn model_change_appends_model_instructions_developer_message() -> Result<(
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: None,
             collaboration_mode: None,
             personality: None,
         })
@@ -247,6 +249,7 @@ async fn model_and_personality_change_only_appends_model_instructions() -> Resul
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: None,
             collaboration_mode: None,
             personality: Some(Personality::Pragmatic),
         })
@@ -941,6 +944,7 @@ async fn model_switch_to_smaller_model_updates_token_context_window() -> Result<
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: None,
             collaboration_mode: None,
             personality: None,
         })

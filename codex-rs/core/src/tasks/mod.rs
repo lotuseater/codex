@@ -30,6 +30,7 @@ use crate::hook_runtime::record_pending_input;
 use crate::session::checkpoint_policy::SemanticCompactDecision;
 use crate::session::checkpoint_policy::SemanticCompactInput;
 use crate::session::session::Session;
+use crate::session::turn::auto_compact_token_limit;
 use crate::session::turn::run_auto_compact;
 use crate::session::turn::semantic_auto_compact_enabled;
 use crate::session::turn_context::TurnContext;
@@ -749,10 +750,14 @@ impl Session {
                         .turn_metadata_state
                         .git_head_changed_since_start()
                         .await;
+                    let is_continuation_turn = self
+                        .last_user_message_is_continuation_for_semantic_compact()
+                        .await;
                     self.record_regular_turn_finished_for_semantic_compact(
                         &turn_token_usage_for_semantic_compact,
                         turn_tool_calls,
                         git_commit_observed,
+                        is_continuation_turn,
                     )
                     .await;
                 }
@@ -854,16 +859,7 @@ impl Session {
         turn_context: &Arc<TurnContext>,
     ) -> anyhow::Result<()> {
         let total_usage_tokens = self.get_total_token_usage().await;
-        let auto_compact_limit = turn_context
-            .model_info
-            .auto_compact_token_limit()
-            .or_else(|| {
-                turn_context
-                    .model_info
-                    .context_window
-                    .map(|window| window.saturating_mul(4) / 5)
-            })
-            .unwrap_or(i64::MAX);
+        let auto_compact_limit = auto_compact_token_limit(turn_context);
         let reason = if total_usage_tokens >= auto_compact_limit {
             Some(CompactionReason::ContextLimit)
         } else {

@@ -66,6 +66,7 @@ fn disabled_plan_turn(
         effort: None,
         summary: None,
         service_tier: None,
+        context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Standard),
         collaboration_mode: Some(collaboration_mode),
         personality: None,
     })

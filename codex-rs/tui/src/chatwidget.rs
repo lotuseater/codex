@@ -149,6 +149,7 @@ use codex_protocol::approvals::GuardianAssessmentEvent;
 use codex_protocol::approvals::GuardianAssessmentStatus;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::CollaborationModeMask;
+use codex_protocol::config_types::ContextBudgetMode;
 use codex_protocol::config_types::ModeKind;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ServiceTier;
@@ -6232,6 +6233,7 @@ impl ChatWidget {
             effective_mode.reasoning_effort(),
             /*summary*/ None,
             service_tier,
+            self.config.context_budget_mode,
             /*final_output_json_schema*/ None,
             collaboration_mode,
             personality,
@@ -7612,6 +7614,7 @@ impl ChatWidget {
                 Some(Some(default_effort)),
                 /*summary*/ None,
                 /*service_tier*/ None,
+                /*context_budget_mode*/ None,
                 /*collaboration_mode*/ None,
                 /*personality*/ None,
             )));
@@ -7833,6 +7836,7 @@ impl ChatWidget {
                         /*effort*/ None,
                         /*summary*/ None,
                         /*service_tier*/ None,
+                        /*context_budget_mode*/ None,
                         /*collaboration_mode*/ None,
                         Some(personality),
                     )));
@@ -8900,6 +8904,7 @@ impl ChatWidget {
                 /*effort*/ None,
                 /*summary*/ None,
                 /*service_tier*/ None,
+                /*context_budget_mode*/ None,
                 /*collaboration_mode*/ None,
                 /*personality*/ None,
             )));
@@ -9682,6 +9687,15 @@ impl ChatWidget {
         self.config.notices.fast_default_opt_out
     }
 
+    /// Set Slow mode in the widget's config copy.
+    pub(crate) fn set_context_budget_mode(&mut self, mode: ContextBudgetMode) {
+        self.config.context_budget_mode = mode;
+    }
+
+    pub(crate) fn current_context_budget_mode(&self) -> ContextBudgetMode {
+        self.config.context_budget_mode
+    }
+
     pub(crate) fn status_account_display(&self) -> Option<&StatusAccountDisplay> {
         self.status_account_display.as_ref()
     }
@@ -9783,6 +9797,7 @@ impl ChatWidget {
                 /*effort*/ None,
                 /*summary*/ None,
                 Some(service_tier.map(|service_tier| service_tier.request_value().to_string())),
+                /*context_budget_mode*/ None,
                 /*collaboration_mode*/ None,
                 /*personality*/ None,
             )));
@@ -9797,6 +9812,36 @@ impl ChatWidget {
             Some(ServiceTier::Fast)
         };
         self.set_service_tier_selection(next_tier);
+    }
+
+    fn set_context_budget_mode_selection(&mut self, mode: ContextBudgetMode) {
+        self.set_context_budget_mode(mode);
+        self.app_event_tx
+            .send(AppEvent::CodexOp(AppCommand::override_turn_context(
+                /*cwd*/ None,
+                /*approval_policy*/ None,
+                /*approvals_reviewer*/ None,
+                /*permission_profile*/ None,
+                /*windows_sandbox_level*/ None,
+                /*model*/ None,
+                /*effort*/ None,
+                /*summary*/ None,
+                /*service_tier*/ None,
+                Some(mode),
+                /*collaboration_mode*/ None,
+                /*personality*/ None,
+            )));
+        self.app_event_tx
+            .send(AppEvent::PersistContextBudgetModeSelection { mode });
+    }
+
+    pub(crate) fn toggle_slow_mode_from_ui(&mut self) {
+        let mode = if self.current_context_budget_mode() == ContextBudgetMode::Slow {
+            ContextBudgetMode::Standard
+        } else {
+            ContextBudgetMode::Slow
+        };
+        self.set_context_budget_mode_selection(mode);
     }
 
     pub(crate) fn current_model(&self) -> &str {

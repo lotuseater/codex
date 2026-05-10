@@ -14,6 +14,7 @@ pub enum SlashCommand {
     // more frequently used commands should be listed first.
     Model,
     Fast,
+    Slow,
     Ide,
     Permissions,
     Keymap,
@@ -109,6 +110,7 @@ impl SlashCommand {
             SlashCommand::Fast => {
                 "toggle Fast mode to enable fastest inference with increased plan usage"
             }
+            SlashCommand::Slow => "toggle Slow mode to reduce avoidable context token usage",
             SlashCommand::Ide => {
                 "include current selection, open files, and other context from your IDE"
             }
@@ -154,6 +156,7 @@ impl SlashCommand {
                 | SlashCommand::Plan
                 | SlashCommand::Goal
                 | SlashCommand::Fast
+                | SlashCommand::Slow
                 | SlashCommand::Ide
                 | SlashCommand::Keymap
                 | SlashCommand::Mcp
@@ -188,6 +191,7 @@ impl SlashCommand {
             | SlashCommand::Compact
             | SlashCommand::Model
             | SlashCommand::Fast
+            | SlashCommand::Slow
             | SlashCommand::Personality
             | SlashCommand::Permissions
             | SlashCommand::Keymap

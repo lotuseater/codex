@@ -685,6 +685,14 @@ fn spawn_tool_spec_build_deduplicates_user_defined_built_in_roles() {
                 nickname_candidates: None,
             },
         ),
+        (
+            "helper".to_string(),
+            AgentRoleConfig {
+                description: Some("custom helper override".to_string()),
+                config_file: None,
+                nickname_candidates: None,
+            },
+        ),
         ("researcher".to_string(), AgentRoleConfig::default()),
     ]);
 
@@ -692,8 +700,10 @@ fn spawn_tool_spec_build_deduplicates_user_defined_built_in_roles() {
 
     assert!(spec.contains("researcher: no description"));
     assert!(spec.contains("explorer: {\nuser override\n}"));
+    assert!(spec.contains("helper: {\ncustom helper override\n}"));
     assert!(spec.contains("default: {\nDefault agent.\n}"));
     assert!(!spec.contains("Explorers are fast and authoritative."));
+    assert!(!spec.contains("Use `helper` for bounded sidecar work"));
 }
 
 #[test]
@@ -714,6 +724,17 @@ fn spawn_tool_spec_lists_user_defined_roles_before_built_ins() {
         .expect("find built-in role");
 
     assert!(user_index < built_in_index);
+}
+
+#[test]
+fn spawn_tool_spec_lists_builtin_helper_role() {
+    let spec = spawn_tool_spec::build(&BTreeMap::new());
+
+    assert!(spec.contains("helper: {"));
+    assert!(spec.contains("Use `helper` for bounded sidecar work"));
+    assert!(spec.contains("first_moves_predict"));
+    assert!(spec.contains("repo_context_scout"));
+    assert!(spec.contains("tool_search"));
 }
 
 #[test]

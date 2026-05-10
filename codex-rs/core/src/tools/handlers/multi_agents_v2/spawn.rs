@@ -267,7 +267,7 @@ impl SpawnAgentArgs {
             .as_deref()
             .map(str::trim)
             .filter(|fork_turns| !fork_turns.is_empty())
-            .unwrap_or("all");
+            .unwrap_or("none");
 
         if fork_turns.eq_ignore_ascii_case("none") {
             return Ok(None);
@@ -288,6 +288,40 @@ impl SpawnAgentArgs {
         }
 
         Ok(Some(SpawnAgentForkMode::LastNTurns(last_n_turns)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args_with_fork_turns(fork_turns: Option<&str>) -> SpawnAgentArgs {
+        SpawnAgentArgs {
+            task_name: "helper".to_string(),
+            message: "do the narrow task".to_string(),
+            agent_type: None,
+            model: None,
+            reasoning_effort: None,
+            fork_turns: fork_turns.map(str::to_string),
+            fork_context: None,
+        }
+    }
+
+    #[test]
+    fn omitted_fork_turns_defaults_to_no_fork() {
+        let args = args_with_fork_turns(None);
+
+        assert!(args.fork_mode().unwrap().is_none());
+    }
+
+    #[test]
+    fn explicit_fork_turns_all_still_forks_full_history() {
+        let args = args_with_fork_turns(Some("all"));
+
+        assert!(matches!(
+            args.fork_mode().unwrap(),
+            Some(SpawnAgentForkMode::FullHistory)
+        ));
     }
 }
 

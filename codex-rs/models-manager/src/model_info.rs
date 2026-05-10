@@ -1,3 +1,4 @@
+use codex_protocol::config_types::ContextBudgetMode;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::openai_models::ConfigShellToolType;
 use codex_protocol::openai_models::ModelInfo;
@@ -11,7 +12,10 @@ use codex_protocol::openai_models::default_input_modalities;
 
 use crate::config::ModelsManagerConfig;
 use codex_utils_output_truncation::approx_bytes_for_tokens;
+use codex_utils_output_truncation::approx_tokens_from_byte_count_i64;
 use tracing::warn;
+
+const SLOW_MODE_TOOL_OUTPUT_TOKEN_LIMIT: usize = 1_500;
 
 pub const BASE_INSTRUCTIONS: &str = include_str!("../prompt.md");
 pub const SELF_REVIEW_INSTRUCTIONS: &str = include_str!("../self_review_instructions.md");
@@ -40,17 +44,17 @@ pub fn with_config_overrides(mut model: ModelInfo, config: &ModelsManagerConfig)
         model.auto_compact_token_limit = Some(auto_compact_token_limit);
     }
     if let Some(token_limit) = config.tool_output_token_limit {
-        model.truncation_policy = match model.truncation_policy.mode {
-            TruncationMode::Bytes => {
-                let byte_limit =
-                    i64::try_from(approx_bytes_for_tokens(token_limit)).unwrap_or(i64::MAX);
-                TruncationPolicyConfig::bytes(byte_limit)
-            }
-            TruncationMode::Tokens => {
-                let limit = i64::try_from(token_limit).unwrap_or(i64::MAX);
-                TruncationPolicyConfig::tokens(limit)
-            }
-        };
+        model.truncation_policy =
+            truncation_policy_for_token_limit(token_limit, model.truncation_policy.mode);
+    }
+    if config.context_budget_mode == ContextBudgetMode::Slow
+        && truncation_policy_token_budget(&model.truncation_policy)
+            > SLOW_MODE_TOOL_OUTPUT_TOKEN_LIMIT
+    {
+        model.truncation_policy = truncation_policy_for_token_limit(
+            SLOW_MODE_TOOL_OUTPUT_TOKEN_LIMIT,
+            model.truncation_policy.mode,
+        );
     }
 
     if let Some(base_instructions) = &config.base_instructions {
@@ -64,6 +68,32 @@ pub fn with_config_overrides(mut model: ModelInfo, config: &ModelsManagerConfig)
     }
 
     model
+}
+
+fn truncation_policy_for_token_limit(
+    token_limit: usize,
+    mode: TruncationMode,
+) -> TruncationPolicyConfig {
+    match mode {
+        TruncationMode::Bytes => {
+            let byte_limit =
+                i64::try_from(approx_bytes_for_tokens(token_limit)).unwrap_or(i64::MAX);
+            TruncationPolicyConfig::bytes(byte_limit)
+        }
+        TruncationMode::Tokens => {
+            let limit = i64::try_from(token_limit).unwrap_or(i64::MAX);
+            TruncationPolicyConfig::tokens(limit)
+        }
+    }
+}
+
+fn truncation_policy_token_budget(policy: &TruncationPolicyConfig) -> usize {
+    match policy.mode {
+        TruncationMode::Bytes => {
+            usize::try_from(approx_tokens_from_byte_count_i64(policy.limit)).unwrap_or(usize::MAX)
+        }
+        TruncationMode::Tokens => usize::try_from(policy.limit).unwrap_or(usize::MAX),
+    }
 }
 
 fn append_self_review_instructions(base_instructions: &mut String) {

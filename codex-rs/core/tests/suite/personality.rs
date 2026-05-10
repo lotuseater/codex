@@ -76,6 +76,7 @@ fn read_only_text_turn_with_personality(
         effort: test.config.model_reasoning_effort,
         summary: None,
         service_tier: None,
+        context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Standard),
         collaboration_mode: None,
         personality,
     }
@@ -339,6 +340,7 @@ async fn user_turn_personality_some_adds_update_message() -> anyhow::Result<()> 
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: None,
             collaboration_mode: None,
             personality: Some(Personality::Friendly),
         })
@@ -423,6 +425,7 @@ async fn user_turn_personality_same_value_does_not_add_update_message() -> anyho
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: None,
             collaboration_mode: None,
             personality: Some(Personality::Pragmatic),
         })
@@ -520,6 +523,7 @@ async fn user_turn_personality_skips_if_feature_disabled() -> anyhow::Result<()>
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: None,
             collaboration_mode: None,
             personality: Some(Personality::Pragmatic),
         })
@@ -769,6 +773,7 @@ async fn user_turn_personality_remote_model_template_includes_update_message() -
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: None,
             collaboration_mode: None,
             personality: Some(Personality::Friendly),
         })

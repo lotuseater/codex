@@ -62,6 +62,7 @@ async fn submit_user_turn(
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Standard),
             collaboration_mode,
             personality: None,
         })
@@ -142,6 +143,7 @@ async fn execpolicy_blocks_shell_invocation() -> Result<()> {
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Standard),
             collaboration_mode: None,
             personality: None,
         })

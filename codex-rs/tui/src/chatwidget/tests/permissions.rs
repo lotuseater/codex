@@ -360,6 +360,7 @@ async fn approvals_popup_navigation_skips_disabled() {
                 approval_policy: Some(AskForApproval::OnRequest),
                 personality: None,
                 ..
+                context_budget_mode: None,
             })
         )),
         "enter should select an enabled preset"
@@ -371,6 +372,7 @@ async fn approvals_popup_navigation_skips_disabled() {
                 approval_policy: Some(AskForApproval::Never),
                 personality: None,
                 ..
+                context_budget_mode: None,
             })
         )),
         "disabled preset should not be selected"
@@ -746,6 +748,7 @@ async fn permissions_selection_sends_approvals_reviewer_in_override_turn_context
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: None,
             collaboration_mode: None,
             personality: None,
         }

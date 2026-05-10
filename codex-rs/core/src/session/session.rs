@@ -1,6 +1,7 @@
 use super::*;
 use crate::goals::GoalRuntimeState;
 use codex_protocol::SessionId;
+use codex_protocol::config_types::ContextBudgetMode;
 use codex_protocol::config_types::ServiceTier;
 use codex_protocol::permissions::FileSystemPath;
 use codex_protocol::permissions::FileSystemSpecialPath;
@@ -44,6 +45,7 @@ pub(crate) struct SessionConfiguration {
     pub(super) collaboration_mode: CollaborationMode,
     pub(super) model_reasoning_summary: Option<ReasoningSummaryConfig>,
     pub(super) service_tier: Option<String>,
+    pub(super) context_budget_mode: ContextBudgetMode,
 
     /// Developer instructions that supplement the base instructions.
     pub(super) developer_instructions: Option<String>,
@@ -193,6 +195,9 @@ impl SessionConfiguration {
                     })
             });
         }
+        if let Some(context_budget_mode) = updates.context_budget_mode {
+            next_configuration.context_budget_mode = context_budget_mode;
+        }
         if let Some(personality) = updates.personality {
             next_configuration.personality = Some(personality);
         }
@@ -318,6 +323,7 @@ pub(crate) struct SessionSettingsUpdate {
     pub(crate) collaboration_mode: Option<CollaborationMode>,
     pub(crate) reasoning_summary: Option<ReasoningSummaryConfig>,
     pub(crate) service_tier: Option<Option<String>>,
+    pub(crate) context_budget_mode: Option<ContextBudgetMode>,
     pub(crate) final_output_json_schema: Option<Option<Value>>,
     /// Turn-local environment override. `None` inherits the sticky thread
     /// environments stored on `SessionConfiguration`; `Some([])` explicitly

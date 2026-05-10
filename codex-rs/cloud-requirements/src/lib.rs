@@ -26,6 +26,7 @@ use codex_login::CodexAuth;
 use codex_login::RefreshTokenError;
 use codex_protocol::account::PlanType;
 use hmac::Hmac;
+use hmac::KeyInit;
 use hmac::Mac;
 use serde::Deserialize;
 use serde::Serialize;

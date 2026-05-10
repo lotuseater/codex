@@ -10,6 +10,7 @@ use tokio::io::BufReader;
 use tokio::process::Command;
 
 use crate::ContextOpsError;
+use codex_context_pack::render_entrypoint_hint;
 
 pub const DEFAULT_MAX_FILES: usize = 50;
 const MAX_FILES: usize = 500;
@@ -338,6 +339,11 @@ fn render_search_text(
     if !fallback_reasons.is_empty() {
         lines.push("fallback_required: true".to_string());
         lines.push(format!("fallback_reason: {}", fallback_reasons.join(",")));
+        if should_render_entrypoint_hint(globs, paths, result)
+            && let Some(hint) = render_entrypoint_hint(workdir, 4)
+        {
+            lines.push(hint);
+        }
     }
     if result.files.is_empty() {
         lines.push("status: no_matches".to_string());
@@ -465,6 +471,16 @@ fn search_fallback_reasons(
         reasons.push("max_matches_per_file");
     }
     reasons
+}
+
+fn should_render_entrypoint_hint(
+    globs: &[String],
+    paths: &[String],
+    result: &SearchTextResult,
+) -> bool {
+    let unscoped =
+        globs.iter().all(|glob| glob.is_empty()) && paths.iter().all(|path| path.is_empty());
+    unscoped && result.files_omitted_lower_bound > 0
 }
 
 pub fn combined_globs(glob: Option<&str>, globs: &[String]) -> Vec<String> {

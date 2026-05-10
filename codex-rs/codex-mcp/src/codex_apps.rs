@@ -346,8 +346,7 @@ const CODEX_APPS_TOOLS_CACHE_DIR: &str = "cache/codex_apps_tools";
 fn sha1_hex(s: &str) -> String {
     let mut hasher = Sha1::new();
     hasher.update(s.as_bytes());
-    let sha1 = hasher.finalize();
-    format!("{sha1:x}")
+    hex::encode(hasher.finalize())
 }
 
 fn system_time_to_epoch_seconds(time: SystemTime) -> Option<i64> {

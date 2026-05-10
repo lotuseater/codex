@@ -2740,6 +2740,7 @@ async fn snapshot_request_shape_remote_pre_turn_compaction_including_incoming_us
                     effort: None,
                     summary: None,
                     service_tier: None,
+                    context_budget_mode: None,
                     collaboration_mode: None,
                     personality: None,
                 })
@@ -2856,6 +2857,7 @@ async fn snapshot_request_shape_remote_pre_turn_compaction_strips_incoming_model
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: None,
             collaboration_mode: None,
             personality: None,
         })

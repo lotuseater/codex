@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
@@ -12,6 +13,9 @@ const DEFAULT_PATH_BUDGET: usize = 16;
 const EXACT_MATCH_LIMIT: usize = 3;
 const MAX_CONTENT_SCORE_FILES: usize = 256;
 const MAX_READ_BYTES: usize = 32_000;
+const MIN_EMIT_SCORE: i64 = 50;
+const IDF_CAP: f64 = 4.0;
+const ENTRY_POINT_RESERVED_SLOTS: usize = 3;
 
 #[derive(Debug, Clone)]
 pub struct ContextPackRequest<'a> {
@@ -58,8 +62,9 @@ pub fn render_graphify_scout_pack(request: &ContextPackRequest<'_>) -> Option<St
         return None;
     }
     let terms = prompt_terms(request.prompt);
+    let idf = build_path_idf(&files);
     for file in &mut files {
-        file.score += path_prompt_score(&file.path, &terms);
+        file.score += path_prompt_score(&file.path, &terms, &idf);
         file.score += operational_path_boost(request.prompt, &file.path);
     }
     files.sort_by(|left, right| {
@@ -69,7 +74,7 @@ pub fn render_graphify_scout_pack(request: &ContextPackRequest<'_>) -> Option<St
             .then_with(|| left.path.cmp(&right.path))
     });
     for file in files.iter_mut().take(MAX_CONTENT_SCORE_FILES) {
-        file.score += content_prompt_score(request.project_root, &file.path, &terms);
+        file.score += content_prompt_score(request.project_root, &file.path, &terms, &idf);
     }
     files.sort_by(|left, right| {
         right
@@ -77,12 +82,15 @@ pub fn render_graphify_scout_pack(request: &ContextPackRequest<'_>) -> Option<St
             .cmp(&left.score)
             .then_with(|| left.path.cmp(&right.path))
     });
-    let selected = files
+    let mut selected = files
         .into_iter()
-        .filter(|file| file.score > 0)
+        .filter(|file| file.score >= MIN_EMIT_SCORE)
         .take(request.path_budget.max(1))
         .map(|file| file.path)
         .collect::<Vec<_>>();
+    if is_generic_exploration_query(request.prompt) {
+        selected = reserve_entry_points(request.project_root, selected, request.path_budget.max(1));
+    }
     if selected.is_empty() {
         return None;
     }
@@ -106,6 +114,25 @@ pub fn prepend_context_pack_to_message(
         return message.to_string();
     };
     format!("{pack}\n\n{message}")
+}
+
+pub fn render_entrypoint_hint(project_root: &Path, path_budget: usize) -> Option<String> {
+    let paths = entry_point_paths(project_root, path_budget.max(1).min(DEFAULT_PATH_BUDGET));
+    if paths.is_empty() {
+        return None;
+    }
+    let mut lines = vec![
+        "graphify_entrypoint_hint".to_string(),
+        "canonical first-reads for broad repo exploration:".to_string(),
+    ];
+    for path in paths {
+        lines.push(format!("- {path}"));
+    }
+    lines.push(
+        "usage: read one or two only if the current broad search is not already enough."
+            .to_string(),
+    );
+    Some(lines.join("\n"))
 }
 
 pub fn has_context_pack(message: &str) -> bool {
@@ -261,6 +288,65 @@ const PHRASE_TRIGGERS: &[&str] = &[
     "walk through",
 ];
 
+const GENERIC_EXPLORATION_PHRASES: &[&str] = &[
+    "give me a tour",
+    "give me an overview",
+    "tour of",
+    "tour this",
+    "tour the",
+    "first reads",
+    "first read",
+    "entry point",
+    "entry points",
+    "main components",
+    "high-level structure",
+    "high level structure",
+    "what's in this",
+    "what's in here",
+    "whats in this",
+    "explain this repo",
+    "explore this repo",
+    "map this repo",
+    "map the repo",
+    "map this codebase",
+    "inspect this repo",
+    "inspect the repo",
+    "inspect the codebase",
+    "repo exploration",
+    "codebase exploration",
+    "overview of",
+];
+
+const ENTRY_POINT_CANDIDATES: &[&str] = &[
+    "CLAUDE.md",
+    "AGENTS.md",
+    "README.md",
+    "README.rst",
+    "README",
+    "docs/repo_navigation_index.md",
+    "docs/mcp_navigation_index.md",
+    "docs/architecture.md",
+    "docs/ARCHITECTURE.md",
+    "ARCHITECTURE.md",
+    "pyproject.toml",
+    "package.json",
+    "Cargo.toml",
+    "CMakeLists.txt",
+    "go.mod",
+    "Makefile",
+    "src/main.py",
+    "src/main.cpp",
+    "src/main.rs",
+    "src/main.go",
+    "src/lib.rs",
+    "src/index.ts",
+    "src/index.js",
+    "main.py",
+    "main.cpp",
+    "main.rs",
+    "main.go",
+];
+
 fn render_scout_pack(paths: &[String]) -> String {
     let mut lines = vec![
         "<context_pack variant=\"graphify_scout_pack\" source=\"context-reducer-lab-2026-05-08-canary\" mode=\"scout\">".to_string(),
@@ -395,6 +481,7 @@ fn should_render_context_pack(prompt: &str) -> bool {
     if is_explicit_repo_routing_prompt(prompt)
         || prompt_has_candidate_extension(prompt)
         || prompt_has_directory_path(prompt)
+        || is_generic_exploration_query(prompt)
         || contains_any(&lower, PHRASE_TRIGGERS)
     {
         return true;
@@ -535,17 +622,22 @@ fn should_visit_entry(root: &Path, entry: &DirEntry, prompt: &str) -> bool {
     !is_generated_path(&path) && !is_low_value_pack_path(&path, prompt)
 }
 
-fn path_prompt_score(path: &str, terms: &BTreeSet<String>) -> i64 {
+fn path_prompt_score(path: &str, terms: &BTreeSet<String>, idf: &BTreeMap<String, f64>) -> i64 {
     let lower = path.to_ascii_lowercase();
-    terms
+    let weight = terms
         .iter()
         .filter(|term| lower.contains(term.as_str()))
-        .count()
-        .min(24) as i64
-        * 25
+        .map(|term| idf.get(term).copied().unwrap_or(1.0))
+        .sum::<f64>();
+    (weight.min(24.0) * 25.0).round() as i64
 }
 
-fn content_prompt_score(root: &Path, path: &str, terms: &BTreeSet<String>) -> i64 {
+fn content_prompt_score(
+    root: &Path,
+    path: &str,
+    terms: &BTreeSet<String>,
+    idf: &BTreeMap<String, f64>,
+) -> i64 {
     if terms.is_empty() {
         return 0;
     }
@@ -555,12 +647,118 @@ fn content_prompt_score(root: &Path, path: &str, terms: &BTreeSet<String>) -> i6
     };
     let len = bytes.len().min(MAX_READ_BYTES);
     let text = String::from_utf8_lossy(&bytes[..len]).to_ascii_lowercase();
-    terms
+    let text = strip_code_comments(path, &text);
+    let weight = terms
         .iter()
         .filter(|term| text.contains(term.as_str()))
-        .count()
-        .min(24) as i64
-        * 18
+        .map(|term| idf.get(term).copied().unwrap_or(1.0))
+        .sum::<f64>();
+    (weight.min(24.0) * 18.0).round() as i64
+}
+
+fn build_path_idf(files: &[FileCandidate]) -> BTreeMap<String, f64> {
+    let mut df = BTreeMap::<String, usize>::new();
+    for file in files {
+        for component in path_components(&file.path) {
+            *df.entry(component).or_default() += 1;
+        }
+    }
+    let n = files.len() as f64;
+    df.into_iter()
+        .map(|(token, freq)| {
+            let raw = ((n + 1.0) / (freq as f64 + 1.0)).ln() + 1.0;
+            (token, raw.min(IDF_CAP))
+        })
+        .collect()
+}
+
+fn path_components(path: &str) -> BTreeSet<String> {
+    path.to_ascii_lowercase()
+        .split(|ch: char| matches!(ch, '/' | '\\' | '.' | '_' | '-'))
+        .filter(|part| part.len() >= 3)
+        .map(str::to_string)
+        .collect()
+}
+
+fn strip_code_comments(path: &str, text: &str) -> String {
+    if !should_strip_comments(path) {
+        return text.to_string();
+    }
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index..].starts_with(b"/*") {
+            index += 2;
+            while index + 1 < bytes.len() && !bytes[index..].starts_with(b"*/") {
+                index += 1;
+            }
+            index = (index + 2).min(bytes.len());
+        } else if bytes[index..].starts_with(b"\"\"\"") || bytes[index..].starts_with(b"'''") {
+            let marker = &bytes[index..index + 3].to_vec();
+            index += 3;
+            while index + 2 < bytes.len() && &bytes[index..index + 3] != marker.as_slice() {
+                index += 1;
+            }
+            index = (index + 3).min(bytes.len());
+        } else if bytes[index..].starts_with(b"//") || bytes[index] == b'#' {
+            while index < bytes.len() && bytes[index] != b'\n' {
+                index += 1;
+            }
+            if index < bytes.len() {
+                out.push(bytes[index]);
+                index += 1;
+            }
+        } else {
+            out.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn should_strip_comments(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    [
+        ".py", ".pyi", ".js", ".jsx", ".mjs", ".ts", ".tsx", ".c", ".cc", ".cpp", ".cxx", ".h",
+        ".hh", ".hpp", ".hxx", ".rs", ".go", ".java", ".kt", ".swift", ".cs", ".php",
+    ]
+    .iter()
+    .any(|suffix| lower.ends_with(suffix))
+}
+
+fn reserve_entry_points(root: &Path, selected: Vec<String>, budget: usize) -> Vec<String> {
+    let entry_points = entry_point_paths(root, budget);
+    if entry_points.is_empty() || budget <= 1 {
+        return selected;
+    }
+    let reserved = entry_points
+        .len()
+        .min(ENTRY_POINT_RESERVED_SLOTS)
+        .min(budget.saturating_sub(1).max(1));
+    let chosen = entry_points.into_iter().take(reserved).collect::<Vec<_>>();
+    let chosen_set = chosen.iter().collect::<BTreeSet<_>>();
+    let mut result = selected
+        .into_iter()
+        .filter(|path| !chosen_set.contains(path))
+        .take(budget.saturating_sub(chosen.len()))
+        .collect::<Vec<_>>();
+    result.extend(chosen);
+    result
+}
+
+fn entry_point_paths(root: &Path, limit: usize) -> Vec<String> {
+    ENTRY_POINT_CANDIDATES
+        .iter()
+        .filter(|path| root.join(path).is_file())
+        .take(limit)
+        .map(|path| (*path).to_string())
+        .collect()
+}
+
+fn is_generic_exploration_query(prompt: &str) -> bool {
+    let lower = prompt.to_ascii_lowercase();
+    contains_any(&lower, GENERIC_EXPLORATION_PHRASES)
 }
 
 fn operational_path_boost(prompt: &str, path: &str) -> i64 {
@@ -620,8 +818,127 @@ fn prompt_terms(prompt: &str) -> BTreeSet<String> {
         .split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
         .map(str::trim)
         .filter(|token| token.len() >= 3)
+        .filter(|token| !is_prompt_stopword(&token.to_ascii_lowercase()))
         .map(str::to_ascii_lowercase)
         .collect()
+}
+
+fn is_prompt_stopword(term: &str) -> bool {
+    matches!(
+        term,
+        "the"
+            | "this"
+            | "that"
+            | "these"
+            | "those"
+            | "its"
+            | "their"
+            | "and"
+            | "but"
+            | "for"
+            | "nor"
+            | "yet"
+            | "with"
+            | "from"
+            | "into"
+            | "onto"
+            | "out"
+            | "off"
+            | "via"
+            | "than"
+            | "then"
+            | "also"
+            | "you"
+            | "your"
+            | "yours"
+            | "they"
+            | "them"
+            | "him"
+            | "her"
+            | "his"
+            | "hers"
+            | "our"
+            | "ours"
+            | "who"
+            | "whom"
+            | "whose"
+            | "what"
+            | "which"
+            | "are"
+            | "was"
+            | "were"
+            | "been"
+            | "being"
+            | "have"
+            | "has"
+            | "had"
+            | "having"
+            | "did"
+            | "does"
+            | "doing"
+            | "can"
+            | "could"
+            | "should"
+            | "would"
+            | "will"
+            | "shall"
+            | "may"
+            | "might"
+            | "must"
+            | "let"
+            | "make"
+            | "made"
+            | "use"
+            | "used"
+            | "uses"
+            | "using"
+            | "get"
+            | "got"
+            | "give"
+            | "given"
+            | "take"
+            | "took"
+            | "want"
+            | "wants"
+            | "how"
+            | "why"
+            | "when"
+            | "where"
+            | "tell"
+            | "say"
+            | "said"
+            | "all"
+            | "any"
+            | "some"
+            | "one"
+            | "two"
+            | "three"
+            | "many"
+            | "much"
+            | "more"
+            | "most"
+            | "less"
+            | "few"
+            | "fewer"
+            | "not"
+            | "now"
+            | "just"
+            | "only"
+            | "still"
+            | "ever"
+            | "even"
+            | "each"
+            | "every"
+            | "both"
+            | "either"
+            | "neither"
+            | "here"
+            | "there"
+            | "thus"
+            | "very"
+            | "really"
+            | "quite"
+    )
 }
 
 fn normalize_slashes(path: impl AsRef<str>) -> String {
@@ -901,7 +1218,7 @@ mod tests {
         fs::create_dir_all(temp.path().join("src")).expect("mkdir");
         for index in 0..300 {
             let body = if matches!(index, 255 | 299) {
-                "raremarker behavior"
+                "find raremarker behavior"
             } else {
                 "ordinary behavior"
             };
@@ -987,7 +1304,7 @@ mod tests {
             );
         }
 
-        let request = ContextPackRequest::new(temp.path(), "Find raremarker payload");
+        let request = ContextPackRequest::new(temp.path(), "Find raremarker payload context pack");
         let pack = render_graphify_scout_pack(&request).expect("pack");
         assert!(pack.contains("src/payload.py"));
         for ignored in [

@@ -379,6 +379,22 @@ Rules:
                     }
                 ),
                 (
+                    "helper".to_string(),
+                    AgentRoleConfig {
+                        description: Some(r#"Use `helper` for bounded sidecar work that saves context or loop effort without taking over the root agent's critical path.
+Typical tasks:
+- Review a focused diff or small file set.
+- Triage a focused test/build failure.
+- Check a policy, config, or implementation slice in parallel while root continues integration.
+Rules:
+- Prefer reusing one existing helper with `followup_task` before spawning another helper.
+- Start from exact `FIRST_READS` or optimized routing tools such as `first_moves_predict`, `repo_context_scout`, or `tool_search` before any broad shell search.
+- Keep a strict token/time budget and stop when the handoff is enough for root to act."#.to_string()),
+                        config_file: None,
+                        nickname_candidates: None,
+                    }
+                ),
+                (
                     "worker".to_string(),
                     AgentRoleConfig {
                         description: Some(r#"Use for execution and production work.

@@ -104,5 +104,5 @@ fn canonical_source_path(path: &Path) -> io::Result<PathBuf> {
 
 fn session_content_sha256(path: &Path) -> io::Result<String> {
     let contents = fs::read(path)?;
-    Ok(format!("{:x}", Sha256::digest(contents)))
+    Ok(hex::encode(Sha256::digest(contents)))
 }

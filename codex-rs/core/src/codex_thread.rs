@@ -9,6 +9,7 @@ use crate::session::SteerInputError;
 use codex_features::Feature;
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::config_types::CollaborationMode;
+use codex_protocol::config_types::ContextBudgetMode;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::config_types::WindowsSandboxLevel;
@@ -91,6 +92,7 @@ pub struct CodexThreadTurnContextOverrides {
     pub effort: Option<Option<ReasoningEffort>>,
     pub summary: Option<ReasoningSummary>,
     pub service_tier: Option<Option<String>>,
+    pub context_budget_mode: Option<ContextBudgetMode>,
     pub collaboration_mode: Option<CollaborationMode>,
     pub personality: Option<Personality>,
 }
@@ -250,6 +252,7 @@ impl CodexThread {
             effort,
             summary,
             service_tier,
+            context_budget_mode,
             collaboration_mode,
             personality,
         } = overrides;
@@ -274,6 +277,7 @@ impl CodexThread {
             collaboration_mode: Some(collaboration_mode),
             reasoning_summary: summary,
             service_tier,
+            context_budget_mode,
             personality,
             ..Default::default()
         };

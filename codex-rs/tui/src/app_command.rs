@@ -13,6 +13,7 @@ use codex_app_server_protocol::UserInput;
 use codex_config::types::ApprovalsReviewer;
 use codex_protocol::approvals::GuardianAssessmentEvent;
 use codex_protocol::config_types::CollaborationMode;
+use codex_protocol::config_types::ContextBudgetMode;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use codex_protocol::config_types::WindowsSandboxLevel;
@@ -46,6 +47,7 @@ pub(crate) enum AppCommand {
         effort: Option<ReasoningEffortConfig>,
         summary: Option<ReasoningSummaryConfig>,
         service_tier: Option<Option<String>>,
+        context_budget_mode: ContextBudgetMode,
         final_output_json_schema: Option<Value>,
         collaboration_mode: Option<CollaborationMode>,
         personality: Option<Personality>,
@@ -60,6 +62,7 @@ pub(crate) enum AppCommand {
         effort: Option<Option<ReasoningEffortConfig>>,
         summary: Option<ReasoningSummaryConfig>,
         service_tier: Option<Option<String>>,
+        context_budget_mode: Option<ContextBudgetMode>,
         collaboration_mode: Option<CollaborationMode>,
         personality: Option<Personality>,
     },
@@ -147,6 +150,7 @@ impl AppCommand {
         effort: Option<ReasoningEffortConfig>,
         summary: Option<ReasoningSummaryConfig>,
         service_tier: Option<Option<String>>,
+        context_budget_mode: ContextBudgetMode,
         final_output_json_schema: Option<Value>,
         collaboration_mode: Option<CollaborationMode>,
         personality: Option<Personality>,
@@ -161,6 +165,7 @@ impl AppCommand {
             effort,
             summary,
             service_tier,
+            context_budget_mode,
             final_output_json_schema,
             collaboration_mode,
             personality,
@@ -178,6 +183,7 @@ impl AppCommand {
         effort: Option<Option<ReasoningEffortConfig>>,
         summary: Option<ReasoningSummaryConfig>,
         service_tier: Option<Option<String>>,
+        context_budget_mode: Option<ContextBudgetMode>,
         collaboration_mode: Option<CollaborationMode>,
         personality: Option<Personality>,
     ) -> Self {
@@ -191,6 +197,7 @@ impl AppCommand {
             effort,
             summary,
             service_tier,
+            context_budget_mode,
             collaboration_mode,
             personality,
         }

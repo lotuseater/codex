@@ -2324,7 +2324,7 @@ async fn quiet_hook_linger_starts_when_delayed_redraw_reveals_hook() {
 }
 
 #[tokio::test]
-async fn blocked_and_failed_hooks_render_feedback_and_errors() {
+async fn blocked_hooks_render_feedback_and_tool_hook_failures_stay_out_of_history() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
     handle_hook_completed(
@@ -2351,6 +2351,18 @@ async fn blocked_and_failed_hooks_render_feedback_and_errors() {
             }],
         ),
     );
+    handle_hook_completed(
+        &mut chat,
+        hook_completed_run(
+            "pre-tool-use:2:/tmp/hooks.json",
+            codex_app_server_protocol::HookEventName::PreToolUse,
+            codex_app_server_protocol::HookRunStatus::Failed,
+            vec![codex_app_server_protocol::HookOutputEntry {
+                kind: codex_app_server_protocol::HookOutputEntryKind::Error,
+                text: "hook exited with code 1".to_string(),
+            }],
+        ),
+    );
 
     let rendered = drain_insert_history(&mut rx)
         .iter()
@@ -2364,8 +2376,9 @@ async fn blocked_and_failed_hooks_render_feedback_and_errors() {
         "expected blocked hook feedback: {rendered:?}"
     );
     assert!(
-        rendered.contains("PostToolUse hook (failed)\n  error: hook exited with code 7"),
-        "expected failed hook error: {rendered:?}"
+        !rendered.contains("PostToolUse hook (failed)")
+            && !rendered.contains("PreToolUse hook (failed)"),
+        "non-blocking tool-hook failures should stay out of conversation history: {rendered:?}"
     );
 }
 

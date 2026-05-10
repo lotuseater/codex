@@ -12,6 +12,7 @@ const SPAWN_AGENT_V2_DEFAULT_USAGE_HINT: &str = r#"### MultiAgentV2 delegation g
 - Decide during planning whether the immediate critical path stays local, reuses an existing agent, or can be split into bounded sidecar tasks that run in parallel.
 - Include an `Agent ROI Estimate` in every plan: new_agent_cost=3, reuse_cost=1, parallel_gain=0-3, context_gain=0-3, repeat_gain=0-4, loop_followup_gain=0-3, risk_penalty=0-3, net = gains + loop_followup_gain - cost - risk. In loop mode, automatic continuation normally adds loop_followup_gain=2, or 3 when a relevant idle/reusable agent or repeated operations are likely. Spawn or reuse only when net >= 2 and no hard keep-local rule applies.
 - When loop mode auto-submits a continuation such as `go on`, use that Plan-mode iteration to decide what work to give idle relevant agents. After plan self-review produces the revised or final plan, auto-loop may accept the implementation prompt automatically unless a blocker or user-choice prompt remains.
+- For recurring sidecar review, test triage, or focused context checks, prefer one stable `helper` agent task name and reuse it with `followup_task` after `list_agents`; compact it before reuse if it is useful but token-heavy. Spawn a fresh helper only when reuse is unavailable or stale and the net ROI remains positive.
 - Before spawning for exploration, run the cheapest available routing step yourself: `first_moves_predict` when exposed, deferred/MCP first-moves via `tool_search` when needed, then repo navigation indexes or established local knowledge-base tools. If those ranked reads answer the routing question, keep the work local.
 - Spawn only concrete, self-contained work that materially advances the user's task. Keep urgent blockers local when your next step depends on them, and do not spawn an agent just for broad raw repo exploration unless first-moves/context scouting is insufficient.
 - Keep work local for simple exploration, exact file/symbol lookup, first-moves-sufficient routing, git commit/push/tag/rebase/merge, deploy or wrapper promotion, and immediate critical-path blockers.
@@ -686,7 +687,7 @@ fn spawn_agent_common_properties_v2(agent_type_description: &str) -> BTreeMap<St
         (
             "fork_turns".to_string(),
             JsonSchema::string(Some(
-                "Optional number of turns to fork. Defaults to `all`. Use `none`, `all`, or a positive integer string such as `3` to fork only the most recent turns."
+                "Optional number of turns to fork. Defaults to `none`. Use `none`, `all`, or a positive integer string such as `3` to fork only the most recent turns."
                     .to_string(),
             )),
         ),

@@ -120,6 +120,7 @@ fn read_only_user_turn_with_model(
         effort: None,
         summary: None,
         service_tier: None,
+        context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Standard),
         collaboration_mode: None,
         personality: None,
         environments: None,

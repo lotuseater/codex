@@ -134,6 +134,7 @@ async fn copy_paste_local_image_persists_rollout_request_shape() -> anyhow::Resu
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Standard),
             collaboration_mode: None,
             personality: None,
         })
@@ -224,6 +225,7 @@ async fn drag_drop_image_persists_rollout_request_shape() -> anyhow::Result<()> 
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Standard),
             collaboration_mode: None,
             personality: None,
         })

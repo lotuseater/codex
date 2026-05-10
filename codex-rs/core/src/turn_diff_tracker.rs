@@ -7,7 +7,6 @@ use std::process::Command;
 use anyhow::Context;
 use anyhow::Result;
 use anyhow::anyhow;
-use sha1::digest::Output;
 use uuid::Uuid;
 
 use codex_protocol::protocol::FileChange;
@@ -67,10 +66,10 @@ impl TurnDiffTracker {
                     let mode_val = mode.unwrap_or(FileMode::Regular);
                     let content = blob_bytes(path, mode_val).unwrap_or_default();
                     let oid = if mode == Some(FileMode::Symlink) {
-                        format!("{:x}", git_blob_sha1_hex_bytes(&content))
+                        git_blob_sha1_hex_bytes(&content)
                     } else {
                         self.git_blob_oid_for_path(path)
-                            .unwrap_or_else(|| format!("{:x}", git_blob_sha1_hex_bytes(&content)))
+                            .unwrap_or_else(|| git_blob_sha1_hex_bytes(&content))
                     };
                     Some(BaselineFileInfo {
                         path: path.clone(),
@@ -275,10 +274,10 @@ impl TurnDiffTracker {
         // Compute right oid before borrowing baseline content.
         let right_oid = if let Some(b) = right_bytes.as_ref() {
             if current_mode == FileMode::Symlink {
-                format!("{:x}", git_blob_sha1_hex_bytes(b))
+                git_blob_sha1_hex_bytes(b)
             } else {
                 self.git_blob_oid_for_path(&current_external_path)
-                    .unwrap_or_else(|| format!("{:x}", git_blob_sha1_hex_bytes(b)))
+                    .unwrap_or_else(|| git_blob_sha1_hex_bytes(b))
             }
         } else {
             ZERO_OID.to_string()
@@ -369,14 +368,14 @@ impl TurnDiffTracker {
 }
 
 /// Compute the Git SHA-1 blob object ID for the given content (bytes).
-fn git_blob_sha1_hex_bytes(data: &[u8]) -> Output<sha1::Sha1> {
+fn git_blob_sha1_hex_bytes(data: &[u8]) -> String {
     // Git blob hash is sha1 of: "blob <len>\0<data>"
     let header = format!("blob {}\0", data.len());
     use sha1::Digest;
     let mut hasher = sha1::Sha1::new();
     hasher.update(header.as_bytes());
     hasher.update(data);
-    hasher.finalize()
+    hex::encode(hasher.finalize())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

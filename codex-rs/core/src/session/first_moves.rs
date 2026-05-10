@@ -5,11 +5,13 @@ use codex_context_pack::ContextPackRequest;
 use codex_context_pack::has_context_pack;
 use codex_context_pack::is_explicit_repo_routing_prompt;
 use codex_context_pack::render_graphify_scout_pack;
+use codex_first_moves::FirstMovesConfig;
 use codex_first_moves::PredictRequest;
 use codex_first_moves::format_first_moves_context;
 use codex_first_moves::is_legacy_first_moves_context;
 use codex_first_moves::is_whole_repo_exploration_prompt;
 use codex_first_moves::predict;
+use codex_protocol::config_types::ContextBudgetMode;
 use codex_protocol::items::TurnItem;
 use codex_protocol::permissions::FileSystemSandboxKind;
 use codex_repo_context_scout::ScoutCommandMode;
@@ -26,7 +28,10 @@ pub(super) async fn first_moves_context_for_fresh_turn(
     turn_context: &Arc<TurnContext>,
     prompt: &str,
 ) -> Option<String> {
-    let config = &turn_context.config.first_moves;
+    let config = effective_first_moves_config(
+        &turn_context.config.first_moves,
+        turn_context.config.context_budget_mode,
+    );
     if !config.enabled() || !config.inject_context {
         return None;
     }
@@ -63,8 +68,23 @@ pub(super) async fn first_moves_context_for_fresh_turn(
 
     combine_context_pack_and_first_moves(
         context_pack,
-        format_first_moves_context(&first_moves_context, config),
+        format_first_moves_context(&first_moves_context, &config),
     )
+}
+
+fn effective_first_moves_config(
+    config: &FirstMovesConfig,
+    context_budget_mode: ContextBudgetMode,
+) -> FirstMovesConfig {
+    if context_budget_mode != ContextBudgetMode::Slow {
+        return config.clone();
+    }
+
+    let mut config = config.clone();
+    config.max_context_moves = config.max_context_moves.min(4);
+    config.max_prewarm_files = 0;
+    config.min_context_score = config.min_context_score.max(0.70);
+    config
 }
 
 fn should_inject_later_context(prompt: &str) -> bool {
@@ -139,7 +159,7 @@ pub(super) async fn spawn_repo_context_scout_shadow_for_fresh_turn(
     let project_root = turn_context.cwd.to_path_buf();
     let codex_home = turn_context.config.codex_home.to_path_buf();
     let prompt = prompt.to_string();
-    let _ = tokio::task::spawn_blocking(move || {
+    std::mem::drop(tokio::task::spawn_blocking(move || {
         if let Err(err) = run_shadow(ScoutRequest {
             project_root: project_root.as_path(),
             codex_home: codex_home.as_path(),
@@ -150,7 +170,7 @@ pub(super) async fn spawn_repo_context_scout_shadow_for_fresh_turn(
         }) {
             tracing::trace!("repo context scout shadow skipped: {err}");
         }
-    });
+    }));
 }
 
 pub(super) fn merge_first_moves_context(
@@ -218,6 +238,28 @@ mod tests {
                 "<context_pack>\npack\n</context_pack>\n\n<first_moves>\nnative\n</first_moves>"
                     .to_string()
             ),
+        );
+    }
+
+    #[test]
+    fn slow_context_budget_tightens_first_moves_context_without_relaxing_user_caps() {
+        let config = FirstMovesConfig {
+            max_context_moves: 2,
+            max_prewarm_files: 3,
+            min_context_score: 0.8,
+            ..Default::default()
+        };
+
+        let slow = effective_first_moves_config(&config, ContextBudgetMode::Slow);
+
+        assert_eq!(
+            slow,
+            FirstMovesConfig {
+                max_context_moves: 2,
+                max_prewarm_files: 0,
+                min_context_score: 0.8,
+                ..config
+            }
         );
     }
 }

@@ -604,6 +604,7 @@ impl Codex {
             collaboration_mode,
             model_reasoning_summary: config.model_reasoning_summary,
             service_tier,
+            context_budget_mode: config.context_budget_mode,
             developer_instructions: config.developer_instructions.clone(),
             user_instructions,
             personality: config.personality,
@@ -1211,11 +1212,28 @@ impl Session {
         checkpoint_scratchpad::cleanup_scratchpad(path);
     }
 
+    pub(crate) async fn last_user_message_is_continuation_for_semantic_compact(&self) -> bool {
+        let state = self.state.lock().await;
+        state
+            .history
+            .raw_items()
+            .iter()
+            .rev()
+            .find_map(|item| match crate::parse_turn_item(item) {
+                Some(codex_protocol::items::TurnItem::UserMessage(user_message)) => Some(
+                    codex_agent_policy::is_continuation_message(&user_message.message()),
+                ),
+                _ => None,
+            })
+            .unwrap_or(false)
+    }
+
     pub(crate) async fn record_regular_turn_finished_for_semantic_compact(
         &self,
         turn_token_usage: &TokenUsage,
         tool_calls: u64,
         git_commit_observed: bool,
+        is_continuation_turn: bool,
     ) {
         let mut state = self.state.lock().await;
         state.record_regular_turn_finished_for_semantic_compact(
@@ -1223,6 +1241,7 @@ impl Session {
                 token_usage: turn_token_usage,
                 tool_calls,
                 git_commit_observed,
+                is_continuation_turn,
             },
         );
     }

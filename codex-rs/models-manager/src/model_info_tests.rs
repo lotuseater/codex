@@ -17,6 +17,7 @@ fn remote_style_model() -> ModelInfo {
         supported_in_api: true,
         priority: 0,
         additional_speed_tiers: Vec::new(),
+        service_tiers: Vec::new(),
         availability_nux: None,
         upgrade: None,
         base_instructions: "Remote base instructions.".to_string(),

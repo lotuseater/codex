@@ -1043,6 +1043,27 @@ async fn usage_error_slash_command_is_available_from_local_recall() {
 }
 
 #[tokio::test]
+async fn slow_usage_error_slash_command_is_available_from_local_recall() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    submit_composer_text(&mut chat, "/slow maybe");
+
+    assert_eq!(chat.bottom_pane.composer_text(), "");
+
+    let cells = drain_insert_history(&mut rx);
+    let rendered = cells
+        .iter()
+        .map(|cell| lines_to_single_string(cell))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        rendered.contains("Usage: /slow [on|off|status]"),
+        "expected usage message, got: {rendered:?}"
+    );
+    assert_eq!(recall_latest_after_clearing(&mut chat), "/slow maybe");
+}
+
+#[tokio::test]
 async fn unrecognized_slash_command_is_not_added_to_local_recall() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
@@ -1822,6 +1843,7 @@ async fn fast_slash_command_updates_and_persists_local_service_tier() {
             event,
             AppEvent::CodexOp(Op::OverrideTurnContext {
                 service_tier: Some(Some(service_tier)),
+                context_budget_mode: None,
                 ..
             }) if service_tier == ServiceTier::Fast.request_value()
         )),
@@ -1853,6 +1875,7 @@ async fn fast_keybinding_toggle_uses_same_events_as_fast_slash_command() {
             event,
             AppEvent::CodexOp(Op::OverrideTurnContext {
                 service_tier: Some(Some(service_tier)),
+                context_budget_mode: None,
                 ..
             }) if service_tier == ServiceTier::Fast.request_value()
         )),
@@ -1869,6 +1892,93 @@ async fn fast_keybinding_toggle_uses_same_events_as_fast_slash_command() {
     );
 
     assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
+}
+
+#[tokio::test]
+async fn slow_slash_command_updates_and_persists_context_budget_mode() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command(SlashCommand::Slow);
+
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert_eq!(chat.current_context_budget_mode(), ContextBudgetMode::Slow);
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            AppEvent::CodexOp(Op::OverrideTurnContext {
+                service_tier: None,
+                context_budget_mode: Some(ContextBudgetMode::Slow),
+                ..
+            })
+        )),
+        "expected slow-mode override app event; events: {events:?}"
+    );
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            AppEvent::PersistContextBudgetModeSelection {
+                mode: ContextBudgetMode::Slow,
+            }
+        )),
+        "expected slow-mode persistence app event; events: {events:?}"
+    );
+
+    assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
+}
+
+#[tokio::test]
+async fn slow_slash_command_accepts_on_off_and_status_args() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command_with_args(SlashCommand::Slow, "on".to_string(), Vec::new());
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert_eq!(chat.current_context_budget_mode(), ContextBudgetMode::Slow);
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            AppEvent::CodexOp(Op::OverrideTurnContext {
+                context_budget_mode: Some(ContextBudgetMode::Slow),
+                ..
+            })
+        )),
+        "expected slow-mode on override app event; events: {events:?}"
+    );
+
+    chat.dispatch_command_with_args(SlashCommand::Slow, "status".to_string(), Vec::new());
+    let rendered = drain_insert_history(&mut rx)
+        .iter()
+        .map(|lines| lines_to_single_string(lines))
+        .collect::<String>();
+    assert!(
+        rendered.contains("Slow mode is on."),
+        "expected slow-mode status message; got: {rendered:?}"
+    );
+
+    chat.dispatch_command_with_args(SlashCommand::Slow, "off".to_string(), Vec::new());
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert_eq!(
+        chat.current_context_budget_mode(),
+        ContextBudgetMode::Standard
+    );
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            AppEvent::CodexOp(Op::OverrideTurnContext {
+                context_budget_mode: Some(ContextBudgetMode::Standard),
+                ..
+            })
+        )),
+        "expected slow-mode off override app event; events: {events:?}"
+    );
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            AppEvent::PersistContextBudgetModeSelection {
+                mode: ContextBudgetMode::Standard,
+            }
+        )),
+        "expected slow-mode off persistence app event; events: {events:?}"
+    );
 }
 
 #[tokio::test]
@@ -1928,6 +2038,7 @@ async fn queued_fast_slash_applies_before_next_queued_message() {
             event,
             AppEvent::CodexOp(Op::OverrideTurnContext {
                 service_tier: Some(Some(service_tier)),
+                context_budget_mode: None,
                 ..
             }) if service_tier == ServiceTier::Fast.request_value()
         )),
@@ -1951,6 +2062,47 @@ async fn queued_fast_slash_applies_before_next_queued_message() {
 }
 
 #[tokio::test]
+async fn queued_slow_slash_updates_mode_before_next_queued_message() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    set_chatgpt_auth(&mut chat);
+    handle_turn_started(&mut chat, "turn-1");
+
+    queue_composer_text_with_tab(&mut chat, "/slow on");
+    queue_composer_text_with_tab(&mut chat, "hello after slow");
+
+    complete_turn_with_message(&mut chat, "turn-1", Some("done"));
+
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert_eq!(chat.current_context_budget_mode(), ContextBudgetMode::Slow);
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            AppEvent::CodexOp(Op::OverrideTurnContext {
+                context_budget_mode: Some(ContextBudgetMode::Slow),
+                ..
+            })
+        )),
+        "expected queued /slow to update context budget mode before next turn; events: {events:?}"
+    );
+
+    match next_submit_op(&mut op_rx) {
+        Op::UserTurn {
+            items,
+            context_budget_mode: Some(ContextBudgetMode::Slow),
+            ..
+        } => assert_eq!(
+            items,
+            vec![UserInput::Text {
+                text: "hello after slow".to_string(),
+                text_elements: Vec::new(),
+            }]
+        ),
+        other => panic!("expected queued message to submit after slow toggle, got {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn user_turn_sends_standard_override_after_fast_is_turned_off() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5.3-codex")).await;
     chat.thread_id = Some(ThreadId::new());
@@ -1967,6 +2119,7 @@ async fn user_turn_sends_standard_override_after_fast_is_turned_off() {
             event,
             AppEvent::CodexOp(Op::OverrideTurnContext {
                 service_tier: Some(None),
+                context_budget_mode: None,
                 ..
             })
         )),

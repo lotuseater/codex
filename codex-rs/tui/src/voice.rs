@@ -25,7 +25,7 @@ impl VoiceCapture {
     pub fn start_realtime(config: &Config, tx: AppEventSender) -> Result<Self, String> {
         let (device, config) = select_realtime_input_device_and_config(config)?;
 
-        let sample_rate = config.sample_rate().0;
+        let sample_rate = config.sample_rate();
         let channels = config.channels();
         let stopped = Arc::new(AtomicBool::new(false));
         let last_peak = Arc::new(AtomicU16::new(0));
@@ -288,7 +288,7 @@ impl RealtimeAudioPlayer {
     pub(crate) fn start(config: &Config) -> Result<Self, String> {
         let (device, config) =
             crate::audio_device::select_configured_output_device_and_config(config)?;
-        let output_sample_rate = config.sample_rate().0;
+        let output_sample_rate = config.sample_rate();
         let output_channels = config.channels();
         let queue = Arc::new(Mutex::new(VecDeque::new()));
         let stream = build_output_stream(&device, &config, Arc::clone(&queue))?;

@@ -717,6 +717,7 @@ async fn run_review_on_session(
             effort: params.reasoning_effort,
             summary: Some(params.reasoning_summary),
             service_tier: None,
+            context_budget_mode: Some(params.parent_turn.config.context_budget_mode),
             final_output_json_schema: Some(params.schema.clone()),
             collaboration_mode: None,
             personality: params.personality,
