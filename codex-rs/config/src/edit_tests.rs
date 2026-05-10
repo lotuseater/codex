@@ -1,14 +1,17 @@
 use super::*;
-use codex_config::types::AppToolApproval;
-use codex_config::types::McpServerToolConfig;
-use codex_config::types::McpServerTransportConfig;
-use codex_config::types::SessionPickerViewMode;
+use crate::types::AppToolApproval;
+use crate::types::McpServerToolConfig;
+use crate::types::McpServerTransportConfig;
+use crate::types::SessionPickerViewMode;
+use codex_protocol::config_types::ContextBudgetMode;
 use codex_protocol::openai_models::ReasoningEffort;
 use pretty_assertions::assert_eq;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
+use std::path::Path;
 use tempfile::tempdir;
 use toml::Value as TomlValue;
+use toml_edit::DocumentMut;
 
 #[test]
 fn blocking_set_model_top_level() {
@@ -30,6 +33,42 @@ fn blocking_set_model_top_level() {
 model_reasoning_effort = "high"
 "#;
     assert_eq!(contents, expected);
+}
+
+#[test]
+fn set_context_budget_mode_top_level() {
+    let tmp = tempdir().expect("tmpdir");
+    let codex_home = tmp.path();
+
+    apply_blocking(
+        codex_home,
+        /*profile*/ None,
+        &[ConfigEdit::SetContextBudgetMode {
+            mode: ContextBudgetMode::Slow,
+        }],
+    )
+    .expect("persist");
+
+    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    assert_eq!(contents, "context_budget_mode = \"slow\"\n");
+}
+
+#[test]
+fn set_context_budget_mode_profile() {
+    let tmp = tempdir().expect("tmpdir");
+    let codex_home = tmp.path();
+
+    ConfigEditsBuilder::new(codex_home)
+        .with_profile(Some("work"))
+        .set_context_budget_mode(ContextBudgetMode::Slow)
+        .apply_blocking()
+        .expect("persist");
+
+    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    assert_eq!(
+        contents,
+        "[profiles.work]\ncontext_budget_mode = \"slow\"\n"
+    );
 }
 
 #[test]
@@ -1468,4 +1507,97 @@ fn replace_mcp_servers_blocking_clears_table_when_empty() {
 
     let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
     assert!(!contents.contains("mcp_servers"));
+}
+
+#[test]
+fn test_set_project_trusted_writes_explicit_tables() -> anyhow::Result<()> {
+    let project_dir = Path::new("/some/path");
+    let mut doc = DocumentMut::new();
+
+    set_project_trust_level_inner(&mut doc, project_dir, TrustLevel::Trusted)?;
+
+    let contents = doc.to_string();
+
+    let raw_path = project_dir.to_string_lossy();
+    let path_str = if raw_path.contains('\\') {
+        format!("'{raw_path}'")
+    } else {
+        format!("\"{raw_path}\"")
+    };
+    let expected = format!(
+        r#"[projects.{path_str}]
+trust_level = "trusted"
+"#
+    );
+    assert_eq!(contents, expected);
+
+    Ok(())
+}
+
+#[test]
+fn test_set_project_trusted_converts_inline_to_explicit() -> anyhow::Result<()> {
+    let project_dir = Path::new("/some/path");
+
+    // Seed config.toml with an inline project entry under [projects].
+    let raw_path = project_dir.to_string_lossy();
+    let path_str = if raw_path.contains('\\') {
+        format!("'{raw_path}'")
+    } else {
+        format!("\"{raw_path}\"")
+    };
+    let initial = format!(
+        r#"[projects]
+{path_str} = {{ trust_level = "untrusted" }}
+"#
+    );
+    let mut doc = initial.parse::<DocumentMut>()?;
+
+    set_project_trust_level_inner(&mut doc, project_dir, TrustLevel::Trusted)?;
+
+    let contents = doc.to_string();
+
+    let expected = format!(
+        r#"[projects]
+
+[projects.{path_str}]
+trust_level = "trusted"
+"#
+    );
+    assert_eq!(contents, expected);
+
+    Ok(())
+}
+
+#[test]
+fn test_set_project_trusted_migrates_top_level_inline_projects_preserving_entries()
+-> anyhow::Result<()> {
+    let initial = r#"toplevel = "baz"
+projects = { "/Users/mbolin/code/codex4" = { trust_level = "trusted", foo = "bar" } , "/Users/mbolin/code/codex3" = { trust_level = "trusted" } }
+model = "foo""#;
+    let mut doc = initial.parse::<DocumentMut>()?;
+
+    let new_project = Path::new("/Users/mbolin/code/codex2");
+    set_project_trust_level_inner(&mut doc, new_project, TrustLevel::Trusted)?;
+
+    let contents = doc.to_string();
+
+    let new_project_key = project_trust_key(new_project);
+    let expected = format!(
+        r#"toplevel = "baz"
+model = "foo"
+
+[projects."/Users/mbolin/code/codex4"]
+trust_level = "trusted"
+foo = "bar"
+
+[projects."/Users/mbolin/code/codex3"]
+trust_level = "trusted"
+
+[projects."{new_project_key}"]
+trust_level = "trusted"
+"#
+    );
+    assert_eq!(contents, expected);
+
+    Ok(())
 }

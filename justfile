@@ -66,7 +66,11 @@ bazel-lock-update:
 
 [no-cd]
 bazel-lock-check:
-    {{ justfile_directory() }}/scripts/check-module-bazel-lock.sh
+    if ! bazel mod deps --lockfile_mode=error; then \
+      echo "MODULE.bazel.lock is out of date."; \
+      echo "Run 'just bazel-lock-update' and commit the updated lockfile."; \
+      exit 1; \
+    fi
 
 bazel-test:
     bazel test --test_tag_filters=-argument-comment-lint //... --keep_going
@@ -91,7 +95,7 @@ mcp-server-run *args:
 
 # Regenerate the json schema for config.toml from the current config types.
 write-config-schema:
-    cargo run --release -p codex-core --bin codex-write-config-schema
+    cargo run --release -p codex-config --bin codex-write-config-schema
 
 # Regenerate vendored app-server protocol schema artifacts.
 write-app-server-schema *args:

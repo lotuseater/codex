@@ -344,6 +344,14 @@
         "chatgpt_base_url": {
           "type": "string"
         },
+        "context_budget_mode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ContextBudgetMode"
+            }
+          ],
+          "description": "Controls local context-budget behavior for new turns."
+        },
         "desktop_automation": {
           "$ref": "#/definitions/DesktopAutomationToml"
         },
@@ -413,6 +421,15 @@
               "type": "boolean"
             },
             "connectors": {
+              "type": "boolean"
+            },
+            "context_ops": {
+              "type": "boolean"
+            },
+            "context_ops_replace": {
+              "type": "boolean"
+            },
+            "context_ops_shadow": {
               "type": "boolean"
             },
             "default_mode_request_user_input": {
@@ -678,6 +695,9 @@
         "plan_mode_reasoning_effort": {
           "$ref": "#/definitions/ReasoningEffort"
         },
+        "repo_context_scout": {
+          "$ref": "#/definitions/RepoContextScoutToml"
+        },
         "sandbox_mode": {
           "$ref": "#/definitions/SandboxMode"
         },
@@ -725,6 +745,13 @@
         }
       },
       "type": "object"
+    },
+    "ContextBudgetMode": {
+      "enum": [
+        "standard",
+        "slow"
+      ],
+      "type": "string"
     },
     "DebugConfigLockToml": {
       "additionalProperties": false,
@@ -2282,6 +2309,58 @@
           "type": "string"
         }
       ]
+    },
+    "RepoContextScoutModeToml": {
+      "enum": [
+        "off",
+        "shadow",
+        "tool"
+      ],
+      "type": "string"
+    },
+    "RepoContextScoutToml": {
+      "additionalProperties": false,
+      "properties": {
+        "max_anchors_per_file": {
+          "description": "Maximum anchors extracted from one file. Defaults to 24.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_candidates": {
+          "description": "Maximum ranked file candidates. Defaults to 12.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_file_bytes": {
+          "description": "Maximum bytes read from one file while extracting anchors. Defaults to 131072.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_files": {
+          "description": "Maximum files indexed. Defaults to 5000.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_output_tokens": {
+          "description": "Maximum approximate tokens in a scout packet. Defaults to 1200.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "mode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/RepoContextScoutModeToml"
+            }
+          ],
+          "description": "Run mode: off, shadow, or tool. Defaults to shadow in this fork."
+        }
+      },
+      "type": "object"
     },
     "SandboxMode": {
       "enum": [
@@ -3971,6 +4050,14 @@
       "description": "Compact prompt used for history compaction.",
       "type": "string"
     },
+    "context_budget_mode": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/ContextBudgetMode"
+        }
+      ],
+      "description": "Controls local context-budget behavior for new turns."
+    },
     "debug": {
       "allOf": [
         {
@@ -4103,6 +4190,15 @@
           "type": "boolean"
         },
         "connectors": {
+          "type": "boolean"
+        },
+        "context_ops": {
+          "type": "boolean"
+        },
+        "context_ops_replace": {
+          "type": "boolean"
+        },
+        "context_ops_shadow": {
           "type": "boolean"
         },
         "default_mode_request_user_input": {
@@ -4621,6 +4717,15 @@
       ],
       "default": null,
       "description": "Experimental / do not use. Realtime websocket session selection. `version` controls v1/v2 and `type` controls conversational/transcription."
+    },
+    "repo_context_scout": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/RepoContextScoutToml"
+        }
+      ],
+      "default": null,
+      "description": "Durable repo context scout settings."
     },
     "review_model": {
       "description": "Review model override used by the `/review` feature.",

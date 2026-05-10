@@ -56,10 +56,10 @@ mod wsl_paths;
 use crate::marketplace_cmd::MarketplaceCli;
 use crate::mcp_cmd::McpCli;
 
+use codex_config::edit::ConfigEditsBuilder;
 use codex_core::build_models_manager;
 use codex_core::config::Config;
 use codex_core::config::ConfigOverrides;
-use codex_core::config::edit::ConfigEditsBuilder;
 use codex_core::config::find_codex_home;
 use codex_features::FEATURES;
 use codex_features::Stage;

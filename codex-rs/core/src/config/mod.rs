@@ -38,7 +38,6 @@ use codex_config::config_toml::RepoContextScoutToml;
 use codex_config::config_toml::ThreadStoreToml;
 use codex_config::config_toml::validate_model_providers;
 use codex_config::loader::load_config_layers_state;
-use codex_config::loader::project_trust_key;
 use codex_config::profile_toml::ConfigProfile;
 use codex_config::sandbox_mode_requirement_for_permission_profile;
 use codex_config::types::ApprovalsReviewer;
@@ -90,6 +89,7 @@ use codex_model_provider_info::built_in_model_providers;
 use codex_model_provider_info::merge_configured_model_providers;
 use codex_models_manager::ModelsManagerConfig;
 use codex_protocol::config_types::AltScreenMode;
+use codex_protocol::config_types::ContextBudgetMode;
 use codex_protocol::config_types::ForcedLoginMethod;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary;
@@ -137,7 +137,6 @@ use crate::config_lock::lock_layer_from_config;
 use crate::config_lock::read_config_lock_from_path;
 use codex_network_proxy::NetworkProxyConfig;
 use toml::Value as TomlValue;
-use toml_edit::DocumentMut;
 
 pub(crate) mod agent_roles;
 pub mod edit;
@@ -415,6 +414,9 @@ pub struct Config {
 
     /// Effective service tier request id preference for new turns.
     pub service_tier: Option<String>,
+
+    /// Local context-budget behavior for new turns.
+    pub context_budget_mode: ContextBudgetMode,
 
     /// Model used specifically for review sessions.
     pub review_model: Option<String>,
@@ -862,6 +864,8 @@ Use this compact ROI rubric in plans before spawning: new_agent_cost=3 for fresh
 
 When loop mode is active and an automatic continuation such as `go on` is planning the next iteration, assume follow-ups are likely. Plan what work to give any idle relevant agent before spawning a replacement, and after plan self-review produces the revised or final plan, the implementation prompt may be accepted automatically unless a blocker or user-choice prompt remains.
 
+For recurring sidecar review, test triage, or focused context checks, prefer one stable `helper` agent task name and reuse it with `followup_task` after `list_agents`; compact it before reuse if it is useful but token-heavy. Spawn a fresh helper only when reuse is unavailable or stale and the net ROI remains positive.
+
 Keep work local for simple exploration, exact file/symbol lookup, first-moves-sufficient routing, git commit/push/tag/rebase/merge, deploy or wrapper promotion, and immediate critical-path blockers. Root owns finalization and irreversible repo or system actions.
 
 Before any whole-repo or cross-repo exploration, including mid-task replanning, run the cheapest available context-routing tool first: native `first_moves_predict` when exposed, `mcp__wizard_codex__first_moves_predict` or `tool_search` for it when deferred, then repo navigation indexes or existing local knowledge bases when those are the repo's established path. Inspect the high-confidence results locally before spawning exploration workers. Spawn an exploration worker only when the cheap scout is ambiguous, the surface can be split into bounded independent questions, or the worker will verify a narrow hypothesis in parallel.
@@ -890,6 +894,8 @@ Oversee agents actively: call list_agents before spawning related follow-up work
 pub const DEFAULT_MULTI_AGENT_V2_SUBAGENT_USAGE_HINT_TEXT: &str = r#"MultiAgentV2 worker mode is enabled.
 
 You are a bounded worker agent. Stay inside the context contract from the parent. Do not broaden the search to the whole repo unless the parent explicitly redirects you.
+
+If you are a `helper` agent, optimize for a compact handoff: use exact `FIRST_READS`, `first_moves_predict`, `repo_context_scout`, `tool_search`, or other cached context tools before broad shell search, and stop when the parent has enough evidence to act.
 
 Follow CONTEXT_AREA, DO_NOT_INSPECT, SCOUT_EVIDENCE, WHY_AGENT / ROI, FIRST_READS, TOOL_HINTS, TOKEN_TIP, and VERIFICATION. If the context is insufficient, ask the parent for precise extra context instead of guessing broadly.
 
@@ -1157,6 +1163,7 @@ impl Config {
             model_context_window: self.model_context_window,
             model_auto_compact_token_limit: self.model_auto_compact_token_limit,
             tool_output_token_limit: self.tool_output_token_limit,
+            context_budget_mode: self.context_budget_mode,
             base_instructions: self.base_instructions.clone(),
             personality_enabled: self.features.enabled(Feature::Personality),
             model_supports_reasoning_summaries: self.model_supports_reasoning_summaries,
@@ -1635,75 +1642,6 @@ fn ensure_no_inline_bearer_tokens(value: &TomlValue) -> std::io::Result<()> {
     Ok(())
 }
 
-pub(crate) fn set_project_trust_level_inner(
-    doc: &mut DocumentMut,
-    project_path: &Path,
-    trust_level: TrustLevel,
-) -> anyhow::Result<()> {
-    // Ensure we render a human-friendly structure:
-    //
-    // [projects]
-    // [projects."/path/to/project"]
-    // trust_level = "trusted" or "untrusted"
-    //
-    // rather than inline tables like:
-    //
-    // [projects]
-    // "/path/to/project" = { trust_level = "trusted" }
-    let project_key = project_trust_key(project_path);
-
-    // Ensure top-level `projects` exists as a non-inline, explicit table. If it
-    // exists but was previously represented as a non-table (e.g., inline),
-    // replace it with an explicit table.
-    {
-        let root = doc.as_table_mut();
-        // If `projects` exists but isn't a standard table (e.g., it's an inline table),
-        // convert it to an explicit table while preserving existing entries.
-        let existing_projects = root.get("projects").cloned();
-        if existing_projects.as_ref().is_none_or(|i| !i.is_table()) {
-            let mut projects_tbl = toml_edit::Table::new();
-            projects_tbl.set_implicit(true);
-
-            // If there was an existing inline table, migrate its entries to explicit tables.
-            if let Some(inline_tbl) = existing_projects.as_ref().and_then(|i| i.as_inline_table()) {
-                for (k, v) in inline_tbl.iter() {
-                    if let Some(inner_tbl) = v.as_inline_table() {
-                        let new_tbl = inner_tbl.clone().into_table();
-                        projects_tbl.insert(k, toml_edit::Item::Table(new_tbl));
-                    }
-                }
-            }
-
-            root.insert("projects", toml_edit::Item::Table(projects_tbl));
-        }
-    }
-    let Some(projects_tbl) = doc["projects"].as_table_mut() else {
-        return Err(anyhow::anyhow!(
-            "projects table missing after initialization"
-        ));
-    };
-
-    // Ensure the per-project entry is its own explicit table. If it exists but
-    // is not a table (e.g., an inline table), replace it with an explicit table.
-    let needs_proj_table = !projects_tbl.contains_key(project_key.as_str())
-        || projects_tbl
-            .get(project_key.as_str())
-            .and_then(|i| i.as_table())
-            .is_none();
-    if needs_proj_table {
-        projects_tbl.insert(project_key.as_str(), toml_edit::table());
-    }
-    let Some(proj_tbl) = projects_tbl
-        .get_mut(project_key.as_str())
-        .and_then(|i| i.as_table_mut())
-    else {
-        return Err(anyhow::anyhow!("project table missing for {project_key}"));
-    };
-    proj_tbl.set_implicit(false);
-    proj_tbl["trust_level"] = toml_edit::value(trust_level.to_string());
-    Ok(())
-}
-
 /// Patch `CODEX_HOME/config.toml` project state to set trust level.
 /// Use with caution.
 pub fn set_project_trust_level(
@@ -1960,6 +1898,7 @@ pub struct ConfigOverrides {
     pub default_permissions: Option<String>,
     pub model_provider: Option<String>,
     pub service_tier: Option<Option<String>>,
+    pub context_budget_mode: Option<ContextBudgetMode>,
     pub config_profile: Option<String>,
     pub codex_self_exe: Option<PathBuf>,
     pub codex_linux_sandbox_exe: Option<PathBuf>,
@@ -2374,6 +2313,7 @@ impl Config {
             default_permissions: default_permissions_override,
             model_provider,
             service_tier: service_tier_override,
+            context_budget_mode: context_budget_mode_override,
             config_profile: config_profile_key,
             codex_self_exe,
             codex_linux_sandbox_exe,
@@ -2995,6 +2935,10 @@ impl Config {
                 None => Some(service_tier),
             }
         });
+        let context_budget_mode = context_budget_mode_override
+            .or(config_profile.context_budget_mode)
+            .or(cfg.context_budget_mode)
+            .unwrap_or_default();
 
         let compact_prompt = compact_prompt.or(cfg.compact_prompt).and_then(|value| {
             let trimmed = value.trim();
@@ -3224,6 +3168,7 @@ impl Config {
         let config = Self {
             model,
             service_tier,
+            context_budget_mode,
             review_model,
             model_context_window: cfg.model_context_window,
             model_auto_compact_token_limit: cfg.model_auto_compact_token_limit,

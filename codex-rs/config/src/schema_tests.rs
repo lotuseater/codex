@@ -1,6 +1,7 @@
 use super::canonicalize;
 use super::config_schema_json;
 use super::write_config_schema;
+use codex_utils_cargo_bin::find_resource;
 
 use pretty_assertions::assert_eq;
 use similar::TextDiff;
@@ -12,8 +13,8 @@ fn trim_single_trailing_newline(contents: &str) -> &str {
 
 #[test]
 fn config_schema_matches_fixture() {
-    let fixture_path = codex_utils_cargo_bin::find_resource!("config.schema.json")
-        .expect("resolve config schema fixture path");
+    let fixture_path =
+        find_resource!("../core/config.schema.json").expect("resolve config schema fixture path");
     let fixture = std::fs::read_to_string(fixture_path).expect("read config schema fixture");
     let fixture_value: serde_json::Value =
         serde_json::from_str(&fixture).expect("parse config schema fixture");

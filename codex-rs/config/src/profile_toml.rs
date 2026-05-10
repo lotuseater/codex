@@ -13,6 +13,7 @@ use crate::types::Personality;
 use crate::types::SessionPickerViewMode;
 use crate::types::WindowsToml;
 use codex_features::FeaturesToml;
+use codex_protocol::config_types::ContextBudgetMode;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::config_types::SandboxMode;
 use codex_protocol::config_types::ServiceTier;
@@ -29,6 +30,8 @@ pub struct ConfigProfile {
     pub model: Option<String>,
     /// Optional explicit service tier preference for new turns (`fast` or `flex`).
     pub service_tier: Option<ServiceTier>,
+    /// Controls local context-budget behavior for new turns.
+    pub context_budget_mode: Option<ContextBudgetMode>,
     /// The key in the `model_providers` map identifying the
     /// [`ModelProviderInfo`] to use.
     pub model_provider: Option<String>,

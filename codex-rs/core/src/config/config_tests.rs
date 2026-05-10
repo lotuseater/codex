@@ -65,6 +65,7 @@ use codex_model_provider_info::LMSTUDIO_OSS_PROVIDER_ID;
 use codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID;
 use codex_model_provider_info::WireApi;
 use codex_models_manager::bundled_models_response;
+use codex_protocol::config_types::ContextBudgetMode;
 use codex_protocol::config_types::ServiceTier;
 use codex_protocol::models::ActivePermissionProfile;
 use codex_protocol::models::ActivePermissionProfileModification;
@@ -7058,6 +7059,7 @@ async fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             model_context_window: None,
             model_auto_compact_token_limit: None,
             service_tier: None,
+            context_budget_mode: ContextBudgetMode::Standard,
             model_provider_id: "openai".to_string(),
             model_provider: fixture.openai_provider.clone(),
             permissions: Permissions {
@@ -7242,6 +7244,55 @@ async fn legacy_fast_service_tier_override_uses_priority_request_value() -> std:
     Ok(())
 }
 
+#[test]
+fn context_budget_mode_deserializes_top_level_and_profile() {
+    let cfg: ConfigToml = toml::from_str(
+        r#"
+context_budget_mode = "slow"
+
+[profiles.lean]
+context_budget_mode = "standard"
+"#,
+    )
+    .expect("deserialize context budget mode");
+
+    assert_eq!(cfg.context_budget_mode, Some(ContextBudgetMode::Slow));
+    assert_eq!(
+        cfg.profiles
+            .get("lean")
+            .and_then(|profile| profile.context_budget_mode),
+        Some(ContextBudgetMode::Standard)
+    );
+}
+
+#[tokio::test]
+async fn context_budget_mode_profile_overrides_top_level() -> std::io::Result<()> {
+    let fixture = create_test_fixture()?;
+    let mut cfg = fixture.cfg.clone();
+    cfg.context_budget_mode = Some(ContextBudgetMode::Slow);
+    cfg.profiles.insert(
+        "standard".to_string(),
+        ConfigProfile {
+            context_budget_mode: Some(ContextBudgetMode::Standard),
+            ..Default::default()
+        },
+    );
+
+    let config = Config::load_from_base_config_with_overrides(
+        cfg,
+        ConfigOverrides {
+            cwd: Some(fixture.cwd_path()),
+            config_profile: Some("standard".to_string()),
+            ..Default::default()
+        },
+        fixture.codex_home(),
+    )
+    .await?;
+
+    assert_eq!(config.context_budget_mode, ContextBudgetMode::Standard);
+    Ok(())
+}
+
 #[tokio::test]
 async fn fast_default_opt_out_notice_config_is_respected() -> std::io::Result<()> {
     let fixture = create_test_fixture()?;
@@ -7287,6 +7338,7 @@ async fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         model_context_window: None,
         model_auto_compact_token_limit: None,
         service_tier: None,
+        context_budget_mode: ContextBudgetMode::Standard,
         model_provider_id: "openai-custom".to_string(),
         model_provider: fixture.openai_custom_provider.clone(),
         permissions: Permissions {
@@ -7448,6 +7500,7 @@ async fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         model_context_window: None,
         model_auto_compact_token_limit: None,
         service_tier: None,
+        context_budget_mode: ContextBudgetMode::Standard,
         model_provider_id: "openai".to_string(),
         model_provider: fixture.openai_provider.clone(),
         permissions: Permissions {
@@ -7594,6 +7647,7 @@ async fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         model_context_window: None,
         model_auto_compact_token_limit: None,
         service_tier: None,
+        context_budget_mode: ContextBudgetMode::Standard,
         model_provider_id: "openai".to_string(),
         model_provider: fixture.openai_provider.clone(),
         permissions: Permissions {
@@ -7787,105 +7841,6 @@ async fn test_requirements_web_search_mode_allowlist_does_not_warn_when_unset() 
         "{:?}",
         config.startup_warnings
     );
-
-    Ok(())
-}
-
-#[test]
-fn test_set_project_trusted_writes_explicit_tables() -> anyhow::Result<()> {
-    let project_dir = Path::new("/some/path");
-    let mut doc = DocumentMut::new();
-
-    set_project_trust_level_inner(&mut doc, project_dir, TrustLevel::Trusted)?;
-
-    let contents = doc.to_string();
-
-    let raw_path = project_dir.to_string_lossy();
-    let path_str = if raw_path.contains('\\') {
-        format!("'{raw_path}'")
-    } else {
-        format!("\"{raw_path}\"")
-    };
-    let expected = format!(
-        r#"[projects.{path_str}]
-trust_level = "trusted"
-"#
-    );
-    assert_eq!(contents, expected);
-
-    Ok(())
-}
-
-#[test]
-fn test_set_project_trusted_converts_inline_to_explicit() -> anyhow::Result<()> {
-    let project_dir = Path::new("/some/path");
-
-    // Seed config.toml with an inline project entry under [projects]
-    let raw_path = project_dir.to_string_lossy();
-    let path_str = if raw_path.contains('\\') {
-        format!("'{raw_path}'")
-    } else {
-        format!("\"{raw_path}\"")
-    };
-    // Use a quoted key so backslashes don't require escaping on Windows
-    let initial = format!(
-        r#"[projects]
-{path_str} = {{ trust_level = "untrusted" }}
-"#
-    );
-    let mut doc = initial.parse::<DocumentMut>()?;
-
-    // Run the function; it should convert to explicit tables and set trusted
-    set_project_trust_level_inner(&mut doc, project_dir, TrustLevel::Trusted)?;
-
-    let contents = doc.to_string();
-
-    // Assert exact output after conversion to explicit table
-    let expected = format!(
-        r#"[projects]
-
-[projects.{path_str}]
-trust_level = "trusted"
-"#
-    );
-    assert_eq!(contents, expected);
-
-    Ok(())
-}
-
-#[test]
-fn test_set_project_trusted_migrates_top_level_inline_projects_preserving_entries()
--> anyhow::Result<()> {
-    let initial = r#"toplevel = "baz"
-projects = { "/Users/mbolin/code/codex4" = { trust_level = "trusted", foo = "bar" } , "/Users/mbolin/code/codex3" = { trust_level = "trusted" } }
-model = "foo""#;
-    let mut doc = initial.parse::<DocumentMut>()?;
-
-    // Approve a new directory
-    let new_project = Path::new("/Users/mbolin/code/codex2");
-    set_project_trust_level_inner(&mut doc, new_project, TrustLevel::Trusted)?;
-
-    let contents = doc.to_string();
-
-    // Since we created the [projects] table as part of migration, it is kept implicit.
-    // Expect explicit per-project tables, preserving prior entries and appending the new one.
-    let new_project_key = project_trust_key(new_project);
-    let expected = format!(
-        r#"toplevel = "baz"
-model = "foo"
-
-[projects."/Users/mbolin/code/codex4"]
-trust_level = "trusted"
-foo = "bar"
-
-[projects."/Users/mbolin/code/codex3"]
-trust_level = "trusted"
-
-[projects."{new_project_key}"]
-trust_level = "trusted"
-"#
-    );
-    assert_eq!(contents, expected);
 
     Ok(())
 }
@@ -9193,6 +9148,8 @@ fn multi_agent_v2_default_hints_gate_exploration_with_first_moves() {
     assert!(root_hint.contains("loop_followup_gain=0-3"));
     assert!(root_hint.contains("automatic continuation is normally 2"));
     assert!(root_hint.contains("implementation prompt may be accepted automatically"));
+    assert!(root_hint.contains("stable `helper` agent task name"));
+    assert!(root_hint.contains("Spawn a fresh helper only when reuse is unavailable"));
     assert!(root_hint.contains("git commit/push/tag/rebase/merge"));
     assert!(root_hint.contains("Do not spawn an agent just to do a broad opening survey"));
     assert!(root_hint.contains("SCOUT_EVIDENCE"));
@@ -9206,6 +9163,8 @@ fn multi_agent_v2_default_hints_gate_exploration_with_first_moves() {
     assert!(subagent_hint.contains("SCOUT_EVIDENCE"));
     assert!(subagent_hint.contains("WHY_AGENT / ROI"));
     assert!(subagent_hint.contains("skip first_moves_predict"));
+    assert!(subagent_hint.contains("If you are a `helper` agent"));
+    assert!(subagent_hint.contains("repo_context_scout"));
     assert!(subagent_hint.contains("Root owns finalization"));
     assert!(subagent_hint.contains("configured tools, skills, MCP/app surfaces"));
 }

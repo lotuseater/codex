@@ -1,5 +1,9 @@
 use super::*;
+use crate::AppToolApproval;
+use crate::ConfigEditsBuilder;
+use crate::McpServerConfig;
 use crate::McpServerToolConfig;
+use crate::McpServerTransportConfig;
 use pretty_assertions::assert_eq;
 use std::collections::HashMap;
 use std::time::SystemTime;
@@ -64,8 +68,6 @@ async fn replace_mcp_servers_serializes_per_tool_approval_overrides() -> anyhow:
 command = "docs-server"
 supports_parallel_tool_calls = true
 default_tools_approval_mode = "auto"
-
-[mcp_servers.docs.tools]
 
 [mcp_servers.docs.tools.read]
 approval_mode = "prompt"
