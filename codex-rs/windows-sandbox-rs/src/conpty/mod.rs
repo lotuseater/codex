@@ -39,13 +39,18 @@ pub struct ConptyInstance {
     _desktop: Option<LaunchDesktop>,
 }
 
+// SAFETY: HANDLE is `*mut c_void` under windows-sys 0.61+ (not Send), but the kernel handles
+// stored here are owned by this instance and only accessed through its API; sending the
+// instance across thread boundaries (e.g. into a wait/cleanup thread) is sound.
+unsafe impl Send for ConptyInstance {}
+
 impl Drop for ConptyInstance {
     fn drop(&mut self) {
         unsafe {
-            if self.input_write != 0 && self.input_write != INVALID_HANDLE_VALUE {
+            if !self.input_write.is_null() && self.input_write != INVALID_HANDLE_VALUE {
                 CloseHandle(self.input_write);
             }
-            if self.output_read != 0 && self.output_read != INVALID_HANDLE_VALUE {
+            if !self.output_read.is_null() && self.output_read != INVALID_HANDLE_VALUE {
                 CloseHandle(self.output_read);
             }
         }
@@ -61,11 +66,11 @@ impl ConptyInstance {
     }
 
     pub fn take_input_write(&mut self) -> HANDLE {
-        std::mem::replace(&mut self.input_write, 0)
+        std::mem::replace(&mut self.input_write, std::ptr::null_mut())
     }
 
     pub fn take_output_read(&mut self) -> HANDLE {
-        std::mem::replace(&mut self.output_read, 0)
+        std::mem::replace(&mut self.output_read, std::ptr::null_mut())
     }
 }
 

@@ -110,14 +110,14 @@ impl OwnedWinHandle {
         // Transfer ownership to the caller. After this point the caller is responsible for
         // eventually closing the returned HANDLE.
         let handle = self.0;
-        self.0 = 0;
+        self.0 = std::ptr::null_mut();
         handle
     }
 }
 
 impl Drop for OwnedWinHandle {
     fn drop(&mut self) {
-        if self.0 != 0 && self.0 != INVALID_HANDLE_VALUE {
+        if !self.0.is_null() && self.0 != INVALID_HANDLE_VALUE {
             unsafe {
                 CloseHandle(self.0);
             }
@@ -127,7 +127,7 @@ impl Drop for OwnedWinHandle {
 
 unsafe fn create_job_kill_on_close() -> Result<HANDLE> {
     let h_job = OwnedWinHandle::new(CreateJobObjectW(std::ptr::null_mut(), std::ptr::null()));
-    if h_job.raw() == 0 {
+    if h_job.raw().is_null() {
         return Err(anyhow::anyhow!("CreateJobObjectW failed"));
     }
     let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
@@ -155,7 +155,7 @@ fn open_pipe(name: &str, access: u32) -> Result<HANDLE> {
             std::ptr::null_mut(),
             OPEN_EXISTING,
             0,
-            0,
+            std::ptr::null_mut(),
         )
     };
     if handle == windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
@@ -360,12 +360,14 @@ fn spawn_output_reader(
 fn spawn_input_loop(
     mut reader: File,
     stdin_handle: Option<HANDLE>,
-    hpc_handle: Arc<StdMutex<Option<HANDLE>>>,
-    process_handle: Arc<StdMutex<Option<HANDLE>>>,
+    hpc_handle: Arc<StdMutex<Option<usize>>>,
+    process_handle: Arc<StdMutex<Option<usize>>>,
     log_dir: Option<PathBuf>,
 ) -> std::thread::JoinHandle<()> {
+    // HANDLE = *mut c_void (windows-sys 0.61+) is !Send; transit as usize.
+    let stdin_handle_addr = stdin_handle.map(|h| h as usize);
     std::thread::spawn(move || {
-        let mut stdin_handle = stdin_handle;
+        let mut stdin_handle: Option<HANDLE> = stdin_handle_addr.map(|a| a as HANDLE);
         loop {
             let msg = match read_frame(&mut reader) {
                 Ok(Some(v)) => v,
@@ -444,7 +446,7 @@ fn spawn_input_loop(
                     {
                         unsafe {
                             let _ = ResizePseudoConsole(
-                                *hpc,
+                                *hpc as isize,
                                 COORD {
                                     X: cols as i16,
                                     Y: rows as i16,
@@ -458,7 +460,7 @@ fn spawn_input_loop(
                         && let Some(handle) = guard.as_ref()
                     {
                         unsafe {
-                            let _ = TerminateProcess(*handle, 1);
+                            let _ = TerminateProcess(*handle as HANDLE, 1);
                         }
                     }
                 }
@@ -527,7 +529,7 @@ pub fn main() -> Result<()> {
     let stderr_handle = ipc_spawn.stderr_handle;
     let mut conpty_owner = ipc_spawn.conpty_owner;
     let stdin_handle = ipc_spawn.stdin_handle;
-    let hpc_handle = Arc::new(StdMutex::new(ipc_spawn.hpc_handle));
+    let hpc_handle = Arc::new(StdMutex::new(ipc_spawn.hpc_handle.map(|h| h as usize)));
 
     let h_job = unsafe { create_job_kill_on_close().ok() };
     if let Some(job) = h_job {
@@ -536,7 +538,7 @@ pub fn main() -> Result<()> {
         }
     }
 
-    let process_handle = Arc::new(StdMutex::new(Some(pi.hProcess)));
+    let process_handle = Arc::new(StdMutex::new(Some(pi.hProcess as usize)));
 
     let msg = FramedMessage {
         version: 1,
@@ -594,10 +596,10 @@ pub fn main() -> Result<()> {
             GetExitCodeProcess(pi.hProcess, &mut raw_exit);
             exit_code = raw_exit as i32;
         }
-        if pi.hThread != 0 {
+        if !pi.hThread.is_null() {
             CloseHandle(pi.hThread);
         }
-        if pi.hProcess != 0 {
+        if !pi.hProcess.is_null() {
             CloseHandle(pi.hProcess);
         }
         if let Some(job) = h_job {

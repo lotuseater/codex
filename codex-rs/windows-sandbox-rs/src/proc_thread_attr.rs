@@ -44,7 +44,7 @@ impl ProcThreadAttributeList {
         self.buffer.as_mut_ptr() as LPPROC_THREAD_ATTRIBUTE_LIST
     }
 
-    pub fn set_pseudoconsole(&mut self, hpc: isize) -> io::Result<()> {
+    pub fn set_pseudoconsole(&mut self, hpc: HANDLE) -> io::Result<()> {
         let list = self.as_mut_ptr();
         let ok = unsafe {
             UpdateProcThreadAttribute(

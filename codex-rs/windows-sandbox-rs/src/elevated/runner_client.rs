@@ -110,14 +110,18 @@ fn connect_pipe_with_timeout(
 ) -> Result<()> {
     let pipe_label = pipe_label.to_string();
     let pipe_label_for_thread = pipe_label.clone();
-    let (thread_handle_tx, thread_handle_rx) = mpsc::sync_channel(1);
+    // HANDLE is `*mut c_void` (not Send) under windows-sys 0.61+, so transit handles across the
+    // spawn boundary as `usize` and re-cast inside the closure.
+    let h_pipe_addr = h_pipe as usize;
+    let (thread_handle_tx, thread_handle_rx) = mpsc::sync_channel::<Result<usize>>(1);
     let (connect_result_tx, connect_result_rx) = mpsc::sync_channel(1);
     let mut connect_thread = Some(
         thread::Builder::new()
             .name(format!("codex-runner-connect-{pipe_label}"))
             .spawn(move || {
+                let h_pipe: HANDLE = h_pipe_addr as HANDLE;
                 let current_process = unsafe { GetCurrentProcess() };
-                let mut thread_handle = 0;
+                let mut thread_handle: HANDLE = std::ptr::null_mut();
                 let duplicate_ok = unsafe {
                     DuplicateHandle(
                         current_process,
@@ -139,7 +143,7 @@ fn connect_pipe_with_timeout(
 
                 // Publish the helper thread HANDLE before the blocking pipe connect so the
                 // parent can cancel this specific operation if it times out.
-                let _ = thread_handle_tx.send(Ok(thread_handle));
+                let _ = thread_handle_tx.send(Ok(thread_handle as usize));
 
                 let result = connect_pipe(h_pipe, expected_runner_pid)
                     .map_err(anyhow::Error::from)
@@ -147,9 +151,9 @@ fn connect_pipe_with_timeout(
                 let _ = connect_result_tx.send(result);
             })?,
     );
-    let thread_handle = thread_handle_rx.recv().map_err(|_| {
+    let thread_handle: HANDLE = thread_handle_rx.recv().map_err(|_| {
         anyhow::anyhow!("runner {pipe_label} connect thread exited before publishing its handle")
-    })??;
+    })?? as HANDLE;
 
     let result = match connect_result_rx.recv_timeout(RUNNER_PIPE_CONNECT_TIMEOUT) {
         Ok(result) => {
@@ -290,7 +294,7 @@ pub(crate) fn spawn_runner_transport(
     })();
 
     unsafe {
-        if pi.hThread != 0 {
+        if !pi.hThread.is_null() {
             CloseHandle(pi.hThread);
         }
     }
@@ -300,7 +304,7 @@ pub(crate) fn spawn_runner_transport(
             // Keep the process handle alive until the pipe handshake finishes. If the handshake
             // fails after the runner process has already launched, we still need a way to stop
             // that child instead of leaking a stray `codex-command-runner.exe`.
-            if pi.hProcess != 0 {
+            if !pi.hProcess.is_null() {
                 let _ = TerminateProcess(pi.hProcess, 1);
                 CloseHandle(pi.hProcess);
             }
@@ -326,7 +330,7 @@ pub(crate) fn spawn_runner_transport(
     })();
     if let Err(err) = startup_result {
         unsafe {
-            if pi.hProcess != 0 {
+            if !pi.hProcess.is_null() {
                 let _ = TerminateProcess(pi.hProcess, 1);
                 CloseHandle(pi.hProcess);
             }
@@ -336,7 +340,7 @@ pub(crate) fn spawn_runner_transport(
     }
 
     unsafe {
-        if pi.hProcess != 0 {
+        if !pi.hProcess.is_null() {
             // The runner has now connected both pipes *and* acknowledged the spawn request, so
             // startup is complete. At that point the transport pipes become the only lifetime
             // anchor we need to keep the session alive.

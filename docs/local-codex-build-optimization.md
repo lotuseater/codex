@@ -236,3 +236,106 @@ When running from the repo root instead of `codex-rs`, set `$log` under `logs\..
 7. Run the produced `codex.exe --version`.
 8. For interactive TUI verification, run that same binary with a temporary `log_dir`.
 9. Only run `FastRelease` when release-profile behavior itself matters, and always capture a build log.
+
+## Profile change 2026-05-10
+
+Updated `codex-rs/.cargo/config.toml` `[profile.release]` to lower per-rustc-job
+peak RSS on this 15.7 GB Win 11 machine:
+
+- `opt-level = 1` (was `2`) — LLVM runs fewer optimization passes per crate,
+  cutting peak codegen RSS by an expected 20–30% on the worst-offender crates
+  (`codex_app_server_protocol`, `codex_config`, `aws_sdk_sts`, `tokio`,
+  `rustls`). Binary size grows ~5–15%; runtime perf drop is imperceptible for
+  a CLI tool whose bottleneck is LLM I/O, not CPU.
+- `codegen-units = 256` (was `64`) — each LLVM module is smaller, so peak
+  rustc memory inside one cargo job drops further. With `--jobs 2` capped by
+  the build script, aggregate parallel pressure stays bounded.
+- `embed-bitcode = false` — defensive: Cargo already implies this for
+  non-LTO release builds, but stating it explicitly keeps the per-rustc
+  memory peak predictable if `lto` is ever flipped on.
+- `split-debuginfo = "off"` — matches the workspace-shipped profile so
+  switching between the local override and upstream shape does not
+  regenerate debuginfo artifacts.
+
+Because this changes the release-profile signature, the build script's stamp
+will mismatch on the next run. Pass
+`-ResetReleaseCacheOnProfileChange` once to accept the clean rebuild:
+
+```powershell
+.\scripts\build-local-codex.ps1 -Mode LowMemRelease -ResetReleaseCacheOnProfileChange
+```
+
+`scripts/build-local-codex.ps1` now auto-enables sccache for any release
+mode when `sccache` is on `PATH` and the caller did not pass
+`-UseSccache:$false`. Pass `-UseSccache:$false` to opt out. The detected
+path is printed once at the start of the run for traceability.
+
+### Things ruled out (and why)
+
+- **`panic = "abort"`** — would cut binary size and link time, but
+  `codex-tui/src/lib.rs:1025`, `codex-exec/src/lib.rs:464`, and
+  `codex-windows-sandbox-rs/src/wfp_setup.rs:106,131` rely on
+  `std::panic::catch_unwind` to make OTel and WFP setup recoverable.
+  `panic = "abort"` makes `catch_unwind` a no-op, so those failure paths
+  would become hard crashes instead. Skip.
+- **`rustc-codegen-cranelift` backend** — nightly-only and explicitly not
+  production-ready for x86_64-pc-windows-msvc as of late 2025
+  (per the Rust project goals 2025h2 doc). Toolchain is pinned to stable
+  1.93.0 here, so this is doubly out of scope.
+- **`-Z threads` parallel front-end** — nightly-only, and per
+  rust-lang/rust#117638 it allocates per-thread arenas up front, which is
+  *exactly the wrong direction* on a memory-constrained box.
+- **Switching the linker to `rust-lld`** — the link step is short
+  relative to the rustc/LLVM-dominated codegen phase, and lld-link can
+  break specific MSVC import-library lookups. Not worth the risk for the
+  win.
+- **Modifying the user's rustc fork** — peak RSS during codex builds is
+  dominated by LLVM codegen during monomorphization of generic-heavy
+  crates, not by rustc's own memory. Touching `compiler/rustc_*` would
+  not move the needle for *this* workload, and building rustc stage 2 on
+  this hardware is a multi-hour, multi-GB-disk project. Out of scope.
+
+## 2026-05-10 dedup slices (Slices 2 & 3)
+
+Two dependency-graph dedup slices landed on top of Slice 1's profile/sccache wins.
+Both used the persistent snapshot tooling described in `scripts/dep-snapshot.ps1`,
+which writes `docs/dep-snapshot.md` with the lockfile census + per-crate
+non-workspace pin candidates + cross-version dup families.
+
+### Slice 2 — caret-loosening + workspace single-source
+
+- ~70 patch-pinned workspace deps loosened to caret form (e.g. `chrono = "0.4.43"` → `"0.4"`).
+- 23 per-crate `dep = "x.y.z"` pins consolidated into `{ workspace = true }` across 9 manifests.
+- Workspace `chrono` switched to `default-features = false, features = ["clock", "std", "iana-time-zone"]` so consumers can override.
+- `windows-sys` added as workspace dep (`version = "0.61", default-features = false`).
+- `windows = { version = "0.62", default-features = false }` added as workspace dep too.
+- `windows = "0.58" → "0.62"` in `windows-sandbox-rs` collapsed 6 windows-* family entries.
+- `windows-sys 0.52 → 0.61` migration in `windows-sandbox-rs` (~30 sites: HANDLE = `*mut c_void` migration; `0` literals → `std::ptr::null_mut()`; equality `== 0` → `.is_null()`; cross-thread `Send` via usize transit; `Send` impls on `ConptyInstance`, `LaunchDesktop`, `PrivateDesktop`).
+
+### Slice 3 — hash-family bump + tui windows-sys + icu pin
+
+- `sha1 0.10 → 0.11`, `sha2 0.10 → 0.11`, `hmac 0.12 → 0.13` in workspace.
+- `hex = "0.4"` added to workspace deps (already a transitive — no new crate).
+- ~12 `format!("{:x}", digest)` sites migrated to `hex::encode(digest)` across `analytics`, `external-agent-sessions`, `repo-context-scout`, `first-moves`, `secrets`, `rmcp-client`, `exec-server`, `login`, `codex-mcp`, `core` (`turn_diff_tracker.rs` helper changed return type to `String`).
+- `hex = { workspace = true }` added to those 9 per-crate manifests.
+- HMAC `Hmac::new_from_slice` requires `use hmac::KeyInit;` import — added in `cloud-requirements`, `app-server-transport`, `app-server` test.
+- `windows-sys 0.52 → 0.61` migration extended to `tui/src/ide_context/windows_pipe.rs` (HANDLE migration, `BOOL` moved to `windows_sys::core`, `PSID` moved to `windows_sys::Win32::Security`) and `tui/src/tui.rs` (`handle == 0` → `is_null`).
+- `icu_decimal/icu_locale_core/icu_provider` tilde-pinned (`~2.1`) in workspace so future `cargo update` cannot drift them past `temporal_rs 0.1.2`'s API compatibility (the regression that derailed several earlier build attempts).
+
+### Slice metrics (build, deploy, dedup)
+
+| Slice | Deployed binary | dup families before → after | Notes |
+|---|---|---|---|
+| 1 | `~/.codex/local-builds/codex-custom-20260510-100936/codex.exe` | (initial) **93** | profile/sccache/link-arg wins; chardetng/ctor/cpal/whoami bumps kept |
+| 2 | (rolled into Slice 3 deploy) | 93 → **60** | windows family collapsed (-6), 23 per-crate pins consolidated |
+| 3 | `~/.codex/local-builds/codex-custom-20260510-181104/codex.exe` | 60 → **61** (sha1 0.10 stays via aws-config) | hash family migrated; net dup ±0 but code is on modern crypto stack |
+
+Slice 3 final cold-ish build (after target/release wipe + many partial restarts) wall time: ~2.4 min from cargo invocation; full codex.exe size 228.9 MB. The "true cold" measurement was repeatedly disrupted by iterative compile-error fixes, so the 2.4-min number is closer to a warm/sccache-assisted rebuild than a green-field cold build.
+
+### Out of scope for next iterations
+
+- Forking `starlark-rust` to dedup `convert_case 0.6`, `strum 0.26`, `rustyline 14`, `textwrap 0.11`, `petgraph 0.6`, `lru 0.12`, `derive_more 1` — all transitively pinned by `starlark = "0.13"`. Would dedup ~6–8 families per fork release but adds a maintenance burden.
+- `rmcp 0.15 → 1.x` — multi-day API migration; would dedup `schemars 0.9 + 1.2` and other rmcp transitives.
+- `keyring 3 → keyring-core` — keyring 4 is a sample-CLI crate; library users must migrate to a different crate (`keyring-core`).
+- `schemars 0.8 → 1` — derive-macro migration across ~30 codex-* crates.
+- `sqlx 0.8 → 0.9` — alpha-only.

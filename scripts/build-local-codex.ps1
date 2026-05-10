@@ -40,6 +40,19 @@ if ($Mode -eq "DevRelease") {
     throw "Build only release!"
 }
 
+# Auto-enable sccache for release builds when it is available on PATH and the
+# caller did not pass -UseSccache:$false explicitly. The release-only rustc
+# wrapper chains sccache safely, and warm-cache hits are the single biggest
+# win for partial rebuilds on this checkout.
+if (-not $PSBoundParameters.ContainsKey('UseSccache') -and
+    $Mode -in @("FastRelease", "LowMemRelease", "FullRelease")) {
+    $autoSccache = Get-Command sccache -ErrorAction SilentlyContinue
+    if ($autoSccache) {
+        $UseSccache = $true
+        Write-Host "sccache detected at $($autoSccache.Source) - auto-enabled. Pass -UseSccache:`$false to disable."
+    }
+}
+
 if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
     $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 }

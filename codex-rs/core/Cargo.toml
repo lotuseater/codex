@@ -9,10 +9,6 @@ doctest = false
 name = "codex_core"
 path = "src/lib.rs"
 
-[[bin]]
-name = "codex-write-config-schema"
-path = "src/bin/config_schema.rs"
-
 [lints]
 workspace = true
 
@@ -24,7 +20,6 @@ async-trait = { workspace = true }
 base64 = { workspace = true }
 bm25 = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
-clap = { workspace = true, features = ["derive"] }
 codex-analytics = { workspace = true }
 codex-agent-graph-store = { workspace = true }
 codex-agent-policy = { workspace = true }
@@ -110,6 +105,7 @@ rmcp = { workspace = true, default-features = false, features = [
 ] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+hex = { workspace = true }
 sha1 = { workspace = true }
 shlex = { workspace = true }
 similar = { workspace = true }

@@ -261,129 +261,136 @@ mcp_test_support = { path = "mcp-server/tests/common" }
 
 # External
 age = "0.11.1"
-allocative = "0.3.3"
+allocative = "0.3.4"
 ansi-to-tui = "7.0.0"
 anyhow = "1"
 arboard = { version = "3", features = ["wayland-data-control"] }
 arc-swap = "1.9.0"
 assert_cmd = "2"
-assert_matches = "1.5.0"
-async-channel = "2.3.1"
-async-io = "2.6.0"
-async-stream = "0.3.6"
-async-trait = "0.1.89"
+assert_matches = "1"
+async-channel = "2"
+async-io = "2"
+async-stream = "0.3"
+async-trait = "0.1"
 aws-config = "1"
 aws-credential-types = "1"
 aws-sigv4 = "1"
 aws-types = "1"
 axum = { version = "0.8", default-features = false }
-base64 = "0.22.1"
-bm25 = "2.3.2"
-bytes = "1.10.1"
-chardetng = "0.1.17"
-chrono = "0.4.43"
+base64 = "0.22"
+bm25 = "2"
+bytes = "1"
+chardetng = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std", "iana-time-zone"] }
 clap = "4"
 clap_complete = "4"
-color-eyre = "0.6.3"
-constant_time_eq = "0.3.1"
-crossbeam-channel = "0.5.15"
-crypto_box = { version = "0.9.1", features = ["seal"] }
-crossterm = "0.28.1"
-csv = "1.3.1"
-ctor = "0.6.3"
+color-eyre = "0.6"
+constant_time_eq = "0.3"
+crossbeam-channel = "0.5"
+crypto_box = { version = "0.9", features = ["seal"] }
+crossterm = "0.28"
+csv = "1"
+ctor = "1"
 deno_core_icudata = "0.77.0"
 derive_more = "2"
-diffy = "0.4.2"
+diffy = "0.5"
 dirs = "6"
-dns-lookup = "3.0.1"
-dotenvy = "0.15.7"
-dunce = "1.0.4"
-ed25519-dalek = { version = "2.2.0", features = ["pkcs8"] }
-encoding_rs = "0.8.35"
-env-flags = "0.1.1"
-env_logger = "0.11.9"
-eventsource-stream = "0.2.3"
-flate2 = "1.1.8"
+dns-lookup = "3"
+dotenvy = "0.15"
+dunce = "1"
+ed25519-dalek = { version = "2", features = ["pkcs8"] }
+encoding_rs = "0.8"
+env-flags = "0.1"
+env_logger = "0.11"
+eventsource-stream = "0.2"
+flate2 = "1"
 futures = { version = "0.3", default-features = false }
-gethostname = "1.1.0"
-gix = { version = "0.81.0", default-features = false, features = ["sha1"] }
+gethostname = "1"
+gix = { version = "0.83", default-features = false, features = ["sha1"] }
 glob = "0.3"
 globset = "0.4"
-hmac = "0.12.1"
-http = "1.3.1"
-iana-time-zone = "0.1.64"
-icu_decimal = "2.1"
-icu_locale_core = "2.1"
-icu_provider = { version = "2.1", features = ["sync"] }
-ignore = "0.4.23"
+hex = "0.4"
+hmac = "0.13"
+http = "1"
+iana-time-zone = "0.1"
+icu_decimal = "~2.1"
+icu_locale_core = "~2.1"
+icu_provider = { version = "~2.1", features = ["sync"] }
+ignore = "0.4"
 image = { version = "^0.25.9", default-features = false }
-include_dir = "0.7.4"
-indexmap = "2.12.0"
-insta = "1.46.3"
-inventory = "0.3.19"
-itertools = "0.14.0"
-jsonwebtoken = "9.3.1"
+include_dir = "0.7"
+indexmap = "2"
+insta = "1.47"
+inventory = "0.3"
+itertools = "0.14"
+jsonwebtoken = "9"
 keyring = { version = "3.6", default-features = false }
-landlock = "0.4.4"
+landlock = "0.4"
 lazy_static = "1"
-libc = "0.2.182"
+libc = "0.2"
 log = "0.4"
-lru = "0.16.3"
-maplit = "1.0.2"
-mime_guess = "2.0.5"
-multimap = "0.10.0"
-notify = "8.2.0"
+lru = "0.18"
+maplit = "1"
+mime_guess = "2"
+multimap = "0.10"
+notify = "8"
 nucleo = { git = "https://github.com/helix-editor/nucleo.git", rev = "4253de9faabb4e5c6d81d946a5e35a90f87347ee" }
-once_cell = "1.20.2"
+once_cell = "1"
 openssl-sys = "*"
-opentelemetry = "0.31.0"
-opentelemetry-appender-tracing = "0.31.0"
-opentelemetry-otlp = "0.31.0"
-opentelemetry-semantic-conventions = "0.31.0"
-opentelemetry_sdk = "0.31.0"
-os_info = "3.12.0"
-owo-colors = "4.3.0"
-path-absolutize = "3.1.1"
+opentelemetry = "0.31"
+opentelemetry-appender-tracing = "0.31"
+opentelemetry-otlp = "0.31"
+opentelemetry-semantic-conventions = "0.31"
+opentelemetry_sdk = "0.31"
+os_info = "3"
+owo-colors = "4"
+path-absolutize = "3"
 pathdiff = "0.2"
-p256 = "0.13.2"
-portable-pty = "0.9.0"
+p256 = "0.13"
+portable-pty = "0.9"
 predicates = "3"
-pretty_assertions = "1.4.1"
+pretty_assertions = "1"
 pulldown-cmark = "0.10"
-quick-xml = "0.38.4"
-rand = "0.9"
-ratatui = "0.29.0"
-ratatui-macros = "0.6.0"
-rcgen = { version = "0.14.7", default-features = false, features = [
+quick-xml = "0.38"
+rand = { version = "0.9", default-features = false, features = [
+    "os_rng",
+    "small_rng",
+    "std",
+    "std_rng",
+    "thread_rng",
+] }
+ratatui = "0.29"
+ratatui-macros = "0.6"
+rcgen = { version = "0.14", default-features = false, features = [
     "aws_lc_rs",
     "pem",
 ] }
-regex = "1.12.3"
-regex-lite = "0.1.8"
-reqwest = { version = "0.12", features = ["cookies"] }
+regex = "1"
+regex-lite = "0.1"
+reqwest = { version = "0.12", default-features = false, features = ["cookies", "rustls-tls"] }
 rmcp = { version = "0.15.0", default-features = false }
 runfiles = { git = "https://github.com/dzbarsky/rules_rust", rev = "b56cbaa8465e74127f1ea216f813cd377295ad81" }
 rustls = { version = "0.23", default-features = false, features = [
     "ring",
     "std",
 ] }
-rustls-native-certs = "0.8.3"
-rustls-pki-types = "1.14.0"
+rustls-native-certs = "0.8"
+rustls-pki-types = "1"
 schemars = "0.8.22"
-seccompiler = "0.5.0"
-semver = "1.0"
-sentry = "0.46.0"
+seccompiler = "0.5"
+semver = "1"
+sentry = "0.46"
 serde = "1"
 serde_json = "1"
-serde_path_to_error = "0.1.20"
+serde_path_to_error = "0.1"
 serde_with = "3.17"
 serde_yaml = "0.9"
-serial_test = "3.2.0"
-sha1 = "0.10.6"
-sha2 = "0.10"
-shlex = "1.3.0"
-similar = "2.7.0"
-socket2 = "0.6.1"
+serial_test = "3"
+sha1 = "0.11"
+sha2 = "0.11"
+shlex = "1"
+similar = "3"
+socket2 = "0.6"
 sqlx = { version = "0.8.6", default-features = false, features = [
     "chrono",
     "json",
@@ -394,59 +401,61 @@ sqlx = { version = "0.8.6", default-features = false, features = [
     "time",
     "uuid",
 ] }
-starlark = "0.13.0"
-strum = "0.27.2"
-strum_macros = "0.28.0"
-supports-color = "3.0.2"
+starlark = "0.13"
+strum = "0.28"
+strum_macros = "0.28"
+supports-color = "3"
 syntect = "5"
-sys-locale = "0.3.2"
+sys-locale = "0.3"
 tar = { version = "=0.4.45", default-features = false }
-tempfile = "3.23.0"
-test-log = "0.2.19"
-textwrap = "0.16.2"
-thiserror = "2.0.17"
-time = "0.3.47"
+tempfile = "3"
+test-log = "0.2"
+textwrap = "0.16"
+thiserror = "2"
+time = "0.3"
 tiny_http = "0.12"
 tokio = "1"
-tokio-stream = "0.1.18"
+tokio-stream = "0.1"
 tokio-test = "0.4"
-tokio-tungstenite = { version = "0.28.0", features = [
+tokio-tungstenite = { version = "0.28", features = [
     "proxy",
     "rustls-tls-native-roots",
 ] }
-tokio-util = "0.7.18"
-toml = "0.9.5"
-toml_edit = "0.24.0"
-tracing = "0.1.44"
-tracing-appender = "0.2.3"
-tracing-opentelemetry = "0.32.0"
-tracing-subscriber = "0.3.22"
-tracing-test = "0.2.5"
-tonic = { version = "0.14.3", default-features = false, features = ["channel", "codegen"] }
-tonic-prost = "0.14.3"
-tree-sitter = "0.25.10"
+tokio-util = "0.7"
+toml = "1"
+toml_edit = "0.25"
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-opentelemetry = "0.32"
+tracing-subscriber = "0.3"
+tracing-test = "0.2"
+tonic = { version = "0.14", default-features = false, features = ["channel", "codegen"] }
+tonic-prost = "0.14"
+tree-sitter = "0.25"
 tree-sitter-bash = "0.25"
 ts-rs = "11"
-tungstenite = { version = "0.27.0", features = ["deflate", "proxy"] }
-uds_windows = "1.1.0"
-unicode-segmentation = "1.12.0"
+tungstenite = { version = "0.27", features = ["deflate", "proxy"] }
+uds_windows = "1"
+unicode-segmentation = "1"
 unicode-width = "0.2"
 url = "2"
 urlencoding = "2.1"
 uuid = "1"
 v8 = "=146.4.0"
-vt100 = "0.16.2"
-walkdir = "2.5.0"
-webbrowser = "1.0"
+vt100 = "0.16"
+walkdir = "2"
+webbrowser = "1"
 which = "8"
-whoami = "1.6.1"
-wildmatch = "2.6.1"
-winapi-util = "0.1.11"
-zip = "2.4.2"
+whoami = "2"
+wildmatch = "2"
+winapi-util = "0.1"
+windows = { version = "0.62", default-features = false }
+windows-sys = { version = "0.61", default-features = false }
+zip = "2"
 zstd = "0.13"
 
 wiremock = "0.6"
-zeroize = "1.8.2"
+zeroize = "1.8"
 
 [workspace.lints]
 rust = {}
@@ -531,9 +540,21 @@ opt-level = 0
 # Uncomment to debug local changes.
 # ratatui = { path = "../../ratatui" }
 crossterm = { git = "https://github.com/nornagon/crossterm", rev = "87db8bfa6dc99427fd3b071681b07fc31c6ce995" }
-ratatui = { git = "https://github.com/nornagon/ratatui", rev = "9b2ad1298408c45918ee9f8241a6f95498cdbed2" }
+ratatui = { git = "https://github.com/lotuseater/ratatui", branch = "unicode-width-loose" }
 tokio-tungstenite = { git = "https://github.com/openai-oss-forks/tokio-tungstenite", rev = "132f5b39c862e3a970f731d709608b3e6276d5f6" }
 tungstenite = { git = "https://github.com/openai-oss-forks/tungstenite-rs", rev = "9200079d3b54a1ff51072e24d81fd354f085156f" }
+
+# Local fork with bumped derive_more 2 / rustyline 18 / textwrap 0.16 / lalrpop 0.23 transitives
+# (see https://github.com/lotuseater/starlark-rust deps/bump-2026-05). Dedupes a chunk of
+# starlark's transitive crate-version splits in the codex lockfile.
+starlark = { git = "https://github.com/lotuseater/starlark-rust", branch = "deps/bump-2026-05-on-0.13.0" }
+starlark_derive = { git = "https://github.com/lotuseater/starlark-rust", branch = "deps/bump-2026-05-on-0.13.0" }
+starlark_map = { git = "https://github.com/lotuseater/starlark-rust", branch = "deps/bump-2026-05-on-0.13.0" }
+starlark_syntax = { git = "https://github.com/lotuseater/starlark-rust", branch = "deps/bump-2026-05-on-0.13.0" }
+# Redirect allocative + allocative_derive to the same fork so codex's workspace allocative 0.3.4
+# and starlark's internal allocative 0.3.3 share a single source instead of double-compiling.
+allocative = { git = "https://github.com/lotuseater/starlark-rust", branch = "deps/bump-2026-05-on-0.13.0" }
+allocative_derive = { git = "https://github.com/lotuseater/starlark-rust", branch = "deps/bump-2026-05-on-0.13.0" }
 
 # Uncomment to debug local changes.
 # rmcp = { path = "../../rust-sdk/crates/rmcp" }

@@ -237,6 +237,11 @@ crate.annotation(
     crate = "rustc_apfloat",
     gen_build_script = "off",
 )
+crate.annotation(
+    # The starlark fork's root workspace does not list this proc-macro crate.
+    crate = "dupe_derive",
+    strip_prefix = "gazebo/dupe_derive",
+)
 
 inject_repo(crate, "zstd")
 use_repo(crate, "argument_comment_lint_crates")

@@ -1,5 +1,8 @@
 [target.'cfg(all(windows, target_env = "msvc"))']
-rustflags = ["-C", "link-arg=/STACK:8388608"]
+rustflags = [
+    "-C", "link-arg=/STACK:8388608",
+    "-C", "link-arg=/DEBUG:NONE",
+]
 
 # MSVC emits a warning about code that may trip "Cortex-A53 MPCore processor bug #843419" (see
 # https://developer.arm.com/documentation/epm048406/latest) which is sometimes emitted by LLVM.
@@ -12,8 +15,12 @@ rustflags = ["-C", "link-arg=-Wl,--stack,8388608"]
 
 [profile.release]
 lto = "off"
-codegen-units = 64
-opt-level = 2
+codegen-units = 256
+opt-level = 1
 debug = 0
 strip = "symbols"
 incremental = false
+# Match the workspace `[profile.release]` so flipping between this local
+# profile and the upstream-shipped profile does not redo split-debuginfo
+# work. Local release keeps debug = 0 anyway, so this is mostly cosmetic.
+split-debuginfo = "off"
