@@ -1,5 +1,6 @@
 use super::*;
 use codex_protocol::approvals::ElicitationRequest as CoreElicitationRequest;
+use codex_protocol::config_types::ContextBudgetMode;
 use codex_protocol::items::AgentMessageContent;
 use codex_protocol::items::AgentMessageItem;
 use codex_protocol::items::FileChangeItem;
@@ -1905,6 +1906,31 @@ fn client_request_turn_start_granular_approval_policy_is_marked_experimental() {
 }
 
 #[test]
+fn turn_start_params_round_trips_context_budget_mode() {
+    let params = TurnStartParams {
+        thread_id: "thr_123".to_string(),
+        input: Vec::new(),
+        context_budget_mode: Some(ContextBudgetMode::Slow),
+        ..Default::default()
+    };
+
+    let value = serde_json::to_value(&params).expect("serialize turn/start params");
+    assert_eq!(value["contextBudgetMode"], json!("slow"));
+
+    let decoded: TurnStartParams = serde_json::from_value(json!({
+        "threadId": "thr_123",
+        "input": [],
+        "contextBudgetMode": "standard"
+    }))
+    .expect("deserialize turn/start params");
+
+    assert_eq!(
+        decoded.context_budget_mode,
+        Some(ContextBudgetMode::Standard)
+    );
+}
+
+#[test]
 fn mcp_server_elicitation_response_round_trips_rmcp_result() {
     let rmcp_result = rmcp::model::CreateElicitationResult {
         action: rmcp::model::ElicitationAction::Accept,
@@ -3514,6 +3540,7 @@ fn turn_start_params_preserve_explicit_null_service_tier() {
         permissions: None,
         model: None,
         service_tier: None,
+        context_budget_mode: None,
         effort: None,
         summary: None,
         output_schema: None,

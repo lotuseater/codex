@@ -360,6 +360,7 @@ impl TurnRequestProcessor {
             || params.permissions.is_some()
             || params.model.is_some()
             || params.service_tier.is_some()
+            || params.context_budget_mode.is_some()
             || params.effort.is_some()
             || params.summary.is_some()
             || collaboration_mode.is_some()
@@ -420,6 +421,7 @@ impl TurnRequestProcessor {
         let effort = params.effort.map(Some);
         let summary = params.summary;
         let service_tier = params.service_tier;
+        let context_budget_mode = params.context_budget_mode;
         let personality = params.personality;
 
         // If any overrides are provided, validate them synchronously so the
@@ -439,6 +441,7 @@ impl TurnRequestProcessor {
                     effort,
                     summary,
                     service_tier: service_tier.clone(),
+                    context_budget_mode,
                     collaboration_mode: collaboration_mode.clone(),
                     personality,
                 })
@@ -464,6 +467,7 @@ impl TurnRequestProcessor {
                 effort,
                 summary,
                 service_tier,
+                context_budget_mode,
                 collaboration_mode,
                 personality,
             }

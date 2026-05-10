@@ -81,7 +81,7 @@ pub mod legacy_core {
         pub use codex_core::config::*;
 
         pub mod edit {
-            pub use codex_core::config::edit::*;
+            pub use codex_config::edit::*;
         }
     }
 

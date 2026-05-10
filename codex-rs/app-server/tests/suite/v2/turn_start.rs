@@ -57,6 +57,7 @@ use codex_core::personality_migration::PERSONALITY_MIGRATION_FILENAME;
 use codex_features::FEATURES;
 use codex_features::Feature;
 use codex_protocol::config_types::CollaborationMode;
+use codex_protocol::config_types::ContextBudgetMode;
 use codex_protocol::config_types::ModeKind;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary;
@@ -418,6 +419,100 @@ async fn turn_start_sends_service_tier_id_to_model_request() -> Result<()> {
     assert_eq!(
         response_mock.single_request().body_json()["service_tier"],
         json!(service_tier_id)
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn turn_start_context_budget_mode_slow_tightens_first_moves_context() -> Result<()> {
+    let server = responses::start_mock_server().await;
+    let body = responses::sse(vec![
+        responses::ev_response_created("resp-1"),
+        responses::ev_assistant_message("msg-1", "Done"),
+        responses::ev_completed("resp-1"),
+    ]);
+    let response_mock = responses::mount_sse_once(&server, body).await;
+
+    let codex_home = TempDir::new()?;
+    create_config_toml(
+        codex_home.path(),
+        &server.uri(),
+        "never",
+        &BTreeMap::default(),
+    )?;
+
+    let project = TempDir::new()?;
+    let src = project.path().join("src");
+    std::fs::create_dir_all(&src)?;
+    let candidate_paths = [
+        "src/alpha.rs",
+        "src/beta.rs",
+        "src/gamma.rs",
+        "src/delta.rs",
+        "src/epsilon.rs",
+        "src/zeta.rs",
+    ];
+    for path in candidate_paths {
+        std::fs::write(project.path().join(path), "pub fn marker() {}\n")?;
+    }
+
+    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
+
+    let thread_req = mcp
+        .send_thread_start_request(ThreadStartParams {
+            cwd: Some(project.path().to_string_lossy().to_string()),
+            model: Some("mock-model".to_string()),
+            ..Default::default()
+        })
+        .await?;
+    let thread_resp: JSONRPCResponse = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(thread_req)),
+    )
+    .await??;
+    let ThreadStartResponse { thread, .. } = to_response::<ThreadStartResponse>(thread_resp)?;
+
+    let prompt = format!(
+        "Please inspect these exact files before editing: {}",
+        candidate_paths.join(", ")
+    );
+    let turn_req = mcp
+        .send_turn_start_request(TurnStartParams {
+            thread_id: thread.id,
+            context_budget_mode: Some(ContextBudgetMode::Slow),
+            input: vec![V2UserInput::Text {
+                text: prompt,
+                text_elements: Vec::new(),
+            }],
+            ..Default::default()
+        })
+        .await?;
+    timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(turn_req)),
+    )
+    .await??;
+    timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_notification_message("turn/completed"),
+    )
+    .await??;
+
+    let payload_text = response_mock.single_request().body_json().to_string();
+    let first_moves_section = payload_text
+        .split("<first_moves>")
+        .nth(1)
+        .and_then(|tail| tail.split("</first_moves>").next())
+        .expect("expected first-moves context in model request");
+    let recommended_count = candidate_paths
+        .iter()
+        .filter(|path| first_moves_section.contains(&format!("- {path} ")))
+        .count();
+    assert_eq!(
+        recommended_count, 4,
+        "slow context budget should cap injected first-moves reads: {first_moves_section}"
     );
 
     Ok(())
@@ -1897,6 +1992,7 @@ async fn turn_start_updates_sandbox_and_cwd_between_turns_v2() -> Result<()> {
             effort: Some(ReasoningEffort::Medium),
             summary: Some(ReasoningSummary::Auto),
             service_tier: None,
+            context_budget_mode: None,
             personality: None,
             output_schema: None,
             collaboration_mode: None,
@@ -1933,6 +2029,7 @@ async fn turn_start_updates_sandbox_and_cwd_between_turns_v2() -> Result<()> {
             effort: Some(ReasoningEffort::Medium),
             summary: Some(ReasoningSummary::Auto),
             service_tier: None,
+            context_budget_mode: None,
             personality: None,
             output_schema: None,
             collaboration_mode: None,

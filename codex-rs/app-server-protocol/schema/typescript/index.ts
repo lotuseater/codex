@@ -10,6 +10,7 @@ export type { ClientNotification } from "./ClientNotification";
 export type { ClientRequest } from "./ClientRequest";
 export type { CollaborationMode } from "./CollaborationMode";
 export type { ContentItem } from "./ContentItem";
+export type { ContextBudgetMode } from "./ContextBudgetMode";
 export type { ConversationGitInfo } from "./ConversationGitInfo";
 export type { ConversationSummary } from "./ConversationSummary";
 export type { ExecCommandApprovalParams } from "./ExecCommandApprovalParams";
