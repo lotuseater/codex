@@ -35,7 +35,7 @@ pub enum ConfigEdit {
         effort: Option<ReasoningEffort>,
     },
     /// Update the service tier preference for future turns.
-    SetServiceTier { service_tier: Option<ServiceTier> },
+    SetServiceTier { service_tier: Option<String> },
     /// Update the context-budget mode preference for future turns.
     SetContextBudgetMode { mode: ContextBudgetMode },
     /// Update the active (or default) model personality.
@@ -540,7 +540,14 @@ impl ConfigDocument {
             }),
             ConfigEdit::SetServiceTier { service_tier } => Ok(self.write_profile_value(
                 &["service_tier"],
-                service_tier.map(|service_tier| value(service_tier.to_string())),
+                service_tier.as_ref().map(|service_tier| {
+                    let config_value = match ServiceTier::from_request_value(service_tier) {
+                        Some(ServiceTier::Fast) => "fast",
+                        Some(ServiceTier::Flex) => "flex",
+                        None => service_tier.as_str(),
+                    };
+                    value(config_value)
+                }),
             )),
             ConfigEdit::SetContextBudgetMode { mode } => {
                 Ok(self
@@ -1176,7 +1183,7 @@ impl ConfigEditsBuilder {
         self
     }
 
-    pub fn set_service_tier(mut self, service_tier: Option<ServiceTier>) -> Self {
+    pub fn set_service_tier(mut self, service_tier: Option<String>) -> Self {
         self.edits.push(ConfigEdit::SetServiceTier { service_tier });
         self
     }

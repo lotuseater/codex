@@ -40,6 +40,7 @@ use crate::history_cell;
 use crate::history_cell::HistoryCell;
 #[cfg(not(debug_assertions))]
 use crate::history_cell::UpdateAvailableHistoryCell;
+use crate::hooks_rpc::HookTrustUpdate;
 use crate::key_hint::KeyBindingListExt;
 use crate::keymap::RuntimeKeymap;
 use crate::legacy_core::config::Config;
@@ -89,8 +90,7 @@ use codex_app_server_protocol::ConfigWriteResponse;
 use codex_app_server_protocol::FeedbackUploadParams;
 use codex_app_server_protocol::FeedbackUploadResponse;
 use codex_app_server_protocol::GetAccountRateLimitsResponse;
-use codex_app_server_protocol::HooksListParams;
-use codex_app_server_protocol::HooksListResponse;
+use codex_app_server_protocol::HooksListEntry;
 use codex_app_server_protocol::ListMcpServerStatusParams;
 use codex_app_server_protocol::ListMcpServerStatusResponse;
 #[cfg(test)]
@@ -180,6 +180,7 @@ use tokio::sync::mpsc::unbounded_channel;
 use tokio::task::JoinHandle;
 use toml::Value as TomlValue;
 use uuid::Uuid;
+mod agent_message_consolidation;
 mod agent_navigation;
 mod app_server_event_targets;
 mod app_server_events;
@@ -606,6 +607,7 @@ impl App {
     ) -> crate::chatwidget::ChatWidgetInit {
         crate::chatwidget::ChatWidgetInit {
             config: cfg,
+            environment_manager: self.environment_manager.clone(),
             frame_requester: tui.frame_requester(),
             app_event_tx: self.app_event_tx.clone(),
             workspace_command_runner: self.workspace_command_runner.clone(),
@@ -771,6 +773,7 @@ impl App {
                         .await;
                 let init = crate::chatwidget::ChatWidgetInit {
                     config: config.clone(),
+                    environment_manager: environment_manager.clone(),
                     frame_requester: tui.frame_requester(),
                     app_event_tx: app_event_tx.clone(),
                     workspace_command_runner: Some(workspace_command_runner.clone()),
@@ -807,6 +810,7 @@ impl App {
                     })?;
                 let init = crate::chatwidget::ChatWidgetInit {
                     config: config.clone(),
+                    environment_manager: environment_manager.clone(),
                     frame_requester: tui.frame_requester(),
                     app_event_tx: app_event_tx.clone(),
                     workspace_command_runner: Some(workspace_command_runner.clone()),
@@ -848,6 +852,7 @@ impl App {
                     })?;
                 let init = crate::chatwidget::ChatWidgetInit {
                     config: config.clone(),
+                    environment_manager: environment_manager.clone(),
                     frame_requester: tui.frame_requester(),
                     app_event_tx: app_event_tx.clone(),
                     workspace_command_runner: Some(workspace_command_runner.clone()),
@@ -943,6 +948,9 @@ See the Codex keymap documentation for supported actions and examples."
             pending_hook_enabled_writes: HashMap::new(),
             auto_loop: AutoLoopState::new(auto_loop_settings),
         };
+        if let Some(entry) = startup_hooks_browser {
+            app.chat_widget.open_hooks_browser(entry);
+        }
         if let Some(started) = initial_started_thread {
             let thread_id = started.session.thread_id;
             app.enqueue_primary_thread_session(started.session, started.turns)
@@ -986,7 +994,6 @@ See the Codex keymap documentation for supported actions and examples."
 
         tui.frame_requester().schedule_frame();
         app.refresh_startup_skills(&app_server);
-        app.refresh_startup_hooks(&app_server);
         // Kick off a non-blocking rate-limit prefetch so the first `/status`
         // already has data, without delaying the initial frame render.
         if requires_openai_auth && has_chatgpt_account {

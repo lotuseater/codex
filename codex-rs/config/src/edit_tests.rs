@@ -4,6 +4,7 @@ use crate::types::McpServerToolConfig;
 use crate::types::McpServerTransportConfig;
 use crate::types::SessionPickerViewMode;
 use codex_protocol::config_types::ContextBudgetMode;
+use codex_protocol::config_types::ServiceTier;
 use codex_protocol::openai_models::ReasoningEffort;
 use pretty_assertions::assert_eq;
 #[cfg(unix)]
@@ -69,6 +70,34 @@ fn set_context_budget_mode_profile() {
         contents,
         "[profiles.work]\ncontext_budget_mode = \"slow\"\n"
     );
+}
+
+#[test]
+fn set_service_tier_saves_priority_as_fast() {
+    let tmp = tempdir().expect("tmpdir");
+    let codex_home = tmp.path();
+
+    ConfigEditsBuilder::new(codex_home)
+        .set_service_tier(Some(ServiceTier::Fast.request_value().to_string()))
+        .apply_blocking()
+        .expect("persist");
+
+    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    assert_eq!(contents, "service_tier = \"fast\"\n");
+}
+
+#[test]
+fn set_service_tier_preserves_unknown_service_tier() {
+    let tmp = tempdir().expect("tmpdir");
+    let codex_home = tmp.path();
+
+    ConfigEditsBuilder::new(codex_home)
+        .set_service_tier(Some("experimental-tier-id".to_string()))
+        .apply_blocking()
+        .expect("persist");
+
+    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    assert_eq!(contents, "service_tier = \"experimental-tier-id\"\n");
 }
 
 #[test]

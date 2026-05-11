@@ -1,0 +1,437 @@
+use super::*;
+use codex_protocol::openai_models::ModelPreset;
+use codex_protocol::openai_models::ReasoningEffort;
+use codex_protocol::openai_models::ReasoningEffortPreset;
+use codex_tool_schema::JsonSchemaPrimitiveType;
+use codex_tool_schema::JsonSchemaType;
+use pretty_assertions::assert_eq;
+use serde_json::json;
+
+fn model_preset(id: &str, show_in_picker: bool) -> ModelPreset {
+    ModelPreset {
+        id: id.to_string(),
+        model: format!("{id}-model"),
+        display_name: format!("{id} display"),
+        description: format!("{id} description"),
+        default_reasoning_effort: ReasoningEffort::Medium,
+        supported_reasoning_efforts: vec![ReasoningEffortPreset {
+            effort: ReasoningEffort::Medium,
+            description: "Balanced".to_string(),
+        }],
+        supports_personality: false,
+        additional_speed_tiers: Vec::new(),
+        service_tiers: Vec::new(),
+        is_default: false,
+        upgrade: None,
+        show_in_picker,
+        availability_nux: None,
+        supported_in_api: true,
+        input_modalities: Vec::new(),
+    }
+}
+
+#[test]
+fn spawn_agent_tool_v2_requires_task_name_and_lists_visible_models() {
+    let tool = create_spawn_agent_tool_v2(SpawnAgentToolOptions {
+        available_models: vec![
+            model_preset("visible", /*show_in_picker*/ true),
+            model_preset("hidden", /*show_in_picker*/ false),
+        ],
+        agent_type_description: "role help".to_string(),
+        hide_agent_type_model_reasoning: false,
+        include_usage_hint: true,
+        usage_hint_text: None,
+        max_concurrent_threads_per_session: Some(4),
+    });
+
+    let ToolSpec::Function(ResponsesApiTool {
+        description,
+        parameters,
+        output_schema,
+        ..
+    }) = tool
+    else {
+        panic!("spawn_agent should be a function tool");
+    };
+    assert_eq!(
+        parameters.schema_type,
+        Some(JsonSchemaType::Single(JsonSchemaPrimitiveType::Object))
+    );
+    let properties = parameters
+        .properties
+        .as_ref()
+        .expect("spawn_agent should use object params");
+    assert!(description.contains("Spawns an agent to work on the specified task."));
+    assert!(description.contains("same configured tools, skills, MCP/app surfaces"));
+    assert!(description.contains("inherits your current permission mode"));
+    assert!(description.contains("prefer quality"));
+    assert!(description.contains("total token effectiveness"));
+    assert!(description.contains("Agent ROI Estimate"));
+    assert!(description.contains("net >= 2"));
+    assert!(description.contains("loop_followup_gain=0-3"));
+    assert!(description.contains("auto-loop may accept the implementation prompt automatically"));
+    assert!(description.contains("stable `helper` agent task name"));
+    assert!(description.contains("Spawn a fresh helper only when reuse is unavailable"));
+    assert!(description.contains("git commit/push/tag/rebase/merge"));
+    assert!(description.contains("exact files"));
+    assert!(description.contains("first_moves_predict"));
+    assert!(description.contains("`max_concurrent_threads_per_session = 4`"));
+    assert!(description.contains("CONTEXT_AREA"));
+    assert!(description.contains("DO_NOT_INSPECT"));
+    assert!(description.contains("SCOUT_EVIDENCE"));
+    assert!(description.contains("WHY_AGENT / ROI"));
+    assert!(description.contains("raw `rg` pattern"));
+    assert!(description.contains("fork_turns = \"none\""));
+    assert!(description.contains("resume_agent"));
+    assert!(description.contains("compact_agent"));
+    assert!(description.contains("restart_agent"));
+    assert!(description.contains("active loop iterations"));
+    assert!(description.contains("encourage automation"));
+    assert!(description.contains("promoted into a durable script, skill, or Codex code change"));
+    assert!(description.contains("Available model overrides"));
+    assert!(description.contains("visible display (`visible-model`)"));
+    assert!(!description.contains("hidden display (`hidden-model`)"));
+    assert!(properties.contains_key("task_name"));
+    assert!(properties.contains_key("message"));
+    assert!(properties.contains_key("fork_turns"));
+    assert!(properties.contains_key("model"));
+    assert!(properties.contains_key("reasoning_effort"));
+    assert!(!properties.contains_key("items"));
+    assert!(!properties.contains_key("fork_context"));
+    assert_eq!(
+        properties.get("agent_type"),
+        Some(&JsonSchema::string(Some("role help".to_string())))
+    );
+    assert_eq!(
+        parameters.required.as_ref(),
+        Some(&vec!["task_name".to_string(), "message".to_string()])
+    );
+    assert_eq!(
+        output_schema.expect("spawn_agent output schema")["required"],
+        json!(["task_name", "nickname"])
+    );
+}
+
+#[test]
+fn spawn_agent_tool_v1_keeps_legacy_fork_context_field() {
+    let tool = create_spawn_agent_tool_v1(SpawnAgentToolOptions {
+        available_models: Vec::new(),
+        agent_type_description: "role help".to_string(),
+        hide_agent_type_model_reasoning: false,
+        include_usage_hint: true,
+        usage_hint_text: None,
+        max_concurrent_threads_per_session: None,
+    });
+
+    let ToolSpec::Function(ResponsesApiTool { parameters, .. }) = tool else {
+        panic!("spawn_agent should be a function tool");
+    };
+    assert_eq!(
+        parameters.schema_type,
+        Some(JsonSchemaType::Single(JsonSchemaPrimitiveType::Object))
+    );
+    let properties = parameters
+        .properties
+        .as_ref()
+        .expect("spawn_agent should use object params");
+
+    assert!(properties.contains_key("fork_context"));
+    assert!(!properties.contains_key("fork_turns"));
+    assert_eq!(
+        properties
+            .get("model")
+            .and_then(|schema| schema.description.as_deref()),
+        Some(SPAWN_AGENT_MODEL_OVERRIDE_DESCRIPTION)
+    );
+}
+
+#[test]
+fn send_message_tool_requires_message_and_has_no_output_schema() {
+    let ToolSpec::Function(ResponsesApiTool {
+        parameters,
+        output_schema,
+        ..
+    }) = create_send_message_tool()
+    else {
+        panic!("send_message should be a function tool");
+    };
+    assert_eq!(
+        parameters.schema_type,
+        Some(JsonSchemaType::Single(JsonSchemaPrimitiveType::Object))
+    );
+    let properties = parameters
+        .properties
+        .as_ref()
+        .expect("send_message should use object params");
+    assert!(properties.contains_key("target"));
+    assert!(properties.contains_key("message"));
+    assert!(!properties.contains_key("interrupt"));
+    assert!(!properties.contains_key("items"));
+    assert_eq!(
+        properties
+            .get("target")
+            .and_then(|schema| schema.description.as_deref()),
+        Some("Relative or canonical task name to message (from spawn_agent).")
+    );
+    assert_eq!(
+        parameters.required.as_ref(),
+        Some(&vec!["target".to_string(), "message".to_string()])
+    );
+    assert_eq!(output_schema, None);
+}
+
+#[test]
+fn followup_task_tool_requires_message_and_has_no_output_schema() {
+    let ToolSpec::Function(ResponsesApiTool {
+        description,
+        parameters,
+        output_schema,
+        ..
+    }) = create_followup_task_tool()
+    else {
+        panic!("followup_task should be a function tool");
+    };
+    assert_eq!(
+        parameters.schema_type,
+        Some(JsonSchemaType::Single(JsonSchemaPrimitiveType::Object))
+    );
+    let properties = parameters
+        .properties
+        .as_ref()
+        .expect("followup_task should use object params");
+    assert!(properties.contains_key("target"));
+    assert!(properties.contains_key("message"));
+    assert!(properties.contains_key("model"));
+    assert!(properties.contains_key("reasoning_effort"));
+    assert!(!properties.contains_key("items"));
+    assert!(description.contains("same-context follow-up work"));
+    assert!(description.contains("list_agents"));
+    assert!(description.contains("cheaper than spawning a replacement"));
+    assert_eq!(
+        parameters.required.as_ref(),
+        Some(&vec!["target".to_string(), "message".to_string()])
+    );
+    assert_eq!(output_schema, None);
+}
+
+#[test]
+fn resume_agent_tool_v2_accepts_task_path_target() {
+    let ToolSpec::Function(ResponsesApiTool {
+        description,
+        parameters,
+        output_schema,
+        ..
+    }) = create_resume_agent_tool_v2()
+    else {
+        panic!("resume_agent should be a function tool");
+    };
+
+    assert!(description.contains("previously closed MultiAgentV2 agent"));
+    let properties = parameters
+        .properties
+        .as_ref()
+        .expect("resume_agent should use object params");
+    assert!(properties.contains_key("target"));
+    assert!(!properties.contains_key("id"));
+    assert_eq!(
+        parameters.required.as_ref(),
+        Some(&vec!["target".to_string()])
+    );
+    assert_eq!(
+        output_schema.expect("resume output schema")["required"],
+        json!(["status"])
+    );
+}
+
+#[test]
+fn compact_agent_tool_requires_target_and_returns_statuses() {
+    let ToolSpec::Function(ResponsesApiTool {
+        description,
+        parameters,
+        output_schema,
+        ..
+    }) = create_compact_agent_tool()
+    else {
+        panic!("compact_agent should be a function tool");
+    };
+
+    assert!(description.contains("live non-root MultiAgentV2 subagent"));
+    assert!(description.contains("before related follow-up work"));
+    let properties = parameters
+        .properties
+        .as_ref()
+        .expect("compact_agent should use object params");
+    assert!(properties.contains_key("target"));
+    assert!(properties.contains_key("reason"));
+    assert_eq!(
+        parameters.required.as_ref(),
+        Some(&vec!["target".to_string()])
+    );
+    assert_eq!(
+        output_schema.expect("compact_agent output schema")["required"],
+        json!(["previous_status", "current_status"])
+    );
+}
+
+#[test]
+fn restart_agent_tool_accepts_optional_message_model_and_effort() {
+    let ToolSpec::Function(ResponsesApiTool {
+        description,
+        parameters,
+        output_schema,
+        ..
+    }) = create_restart_agent_tool()
+    else {
+        panic!("restart_agent should be a function tool");
+    };
+
+    assert!(description.contains("Restart a non-root MultiAgentV2 subagent"));
+    let properties = parameters
+        .properties
+        .as_ref()
+        .expect("restart_agent should use object params");
+    assert!(properties.contains_key("target"));
+    assert!(properties.contains_key("message"));
+    assert!(properties.contains_key("model"));
+    assert!(properties.contains_key("reasoning_effort"));
+    assert_eq!(
+        parameters.required.as_ref(),
+        Some(&vec!["target".to_string()])
+    );
+    assert_eq!(
+        output_schema.expect("restart_agent output schema")["required"],
+        json!(["previous_status", "status"])
+    );
+}
+
+#[test]
+fn wait_agent_tool_v2_accepts_optional_targets_and_summary_output() {
+    let ToolSpec::Function(ResponsesApiTool {
+        description,
+        parameters,
+        output_schema,
+        ..
+    }) = create_wait_agent_tool_v2(WaitAgentTimeoutOptions {
+        default_timeout_ms: 30_000,
+        min_timeout_ms: 10_000,
+        max_timeout_ms: 3_600_000,
+    })
+    else {
+        panic!("wait_agent should be a function tool");
+    };
+    assert_eq!(
+        parameters.schema_type,
+        Some(JsonSchemaType::Single(JsonSchemaPrimitiveType::Object))
+    );
+    let properties = parameters
+        .properties
+        .as_ref()
+        .expect("wait_agent should use object params");
+    assert!(properties.contains_key("targets"));
+    assert!(properties.contains_key("timeout_ms"));
+    assert!(
+        description
+            .contains("When targets are provided, wait for those agents to reach a final status")
+    );
+    assert_eq!(
+        properties
+            .get("targets")
+            .and_then(|schema| schema.description.as_deref()),
+        Some(
+            "Optional agent ids or canonical task names to wait on. Omit to wait for any mailbox update."
+        )
+    );
+    assert_eq!(
+        properties
+            .get("timeout_ms")
+            .and_then(|schema| schema.description.as_deref()),
+        Some("Optional timeout in milliseconds. Defaults to 30000, min 10000, max 3600000.")
+    );
+    assert_eq!(parameters.required.as_ref(), None);
+    assert_eq!(
+        output_schema.expect("wait output schema")["properties"]["message"]["description"],
+        json!("Brief wait summary without the agent's final content.")
+    );
+}
+
+#[test]
+fn list_agents_tool_includes_path_prefix_and_agent_fields() {
+    let ToolSpec::Function(ResponsesApiTool {
+        description,
+        parameters,
+        output_schema,
+        ..
+    }) = create_list_agents_tool()
+    else {
+        panic!("list_agents should be a function tool");
+    };
+    assert_eq!(
+        parameters.schema_type,
+        Some(JsonSchemaType::Single(JsonSchemaPrimitiveType::Object))
+    );
+    let properties = parameters
+        .properties
+        .as_ref()
+        .expect("list_agents should use object params");
+    assert!(description.contains("before spawning related follow-up work"));
+    assert!(description.contains("reused instead"));
+    assert!(properties.contains_key("path_prefix"));
+    assert_eq!(
+        properties
+            .get("path_prefix")
+            .and_then(|schema| schema.description.as_deref()),
+        Some(
+            "Optional task-path prefix (not ending with trailing slash). Accepts the same relative or absolute task-path syntax."
+        )
+    );
+    assert_eq!(
+        output_schema.expect("list_agents output schema")["properties"]["agents"]["items"]["required"],
+        json!(["agent_name", "agent_status", "last_task_message"])
+    );
+}
+
+#[test]
+fn close_agent_tool_v2_describes_retention_lifecycle() {
+    let ToolSpec::Function(ResponsesApiTool {
+        description,
+        parameters,
+        output_schema,
+        ..
+    }) = create_close_agent_tool_v2()
+    else {
+        panic!("close_agent should be a function tool");
+    };
+
+    assert!(description.contains("plan-completion self-review"));
+    assert!(description.contains("no follow-up is expected"));
+    let properties = parameters
+        .properties
+        .as_ref()
+        .expect("close_agent should use object params");
+    assert!(properties.contains_key("target"));
+    assert_eq!(
+        parameters.required.as_ref(),
+        Some(&vec!["target".to_string()])
+    );
+    assert!(output_schema.is_some());
+}
+
+#[test]
+fn list_agents_tool_status_schema_includes_interrupted() {
+    let ToolSpec::Function(ResponsesApiTool { output_schema, .. }) = create_list_agents_tool()
+    else {
+        panic!("list_agents should be a function tool");
+    };
+
+    assert_eq!(
+        output_schema.expect("list_agents output schema")["properties"]["agents"]["items"]["properties"]
+            ["agent_status"]["allOf"][0]["oneOf"][0]["enum"],
+        json!([
+            "pending_init",
+            "running",
+            "interrupted",
+            "shutdown",
+            "not_found"
+        ])
+    );
+}

@@ -1,6 +1,4 @@
 use super::augment_tool_spec_for_code_mode;
-use super::create_code_mode_tool;
-use super::create_wait_tool;
 use super::tool_spec_to_code_mode_tool_definition;
 use crate::FreeformTool;
 use crate::FreeformToolFormat;

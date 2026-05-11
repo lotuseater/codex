@@ -584,7 +584,7 @@ pub fn build_tool_registry_plan(
 
     if let Some(mcp_tools) = params.mcp_tools {
         let mut entries = mcp_tools.to_vec();
-        entries.sort_by_key(|tool| tool.name.display());
+        entries.sort_by_key(|tool| tool.name.to_string());
         let mut namespace_entries = BTreeMap::new();
 
         for tool in entries {

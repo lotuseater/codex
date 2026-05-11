@@ -87,6 +87,7 @@ use codex_app_server_protocol::ThreadSetNameParams;
 use codex_app_server_protocol::ThreadSetNameResponse;
 use codex_app_server_protocol::ThreadShellCommandParams;
 use codex_app_server_protocol::ThreadShellCommandResponse;
+use codex_app_server_protocol::ThreadSource;
 use codex_app_server_protocol::ThreadStartParams;
 use codex_app_server_protocol::ThreadStartResponse;
 use codex_app_server_protocol::ThreadStartSource;
@@ -1212,6 +1213,7 @@ fn thread_start_params_from_config(
         config: config_request_overrides_from_config(config),
         ephemeral: Some(config.ephemeral),
         session_start_source,
+        thread_source: Some(ThreadSource::User),
         persist_extended_history: false,
         ..ThreadStartParams::default()
     }
@@ -1277,6 +1279,7 @@ fn thread_fork_params_from_config(
         base_instructions: config.base_instructions.clone(),
         developer_instructions: config.developer_instructions.clone(),
         ephemeral: config.ephemeral,
+        thread_source: Some(ThreadSource::User),
         persist_extended_history: false,
         ..ThreadForkParams::default()
     }
@@ -1578,6 +1581,7 @@ mod tests {
                 .map(permissions_selection_from_active_profile)
         );
         assert_eq!(params.model_provider, Some(config.model_provider_id));
+        assert_eq!(params.thread_source, Some(ThreadSource::User));
     }
 
     #[tokio::test]
@@ -1730,6 +1734,8 @@ mod tests {
         assert_eq!(start.permissions, None);
         assert_eq!(resume.permissions, None);
         assert_eq!(fork.permissions, None);
+        assert_eq!(start.thread_source, Some(ThreadSource::User));
+        assert_eq!(fork.thread_source, Some(ThreadSource::User));
     }
 
     #[test]
@@ -1835,6 +1841,8 @@ mod tests {
         assert_eq!(start.permissions, None);
         assert_eq!(resume.permissions, None);
         assert_eq!(fork.permissions, None);
+        assert_eq!(start.thread_source, Some(ThreadSource::User));
+        assert_eq!(fork.thread_source, Some(ThreadSource::User));
     }
 
     #[tokio::test]

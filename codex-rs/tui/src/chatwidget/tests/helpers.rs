@@ -157,51 +157,20 @@ pub(super) async fn make_chatwidget_manual(
     if let Some(model) = model_override {
         cfg.model = Some(model.to_string());
     }
-    let prevent_idle_sleep = cfg.features.enabled(Feature::PreventIdleSleep);
     let session_telemetry = test_session_telemetry(&cfg, resolved_model.as_str());
-    let mut bottom = BottomPane::new(BottomPaneParams {
-        app_event_tx: app_event_tx.clone(),
-        frame_requester: FrameRequester::test_dummy(),
-        has_input_focus: true,
-        enhanced_keys_supported: false,
-        placeholder_text: "Ask Codex to do anything".to_string(),
-        disable_paste_burst: false,
-        animations_enabled: cfg.animations,
-        skills: None,
-    });
-    bottom.set_collaboration_modes_enabled(/*enabled*/ true);
     let model_catalog = test_model_catalog(&cfg);
-    let reasoning_effort = None;
-    let base_mode = CollaborationMode {
-        mode: ModeKind::Default,
-        settings: Settings {
-            model: resolved_model.clone(),
-            reasoning_effort,
-            developer_instructions: None,
-        },
-    };
-    let current_collaboration_mode = base_mode;
-    let active_collaboration_mask = collaboration_modes::default_mask(model_catalog.as_ref());
-    let effective_service_tier = cfg
-        .service_tier
-        .as_deref()
-        .and_then(ServiceTier::from_request_value);
-    let mut widget = ChatWidget {
-        app_event_tx,
-        codex_op_target: super::CodexOpTarget::Direct(op_tx),
-        bottom_pane: bottom,
-        active_cell: None,
-        active_cell_revision: 0,
-        raw_output_mode: cfg.tui_raw_output_mode,
+    let common = ChatWidgetInit {
         config: cfg,
-        effective_service_tier,
-        current_collaboration_mode,
-        active_collaboration_mask,
+        environment_manager: Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
+        frame_requester: FrameRequester::test_dummy(),
+        app_event_tx,
+        workspace_command_runner: None,
+        initial_user_message: None,
+        enhanced_keys_supported: false,
         has_chatgpt_account: false,
         model_catalog,
-        session_telemetry,
-        session_header: SessionHeader::new(resolved_model.clone()),
-        initial_user_message: None,
+        feedback: codex_feedback::CodexFeedback::new(),
+        is_first_run: true,
         status_account_display: None,
         runtime_model_provider_base_url: None,
         token_info: None,
@@ -318,27 +287,17 @@ pub(super) async fn make_chatwidget_manual(
         session_network_proxy: None,
         status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
         terminal_title_invalid_items_warned: Arc::new(AtomicBool::new(false)),
-        last_terminal_title: None,
-        last_terminal_title_requires_action: false,
-        terminal_title_setup_original_items: None,
-        terminal_title_animation_origin: Instant::now(),
-        status_line_project_root_name_cache: None,
-        status_line_branch: None,
-        status_line_branch_cwd: None,
-        status_line_branch_pending: false,
-        status_line_branch_lookup_complete: false,
-        status_line_git_summary: None,
-        status_line_git_summary_cwd: None,
-        status_line_git_summary_pending: false,
-        status_line_git_summary_lookup_complete: false,
-        current_goal_status_indicator: None,
-        current_goal_status: None,
-        goal_status_active_turn_started_at: None,
-        external_editor_state: ExternalEditorState::Closed,
-        realtime_conversation: RealtimeConversationUiState::default(),
-        last_rendered_user_message_display: None,
-        last_non_retry_error: None,
+        session_telemetry,
     };
+    let mut widget = ChatWidget::new_with_op_target(common, super::CodexOpTarget::Direct(op_tx));
+    widget.transcript.active_cell = None;
+    widget.transcript.active_cell_revision = 0;
+    widget.normal_placeholder_text = "Ask Codex to do anything".to_string();
+    widget.side_placeholder_text =
+        "Check recently modified functions for compatibility".to_string();
+    widget
+        .bottom_pane
+        .set_placeholder_text(widget.normal_placeholder_text.clone());
     widget.set_model(&resolved_model);
     (widget, rx, op_rx)
 }
@@ -397,8 +356,12 @@ pub(crate) fn set_chatgpt_auth(chat: &mut ChatWidget) {
 }
 
 fn test_model_info(slug: &str, priority: i32, supports_fast_mode: bool) -> ModelInfo {
-    let additional_speed_tiers = if supports_fast_mode {
-        vec![codex_protocol::openai_models::SPEED_TIER_FAST]
+    let service_tiers = if supports_fast_mode {
+        vec![json!({
+            "id": ServiceTier::Fast.request_value(),
+            "name": "fast",
+            "description": "Fastest inference with increased plan usage"
+        })]
     } else {
         Vec::new()
     };
@@ -412,7 +375,8 @@ fn test_model_info(slug: &str, priority: i32, supports_fast_mode: bool) -> Model
         "visibility": "list",
         "supported_in_api": true,
         "priority": priority,
-        "additional_speed_tiers": additional_speed_tiers,
+        "additional_speed_tiers": [],
+        "service_tiers": service_tiers,
         "availability_nux": null,
         "upgrade": null,
         "base_instructions": "base instructions",
@@ -530,6 +494,7 @@ pub(super) fn handle_token_count(chat: &mut ChatWidget, info: Option<TokenUsageI
                     codex_app_server_protocol::ThreadTokenUsageUpdatedNotification {
                         thread_id: thread_id(chat),
                         turn_id: chat
+                            .turn_lifecycle
                             .last_turn_id
                             .clone()
                             .unwrap_or_else(|| "turn-1".to_string()),
@@ -562,6 +527,7 @@ pub(super) fn handle_error(
             will_retry: false,
             thread_id: thread_id(chat),
             turn_id: chat
+                .turn_lifecycle
                 .last_turn_id
                 .clone()
                 .unwrap_or_else(|| "turn-1".to_string()),
@@ -594,6 +560,7 @@ pub(super) fn handle_stream_error_with_replay(
             will_retry: true,
             thread_id: thread_id(chat),
             turn_id: chat
+                .turn_lifecycle
                 .last_turn_id
                 .clone()
                 .unwrap_or_else(|| "turn-1".to_string()),
@@ -620,6 +587,7 @@ pub(super) fn handle_model_verification(
         ServerNotification::ModelVerification(ModelVerificationNotification {
             thread_id: thread_id(chat),
             turn_id: chat
+                .turn_lifecycle
                 .last_turn_id
                 .clone()
                 .unwrap_or_else(|| "turn-1".to_string()),
@@ -635,6 +603,7 @@ pub(super) fn handle_agent_message_delta(chat: &mut ChatWidget, delta: impl Into
             codex_app_server_protocol::AgentMessageDeltaNotification {
                 thread_id: thread_id(chat),
                 turn_id: chat
+                    .turn_lifecycle
                     .last_turn_id
                     .clone()
                     .unwrap_or_else(|| "turn-1".to_string()),
@@ -651,6 +620,7 @@ pub(super) fn handle_agent_reasoning_delta(chat: &mut ChatWidget, delta: impl In
         ServerNotification::ReasoningSummaryTextDelta(ReasoningSummaryTextDeltaNotification {
             thread_id: thread_id(chat),
             turn_id: chat
+                .turn_lifecycle
                 .last_turn_id
                 .clone()
                 .unwrap_or_else(|| "turn-1".to_string()),
@@ -667,6 +637,7 @@ pub(super) fn handle_agent_reasoning_final(chat: &mut ChatWidget) {
         ServerNotification::ItemCompleted(ItemCompletedNotification {
             thread_id: thread_id(chat),
             turn_id: chat
+                .turn_lifecycle
                 .last_turn_id
                 .clone()
                 .unwrap_or_else(|| "turn-1".to_string()),
@@ -686,6 +657,7 @@ pub(super) fn handle_entered_review_mode(chat: &mut ChatWidget, review: impl Int
         ServerNotification::ItemStarted(ItemStartedNotification {
             thread_id: thread_id(chat),
             turn_id: chat
+                .turn_lifecycle
                 .last_turn_id
                 .clone()
                 .unwrap_or_else(|| "turn-1".to_string()),
@@ -715,6 +687,7 @@ pub(super) fn handle_exited_review_mode(chat: &mut ChatWidget) {
         ServerNotification::ItemCompleted(ItemCompletedNotification {
             thread_id: thread_id(chat),
             turn_id: chat
+                .turn_lifecycle
                 .last_turn_id
                 .clone()
                 .unwrap_or_else(|| "turn-1".to_string()),
@@ -992,6 +965,7 @@ pub(super) fn handle_exec_begin(chat: &mut ChatWidget, item: AppServerThreadItem
         ServerNotification::ItemStarted(ItemStartedNotification {
             thread_id: thread_id(chat),
             turn_id: chat
+                .turn_lifecycle
                 .last_turn_id
                 .clone()
                 .unwrap_or_else(|| "turn-1".to_string()),
@@ -1013,6 +987,7 @@ pub(super) fn terminal_interaction(
             codex_app_server_protocol::TerminalInteractionNotification {
                 thread_id: thread_id(chat),
                 turn_id: chat
+                    .turn_lifecycle
                     .last_turn_id
                     .clone()
                     .unwrap_or_else(|| "turn-1".to_string()),
@@ -1156,7 +1131,7 @@ pub(super) fn handle_turn_interrupted(chat: &mut ChatWidget, turn_id: &str) {
 }
 
 pub(super) fn handle_budget_limited_turn(chat: &mut ChatWidget, turn_id: &str) {
-    chat.budget_limited_turn_ids.insert(turn_id.to_string());
+    chat.turn_lifecycle.mark_budget_limited(turn_id.to_string());
     handle_turn_interrupted(chat, turn_id);
 }
 
@@ -1218,6 +1193,7 @@ pub(super) fn handle_exec_end(chat: &mut ChatWidget, item: AppServerThreadItem) 
         ServerNotification::ItemCompleted(ItemCompletedNotification {
             thread_id: thread_id(chat),
             turn_id: chat
+                .turn_lifecycle
                 .last_turn_id
                 .clone()
                 .unwrap_or_else(|| "turn-1".to_string()),
@@ -1230,6 +1206,7 @@ pub(super) fn handle_exec_end(chat: &mut ChatWidget, item: AppServerThreadItem) 
 
 pub(super) fn active_blob(chat: &ChatWidget) -> String {
     let lines = chat
+        .transcript
         .active_cell
         .as_ref()
         .expect("active cell present")
@@ -1291,9 +1268,11 @@ pub(super) async fn assert_shift_left_edits_most_recent_queued_message_for_termi
     chat.bottom_pane.set_task_running(/*running*/ true);
 
     // Seed two queued messages.
-    chat.queued_user_messages
+    chat.input_queue
+        .queued_user_messages
         .push_back(UserMessage::from("first queued".to_string()).into());
-    chat.queued_user_messages
+    chat.input_queue
+        .queued_user_messages
         .push_back(UserMessage::from("second queued".to_string()).into());
     chat.refresh_pending_input_preview();
 
@@ -1306,9 +1285,9 @@ pub(super) async fn assert_shift_left_edits_most_recent_queued_message_for_termi
         "second queued".to_string()
     );
     // And the queue should now contain only the remaining (older) item.
-    assert_eq!(chat.queued_user_messages.len(), 1);
+    assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
     assert_eq!(
-        chat.queued_user_messages.front().unwrap().text,
+        chat.input_queue.queued_user_messages.front().unwrap().text,
         "first queued"
     );
 }
@@ -1445,6 +1424,7 @@ pub(super) fn plugins_test_summary(
     PluginSummary {
         id: id.to_string(),
         name: name.to_string(),
+        share_context: None,
         source: PluginSource::Local {
             path: plugins_test_absolute_path(&format!("plugins/{name}")),
         },
@@ -1510,6 +1490,7 @@ pub(super) fn plugins_test_detail(
     summary: PluginSummary,
     description: Option<&str>,
     skills: &[&str],
+    hooks: &[(codex_app_server_protocol::HookEventName, usize)],
     apps: &[(&str, bool)],
     mcp_servers: &[&str],
 ) -> PluginDetail {
@@ -1529,6 +1510,18 @@ pub(super) fn plugins_test_detail(
                     "skills/{name}/SKILL.md"
                 ))),
                 enabled: true,
+            })
+            .collect(),
+        hooks: hooks
+            .iter()
+            .enumerate()
+            .flat_map(|(event_index, (event_name, handler_count))| {
+                (0..*handler_count).map(move |handler_index| {
+                    codex_app_server_protocol::PluginHookSummary {
+                        key: format!("plugin:{event_index}:{handler_index}"),
+                        event_name: *event_name,
+                    }
+                })
             })
             .collect(),
         apps: apps
@@ -1682,6 +1675,8 @@ fn hook_event_label(event_name: codex_app_server_protocol::HookEventName) -> &'s
         codex_app_server_protocol::HookEventName::PreToolUse => "PreToolUse",
         codex_app_server_protocol::HookEventName::PermissionRequest => "PermissionRequest",
         codex_app_server_protocol::HookEventName::PostToolUse => "PostToolUse",
+        codex_app_server_protocol::HookEventName::PreCompact => "PreCompact",
+        codex_app_server_protocol::HookEventName::PostCompact => "PostCompact",
         codex_app_server_protocol::HookEventName::SessionStart => "SessionStart",
         codex_app_server_protocol::HookEventName::UserPromptSubmit => "UserPromptSubmit",
         codex_app_server_protocol::HookEventName::Stop => "Stop",

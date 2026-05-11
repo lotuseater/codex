@@ -1,10 +1,8 @@
-use std::collections::HashMap;
 use std::collections::HashSet;
 
 use codex_features::Feature;
 use codex_mcp::CODEX_APPS_MCP_SERVER_NAME;
 use codex_mcp::ToolInfo as McpToolInfo;
-use codex_mcp::filter_non_codex_apps_mcp_tools_only;
 use codex_tools::ToolsConfig;
 
 use crate::config::Config;
@@ -21,12 +19,12 @@ const WIZARD_CODEX_MCP_SERVER_NAME: &str = "wizard-codex";
 const WIZARD_CODEX_MCP_TOOL_NAMESPACE: &str = "mcp__wizard_codex__";
 
 pub(crate) struct McpToolExposure {
-    pub(crate) direct_tools: HashMap<String, McpToolInfo>,
-    pub(crate) deferred_tools: Option<HashMap<String, McpToolInfo>>,
+    pub(crate) direct_tools: Vec<McpToolInfo>,
+    pub(crate) deferred_tools: Option<Vec<McpToolInfo>>,
 }
 
 pub(crate) fn build_mcp_tool_exposure(
-    all_mcp_tools: &HashMap<String, McpToolInfo>,
+    all_mcp_tools: &[McpToolInfo],
     connectors: Option<&[connectors::AppInfo]>,
     explicitly_enabled_connectors: &[connectors::AppInfo],
     config: &Config,
@@ -82,10 +80,10 @@ fn filter_bootstrap_mcp_tools(
 }
 
 fn filter_codex_apps_mcp_tools(
-    mcp_tools: &HashMap<String, McpToolInfo>,
+    mcp_tools: &[McpToolInfo],
     connectors: &[connectors::AppInfo],
     config: &Config,
-) -> HashMap<String, McpToolInfo> {
+) -> Vec<McpToolInfo> {
     let allowed: HashSet<&str> = connectors
         .iter()
         .map(|connector| connector.id.as_str())
@@ -93,7 +91,7 @@ fn filter_codex_apps_mcp_tools(
 
     mcp_tools
         .iter()
-        .filter(|(_, tool)| {
+        .filter(|tool| {
             if tool.server_name != CODEX_APPS_MCP_SERVER_NAME {
                 return false;
             }
@@ -102,7 +100,7 @@ fn filter_codex_apps_mcp_tools(
             };
             allowed.contains(connector_id) && connectors::codex_app_tool_is_enabled(config, tool)
         })
-        .map(|(name, tool)| (name.clone(), tool.clone()))
+        .cloned()
         .collect()
 }
 

@@ -40,16 +40,6 @@ pub fn codex_apps_tools_cache_key(auth: Option<&CodexAuth>) -> CodexAppsToolsCac
     }
 }
 
-pub fn filter_non_codex_apps_mcp_tools_only(
-    mcp_tools: &HashMap<String, ToolInfo>,
-) -> HashMap<String, ToolInfo> {
-    mcp_tools
-        .iter()
-        .filter(|(_, tool)| tool.server_name != CODEX_APPS_MCP_SERVER_NAME)
-        .map(|(name, tool)| (name.clone(), tool.clone()))
-        .collect()
-}
-
 #[derive(Clone)]
 pub(crate) struct CodexAppsToolsCacheContext {
     pub(crate) codex_home: PathBuf,

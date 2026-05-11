@@ -42,7 +42,6 @@ use codex_protocol::config_types::ForcedLoginMethod;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::config_types::SandboxMode;
-use codex_protocol::config_types::ServiceTier;
 use codex_protocol::config_types::TrustLevel;
 use codex_protocol::config_types::Verbosity;
 use codex_protocol::config_types::WebSearchMode;
@@ -177,7 +176,10 @@ pub struct ConfigToml {
     pub compact_prompt: Option<String>,
 
     /// Optional commit attribution text for commit message co-author trailers.
+    /// This top-level setting only takes effect when `[features].codex_git_commit`
+    /// is enabled.
     ///
+    /// When enabled and unset, Codex uses `Codex <noreply@openai.com>`.
     /// Set to an empty string to disable automatic commit attribution.
     pub commit_attribution: Option<String>,
 
@@ -305,8 +307,9 @@ pub struct ConfigToml {
     /// Optionally specify a personality for the model
     pub personality: Option<Personality>,
 
-    /// Optional explicit service tier preference for new turns (`fast` or `flex`).
-    pub service_tier: Option<ServiceTier>,
+    /// Optional explicit service tier request id for new turns (for example
+    /// `priority` or `flex`; legacy `fast` also works).
+    pub service_tier: Option<String>,
 
     /// Controls local context-budget behavior for new turns.
     pub context_budget_mode: Option<ContextBudgetMode>,
@@ -346,13 +349,14 @@ pub struct ConfigToml {
     /// active.
     pub experimental_realtime_start_instructions: Option<String>,
 
-    /// Experimental / do not use. When set, app-server uses a remote thread
-    /// store at this endpoint instead of the local filesystem/SQLite store.
-    pub experimental_thread_store_endpoint: Option<String>,
-
     /// Experimental / do not use. When set, app-server fetches thread-scoped
     /// config from a remote service at this endpoint.
     pub experimental_thread_config_endpoint: Option<String>,
+
+    /// Removed. Former remote thread-store endpoint setting kept only so we can
+    /// fail fast instead of silently falling back to local persistence.
+    #[schemars(skip)]
+    pub experimental_thread_store_endpoint: Option<String>,
 
     /// Experimental / do not use. Selects the thread store implementation.
     pub experimental_thread_store: Option<ThreadStoreToml>,
@@ -501,9 +505,6 @@ pub struct DebugConfigLockToml {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ThreadStoreToml {
     Local {},
-    Remote {
-        endpoint: String,
-    },
     #[schemars(skip)]
     InMemory {
         id: String,

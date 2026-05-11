@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use std::time::Instant;
 
 use crate::function_tool::FunctionCallError;
 use crate::goals::GoalRuntimeEvent;
@@ -52,6 +51,14 @@ pub trait ToolHandler: Send + Sync {
 
     /// The concrete tool name handled by this handler instance.
     fn tool_name(&self) -> ToolName;
+
+    fn spec(&self) -> Option<ToolSpec> {
+        None
+    }
+
+    fn supports_parallel_tool_calls(&self) -> bool {
+        false
+    }
 
     fn kind(&self) -> ToolKind;
 
@@ -269,7 +276,7 @@ impl ToolRegistry {
         invocation: ToolInvocation,
     ) -> Result<AnyToolResult, FunctionCallError> {
         let tool_name = invocation.tool_name.clone();
-        let display_name = tool_name.display();
+        let tool_name_flat = flat_tool_name(&tool_name);
         let call_id_owned = invocation.call_id.clone();
         let otel = invocation.turn.session_telemetry.clone();
         let payload_for_response = invocation.payload.clone();
@@ -322,7 +329,7 @@ impl ToolRegistry {
             None => {
                 let message = unsupported_tool_call_message(&invocation.payload, &tool_name);
                 otel.tool_result_with_tags(
-                    &display_name,
+                    tool_name_flat.as_ref(),
                     &call_id_owned,
                     log_payload.as_ref(),
                     Duration::ZERO,
@@ -339,9 +346,9 @@ impl ToolRegistry {
         };
 
         if !handler.matches_kind(&invocation.payload) {
-            let message = format!("tool {display_name} invoked with incompatible payload");
+            let message = format!("tool {tool_name} invoked with incompatible payload");
             otel.tool_result_with_tags(
-                &display_name,
+                tool_name_flat.as_ref(),
                 &call_id_owned,
                 log_payload.as_ref(),
                 Duration::ZERO,
@@ -505,10 +512,9 @@ impl ToolRegistry {
         let response_cell = tokio::sync::Mutex::new(None);
         let invocation_for_tool = invocation.clone();
 
-        let started = Instant::now();
         let result = otel
             .log_tool_result_with_tags(
-                &display_name,
+                tool_name_flat.as_ref(),
                 &call_id_owned,
                 log_payload.as_ref(),
                 &metric_tags,
@@ -537,10 +543,9 @@ impl ToolRegistry {
                 },
             )
             .await;
-        let duration = started.elapsed();
-        let (output_preview, success) = match &result {
-            Ok((preview, success)) => (preview.clone(), *success),
-            Err(err) => (err.to_string(), false),
+        let success = match &result {
+            Ok((_preview, success)) => *success,
+            Err(_) => false,
         };
         emit_metric_for_tool_read(&invocation, success).await;
         maybe_spawn_first_moves_hit(&invocation, pre_tool_use_payload.as_ref(), success);
@@ -569,21 +574,6 @@ impl ToolRegistry {
         } else {
             None
         };
-        // Deprecated: this is the legacy AfterToolUse hook. Prefer the new PostToolUse
-        let hook_abort_error = dispatch_after_tool_use_hook(AfterToolUseHookDispatch {
-            invocation: &invocation,
-            output_preview,
-            success,
-            executed: true,
-            duration,
-            mutating: is_mutating,
-        })
-        .await;
-
-        if let Some(err) = hook_abort_error {
-            dispatch_trace.record_failed(&err);
-            return Err(err);
-        }
 
         let mut replaced_by_post_tool_use = false;
         if let Some(outcome) = &post_tool_use_outcome {
@@ -656,25 +646,24 @@ impl ToolRegistry {
 pub struct ToolRegistryBuilder {
     handlers: HashMap<ToolName, Arc<dyn AnyToolHandler>>,
     specs: Vec<ConfiguredToolSpec>,
+    code_mode_enabled: bool,
 }
 
 impl ToolRegistryBuilder {
-    pub fn new() -> Self {
+    pub fn new(code_mode_enabled: bool) -> Self {
         Self {
             handlers: HashMap::new(),
             specs: Vec::new(),
+            code_mode_enabled,
         }
     }
 
-    pub fn push_spec(&mut self, spec: ToolSpec) {
-        self.push_spec_with_parallel_support(spec, /*supports_parallel_tool_calls*/ false);
-    }
-
-    pub fn push_spec_with_parallel_support(
-        &mut self,
-        spec: ToolSpec,
-        supports_parallel_tool_calls: bool,
-    ) {
+    pub(crate) fn push_spec(&mut self, spec: ToolSpec, supports_parallel_tool_calls: bool) {
+        let spec = if self.code_mode_enabled {
+            codex_tools::augment_tool_spec_for_code_mode(spec)
+        } else {
+            spec
+        };
         self.specs
             .push(ConfiguredToolSpec::new(spec, supports_parallel_tool_calls));
     }
@@ -684,11 +673,22 @@ impl ToolRegistryBuilder {
         H: ToolHandler + 'static,
     {
         let name = handler.tool_name();
-        let display_name = name.display();
-        let handler: Arc<dyn AnyToolHandler> = handler;
-        if self.handlers.insert(name, handler).is_some() {
-            warn!("overwriting handler for tool {display_name}");
+        if self.handlers.contains_key(&name) {
+            error_or_panic(format!("handler for tool {name} already registered"));
+            return;
         }
+
+        if let Some(spec) = handler.spec() {
+            let supports_parallel_tool_calls = handler.supports_parallel_tool_calls();
+            self.push_spec(spec, supports_parallel_tool_calls);
+        }
+
+        let handler: Arc<dyn AnyToolHandler> = handler;
+        self.handlers.insert(name, handler);
+    }
+
+    pub(crate) fn specs(&self) -> &[ConfiguredToolSpec] {
+        &self.specs
     }
 
     pub fn build(self) -> (Vec<ConfiguredToolSpec>, ToolRegistry) {
@@ -698,7 +698,6 @@ impl ToolRegistryBuilder {
 }
 
 fn unsupported_tool_call_message(payload: &ToolPayload, tool_name: &ToolName) -> String {
-    let tool_name = tool_name.display();
     match payload {
         ToolPayload::Custom { .. } => format!("unsupported custom tool call: {tool_name}"),
         _ => format!("unsupported call: {tool_name}"),

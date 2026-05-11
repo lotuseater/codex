@@ -2239,6 +2239,8 @@ mod tests {
                 id: "review-guardian-exec".into(),
                 target_item_id: Some("guardian-exec".into()),
                 turn_id: "turn-1".into(),
+                started_at_ms: 1_000,
+                completed_at_ms: None,
                 status: GuardianAssessmentStatus::InProgress,
                 risk_level: None,
                 user_authorization: None,
@@ -2256,6 +2258,8 @@ mod tests {
                 id: "review-guardian-exec".into(),
                 target_item_id: Some("guardian-exec".into()),
                 turn_id: "turn-1".into(),
+                started_at_ms: 1_000,
+                completed_at_ms: Some(1_042),
                 status: GuardianAssessmentStatus::Denied,
                 risk_level: Some(codex_protocol::protocol::GuardianRiskLevel::High),
                 user_authorization: Some(codex_protocol::protocol::GuardianUserAuthorization::Low),
@@ -2318,6 +2322,8 @@ mod tests {
                 id: "review-guardian-execve".into(),
                 target_item_id: Some("guardian-execve".into()),
                 turn_id: "turn-1".into(),
+                started_at_ms: 2_000,
+                completed_at_ms: None,
                 status: GuardianAssessmentStatus::InProgress,
                 risk_level: None,
                 user_authorization: None,
@@ -2621,6 +2627,7 @@ mod tests {
             EventMsg::ApplyPatchApprovalRequest(ApplyPatchApprovalRequestEvent {
                 call_id: "patch-call".into(),
                 turn_id: turn_id.to_string(),
+                started_at_ms: 0,
                 changes: [(
                     PathBuf::from("README.md"),
                     codex_protocol::protocol::FileChange::Add {
