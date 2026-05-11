@@ -365,6 +365,7 @@ non-workspace pin candidates + cross-version dup families.
 | 1 | `~/.codex/local-builds/codex-custom-20260510-100936/codex.exe` | (initial) **93** | profile/sccache/link-arg wins; chardetng/ctor/cpal/whoami bumps kept |
 | 2 | (rolled into Slice 3 deploy) | 93 → **60** | windows family collapsed (-6), 23 per-crate pins consolidated |
 | 3 | `~/.codex/local-builds/codex-custom-20260510-181104/codex.exe` | 60 → **61** (sha1 0.10 stays via aws-config) | hash family migrated; net dup ±0 but code is on modern crypto stack |
+| 7 | (no deploy — reporting + sentry feature swap) | workspace 48 (unchanged); **deploy-graph 45** (new measurement) | `native-tls` left the lockfile (1296 → 1286 entries) via `sentry = { default-features = false, features = [..., "rustls"] }`; dep-snapshot now reports deploy-graph dups + release-artifact families; V8/code-mode decoupling captured in `docs/v8-code-mode-decoupling-options.md`; full release test deferred (disk-bound) |
 
 Slice 3 final cold-ish build (after target/release wipe + many partial restarts) wall time: ~2.4 min from cargo invocation; full codex.exe size 228.9 MB. The "true cold" measurement was repeatedly disrupted by iterative compile-error fixes, so the 2.4-min number is closer to a warm/sccache-assisted rebuild than a green-field cold build.
 
