@@ -11,11 +11,6 @@ use codex_protocol::protocol::SessionSource;
 use codex_utils_cli::CliConfigOverrides;
 use std::path::PathBuf;
 
-// Hidden integration-test hooks: let tests that spawn the release app-server
-// binary avoid machine-level config and plugin startup side effects.
-const MANAGED_CONFIG_PATH_ENV_VAR: &str = "CODEX_APP_SERVER_MANAGED_CONFIG_PATH";
-const DISABLE_MANAGED_CONFIG_ENV_VAR: &str = "CODEX_APP_SERVER_DISABLE_MANAGED_CONFIG";
-
 #[derive(Debug, Parser)]
 struct AppServerArgs {
     /// Transport endpoint URL. Supported values: `stdio://` (default),
@@ -43,18 +38,31 @@ struct AppServerArgs {
     /// app-server binary.
     #[arg(long = "disable-plugin-startup-tasks-for-tests", hide = true)]
     disable_plugin_startup_tasks_for_tests: bool,
+
+    /// Hidden test hook used by integration tests that spawn the production
+    /// app-server binary.
+    #[arg(
+        long = "disable-managed-config-for-tests",
+        hide = true,
+        conflicts_with = "managed_config_path_for_tests"
+    )]
+    disable_managed_config_for_tests: bool,
+
+    /// Hidden test hook used by integration tests that spawn the production
+    /// app-server binary.
+    #[arg(
+        long = "managed-config-path-for-tests",
+        value_name = "PATH",
+        hide = true,
+        conflicts_with = "disable_managed_config_for_tests"
+    )]
+    managed_config_path_for_tests: Option<PathBuf>,
 }
 
 fn main() -> anyhow::Result<()> {
     arg0_dispatch_or_else(|arg0_paths: Arg0DispatchPaths| async move {
         let args = AppServerArgs::parse();
-        let loader_overrides = if disable_managed_config_from_debug_env() {
-            LoaderOverrides::without_managed_config_for_tests()
-        } else {
-            managed_config_path_from_debug_env()
-                .map(LoaderOverrides::with_managed_config_path_for_tests)
-                .unwrap_or_default()
-        };
+        let loader_overrides = loader_overrides_from_args(&args);
         let transport = args.listen;
         let session_source = args.session_source;
         let auth = args.auth.try_into_settings()?;
@@ -78,22 +86,70 @@ fn main() -> anyhow::Result<()> {
     })
 }
 
-fn disable_managed_config_from_debug_env() -> bool {
-    if let Ok(value) = std::env::var(DISABLE_MANAGED_CONFIG_ENV_VAR) {
-        return matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES");
+fn loader_overrides_from_args(args: &AppServerArgs) -> LoaderOverrides {
+    if args.disable_managed_config_for_tests {
+        LoaderOverrides::without_managed_config_for_tests()
+    } else if let Some(path) = args.managed_config_path_for_tests.clone() {
+        LoaderOverrides::with_managed_config_path_for_tests(path)
+    } else {
+        LoaderOverrides::default()
     }
-
-    false
 }
 
-fn managed_config_path_from_debug_env() -> Option<PathBuf> {
-    if let Ok(value) = std::env::var(MANAGED_CONFIG_PATH_ENV_VAR) {
-        return if value.is_empty() {
-            None
-        } else {
-            Some(PathBuf::from(value))
-        };
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn loader_overrides_default_args_use_default_loader_overrides() {
+        let args = AppServerArgs::try_parse_from(["codex-app-server"]).unwrap();
+
+        assert_eq!(
+            loader_overrides_from_args(&args),
+            LoaderOverrides::default()
+        );
     }
 
-    None
+    #[test]
+    fn loader_overrides_disable_managed_config_arg_uses_test_overrides() {
+        let args = AppServerArgs::try_parse_from([
+            "codex-app-server",
+            "--disable-managed-config-for-tests",
+        ])
+        .unwrap();
+
+        assert_eq!(
+            loader_overrides_from_args(&args),
+            LoaderOverrides::without_managed_config_for_tests()
+        );
+    }
+
+    #[test]
+    fn loader_overrides_managed_config_path_arg_uses_explicit_path() {
+        let managed_config_path = PathBuf::from("managed_config.toml");
+        let args = AppServerArgs::try_parse_from([
+            "codex-app-server",
+            "--managed-config-path-for-tests",
+            "managed_config.toml",
+        ])
+        .unwrap();
+
+        assert_eq!(
+            loader_overrides_from_args(&args),
+            LoaderOverrides::with_managed_config_path_for_tests(managed_config_path)
+        );
+    }
+
+    #[test]
+    fn loader_overrides_managed_config_test_args_conflict() {
+        let result = AppServerArgs::try_parse_from([
+            "codex-app-server",
+            "--disable-managed-config-for-tests",
+            "--managed-config-path-for-tests",
+            "managed_config.toml",
+        ]);
+
+        assert!(result.is_err());
+    }
 }

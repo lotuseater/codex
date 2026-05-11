@@ -420,16 +420,7 @@ writable_roots = [{}]
         ),
     )?;
 
-    let managed_path_str = managed_path.display().to_string();
-
-    let mut mcp = McpProcess::new_with_env(
-        codex_home.path(),
-        &[(
-            "CODEX_APP_SERVER_MANAGED_CONFIG_PATH",
-            Some(&managed_path_str),
-        )],
-    )
-    .await?;
+    let mut mcp = McpProcess::new_with_managed_config_path(codex_home.path(), managed_path).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
     let request_id = mcp
