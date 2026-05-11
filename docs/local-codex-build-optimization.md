@@ -7,11 +7,12 @@ Date: 2026-04-30
 - The local build target is scoped to the binary with `cargo build --release -p codex-cli --bin codex`.
 - `scripts/build-local-codex.ps1 -Mode FastRelease` reuses the shared release profile from `codex-rs\.cargo\config.toml`:
   - `lto = "off"`
-  - `codegen-units = 64`
-  - `opt-level = 2`
+  - `codegen-units = 256`
+  - `opt-level = 1`
   - `debug = 0`
   - `strip = "symbols"`
   - `incremental = false`
+  - `split-debuginfo = "off"`
 - Keeping these settings in Cargo config, instead of per-command environment overrides, makes all local release builds/tests/checks reuse one artifact shape.
 - `build-local-codex.ps1` records a release-profile stamp under
   `codex-rs\target\release\.codex-local-release-profile.json` after a
@@ -23,6 +24,9 @@ Date: 2026-04-30
   accepting a one-time clean release rebuild.
 - During recent builds, long-running rustc children were observed compiling crates such as `codex_app_server_protocol`, `codex_config`, `aws_sdk_sts`, `tokio`, and `rustls` at release optimization.
 - `--jobs 1` reduces peak memory but also serializes the whole dependency graph. It is appropriate when rustc is failing with memory allocation errors, but it makes a cold or partly cold release build very long.
+- The fast local profile intentionally trades away some release optimization work
+  (`opt-level = 1`, more codegen partitions) to lower build time, peak memory,
+  and deployed binary size on this Windows checkout.
 - The high-cost mistake was mixing build lanes. For this workflow, keep the release cache hot and avoid actions that force debug/test rebuilds.
 - Another high-cost mistake is overlapping release commands. The build script
   now detects Codex Cargo command lines such as `cargo check -p codex-core` even
@@ -141,8 +145,9 @@ What it removes:
 - `codex-rs\target\release\incremental`
 - release PDB files
 
-When C: is still under pressure, add `-CleanTestArtifacts` to remove disposable
-release test executables under `target\release\deps`. Do not delete release
+When C: is still under pressure, add `-CleanTestArtifacts` to remove
+disposable release test executables under `target\release` and
+`target\release\deps`. Do not delete release
 `.rlib`, `.rmeta`, `.d`, `build`, `gn_out`, or `.fingerprint` files by hand;
 Cargo fingerprints can still reference them.
 
@@ -232,34 +237,60 @@ When running from the repo root instead of `codex-rs`, set `$log` under `logs\..
    .\scripts\test-operation-cache-runtime.ps1
    ```
 
-6. If `target/debug` exists or C: is low, run `build-local-codex.ps1 -Mode CleanSafe`; add `-CleanTestArtifacts` only under disk pressure.
+6. If `target/debug` exists or C: is low, run `build-local-codex.ps1 -Mode CleanSafe`; add `-CleanTestArtifacts` to immediately remove disposable release test executables.
 7. Run the produced `codex.exe --version`.
 8. For interactive TUI verification, run that same binary with a temporary `log_dir`.
 9. Only run `FastRelease` when release-profile behavior itself matters, and always capture a build log.
 
-## Profile change 2026-05-10
+### Focused Release Tests
 
-Updated `codex-rs/.cargo/config.toml` `[profile.release]` to lower per-rustc-job
-peak RSS on this 15.7 GB Win 11 machine:
+Use the release-test wrapper for local focused checks:
 
-- `opt-level = 1` (was `2`) — LLVM runs fewer optimization passes per crate,
-  cutting peak codegen RSS by an expected 20–30% on the worst-offender crates
-  (`codex_app_server_protocol`, `codex_config`, `aws_sdk_sts`, `tokio`,
-  `rustls`). Binary size grows ~5–15%; runtime perf drop is imperceptible for
-  a CLI tool whose bottleneck is LLM I/O, not CPU.
-- `codegen-units = 256` (was `64`) — each LLVM module is smaller, so peak
-  rustc memory inside one cargo job drops further. With `--jobs 2` capped by
-  the build script, aggregate parallel pressure stays bounded.
-- `embed-bitcode = false` — defensive: Cargo already implies this for
-  non-LTO release builds, but stating it explicitly keeps the per-rustc
-  memory peak predictable if `lto` is ever flipped on.
-- `split-debuginfo = "off"` — matches the workspace-shipped profile so
-  switching between the local override and upstream shape does not
-  regenerate debuginfo artifacts.
+```powershell
+.\scripts\test-local-codex-release.ps1 -Package codex-app-server -Filter managed_config
+```
 
-Because this changes the release-profile signature, the build script's stamp
-will mismatch on the next run. Pass
-`-ResetReleaseCacheOnProfileChange` once to accept the clean rebuild:
+The wrapper runs `cargo test -p <crate> --release`, writes a repo-local log, and
+after a successful test run calls:
+
+```powershell
+.\scripts\build-local-codex.ps1 -Mode CleanSafe -CleanTestArtifacts
+```
+
+This removes disposable release test executable artifacts from `target\release`
+and `target\release\deps`, while preserving `target\release\codex.exe`,
+`target\release\build`, `target\release\gn_out`, `.fingerprint`, and compiled
+libraries that Cargo may still reference for incremental release reuse. A
+2026-05-11 app-server release test left 9 `deps` executables plus 3 root
+non-`codex.exe` executables; the explicit cleanup path can reclaim roughly
+1 GB quickly without invalidating the main release cache.
+
+## Release profile contract
+
+Keep `codex-rs/.cargo/config.toml` aligned with the shared fast local release
+profile listed in the current observations above. The local deploy lane uses
+`opt-level = 1` and `codegen-units = 256` because the recent measured local
+tradeoff favored this machine's clean build time. A clean `64/2` LowMemRelease
+rebuild on 2026-05-11 took 52m49s and produced a 309.8 MB binary. Keep
+`embed-bitcode` unset because Cargo warns on that profile key in this checkout.
+
+Codegen-unit measurements on 2026-05-11 used the same profile knobs except
+`codegen-units`, `FastRelease`, `--jobs 3`, `--timings`, `-SkipDeploy`, and a
+clean `target\release` reset between profile-shape trials:
+
+| `codegen-units` | Wall time | `codex.exe` | `target\release` | Result |
+| --- | ---: | ---: | ---: | --- |
+| 256 | 19m30s | 224.9 MiB | 4285.1 MiB | Fastest; default local deploy lane. |
+| 128 | 27m48s | 224.4 MiB | 4277.3 MiB | Slower with only tiny space savings. |
+| 64 | 27m58s | 227.5 MiB | 4267.1 MiB | Slower and larger binary. |
+| 32 | 23m30s | 218.2 MiB | 4203.6 MiB | Smaller, but 4m slower than 256. |
+
+Use `32` only for a deliberate space-biased experiment. For the shared local
+deploy lane, `256` saves more time than `32` saves space.
+
+If the release-profile stamp mismatches after an intentional profile or
+toolchain change, pass `-ResetReleaseCacheOnProfileChange` once to accept the
+clean rebuild:
 
 ```powershell
 .\scripts\build-local-codex.ps1 -Mode LowMemRelease -ResetReleaseCacheOnProfileChange
@@ -272,6 +303,11 @@ path is printed once at the start of the run for traceability.
 
 ### Things ruled out (and why)
 
+- **Release incremental as the shared deploy default** — it can improve repeated
+  edit/build cycles, but it grows `target\release\incremental` and creates
+  another cache surface under tight C: disk pressure. Keep it for a separately
+  measured non-deploy experiment only; the shared deploy lane stays
+  `incremental = false` and `CleanSafe` removes leaked incremental artifacts.
 - **`panic = "abort"`** — would cut binary size and link time, but
   `codex-tui/src/lib.rs:1025`, `codex-exec/src/lib.rs:464`, and
   `codex-windows-sandbox-rs/src/wfp_setup.rs:106,131` rely on

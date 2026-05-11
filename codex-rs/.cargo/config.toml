@@ -20,7 +20,4 @@ opt-level = 1
 debug = 0
 strip = "symbols"
 incremental = false
-# Match the workspace `[profile.release]` so flipping between this local
-# profile and the upstream-shipped profile does not redo split-debuginfo
-# work. Local release keeps debug = 0 anyway, so this is mostly cosmetic.
 split-debuginfo = "off"

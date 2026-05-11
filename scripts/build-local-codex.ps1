@@ -23,7 +23,7 @@ param(
 
     [switch]$CleanTestArtifacts,
 
-    [int]$CleanTestArtifactsBelowGB = 5,
+    [int]$CleanTestArtifactsBelowGB = 0,
 
     [double]$DiskRequiredGB = 5,
 
@@ -317,14 +317,14 @@ function Get-BuildPlan {
 
     $envOverrides = [ordered]@{}
     $cargoArgs = @("build", "-p", "codex-cli", "--release", "--bin", "codex")
-    $description = "local low-memory release build using .cargo/config.toml release profile"
+    $description = "local fast release build using .cargo/config.toml release profile"
     $binary = Join-Path $TargetRoot "release\codex.exe"
 
     switch ($BuildMode) {
         "FastRelease" {
-            $description = "local low-memory release build (single shared release profile)"
+            $description = "local fast release build (single shared release profile)"
             if ($JobsOverride -le 0) {
-                $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 1300 -PerJobDiskMB 1600 -Ceiling 3
+                $JobsOverride = Get-RecommendedJobs -PerJobMemoryMB 1000 -PerJobDiskMB 1200 -Ceiling 4
             }
         }
         "LowMemRelease" {
@@ -400,6 +400,13 @@ function Test-AndFreeDiskSpace {
     if ($pdbCleanup["reclaimed_mb"] -gt 0) {
         Write-Host ("  - reclaimed {0,7:N1} MB from release PDB files" -f $pdbCleanup["reclaimed_mb"])
     }
+    $testArtifactSummary = Get-ReleaseTestArtifactSummary -RepoRoot $RepoRoot
+    if ($testArtifactSummary["total_mb"] -gt 0) {
+        $testCleanup = Invoke-ReleaseTestArtifactCleanup -RepoRoot $RepoRoot
+        if ($testCleanup["reclaimed_mb"] -gt 0) {
+            Write-Host ("  - reclaimed {0,7:N1} MB from release test executable artifacts" -f $testCleanup["reclaimed_mb"])
+        }
+    }
 
     foreach ($entry in $reclaimable) {
         if (-not (Test-Path -LiteralPath $entry.Path)) { continue }
@@ -468,7 +475,7 @@ function Get-PathSizeMB {
 }
 
 function Remove-GeneratedPathFast {
-    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = "High")]
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = "None")]
     param(
         [string]$Path,
         [string]$Action = "remove generated path"
@@ -578,54 +585,92 @@ function Invoke-GeneratedPathCleanup {
 function Get-ReleaseTestArtifactSummary {
     param([string]$RepoRoot)
 
+    $files = @(Get-ReleaseTestArtifactFiles -RepoRoot $RepoRoot)
+    $exeFiles = @($files | Where-Object { $_.Extension -ieq ".exe" })
+    $pdbFiles = @($files | Where-Object { $_.Extension -ieq ".pdb" })
+    $sidecarFiles = @($files | Where-Object { $_.Extension -ine ".exe" })
+    $release = Join-Path $RepoRoot "codex-rs\target\release"
     $deps = Join-Path $RepoRoot "codex-rs\target\release\deps"
-    if (-not (Test-Path -LiteralPath $deps)) {
-        return [ordered]@{
-            count = 0
-            total_mb = 0
-            matching_pdb_count = 0
-            matching_pdb_mb = 0
-        }
-    }
-
-    $exeFiles = @(Get-ChildItem -LiteralPath $deps -File -Filter "*.exe" -ErrorAction SilentlyContinue)
-    $pdbFiles = @()
-    foreach ($exe in $exeFiles) {
-        $pdb = [System.IO.Path]::ChangeExtension($exe.FullName, ".pdb")
-        if (Test-Path -LiteralPath $pdb) {
-            $pdbFiles += Get-Item -LiteralPath $pdb
-        }
-    }
+    $totalBytes = ($files | Measure-Object Length -Sum).Sum
+    $pdbBytes = ($pdbFiles | Measure-Object Length -Sum).Sum
+    $sidecarBytes = ($sidecarFiles | Measure-Object Length -Sum).Sum
+    if ($null -eq $totalBytes) { $totalBytes = 0 }
+    if ($null -eq $pdbBytes) { $pdbBytes = 0 }
+    if ($null -eq $sidecarBytes) { $sidecarBytes = 0 }
 
     return [ordered]@{
         count = $exeFiles.Count
-        total_mb = [math]::Round(($exeFiles | Measure-Object Length -Sum).Sum / 1MB, 1)
+        total_mb = [math]::Round($totalBytes / 1MB, 1)
+        root_exe_count = @($exeFiles | Where-Object { $_.DirectoryName -ieq $release }).Count
+        deps_exe_count = @($exeFiles | Where-Object { $_.DirectoryName -ieq $deps }).Count
         matching_pdb_count = $pdbFiles.Count
-        matching_pdb_mb = [math]::Round(($pdbFiles | Measure-Object Length -Sum).Sum / 1MB, 1)
+        matching_pdb_mb = [math]::Round($pdbBytes / 1MB, 1)
+        sidecar_count = $sidecarFiles.Count
+        sidecar_mb = [math]::Round($sidecarBytes / 1MB, 1)
     }
+}
+
+function Get-ReleaseTestArtifactFiles {
+    param([string]$RepoRoot)
+
+    $release = Join-Path $RepoRoot "codex-rs\target\release"
+    $deps = Join-Path $RepoRoot "codex-rs\target\release\deps"
+    if (-not (Test-Path -LiteralPath $release)) {
+        return @()
+    }
+
+    $candidatePaths = New-Object System.Collections.Generic.List[string]
+
+    foreach ($exe in @(Get-ChildItem -LiteralPath $release -File -Filter "*.exe" -ErrorAction SilentlyContinue)) {
+        if ($exe.Name -ieq "codex.exe") {
+            continue
+        }
+        $candidatePaths.Add($exe.FullName)
+    }
+
+    if (Test-Path -LiteralPath $deps) {
+        foreach ($exe in @(Get-ChildItem -LiteralPath $deps -File -Filter "*.exe" -ErrorAction SilentlyContinue)) {
+            $candidatePaths.Add($exe.FullName)
+        }
+    }
+
+    $pathsWithSidecars = New-Object System.Collections.Generic.List[string]
+    foreach ($path in $candidatePaths) {
+        foreach ($candidate in @($path, [System.IO.Path]::ChangeExtension($path, ".pdb"), [System.IO.Path]::ChangeExtension($path, ".d"))) {
+            if (Test-Path -LiteralPath $candidate) {
+                $pathsWithSidecars.Add($candidate)
+            }
+        }
+    }
+
+    return @(
+        $pathsWithSidecars |
+            Sort-Object -Unique |
+            ForEach-Object { Get-Item -LiteralPath $_ -Force }
+    )
 }
 
 function Invoke-ReleaseTestArtifactCleanup {
     param([string]$RepoRoot)
 
-    $deps = Join-Path $RepoRoot "codex-rs\target\release\deps"
-    if (-not (Test-Path -LiteralPath $deps)) {
+    $release = Join-Path $RepoRoot "codex-rs\target\release"
+    if (-not (Test-Path -LiteralPath $release)) {
         return [ordered]@{ removed = 0; reclaimed_mb = 0; status = "missing" }
+    }
+
+    $artifacts = @(Get-ReleaseTestArtifactFiles -RepoRoot $RepoRoot)
+    if ($artifacts.Count -eq 0) {
+        return [ordered]@{ removed = 0; reclaimed_mb = 0; status = "empty" }
     }
 
     $bytes = 0
     $removed = 0
-    foreach ($exe in @(Get-ChildItem -LiteralPath $deps -File -Filter "*.exe" -ErrorAction SilentlyContinue)) {
-        foreach ($path in @($exe.FullName, [System.IO.Path]::ChangeExtension($exe.FullName, ".pdb"))) {
-            if (-not (Test-Path -LiteralPath $path)) {
-                continue
-            }
-            $safePath = Assert-UnderRoot -Path $path -Root $deps -Label "release test artifact"
-            $item = Get-Item -LiteralPath $safePath -Force
-            $bytes += $item.Length
-            Remove-Item -LiteralPath $safePath -Force -ErrorAction Stop
-            $removed += 1
-        }
+    foreach ($artifact in $artifacts) {
+        $safePath = Assert-UnderRoot -Path $artifact.FullName -Root $release -Label "release test artifact"
+        $item = Get-Item -LiteralPath $safePath -Force
+        $bytes += $item.Length
+        Remove-Item -LiteralPath $safePath -Force -ErrorAction Stop
+        $removed += 1
     }
 
     return [ordered]@{

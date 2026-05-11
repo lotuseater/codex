@@ -1,10 +1,11 @@
 [profile.release]
 lto = "off"
-codegen-units = 64
-opt-level = 2
+codegen-units = 256
+opt-level = 1
 debug = 0
 strip = "symbols"
 incremental = false
+split-debuginfo = "off"
 
 [env]
 RUST_MIN_STACK = "16777216"
