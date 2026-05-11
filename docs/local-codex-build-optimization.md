@@ -146,8 +146,7 @@ What it removes:
 - release PDB files
 
 When C: is still under pressure, add `-CleanTestArtifacts` to remove
-disposable release test executables under `target\release` and
-`target\release\deps`. Do not delete release
+disposable release test executables under `target\release\deps`. Do not delete release
 `.rlib`, `.rmeta`, `.d`, `build`, `gn_out`, or `.fingerprint` files by hand;
 Cargo fingerprints can still reference them.
 
@@ -257,13 +256,14 @@ after a successful test run calls:
 .\scripts\build-local-codex.ps1 -Mode CleanSafe -CleanTestArtifacts
 ```
 
-This removes disposable release test executable artifacts from `target\release`
-and `target\release\deps`, while preserving `target\release\codex.exe`,
+This removes disposable release test executable artifacts from
+`target\release\deps`, while preserving root release binaries such as
+`target\release\codex.exe` and `target\release\codex-app-server.exe`,
 `target\release\build`, `target\release\gn_out`, `.fingerprint`, and compiled
 libraries that Cargo may still reference for incremental release reuse. A
-2026-05-11 app-server release test left 9 `deps` executables plus 3 root
-non-`codex.exe` executables; the explicit cleanup path can reclaim roughly
-1 GB quickly without invalidating the main release cache.
+2026-05-11 app-server release test left 9 `deps` executables; the explicit
+cleanup path can reclaim hundreds of MB quickly without invalidating the main
+release cache.
 
 ## Release profile contract
 

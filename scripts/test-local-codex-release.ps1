@@ -50,6 +50,11 @@ Write-Host ("Running: cargo {0}" -f ($cargoArgs -join " "))
 Write-Host "Log: $log"
 
 $testExit = 1
+$hadNativeCommandPreference = Test-Path -LiteralPath Variable:\PSNativeCommandUseErrorActionPreference
+if ($hadNativeCommandPreference) {
+    $previousNativeCommandPreference = $PSNativeCommandUseErrorActionPreference
+    $PSNativeCommandUseErrorActionPreference = $false
+}
 Push-Location $codexRs
 try {
     & cargo @cargoArgs 2>&1 | Tee-Object -FilePath $log
@@ -57,6 +62,12 @@ try {
 }
 finally {
     Pop-Location
+    if ($hadNativeCommandPreference) {
+        $PSNativeCommandUseErrorActionPreference = $previousNativeCommandPreference
+    }
+}
+if ($null -eq $testExit) {
+    $testExit = 1
 }
 
 if ($testExit -eq 0 -and -not $NoCleanup) {

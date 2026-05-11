@@ -589,7 +589,6 @@ function Get-ReleaseTestArtifactSummary {
     $exeFiles = @($files | Where-Object { $_.Extension -ieq ".exe" })
     $pdbFiles = @($files | Where-Object { $_.Extension -ieq ".pdb" })
     $sidecarFiles = @($files | Where-Object { $_.Extension -ine ".exe" })
-    $release = Join-Path $RepoRoot "codex-rs\target\release"
     $deps = Join-Path $RepoRoot "codex-rs\target\release\deps"
     $totalBytes = ($files | Measure-Object Length -Sum).Sum
     $pdbBytes = ($pdbFiles | Measure-Object Length -Sum).Sum
@@ -601,7 +600,7 @@ function Get-ReleaseTestArtifactSummary {
     return [ordered]@{
         count = $exeFiles.Count
         total_mb = [math]::Round($totalBytes / 1MB, 1)
-        root_exe_count = @($exeFiles | Where-Object { $_.DirectoryName -ieq $release }).Count
+        root_exe_count = 0
         deps_exe_count = @($exeFiles | Where-Object { $_.DirectoryName -ieq $deps }).Count
         matching_pdb_count = $pdbFiles.Count
         matching_pdb_mb = [math]::Round($pdbBytes / 1MB, 1)
@@ -613,25 +612,14 @@ function Get-ReleaseTestArtifactSummary {
 function Get-ReleaseTestArtifactFiles {
     param([string]$RepoRoot)
 
-    $release = Join-Path $RepoRoot "codex-rs\target\release"
     $deps = Join-Path $RepoRoot "codex-rs\target\release\deps"
-    if (-not (Test-Path -LiteralPath $release)) {
+    if (-not (Test-Path -LiteralPath $deps)) {
         return @()
     }
 
     $candidatePaths = New-Object System.Collections.Generic.List[string]
-
-    foreach ($exe in @(Get-ChildItem -LiteralPath $release -File -Filter "*.exe" -ErrorAction SilentlyContinue)) {
-        if ($exe.Name -ieq "codex.exe") {
-            continue
-        }
+    foreach ($exe in @(Get-ChildItem -LiteralPath $deps -File -Filter "*.exe" -ErrorAction SilentlyContinue)) {
         $candidatePaths.Add($exe.FullName)
-    }
-
-    if (Test-Path -LiteralPath $deps) {
-        foreach ($exe in @(Get-ChildItem -LiteralPath $deps -File -Filter "*.exe" -ErrorAction SilentlyContinue)) {
-            $candidatePaths.Add($exe.FullName)
-        }
     }
 
     $pathsWithSidecars = New-Object System.Collections.Generic.List[string]
@@ -653,8 +641,8 @@ function Get-ReleaseTestArtifactFiles {
 function Invoke-ReleaseTestArtifactCleanup {
     param([string]$RepoRoot)
 
-    $release = Join-Path $RepoRoot "codex-rs\target\release"
-    if (-not (Test-Path -LiteralPath $release)) {
+    $deps = Join-Path $RepoRoot "codex-rs\target\release\deps"
+    if (-not (Test-Path -LiteralPath $deps)) {
         return [ordered]@{ removed = 0; reclaimed_mb = 0; status = "missing" }
     }
 
@@ -666,7 +654,7 @@ function Invoke-ReleaseTestArtifactCleanup {
     $bytes = 0
     $removed = 0
     foreach ($artifact in $artifacts) {
-        $safePath = Assert-UnderRoot -Path $artifact.FullName -Root $release -Label "release test artifact"
+        $safePath = Assert-UnderRoot -Path $artifact.FullName -Root $deps -Label "release test artifact"
         $item = Get-Item -LiteralPath $safePath -Force
         $bytes += $item.Length
         Remove-Item -LiteralPath $safePath -Force -ErrorAction Stop
