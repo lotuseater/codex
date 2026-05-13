@@ -1517,3 +1517,38 @@ async fn code_mode_only_restricts_model_tools_to_exec_tools() {
     )
     .await;
 }
+
+#[tokio::test]
+async fn code_mode_augments_model_visible_tool_descriptions_once() {
+    let config = test_config().await;
+    let model_info = construct_model_info_offline("gpt-5.4", &config);
+    let mut features = Features::with_defaults();
+    features.enable(Feature::CodeMode);
+    features.enable(Feature::UnifiedExec);
+    let available_models = Vec::new();
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        image_generation_tool_auth_allowed: true,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        permission_profile: &PermissionProfile::Disabled,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+    let (tools, _) = build_specs(
+        &tools_config,
+        /*mcp_tools*/ None,
+        /*deferred_mcp_tools*/ None,
+        &[],
+    )
+    .build();
+    let ToolSpec::Function(ResponsesApiTool { description, .. }) =
+        &find_tool(&tools, "view_image").spec
+    else {
+        panic!("view_image should be a function tool");
+    };
+
+    assert_eq!(description.matches("exec tool declaration:").count(), 1);
+    assert!(description.contains("declare const tools: { view_image"));
+}

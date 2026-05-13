@@ -352,6 +352,7 @@ use self::plugins::PluginsCacheState;
 mod plan_implementation;
 use self::plan_implementation::PLAN_IMPLEMENTATION_TITLE;
 use self::plan_implementation::PLAN_IMPLEMENTATION_VIEW_ID;
+mod protocol;
 mod realtime;
 use self::realtime::RealtimeConversationUiState;
 mod reasoning_shortcuts;
@@ -650,95 +651,6 @@ pub(crate) enum ExternalEditorState {
     Active,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct StatusIndicatorState {
-    header: String,
-    details: Option<String>,
-    details_max_lines: usize,
-}
-
-impl StatusIndicatorState {
-    fn working() -> Self {
-        Self {
-            header: String::from("Working"),
-            details: None,
-            details_max_lines: STATUS_DETAILS_DEFAULT_MAX_LINES,
-        }
-    }
-
-    fn is_guardian_review(&self) -> bool {
-        self.header == "Reviewing approval request" || self.header.starts_with("Reviewing ")
-    }
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-struct PendingGuardianReviewStatus {
-    entries: Vec<PendingGuardianReviewStatusEntry>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct PendingGuardianReviewStatusEntry {
-    id: String,
-    detail: String,
-}
-
-impl PendingGuardianReviewStatus {
-    fn start_or_update(&mut self, id: String, detail: String) {
-        if let Some(existing) = self.entries.iter_mut().find(|entry| entry.id == id) {
-            existing.detail = detail;
-        } else {
-            self.entries
-                .push(PendingGuardianReviewStatusEntry { id, detail });
-        }
-    }
-
-    fn finish(&mut self, id: &str) -> bool {
-        let original_len = self.entries.len();
-        self.entries.retain(|entry| entry.id != id);
-        self.entries.len() != original_len
-    }
-
-    fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
-    // Guardian review status is derived from the full set of currently pending
-    // review entries. The generic status cache on `ChatWidget` stores whichever
-    // footer is currently rendered; this helper computes the guardian-specific
-    // footer snapshot that should replace it while reviews remain in flight.
-    fn status_indicator_state(&self) -> Option<StatusIndicatorState> {
-        let details = if self.entries.len() == 1 {
-            self.entries.first().map(|entry| entry.detail.clone())
-        } else if self.entries.is_empty() {
-            None
-        } else {
-            let mut lines = self
-                .entries
-                .iter()
-                .take(3)
-                .map(|entry| format!("• {}", entry.detail))
-                .collect::<Vec<_>>();
-            let remaining = self.entries.len().saturating_sub(3);
-            if remaining > 0 {
-                lines.push(format!("+{remaining} more"));
-            }
-            Some(lines.join("\n"))
-        };
-        let details = details?;
-        let header = if self.entries.len() == 1 {
-            String::from("Reviewing approval request")
-        } else {
-            format!("Reviewing {} approval requests", self.entries.len())
-        };
-        let details_max_lines = if self.entries.len() == 1 { 1 } else { 4 };
-        Some(StatusIndicatorState {
-            header,
-            details: Some(details),
-            details_max_lines,
-        })
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AutoLoopAfterSelfReview {
     Idle,
@@ -806,33 +718,10 @@ pub(crate) struct ChatWidget {
     /// Holds the platform clipboard lease so copied text remains available while supported.
     clipboard_lease: Option<crate::clipboard_copy::ClipboardLease>,
     copy_last_response_binding: Vec<KeyBinding>,
-    /// Raw markdown of the most recently completed agent response that
-    /// survived any local thread rollback.
-    last_agent_markdown: Option<String>,
-    /// Copyable agent responses keyed by the number of visible user turns at
-    /// the time the response completed.
-    agent_turn_markdowns: Vec<AgentTurnMarkdown>,
-    /// Number of user turns currently reflected in the visible transcript.
-    visible_user_turn_count: usize,
-    /// True when rollback discarded the requested copy source because it was
-    /// older than the retained copy history.
-    copy_history_evicted_by_rollback: bool,
-    /// Raw markdown of the most recently completed proposed plan.
-    ///
-    /// This is cached only for the approval popup. It is reset at the start of each new task so the
-    /// fresh-context action cannot accidentally submit an older plan after a later turn begins.
-    latest_proposed_plan_markdown: Option<String>,
     /// Latest fully completed `update_plan` checklist, used by the post-plan follow-up checkpoint.
     latest_completed_plan_markdown: Option<String>,
     plan_self_review: PlanSelfReview,
     last_plan_self_review_started_at: Option<Instant>,
-    /// Whether this turn already produced a copyable response.
-    ///
-    /// `TurnComplete.last_agent_message` is a fallback source: use it only when no earlier
-    /// agent/plan/review item recorded copyable markdown for the turn. This gives item-level
-    /// sources precedence and avoids duplicating the same final answer when both event shapes are
-    /// emitted.
-    saw_copy_source_this_turn: bool,
     running_commands: HashMap<String, RunningCommand>,
     collab_agent_metadata: HashMap<ThreadId, AgentMetadata>,
     pending_collab_spawn_requests: HashMap<String, multi_agents::SpawnRequestSummary>,
@@ -927,32 +816,10 @@ pub(crate) struct ChatWidget {
     auto_loop_after_self_review: AutoLoopAfterSelfReview,
     // Snapshot of token usage to restore after review mode exits.
     pre_review_token_info: Option<Option<TokenUsageInfo>>,
-    // Whether the next streamed assistant content should be preceded by a final message separator.
-    //
-    // This is set whenever we insert a visible history cell that conceptually belongs to a turn.
-    // The separator itself is only rendered if the turn recorded "work" activity.
-    needs_final_message_separator: bool,
-    // Whether the current turn performed "work" (exec commands, MCP tool calls, patch applications).
-    //
-    // This gates rendering of the "Worked for …" separator so purely conversational turns don't
-    // show an empty divider.
-    had_work_activity: bool,
-    // Whether the current turn emitted a plan update.
-    saw_plan_update_this_turn: bool,
-    // Whether the current turn emitted a proposed plan item that has not been superseded by a
-    // later steer. This is cleared when the user submits a steer so the plan popup only appears
-    // if a newer proposed plan arrives afterward.
-    saw_plan_item_this_turn: bool,
     // Whether this turn marked every item in the current `update_plan` checklist completed.
     plan_completed_this_turn: bool,
     // Whether post-plan follow-up consideration is waiting for review/blockers to clear.
     plan_completion_followup_pending: bool,
-    // Latest `update_plan` checklist task counts for terminal-title rendering.
-    last_plan_progress: Option<(usize, usize)>,
-    // Incremental buffer for streamed plan content.
-    plan_delta_buffer: String,
-    // True while a plan item is streaming.
-    plan_item_active: bool,
     // Runtime metrics accumulated across delta snapshots for the active turn.
     turn_runtime_metrics: RuntimeMetricsSummary,
     self_review_tracker: SelfReviewTracker,
@@ -2438,26 +2305,23 @@ impl ChatWidget {
     // Raw reasoning uses the same flow as summarized reasoning
 
     fn on_task_started(&mut self) {
-        self.user_turn_pending_start = false;
-        self.agent_turn_running = true;
-        self.goal_status_active_turn_started_at = Some(Instant::now());
-        self.turn_sleep_inhibitor
-            .set_turn_running(/*turn_running*/ true);
-        self.saw_copy_source_this_turn = false;
-        self.saw_plan_update_this_turn = false;
-        self.saw_plan_item_this_turn = false;
+        self.input_queue.user_turn_pending_start = false;
+        self.turn_lifecycle.start(Instant::now());
+        self.transcript.saw_copy_source_this_turn = false;
+        self.transcript.saw_plan_update_this_turn = false;
+        self.transcript.saw_plan_item_this_turn = false;
         self.plan_completed_this_turn = false;
-        self.had_work_activity = false;
+        self.transcript.had_work_activity = false;
         let awaiting_plan_self_review_revision =
             self.plan_self_review == PlanSelfReview::AwaitingRevision;
         if self.plan_self_review == PlanSelfReview::ReviewedCurrentPlan {
             self.plan_self_review = PlanSelfReview::Idle;
         }
         if !awaiting_plan_self_review_revision {
-            self.latest_proposed_plan_markdown = None;
+            self.transcript.latest_proposed_plan_markdown = None;
         }
-        self.plan_delta_buffer.clear();
-        self.plan_item_active = false;
+        self.transcript.plan_delta_buffer.clear();
+        self.transcript.plan_item_active = false;
         self.self_review_tracker.reset_turn();
         self.adaptive_chunking.reset();
         self.plan_stream_controller = None;
@@ -2562,6 +2426,9 @@ impl ChatWidget {
         // Mark task stopped and request redraw now that all content is in history.
         self.status_state.pending_status_indicator_restore = false;
         self.input_queue.user_turn_pending_start = false;
+        if self.active_hook_cell.take().is_some() {
+            self.bump_active_cell_revision();
+        }
         self.turn_lifecycle.finish();
         self.update_task_running_state();
         self.running_commands.clear();
@@ -2679,13 +2546,14 @@ impl ChatWidget {
         match self.plan_self_review {
             PlanSelfReview::Idle => {}
             PlanSelfReview::AwaitingRevision => {
-                if !self.saw_plan_item_this_turn
+                if !self.transcript.saw_plan_item_this_turn
                     && self
+                        .transcript
                         .latest_proposed_plan_markdown
                         .as_deref()
                         .is_some_and(|plan| !plan.trim().is_empty())
                 {
-                    self.saw_plan_item_this_turn = true;
+                    self.transcript.saw_plan_item_this_turn = true;
                 }
                 self.plan_self_review = PlanSelfReview::ReviewedCurrentPlan;
                 return false;
@@ -2694,7 +2562,7 @@ impl ChatWidget {
                 return false;
             }
         }
-        if !self.saw_plan_item_this_turn {
+        if !self.transcript.saw_plan_item_this_turn {
             return false;
         }
         if self.has_queued_follow_up_messages() {
@@ -2715,6 +2583,7 @@ impl ChatWidget {
         }
 
         let Some(plan_markdown) = self
+            .transcript
             .latest_proposed_plan_markdown
             .as_deref()
             .map(str::trim)
@@ -2747,7 +2616,7 @@ impl ChatWidget {
         else {
             return false;
         };
-        if self.has_queued_follow_up_messages() || !self.pending_steers.is_empty() {
+        if self.has_queued_follow_up_messages() || !self.input_queue.pending_steers.is_empty() {
             return false;
         }
         if !self.bottom_pane.no_modal_or_popup_active() || !self.bottom_pane.composer_is_empty() {
@@ -2776,8 +2645,8 @@ impl ChatWidget {
     fn suppress_regular_self_review_for_plan_activity(&self) -> bool {
         self.collaboration_modes_enabled()
             && self.active_mode_kind() == ModeKind::Plan
-            && (self.saw_plan_update_this_turn
-                || self.saw_plan_item_this_turn
+            && (self.transcript.saw_plan_update_this_turn
+                || self.transcript.saw_plan_item_this_turn
                 || self.plan_self_review != PlanSelfReview::Idle)
     }
 
@@ -3656,7 +3525,7 @@ impl ChatWidget {
                 StepStatus::Pending | StepStatus::InProgress => false,
             })
             .count();
-        self.last_plan_progress = (total > 0).then_some((completed, total));
+        self.transcript.last_plan_progress = (total > 0).then_some((completed, total));
         if total > 0 && completed == total {
             self.plan_completed_this_turn = true;
             self.plan_completion_followup_pending = true;
@@ -4807,7 +4676,7 @@ impl ChatWidget {
             }
         }
         // Mark that actual work was done (command executed)
-        self.had_work_activity = true;
+        self.transcript.had_work_activity = true;
         self.self_review_tracker.note_command(command_note);
         if is_user_shell {
             self.maybe_send_next_queued_input();
@@ -4827,7 +4696,7 @@ impl ChatWidget {
             self.add_to_history(history_cell::new_patch_apply_failure(String::new()));
         }
         // Mark that actual work was done (patch applied)
-        self.had_work_activity = true;
+        self.transcript.had_work_activity = true;
         if matches!(
             &status,
             codex_app_server_protocol::PatchApplyStatus::Completed
@@ -5288,15 +5157,9 @@ impl ChatWidget {
             task_complete_pending: false,
             unified_exec_processes: Vec::new(),
             mcp_startup_status: None,
-            last_agent_markdown: None,
-            agent_turn_markdowns: Vec::new(),
-            visible_user_turn_count: 0,
-            copy_history_evicted_by_rollback: false,
-            latest_proposed_plan_markdown: None,
             latest_completed_plan_markdown: None,
             plan_self_review: PlanSelfReview::Idle,
             last_plan_self_review_started_at: None,
-            saw_copy_source_this_turn: false,
             mcp_startup_expected_servers: None,
             mcp_startup_ignore_updates_until_next_start: false,
             mcp_startup_allow_terminal_only_next_round: false,
@@ -5338,15 +5201,8 @@ impl ChatWidget {
             is_review_mode: false,
             auto_loop_after_self_review: AutoLoopAfterSelfReview::Idle,
             pre_review_token_info: None,
-            needs_final_message_separator: false,
-            had_work_activity: false,
-            saw_plan_update_this_turn: false,
-            saw_plan_item_this_turn: false,
             plan_completed_this_turn: false,
             plan_completion_followup_pending: false,
-            last_plan_progress: None,
-            plan_delta_buffer: String::new(),
-            plan_item_active: false,
             turn_runtime_metrics: RuntimeMetricsSummary::default(),
             self_review_tracker: SelfReviewTracker::default(),
             last_rendered_width: std::cell::Cell::new(None),
@@ -9349,28 +9205,6 @@ impl ChatWidget {
         self.config.personality = Some(personality);
     }
 
-    /// Set Fast mode in the widget's config copy.
-    pub(crate) fn set_service_tier(&mut self, service_tier: Option<ServiceTier>) {
-        self.config.service_tier =
-            service_tier.map(|service_tier| service_tier.request_value().to_string());
-        self.effective_service_tier = service_tier;
-    }
-
-    pub(crate) fn current_service_tier(&self) -> Option<ServiceTier> {
-        self.effective_service_tier
-    }
-
-    pub(crate) fn configured_service_tier(&self) -> Option<ServiceTier> {
-        self.config
-            .service_tier
-            .as_deref()
-            .and_then(ServiceTier::from_request_value)
-    }
-
-    pub(crate) fn fast_default_opt_out(&self) -> Option<bool> {
-        self.config.notices.fast_default_opt_out
-    }
-
     /// Set Slow mode in the widget's config copy.
     pub(crate) fn set_context_budget_mode(&mut self, mode: ContextBudgetMode) {
         self.config.context_budget_mode = mode;
@@ -9443,39 +9277,6 @@ impl ChatWidget {
             mask.model = Some(model.to_string());
         }
         self.refresh_model_dependent_surfaces();
-    }
-
-    fn set_service_tier_selection(&mut self, service_tier: Option<ServiceTier>) {
-        if service_tier.is_none() {
-            self.config.notices.fast_default_opt_out = Some(true);
-        }
-        self.set_service_tier(service_tier);
-        self.app_event_tx
-            .send(AppEvent::CodexOp(AppCommand::override_turn_context(
-                /*cwd*/ None,
-                /*approval_policy*/ None,
-                /*approvals_reviewer*/ None,
-                /*permission_profile*/ None,
-                /*windows_sandbox_level*/ None,
-                /*model*/ None,
-                /*effort*/ None,
-                /*summary*/ None,
-                Some(service_tier.map(|service_tier| service_tier.request_value().to_string())),
-                /*context_budget_mode*/ None,
-                /*collaboration_mode*/ None,
-                /*personality*/ None,
-            )));
-        self.app_event_tx
-            .send(AppEvent::PersistServiceTierSelection { service_tier });
-    }
-
-    pub(crate) fn toggle_fast_mode_from_ui(&mut self) {
-        let next_tier = if matches!(self.current_service_tier(), Some(ServiceTier::Fast)) {
-            None
-        } else {
-            Some(ServiceTier::Fast)
-        };
-        self.set_service_tier_selection(next_tier);
     }
 
     fn set_context_budget_mode_selection(&mut self, mode: ContextBudgetMode) {
@@ -10485,7 +10286,7 @@ impl ChatWidget {
         if self.is_user_turn_pending_or_running() {
             return Err("a turn is still running");
         }
-        if self.has_queued_follow_up_messages() || !self.pending_steers.is_empty() {
+        if self.has_queued_follow_up_messages() || !self.input_queue.pending_steers.is_empty() {
             return Err("another message is already queued");
         }
         if self.bottom_pane.has_pending_thread_approvals() {

@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::path::PathBuf;
 
 use codex_arg0::Arg0DispatchPaths;
 use codex_arg0::Arg0PathEntryGuard;
@@ -44,7 +45,14 @@ where
         }
         TestBinaryDispatchMode::Skip => None,
         TestBinaryDispatchMode::InstallAliases => {
-            let codex_home = match tempfile::Builder::new().prefix(codex_home_prefix).tempdir() {
+            let codex_home_parent = match test_codex_home_parent() {
+                Ok(path) => path,
+                Err(error) => panic!("failed to resolve test CODEX_HOME parent: {error}"),
+            };
+            let codex_home = match tempfile::Builder::new()
+                .prefix(codex_home_prefix)
+                .tempdir_in(codex_home_parent)
+            {
                 Ok(codex_home) => codex_home,
                 Err(error) => panic!("failed to create test CODEX_HOME: {error}"),
             };
@@ -74,4 +82,23 @@ where
             })
         }
     }
+}
+
+fn test_codex_home_parent() -> std::io::Result<PathBuf> {
+    if let Some(target_tmpdir) = std::env::var_os("CARGO_TARGET_TMPDIR") {
+        let path = PathBuf::from(target_tmpdir);
+        std::fs::create_dir_all(&path)?;
+        return Ok(path);
+    }
+
+    let exe = std::env::current_exe()?;
+    let exe_dir = exe.parent().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "test executable path has no parent directory",
+        )
+    })?;
+    let path = exe_dir.join("test-codex-home");
+    std::fs::create_dir_all(&path)?;
+    Ok(path)
 }

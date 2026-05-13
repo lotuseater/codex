@@ -2130,7 +2130,7 @@ async fn queued_slow_slash_updates_mode_before_next_queued_message() {
     match next_submit_op(&mut op_rx) {
         Op::UserTurn {
             items,
-            context_budget_mode: Some(ContextBudgetMode::Slow),
+            context_budget_mode: ContextBudgetMode::Slow,
             ..
         } => assert_eq!(
             items,

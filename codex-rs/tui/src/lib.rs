@@ -621,7 +621,7 @@ async fn lookup_latest_session_target_with_app_server(
     cwd_filter: Option<&Path>,
     include_non_interactive: bool,
 ) -> color_eyre::Result<Option<resume_picker::SessionTarget>> {
-    let mut response = app_server
+    let response = app_server
         .thread_list(latest_session_lookup_params(
             app_server.is_remote(),
             config,
@@ -1554,6 +1554,7 @@ async fn run_ratatui_app(
         remote_auth_token,
         state_db,
         environment_manager,
+        startup_hooks_browser,
         crate::app::AutoLoopSettings::new(auto_loop, auto_loop_period, auto_loop_message),
     )
     .await;

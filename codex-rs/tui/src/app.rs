@@ -83,6 +83,7 @@ use codex_app_server_protocol::AddCreditsNudgeCreditType;
 use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::CodexErrorInfo as AppServerCodexErrorInfo;
+use codex_app_server_protocol::CollabAgentStatus;
 use codex_app_server_protocol::ConfigBatchWriteParams;
 use codex_app_server_protocol::ConfigLayerSource;
 use codex_app_server_protocol::ConfigValueWriteParams;
@@ -249,6 +250,30 @@ fn collab_receiver_thread_ids(notification: &ServerNotification) -> Option<&[Str
             _ => None,
         },
         _ => None,
+    }
+}
+
+fn collab_agent_item_is_not_found(item: &ThreadItem, receiver_thread_id: &str) -> bool {
+    let ThreadItem::CollabAgentToolCall { agents_states, .. } = item else {
+        return false;
+    };
+    agents_states
+        .get(receiver_thread_id)
+        .is_some_and(|state| state.status == CollabAgentStatus::NotFound)
+}
+
+fn collab_receiver_is_not_found(
+    notification: &ServerNotification,
+    receiver_thread_id: &str,
+) -> bool {
+    match notification {
+        ServerNotification::ItemStarted(notification) => {
+            collab_agent_item_is_not_found(&notification.item, receiver_thread_id)
+        }
+        ServerNotification::ItemCompleted(notification) => {
+            collab_agent_item_is_not_found(&notification.item, receiver_thread_id)
+        }
+        _ => false,
     }
 }
 
@@ -650,6 +675,7 @@ impl App {
         remote_app_server_auth_token: Option<String>,
         state_db: Option<StateDbHandle>,
         environment_manager: Arc<EnvironmentManager>,
+        startup_hooks_browser: Option<HooksListEntry>,
         auto_loop_settings: AutoLoopSettings,
     ) -> Result<AppExitInfo> {
         use tokio_stream::StreamExt;

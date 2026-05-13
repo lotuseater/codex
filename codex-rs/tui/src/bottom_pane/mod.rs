@@ -1227,7 +1227,7 @@ impl BottomPane {
 
     pub(crate) fn auto_loop_prompt_signature(&self) -> Option<String> {
         self.active_view()
-            .and_then(|view| view.auto_loop_prompt_signature())
+            .and_then(bottom_pane_view::BottomPaneView::auto_loop_prompt_signature)
     }
 
     pub(crate) fn try_auto_loop_prompt_action(&mut self) -> bool {

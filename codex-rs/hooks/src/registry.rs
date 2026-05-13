@@ -86,6 +86,7 @@ impl Hooks {
     fn hooks_for_event(&self, hook_event: &HookEvent) -> &[Hook] {
         match hook_event {
             HookEvent::AfterAgent { .. } => &self.after_agent,
+            HookEvent::AfterToolUse { .. } => &[],
         }
     }
 

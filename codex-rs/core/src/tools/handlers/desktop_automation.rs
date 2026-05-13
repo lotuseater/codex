@@ -45,7 +45,7 @@ impl ToolHandler for DesktopAutomationHandler {
 
     fn pre_tool_use_payload(&self, invocation: &ToolInvocation) -> Option<PreToolUsePayload> {
         Some(PreToolUsePayload {
-            tool_name: HookToolName::new(invocation.tool_name.display()),
+            tool_name: HookToolName::new(invocation.tool_name.to_string()),
             tool_input: function_arguments(&invocation.payload),
         })
     }
@@ -56,7 +56,7 @@ impl ToolHandler for DesktopAutomationHandler {
         result: &Self::Output,
     ) -> Option<PostToolUsePayload> {
         Some(PostToolUsePayload {
-            tool_name: HookToolName::new(invocation.tool_name.display()),
+            tool_name: HookToolName::new(invocation.tool_name.to_string()),
             tool_use_id: invocation.call_id.clone(),
             tool_input: function_arguments(&invocation.payload),
             tool_response: result.post_tool_use_response.clone().unwrap_or(Value::Null),

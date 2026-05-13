@@ -38,7 +38,7 @@ pub struct SpawnAgentToolOptions<'a> {
     pub max_concurrent_threads_per_session: Option<usize>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct WaitAgentTimeoutOptions {
     pub default_timeout_ms: i64,
     pub min_timeout_ms: i64,

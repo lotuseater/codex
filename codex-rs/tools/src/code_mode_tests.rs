@@ -5,6 +5,8 @@ use crate::FreeformToolFormat;
 use crate::ResponsesApiTool;
 use crate::ToolName;
 use crate::ToolSpec;
+use crate::create_code_mode_tool;
+use crate::create_wait_tool;
 use codex_tool_schema::AdditionalProperties;
 use codex_tool_schema::JsonSchema;
 use pretty_assertions::assert_eq;

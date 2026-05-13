@@ -21,7 +21,7 @@ use crate::tools::context::ToolPayload;
 use crate::tools::events::ToolEmitter;
 use crate::tools::events::ToolEventCtx;
 use crate::tools::handlers::apply_granted_turn_permissions;
-use crate::tools::handlers::apply_patch_spec::create_apply_patch_freeform_tool;
+use crate::tools::handlers::parse_arguments;
 use crate::tools::hook_names::HookToolName;
 use crate::tools::orchestrator::ToolOrchestrator;
 use crate::tools::registry::PostToolUsePayload;
@@ -46,8 +46,8 @@ use codex_protocol::protocol::PatchApplyUpdatedEvent;
 use codex_sandboxing::policy_transforms::effective_file_system_sandbox_policy;
 use codex_sandboxing::policy_transforms::merge_permission_profiles;
 use codex_sandboxing::policy_transforms::normalize_additional_permissions;
+use codex_tools::ApplyPatchToolArgs;
 use codex_tools::ToolName;
-use codex_tools::ToolSpec;
 use codex_utils_absolute_path::AbsolutePathBuf;
 
 const APPLY_PATCH_ARGUMENT_DIFF_BUFFER_INTERVAL: Duration = Duration::from_millis(500);
@@ -242,8 +242,15 @@ fn write_permissions_for_paths(
 }
 
 /// Extracts the raw patch text used as the command-shaped hook input for apply_patch.
+///
+/// The apply_patch tool can arrive as the older JSON/function shape or as a
+/// freeform custom tool call. Both represent the same file edit operation, so
+/// hooks see the raw patch body in `tool_input.command` either way.
 fn apply_patch_payload_command(payload: &ToolPayload) -> Option<String> {
     match payload {
+        ToolPayload::Function { arguments } => parse_arguments::<ApplyPatchToolArgs>(arguments)
+            .ok()
+            .map(|args| args.input),
         ToolPayload::Custom { input } => Some(input.clone()),
         _ => None,
     }
@@ -290,16 +297,15 @@ impl ToolHandler for ApplyPatchHandler {
         ToolName::plain("apply_patch")
     }
 
-    fn spec(&self) -> Option<ToolSpec> {
-        Some(create_apply_patch_freeform_tool())
-    }
-
     fn kind(&self) -> ToolKind {
         ToolKind::Function
     }
 
     fn matches_kind(&self, payload: &ToolPayload) -> bool {
-        matches!(payload, ToolPayload::Custom { .. })
+        matches!(
+            payload,
+            ToolPayload::Function { .. } | ToolPayload::Custom { .. }
+        )
     }
 
     async fn is_mutating(&self, _invocation: &ToolInvocation) -> bool {
@@ -345,10 +351,17 @@ impl ToolHandler for ApplyPatchHandler {
             ..
         } = invocation;
 
-        let ToolPayload::Custom { input: patch_input } = payload else {
-            return Err(FunctionCallError::RespondToModel(
-                "apply_patch handler received unsupported payload".to_string(),
-            ));
+        let patch_input = match payload {
+            ToolPayload::Function { arguments } => {
+                let args: ApplyPatchToolArgs = parse_arguments(&arguments)?;
+                args.input
+            }
+            ToolPayload::Custom { input } => input,
+            _ => {
+                return Err(FunctionCallError::RespondToModel(
+                    "apply_patch handler received unsupported payload".to_string(),
+                ));
+            }
         };
 
         // Re-parse and verify the patch so we can compute changes and approval.
@@ -422,11 +435,10 @@ impl ToolHandler for ApplyPatchHandler {
                                 turn.as_ref(),
                                 turn.approval_policy.value(),
                             )
-                            .await
-                            .map(|result| result.output);
+                            .await;
                         let (out, delta) = match out {
-                            Ok(output) => (Ok(output.exec_output), Some(output.delta)),
-                            Err(error) => (Err(error), Some(runtime.committed_delta().clone())),
+                            Ok(r) => (Ok(r.output.exec_output), Some(r.output.delta)),
+                            Err(e) => (Err(e), None),
                         };
                         let event_ctx = ToolEventCtx::new(
                             session.as_ref(),
@@ -534,11 +546,10 @@ pub(crate) async fn intercept_apply_patch(
                             turn.as_ref(),
                             turn.approval_policy.value(),
                         )
-                        .await
-                        .map(|result| result.output);
+                        .await;
                     let (out, delta) = match out {
-                        Ok(output) => (Ok(output.exec_output), Some(output.delta)),
-                        Err(error) => (Err(error), Some(runtime.committed_delta().clone())),
+                        Ok(r) => (Ok(r.output.exec_output), Some(r.output.delta)),
+                        Err(e) => (Err(e), None),
                     };
                     let event_ctx = ToolEventCtx::new(
                         session.as_ref(),

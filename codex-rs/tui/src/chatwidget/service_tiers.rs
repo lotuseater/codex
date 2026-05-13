@@ -97,7 +97,7 @@ impl ChatWidget {
             .unwrap_or_default()
     }
 
-    fn set_service_tier_selection(&mut self, service_tier: Option<String>) {
+    pub(super) fn set_service_tier_selection(&mut self, service_tier: Option<String>) {
         if service_tier.is_none() {
             self.config.notices.fast_default_opt_out = Some(true);
         }
@@ -113,6 +113,7 @@ impl ChatWidget {
                 /*effort*/ None,
                 /*summary*/ None,
                 Some(service_tier.clone()),
+                /*context_budget_mode*/ None,
                 /*collaboration_mode*/ None,
                 /*personality*/ None,
             )));

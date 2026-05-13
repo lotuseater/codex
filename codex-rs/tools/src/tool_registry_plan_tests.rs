@@ -104,7 +104,6 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
         create_image_generation_tool("png"),
         create_view_image_tool(ViewImageToolOptions {
             can_request_original_image_detail: config.can_request_original_image_detail,
-            include_environment_id: false,
         }),
     ] {
         expected.insert(spec.name().to_string(), spec);
@@ -883,48 +882,6 @@ fn disabled_environment_omits_environment_backed_tools() {
 }
 
 #[test]
-fn view_image_spec_includes_environment_id_only_for_multiple_selected_environments() {
-    let model_info = model_info();
-    let available_models = Vec::new();
-    let tools_config = ToolsConfig::new(&ToolsConfigParams {
-        model_info: &model_info,
-        available_models: &available_models,
-        features: &Features::with_defaults(),
-        image_generation_tool_auth_allowed: true,
-        web_search_mode: Some(WebSearchMode::Cached),
-        session_source: SessionSource::Cli,
-        permission_profile: &PermissionProfile::Disabled,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
-    });
-
-    let (single_environment_tools, _) = build_specs(
-        &tools_config,
-        /*mcp_tools*/ None,
-        /*deferred_mcp_tools*/ None,
-        &[],
-    );
-    assert_process_tool_environment_id(
-        &single_environment_tools,
-        VIEW_IMAGE_TOOL_NAME,
-        /*expected_present*/ false,
-    );
-
-    let multi_environment_config =
-        tools_config.with_environment_mode(ToolEnvironmentMode::Multiple);
-    let (multi_environment_tools, _) = build_specs(
-        &multi_environment_config,
-        /*mcp_tools*/ None,
-        /*deferred_mcp_tools*/ None,
-        &[],
-    );
-    assert_process_tool_environment_id(
-        &multi_environment_tools,
-        VIEW_IMAGE_TOOL_NAME,
-        /*expected_present*/ true,
-    );
-}
-
-#[test]
 fn test_build_specs_agent_job_worker_tools_enabled() {
     let model_info = model_info();
     let mut features = Features::with_defaults();
@@ -1600,7 +1557,7 @@ fn namespace_specs_are_hidden_when_namespace_tools_are_disabled() {
     });
     tools_config.namespace_tools = false;
 
-    let (tools, registry) = build_specs(
+    let (tools, handlers) = build_specs(
         &tools_config,
         Some(HashMap::from([(
             ToolName::namespaced("mcp__sample__", "echo"),
@@ -1611,7 +1568,10 @@ fn namespace_specs_are_hidden_when_namespace_tools_are_disabled() {
     );
 
     assert_lacks_tool_name(&tools, "mcp__sample__");
-    assert!(registry.has_handler(&ToolName::namespaced("mcp__sample__", "echo")));
+    assert!(handlers.contains(&ToolHandlerSpec {
+        name: ToolName::namespaced("mcp__sample__", "echo"),
+        kind: ToolHandlerKind::Mcp,
+    }));
 }
 
 #[test]
@@ -1765,7 +1725,7 @@ fn search_tool_description_lists_each_mcp_source_once() {
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
 
-    let (tools, registry) = build_specs(
+    let (tools, handlers) = build_specs(
         &tools_config,
         Some(HashMap::from([
             (
@@ -1830,11 +1790,14 @@ fn search_tool_description_lists_each_mcp_source_once() {
     assert!(description.contains("- rmcp: Remote memory tools."));
     assert!(!description.contains("mcp__rmcp__echo"));
 
-    assert!(registry.has_handler(&ToolName::namespaced(
-        "mcp__codex_apps__calendar",
-        "_create_event",
-    )));
-    assert!(registry.has_handler(&ToolName::namespaced("mcp__rmcp__", "echo")));
+    assert!(handlers.contains(&ToolHandlerSpec {
+        name: ToolName::namespaced("mcp__codex_apps__calendar", "_create_event"),
+        kind: ToolHandlerKind::Mcp,
+    }));
+    assert!(handlers.contains(&ToolHandlerSpec {
+        name: ToolName::namespaced("mcp__rmcp__", "echo"),
+        kind: ToolHandlerKind::Mcp,
+    }));
 }
 
 #[test]
@@ -1928,7 +1891,7 @@ fn search_tool_is_hidden_when_only_deferred_namespace_tools_are_available() {
     });
     tools_config.namespace_tools = false;
 
-    let (tools, registry) = build_specs(
+    let (tools, handlers) = build_specs(
         &tools_config,
         /*mcp_tools*/ None,
         Some(vec![deferred_mcp_tool(
@@ -1942,7 +1905,10 @@ fn search_tool_is_hidden_when_only_deferred_namespace_tools_are_available() {
     );
 
     assert_lacks_tool_name(&tools, TOOL_SEARCH_TOOL_NAME);
-    assert!(!registry.has_handler(&ToolName::plain(TOOL_SEARCH_TOOL_NAME)));
+    assert!(!handlers.contains(&ToolHandlerSpec {
+        name: ToolName::plain(TOOL_SEARCH_TOOL_NAME),
+        kind: ToolHandlerKind::ToolSearch,
+    }));
 }
 
 #[test]
@@ -1986,7 +1952,7 @@ fn search_tool_registers_for_deferred_dynamic_tools() {
         },
     ];
 
-    let (tools, registry) = build_specs(
+    let (tools, handlers) = build_specs(
         &tools_config,
         /*mcp_tools*/ None,
         /*deferred_mcp_tools*/ None,
@@ -2017,9 +1983,18 @@ fn search_tool_registers_for_deferred_dynamic_tools() {
         let dynamic_tool = find_namespace_function_tool(&tools, "codex_app", tool_name);
         assert_eq!(dynamic_tool.defer_loading, Some(true));
     }
-    assert!(registry.has_handler(&ToolName::plain(TOOL_SEARCH_TOOL_NAME)));
-    assert!(registry.has_handler(&ToolName::namespaced("codex_app", "automation_update")));
-    assert!(registry.has_handler(&ToolName::namespaced("codex_app", "automation_list")));
+    assert!(handlers.contains(&ToolHandlerSpec {
+        name: ToolName::plain(TOOL_SEARCH_TOOL_NAME),
+        kind: ToolHandlerKind::ToolSearch,
+    }));
+    assert!(handlers.contains(&ToolHandlerSpec {
+        name: ToolName::namespaced("codex_app", "automation_update"),
+        kind: ToolHandlerKind::DynamicTool,
+    }));
+    assert!(handlers.contains(&ToolHandlerSpec {
+        name: ToolName::namespaced("codex_app", "automation_list"),
+        kind: ToolHandlerKind::DynamicTool,
+    }));
 }
 
 #[test]
@@ -2056,7 +2031,7 @@ fn search_tool_keeps_plain_deferred_dynamic_tools_when_namespace_tools_are_disab
         },
     ];
 
-    let (tools, registry) = build_specs(
+    let (tools, handlers) = build_specs(
         &tools_config,
         /*mcp_tools*/ None,
         /*deferred_mcp_tools*/ None,
@@ -2065,7 +2040,10 @@ fn search_tool_keeps_plain_deferred_dynamic_tools_when_namespace_tools_are_disab
 
     assert_contains_tool_names(&tools, &[TOOL_SEARCH_TOOL_NAME, "plain_dynamic"]);
     assert_lacks_tool_name(&tools, "codex_app");
-    assert!(registry.has_handler(&ToolName::plain(TOOL_SEARCH_TOOL_NAME)));
+    assert!(handlers.contains(&ToolHandlerSpec {
+        name: ToolName::plain(TOOL_SEARCH_TOOL_NAME),
+        kind: ToolHandlerKind::ToolSearch,
+    }));
 }
 
 #[test]
@@ -2197,14 +2175,17 @@ fn request_plugin_install_description_lists_discoverable_tools() {
         })),
     ];
 
-    let (tools, registry) = build_specs_with_discoverable_tools(
+    let (tools, handlers) = build_specs_with_discoverable_tools(
         &tools_config,
         /*mcp_tools*/ None,
         /*deferred_mcp_tools*/ None,
         Some(discoverable_tools),
         &[],
     );
-    assert!(registry.has_handler(&ToolName::plain(REQUEST_PLUGIN_INSTALL_TOOL_NAME)));
+    assert!(handlers.contains(&ToolHandlerSpec {
+        name: ToolName::plain(REQUEST_PLUGIN_INSTALL_TOOL_NAME),
+        kind: ToolHandlerKind::RequestPluginInstall,
+    }));
 
     let request_plugin_install = find_tool(&tools, REQUEST_PLUGIN_INSTALL_TOOL_NAME);
     let ToolSpec::Function(ResponsesApiTool {
@@ -2267,7 +2248,7 @@ fn request_plugin_install_description_lists_discoverable_tools() {
 }
 
 #[test]
-fn code_mode_augments_mcp_tool_descriptions_with_namespaced_sample() {
+fn code_mode_plan_leaves_mcp_tool_descriptions_unaugmented() {
     let model_info = model_info();
     let mut features = Features::with_defaults();
     features.enable(Feature::CodeMode);
@@ -2309,19 +2290,11 @@ fn code_mode_augments_mcp_tool_descriptions_with_namespaced_sample() {
     let ResponsesApiTool { description, .. } =
         find_namespace_function_tool(&tools, "mcp__sample__", "echo");
 
-    assert_eq!(
-        description,
-        r#"Echo text
-
-exec tool declaration:
-```ts
-declare const tools: { mcp__sample__echo(args: { message: string; }): Promise<CallToolResult>; };
-```"#
-    );
+    assert_eq!(description, "Echo text");
 }
 
 #[test]
-fn code_mode_preserves_nullable_and_literal_mcp_input_shapes() {
+fn code_mode_plan_leaves_nullable_and_literal_mcp_descriptions_unaugmented() {
     let model_info = model_info();
     let mut features = Features::with_defaults();
     features.enable(Feature::CodeMode);
@@ -2395,16 +2368,11 @@ fn code_mode_preserves_nullable_and_literal_mcp_input_shapes() {
     let ResponsesApiTool { description, .. } =
         find_namespace_function_tool(&tools, "mcp__sample__", "fn");
 
-    assert!(description.contains(
-        r#"exec tool declaration:
-```ts
-declare const tools: { mcp__sample__fn(args: { open?: Array<{ lineno?: number | null; ref_id: string; }> | null; response_length?: "short" | "medium" | "long"; tagged_list?: Array<{ kind: "tagged"; scope: "one" | "two"; variant: "alpha" | "beta"; }> | null; }): Promise<CallToolResult>; };
-```"#
-    ));
+    assert_eq!(description, "Sample fn");
 }
 
 #[test]
-fn code_mode_augments_builtin_tool_descriptions_with_typed_sample() {
+fn code_mode_plan_leaves_builtin_tool_descriptions_unaugmented() {
     let model_info = model_info();
     let mut features = Features::with_defaults();
     features.enable(Feature::CodeMode);
@@ -2435,7 +2403,7 @@ fn code_mode_augments_builtin_tool_descriptions_with_typed_sample() {
 
     assert_eq!(
         description,
-        "View a local image from the filesystem (only use if given a full filepath by the user, and the image isn't already attached to the thread context within <image ...> tags).\n\nexec tool declaration:\n```ts\ndeclare const tools: { view_image(args: {\n  // Local filesystem path to an image file\n  path: string;\n}): Promise<{\n  // Image detail hint returned by view_image. Returns `original` when original resolution is preserved, otherwise `null`.\n  detail: string | null;\n  // Data URL for the loaded image.\n  image_url: string;\n}>; };\n```"
+        "View a local image from the filesystem (only use if given a full filepath by the user, and the image isn't already attached to the thread context within <image ...> tags)."
     );
 }
 
@@ -2557,9 +2525,9 @@ fn search_capable_model_info() -> ModelInfo {
 fn build_specs<'a>(
     config: &ToolsConfig,
     mcp_tools: Option<HashMap<ToolName, rmcp::model::Tool>>,
-    deferred_mcp_tools: Option<Vec<ToolRegistryBuildDeferredTool<'a>>>,
+    deferred_mcp_tools: Option<Vec<ToolRegistryPlanDeferredTool<'a>>>,
     dynamic_tools: &[DynamicToolSpec],
-) -> (Vec<ConfiguredToolSpec>, ToolRegistry) {
+) -> (Vec<ConfiguredToolSpec>, Vec<ToolHandlerSpec>) {
     build_specs_with_discoverable_tools(
         config,
         mcp_tools,
@@ -2572,10 +2540,10 @@ fn build_specs<'a>(
 fn build_specs_with_discoverable_tools<'a>(
     config: &ToolsConfig,
     mcp_tools: Option<HashMap<ToolName, rmcp::model::Tool>>,
-    deferred_mcp_tools: Option<Vec<ToolRegistryBuildDeferredTool<'a>>>,
+    deferred_mcp_tools: Option<Vec<ToolRegistryPlanDeferredTool<'a>>>,
     discoverable_tools: Option<Vec<DiscoverableTool>>,
     dynamic_tools: &[DynamicToolSpec],
-) -> (Vec<ConfiguredToolSpec>, ToolRegistry) {
+) -> (Vec<ConfiguredToolSpec>, Vec<ToolHandlerSpec>) {
     build_specs_with_optional_tool_namespaces(
         config,
         mcp_tools,
@@ -2589,23 +2557,23 @@ fn build_specs_with_discoverable_tools<'a>(
 fn build_specs_with_optional_tool_namespaces<'a>(
     config: &ToolsConfig,
     mcp_tools: Option<HashMap<ToolName, rmcp::model::Tool>>,
-    deferred_mcp_tools: Option<Vec<ToolRegistryBuildDeferredTool<'a>>>,
+    deferred_mcp_tools: Option<Vec<ToolRegistryPlanDeferredTool<'a>>>,
     tool_namespaces: Option<HashMap<String, ToolNamespace>>,
     discoverable_tools: Option<Vec<DiscoverableTool>>,
     dynamic_tools: &[DynamicToolSpec],
-) -> (Vec<ConfiguredToolSpec>, ToolRegistry) {
+) -> (Vec<ConfiguredToolSpec>, Vec<ToolHandlerSpec>) {
     let mcp_tool_inputs = mcp_tools.as_ref().map(|mcp_tools| {
         mcp_tools
             .iter()
-            .map(|(name, tool)| ToolRegistryBuildMcpTool {
+            .map(|(name, tool)| ToolRegistryPlanMcpTool {
                 name: name.clone(),
                 tool,
             })
             .collect::<Vec<_>>()
     });
-    let builder = build_tool_registry_builder(
+    let plan = build_tool_registry_plan(
         config,
-        ToolRegistryBuildParams {
+        ToolRegistryPlanParams {
             mcp_tools: mcp_tool_inputs.as_deref(),
             deferred_mcp_tools: deferred_mcp_tools.as_deref(),
             tool_namespaces: tool_namespaces.as_ref(),
@@ -2613,10 +2581,9 @@ fn build_specs_with_optional_tool_namespaces<'a>(
             dynamic_tools,
             default_agent_type_description: DEFAULT_AGENT_TYPE_DESCRIPTION,
             wait_agent_timeouts: wait_agent_timeout_options(),
-            tool_search_entries: &[],
         },
     );
-    builder.build()
+    (plan.specs, plan.handlers)
 }
 
 fn mcp_tool(name: &str, description: &str, input_schema: serde_json::Value) -> rmcp::model::Tool {
@@ -2634,7 +2601,7 @@ fn mcp_tool(name: &str, description: &str, input_schema: serde_json::Value) -> r
 }
 
 #[test]
-fn code_mode_augments_mcp_tool_descriptions_with_structured_output_sample() {
+fn code_mode_plan_leaves_structured_output_mcp_descriptions_unaugmented() {
     let model_info = model_info();
     let mut features = Features::with_defaults();
     features.enable(Feature::CodeMode);
@@ -2694,15 +2661,7 @@ fn code_mode_augments_mcp_tool_descriptions_with_structured_output_sample() {
     let ResponsesApiTool { description, .. } =
         find_namespace_function_tool(&tools, "mcp__sample__", "echo");
 
-    assert_eq!(
-        description,
-        r#"Echo text
-
-exec tool declaration:
-```ts
-declare const tools: { mcp__sample__echo(args: { message: string; }): Promise<CallToolResult<{ echo: string; env: string | null; }>>; };
-```"#
-    );
+    assert_eq!(description, "Echo text");
 }
 
 fn discoverable_connector(id: &str, name: &str, description: &str) -> DiscoverableTool {
@@ -2730,8 +2689,8 @@ fn deferred_mcp_tool<'a>(
     server_name: &'a str,
     connector_name: Option<&'a str>,
     description: Option<&'a str>,
-) -> ToolRegistryBuildDeferredTool<'a> {
-    ToolRegistryBuildDeferredTool {
+) -> ToolRegistryPlanDeferredTool<'a> {
+    ToolRegistryPlanDeferredTool {
         name: ToolName::namespaced(tool_namespace, tool_name),
         server_name,
         connector_name,
@@ -2776,9 +2735,9 @@ fn request_user_input_tool_spec(available_modes: &[ModeKind]) -> ToolSpec {
     create_request_user_input_tool(request_user_input_tool_description(available_modes))
 }
 
-fn spawn_agent_tool_options(config: &ToolsConfig) -> SpawnAgentToolOptions {
+fn spawn_agent_tool_options(config: &ToolsConfig) -> SpawnAgentToolOptions<'_> {
     SpawnAgentToolOptions {
-        available_models: config.available_models.clone(),
+        available_models: &config.available_models,
         agent_type_description: agent_type_description(config, DEFAULT_AGENT_TYPE_DESCRIPTION),
         hide_agent_type_model_reasoning: config.hide_spawn_agent_metadata,
         include_usage_hint: config.spawn_agent_usage_hint,

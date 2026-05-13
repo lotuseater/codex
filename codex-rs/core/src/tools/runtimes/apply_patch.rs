@@ -62,10 +62,6 @@ impl ApplyPatchRuntime {
         Self::default()
     }
 
-    pub fn committed_delta(&self) -> &AppliedPatchDelta {
-        &self.committed_delta
-    }
-
     fn build_guardian_review_request(
         req: &ApplyPatchRequest,
         call_id: &str,

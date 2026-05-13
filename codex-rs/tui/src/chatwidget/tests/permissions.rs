@@ -359,8 +359,8 @@ async fn approvals_popup_navigation_skips_disabled() {
             AppEvent::CodexOp(Op::OverrideTurnContext {
                 approval_policy: Some(AskForApproval::OnRequest),
                 personality: None,
-                ..
                 context_budget_mode: None,
+                ..
             })
         )),
         "enter should select an enabled preset"
@@ -371,8 +371,8 @@ async fn approvals_popup_navigation_skips_disabled() {
             AppEvent::CodexOp(Op::OverrideTurnContext {
                 approval_policy: Some(AskForApproval::Never),
                 personality: None,
-                ..
                 context_budget_mode: None,
+                ..
             })
         )),
         "disabled preset should not be selected"

@@ -513,6 +513,7 @@ async fn builtin_memories_mcp_call_does_not_mark_thread_memory_mode_polluted_whe
             effort: None,
             summary: None,
             service_tier: None,
+            context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Standard),
             collaboration_mode: None,
             personality: None,
         })

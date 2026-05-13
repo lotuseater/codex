@@ -17,10 +17,12 @@ use crate::tools::context::McpToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
+use crate::tools::flat_tool_name;
 use crate::tools::handlers::spawn_record_tool_use_hit;
 use crate::tools::hook_names::HookToolName;
 use crate::tools::operation_cache;
 use crate::tools::tool_dispatch_trace::ToolDispatchTrace;
+use crate::util::error_or_panic;
 use codex_hooks::HookEvent;
 use codex_hooks::HookEventAfterToolUse;
 use codex_hooks::HookPayload;
@@ -430,7 +432,7 @@ impl ToolRegistry {
             };
             let mut preview = result.result.log_preview();
             otel.tool_result_with_tags(
-                &display_name,
+                &tool_name_flat,
                 &call_id_owned,
                 log_payload.as_ref(),
                 cache_hit.duration,
@@ -687,10 +689,6 @@ impl ToolRegistryBuilder {
         self.handlers.insert(name, handler);
     }
 
-    pub(crate) fn specs(&self) -> &[ConfiguredToolSpec] {
-        &self.specs
-    }
-
     pub fn build(self) -> (Vec<ConfiguredToolSpec>, ToolRegistry) {
         let registry = ToolRegistry::new(self.handlers);
         (self.specs, registry)
@@ -831,7 +829,7 @@ async fn dispatch_after_tool_use_hook(
                 event: HookEventAfterToolUse {
                     turn_id: turn.sub_id.clone(),
                     call_id: invocation.call_id.clone(),
-                    tool_name: invocation.tool_name.display(),
+                    tool_name: invocation.tool_name.to_string(),
                     tool_kind: hook_tool_kind(&tool_input),
                     tool_input,
                     executed: dispatch.executed,
@@ -862,7 +860,7 @@ async fn dispatch_after_tool_use_hook(
             HookResult::FailedContinue(error) => {
                 warn!(
                     call_id = %invocation.call_id,
-                    tool_name = %invocation.tool_name.display(),
+                    tool_name = %invocation.tool_name.to_string(),
                     hook_name = %hook_name,
                     error = %error,
                     "after_tool_use hook failed; continuing"
@@ -871,7 +869,7 @@ async fn dispatch_after_tool_use_hook(
             HookResult::FailedAbort(error) => {
                 warn!(
                     call_id = %invocation.call_id,
-                    tool_name = %invocation.tool_name.display(),
+                    tool_name = %invocation.tool_name.to_string(),
                     hook_name = %hook_name,
                     error = %error,
                     "after_tool_use hook failed; aborting operation"

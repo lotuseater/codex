@@ -14,6 +14,7 @@ use crate::bottom_pane::slash_commands::BuiltinCommandFlags;
 use crate::bottom_pane::slash_commands::ServiceTierCommand;
 use crate::bottom_pane::slash_commands::SlashCommandItem;
 use crate::bottom_pane::slash_commands::find_slash_command;
+use codex_protocol::config_types::ServiceTier;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SlashCommandDispatchSource {
@@ -599,15 +600,18 @@ impl ChatWidget {
         match cmd {
             SlashCommand::Fast => {
                 match trimmed.to_ascii_lowercase().as_str() {
-                    "on" => self.set_service_tier_selection(Some(ServiceTier::Fast)),
+                    "on" => self.set_service_tier_selection(Some(
+                        ServiceTier::Fast.request_value().to_string(),
+                    )),
                     "off" => self.set_service_tier_selection(/*service_tier*/ None),
                     "status" => {
-                        let status =
-                            if matches!(self.current_service_tier(), Some(ServiceTier::Fast)) {
-                                "on"
-                            } else {
-                                "off"
-                            };
+                        let status = if self.current_service_tier()
+                            == Some(ServiceTier::Fast.request_value())
+                        {
+                            "on"
+                        } else {
+                            "off"
+                        };
                         self.add_info_message(
                             format!("Fast mode is {status}."),
                             /*hint*/ None,

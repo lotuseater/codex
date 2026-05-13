@@ -13,7 +13,6 @@ use super::DEFAULT_WAIT_YIELD_TIME_MS;
 use super::ExecContext;
 use super::WAIT_TOOL_NAME;
 use super::handle_runtime_response;
-use super::wait_spec::create_wait_tool;
 
 pub struct CodeModeWaitHandler;
 
@@ -49,7 +48,7 @@ impl ToolHandler for CodeModeWaitHandler {
     }
 
     fn spec(&self) -> Option<ToolSpec> {
-        Some(create_wait_tool())
+        None
     }
 
     fn kind(&self) -> ToolKind {

@@ -1,25 +1,27 @@
 use crate::shell::Shell;
 use crate::shell::ShellType;
-use crate::tools::flat_tool_name;
+use crate::tools::handlers::agent_jobs::ReportAgentJobResultHandler;
+use crate::tools::handlers::agent_jobs::SpawnAgentsOnCsvHandler;
 use crate::tools::handlers::multi_agents_common::DEFAULT_WAIT_TIMEOUT_MS;
 use crate::tools::handlers::multi_agents_common::MAX_WAIT_TIMEOUT_MS;
 use crate::tools::handlers::multi_agents_common::MIN_WAIT_TIMEOUT_MS;
-use crate::tools::handlers::multi_agents_spec::WaitAgentTimeoutOptions;
 use crate::tools::registry::ToolRegistryBuilder;
-use crate::tools::spec_plan::build_tool_registry_builder;
-use crate::tools::spec_plan_types::ToolNamespace;
-use crate::tools::spec_plan_types::ToolRegistryBuildDeferredTool;
-use crate::tools::spec_plan_types::ToolRegistryBuildMcpTool;
-use crate::tools::spec_plan_types::ToolRegistryBuildParams;
 use codex_mcp::ToolInfo;
 use codex_protocol::dynamic_tools::DynamicToolSpec;
 use codex_tool_schema::AdditionalProperties;
 use codex_tool_schema::JsonSchema;
 use codex_tools::DiscoverableTool;
 use codex_tools::ResponsesApiTool;
+use codex_tools::ToolHandlerKind;
 use codex_tools::ToolName;
+use codex_tools::ToolNamespace;
+use codex_tools::ToolRegistryPlanDeferredTool;
+use codex_tools::ToolRegistryPlanMcpTool;
+use codex_tools::ToolRegistryPlanParams;
 use codex_tools::ToolUserShellType;
 use codex_tools::ToolsConfig;
+use codex_tools::WaitAgentTimeoutOptions;
+use codex_tools::build_tool_registry_plan;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -35,7 +37,7 @@ pub(crate) fn tool_user_shell_type(user_shell: &Shell) -> ToolUserShellType {
 }
 
 struct McpToolPlanInputs<'a> {
-    mcp_tools: Vec<ToolRegistryBuildMcpTool<'a>>,
+    mcp_tools: Vec<ToolRegistryPlanMcpTool<'a>>,
     tool_namespaces: HashMap<String, ToolNamespace>,
 }
 
@@ -43,7 +45,7 @@ fn map_mcp_tools_for_plan(mcp_tools: &[ToolInfo]) -> McpToolPlanInputs<'_> {
     McpToolPlanInputs {
         mcp_tools: mcp_tools
             .iter()
-            .map(|tool| ToolRegistryBuildMcpTool {
+            .map(|tool| ToolRegistryPlanMcpTool {
                 name: tool.canonical_tool_name(),
                 tool: &tool.tool,
             })
@@ -117,11 +119,18 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::unavailable_tool_message;
     use crate::tools::tool_search_entry::build_tool_search_entries_for_config;
 
+    let mut builder = ToolRegistryBuilder::new(config.code_mode_enabled);
+    let direct_mcp_tool_names = mcp_tools.as_ref().map(|tools| {
+        tools
+            .iter()
+            .map(ToolInfo::canonical_tool_name)
+            .collect::<HashSet<_>>()
+    });
     let mcp_tool_plan_inputs = mcp_tools.as_deref().map(map_mcp_tools_for_plan);
     let deferred_mcp_tool_sources = deferred_mcp_tools.as_ref().map(|tools| {
         tools
             .iter()
-            .map(|tool| ToolRegistryBuildDeferredTool {
+            .map(|tool| ToolRegistryPlanDeferredTool {
                 name: tool.canonical_tool_name(),
                 server_name: tool.server_name.as_str(),
                 connector_name: tool.connector_name.as_deref(),
@@ -141,19 +150,9 @@ pub(crate) fn build_specs_with_discoverable_tools(
     };
     let default_wait_timeout_ms =
         DEFAULT_WAIT_TIMEOUT_MS.clamp(min_wait_timeout_ms, MAX_WAIT_TIMEOUT_MS);
-    let deferred_dynamic_tools = dynamic_tools
-        .iter()
-        .filter(|tool| tool.defer_loading && (config.namespace_tools || tool.namespace.is_none()))
-        .cloned()
-        .collect::<Vec<_>>();
-    let tool_search_entries = build_tool_search_entries_for_config(
+    let plan = build_tool_registry_plan(
         config,
-        deferred_mcp_tools.as_deref(),
-        &deferred_dynamic_tools,
-    );
-    let mut builder = build_tool_registry_builder(
-        config,
-        ToolRegistryBuildParams {
+        ToolRegistryPlanParams {
             mcp_tools: mcp_tool_plan_inputs
                 .as_ref()
                 .map(|inputs| inputs.mcp_tools.as_slice()),
@@ -169,23 +168,21 @@ pub(crate) fn build_specs_with_discoverable_tools(
                 min_timeout_ms: min_wait_timeout_ms,
                 max_timeout_ms: MAX_WAIT_TIMEOUT_MS,
             },
-            tool_search_entries: &tool_search_entries,
         },
     );
-    let mut existing_spec_names = builder
-        .specs()
+    let deferred_dynamic_tools = dynamic_tools
+        .iter()
+        .filter(|tool| tool.defer_loading && (config.namespace_tools || tool.namespace.is_none()))
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut existing_spec_names = plan
+        .specs
         .iter()
         .map(|configured_tool| configured_tool.name().to_string())
         .collect::<HashSet<_>>();
 
     for spec in plan.specs {
-        if spec.supports_parallel_tool_calls {
-            builder.push_spec_with_parallel_support(
-                spec.spec, /*supports_parallel_tool_calls*/ true,
-            );
-        } else {
-            builder.push_spec(spec.spec);
-        }
+        builder.push_spec(spec.spec, spec.supports_parallel_tool_calls);
     }
 
     for handler in plan.handlers {
@@ -309,7 +306,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
             ToolHandlerKind::ToolSearch => {
                 let entries = build_tool_search_entries_for_config(
                     config,
-                    deferred_mcp_tools.as_ref(),
+                    deferred_mcp_tools.as_deref(),
                     &deferred_dynamic_tools,
                 );
                 builder.register_handler(Arc::new(ToolSearchHandler::new(entries)));
@@ -335,17 +332,17 @@ pub(crate) fn build_specs_with_discoverable_tools(
         }
     }
     if let Some(deferred_mcp_tools) = deferred_mcp_tools.as_ref() {
-        for (_, tool) in deferred_mcp_tools.iter().filter(|(name, _)| {
-            !mcp_tools
+        for tool in deferred_mcp_tools.iter().filter(|tool| {
+            !direct_mcp_tool_names
                 .as_ref()
-                .is_some_and(|tools| tools.contains_key(*name))
+                .is_some_and(|tools| tools.contains(&tool.canonical_tool_name()))
         }) {
             builder.register_handler(Arc::new(McpHandler::new(tool.canonical_tool_name())));
         }
     }
 
     for unavailable_tool in unavailable_called_tools {
-        let tool_name = flat_tool_name(&unavailable_tool).into_owned();
+        let tool_name = unavailable_tool.to_string();
         if existing_spec_names.insert(tool_name.clone()) {
             let spec = codex_tools::ToolSpec::Function(ResponsesApiTool {
                 name: tool_name.clone(),

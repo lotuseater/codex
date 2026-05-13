@@ -2861,6 +2861,27 @@ async fn running_hook_does_not_displace_active_exec_cell() {
 }
 
 #[tokio::test]
+async fn turn_completed_clears_orphaned_running_hook() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    handle_turn_started(&mut chat, "turn-1");
+    handle_hook_started(
+        &mut chat,
+        hook_started_run(
+            "pre-tool-use:0:/tmp/hooks.json:call-1",
+            codex_app_server_protocol::HookEventName::PreToolUse,
+            Some("checking input"),
+        ),
+    );
+    reveal_running_hooks(&mut chat);
+    assert!(active_hook_blob(&chat).contains("Running PreToolUse hook"));
+
+    handle_turn_completed(&mut chat, "turn-1", /*duration_ms*/ None);
+
+    assert_eq!(active_hook_blob(&chat), "<empty>\n");
+}
+
+#[tokio::test]
 async fn hidden_active_hook_does_not_add_transcript_separator() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 

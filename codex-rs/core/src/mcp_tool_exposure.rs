@@ -55,9 +55,11 @@ pub(crate) fn build_mcp_tool_exposure(
     let mut direct_tools =
         filter_codex_apps_mcp_tools(all_mcp_tools, explicitly_enabled_connectors, config);
     direct_tools.extend(filter_bootstrap_mcp_tools(&deferred_tools));
-    for direct_tool_name in direct_tools.keys() {
-        deferred_tools.remove(direct_tool_name);
-    }
+    let direct_tool_names = direct_tools
+        .iter()
+        .map(McpToolInfo::canonical_tool_name)
+        .collect::<HashSet<_>>();
+    deferred_tools.retain(|tool| !direct_tool_names.contains(&tool.canonical_tool_name()));
 
     McpToolExposure {
         direct_tools,
@@ -65,17 +67,23 @@ pub(crate) fn build_mcp_tool_exposure(
     }
 }
 
-fn filter_bootstrap_mcp_tools(
-    mcp_tools: &HashMap<String, McpToolInfo>,
-) -> HashMap<String, McpToolInfo> {
+fn filter_non_codex_apps_mcp_tools_only(mcp_tools: &[McpToolInfo]) -> Vec<McpToolInfo> {
     mcp_tools
         .iter()
-        .filter(|(_, tool)| {
+        .filter(|tool| tool.server_name != CODEX_APPS_MCP_SERVER_NAME)
+        .cloned()
+        .collect()
+}
+
+fn filter_bootstrap_mcp_tools(mcp_tools: &[McpToolInfo]) -> Vec<McpToolInfo> {
+    mcp_tools
+        .iter()
+        .filter(|tool| {
             tool.server_name == WIZARD_CODEX_MCP_SERVER_NAME
                 && tool.callable_namespace == WIZARD_CODEX_MCP_TOOL_NAMESPACE
                 && BOOTSTRAP_MCP_TOOL_NAMES.contains(&tool.callable_name.as_str())
         })
-        .map(|(name, tool)| (name.clone(), tool.clone()))
+        .cloned()
         .collect()
 }
 

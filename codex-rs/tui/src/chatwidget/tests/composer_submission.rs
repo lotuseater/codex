@@ -901,7 +901,7 @@ async fn auto_loop_does_not_queue_while_turn_is_running() {
     assert!(
         !chat.submit_auto_loop_message("go on".to_string(), AutoLoopSubmissionContext::Periodic)
     );
-    assert!(chat.pending_steers.is_empty());
+    assert!(chat.input_queue.pending_steers.is_empty());
     assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
 }
 

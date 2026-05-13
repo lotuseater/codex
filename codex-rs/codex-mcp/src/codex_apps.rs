@@ -5,7 +5,6 @@
 //! connector allow-list filtering, and the normalization that turns app
 //! connector/tool metadata into model-visible MCP callable names.
 
-use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
 use std::time::Instant;

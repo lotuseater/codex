@@ -2,7 +2,6 @@ use crate::function_tool::FunctionCallError;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
-use crate::tools::handlers::plan_spec::create_update_plan_tool;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
 use codex_protocol::config_types::ModeKind;
@@ -12,7 +11,6 @@ use codex_protocol::plan_tool::UpdatePlanArgs;
 use codex_protocol::protocol::EventMsg;
 use codex_self_review::plan_tool_response;
 use codex_tools::ToolName;
-use codex_tools::ToolSpec;
 use serde_json::Value as JsonValue;
 
 pub struct PlanHandler;
@@ -50,10 +48,6 @@ impl ToolHandler for PlanHandler {
 
     fn tool_name(&self) -> ToolName {
         ToolName::plain("update_plan")
-    }
-
-    fn spec(&self) -> Option<ToolSpec> {
-        Some(create_update_plan_tool())
     }
 
     fn kind(&self) -> ToolKind {

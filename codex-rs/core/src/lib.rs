@@ -8,6 +8,7 @@
 mod apply_patch;
 mod apps;
 mod arc_monitor;
+mod attestation;
 mod client;
 mod client_common;
 mod realtime_context;
@@ -22,9 +23,7 @@ mod config_lock;
 pub use codex_thread::CodexThread;
 pub use codex_thread::CodexThreadTurnContextOverrides;
 pub use codex_thread::ThreadConfigSnapshot;
-pub use session::turn_context::TurnContext;
 mod agent;
-mod attestation;
 mod codex_delegate;
 mod command_canonicalization;
 pub mod config;

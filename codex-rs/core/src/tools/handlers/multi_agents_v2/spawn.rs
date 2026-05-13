@@ -16,28 +16,14 @@ use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::permissions::FileSystemSandboxKind;
 use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::Op;
-use codex_tools::ToolSpec;
 
-#[derive(Default)]
-pub(crate) struct Handler {
-    options: SpawnAgentToolOptions,
-}
-
-impl Handler {
-    pub(crate) fn new(options: SpawnAgentToolOptions) -> Self {
-        Self { options }
-    }
-}
+pub(crate) struct Handler;
 
 impl ToolHandler for Handler {
     type Output = SpawnAgentResult;
 
     fn tool_name(&self) -> ToolName {
         ToolName::plain("spawn_agent")
-    }
-
-    fn spec(&self) -> Option<ToolSpec> {
-        Some(create_spawn_agent_tool_v2(self.options.clone()))
     }
 
     fn kind(&self) -> ToolKind {

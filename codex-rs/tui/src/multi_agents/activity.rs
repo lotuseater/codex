@@ -534,9 +534,9 @@ fn file_change_lines(changes: &[FileUpdateChange]) -> Vec<Line<'static>> {
 fn dynamic_tool_content_preview(items: &[DynamicToolCallOutputContentItem]) -> Option<String> {
     let text = items
         .iter()
-        .filter_map(|item| match item {
-            DynamicToolCallOutputContentItem::InputText { text } => Some(text.as_str()),
-            DynamicToolCallOutputContentItem::InputImage { image_url } => Some(image_url.as_str()),
+        .map(|item| match item {
+            DynamicToolCallOutputContentItem::InputText { text } => text.as_str(),
+            DynamicToolCallOutputContentItem::InputImage { image_url } => image_url.as_str(),
         })
         .collect::<Vec<_>>()
         .join(" ");

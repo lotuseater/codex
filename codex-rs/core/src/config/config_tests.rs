@@ -23,7 +23,6 @@ use codex_config::config_toml::RealtimeWsMode;
 use codex_config::config_toml::RealtimeWsVersion;
 use codex_config::config_toml::RepoContextScoutModeToml;
 use codex_config::config_toml::ToolsToml;
-use codex_config::loader::project_trust_key;
 use codex_config::permissions_toml::FilesystemPermissionToml;
 use codex_config::permissions_toml::FilesystemPermissionsToml;
 use codex_config::permissions_toml::NetworkDomainPermissionToml;

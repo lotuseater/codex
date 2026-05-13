@@ -2420,8 +2420,8 @@ async fn try_run_sampling_request(
 
     if should_emit_turn_diff {
         let unified_diff = {
-            let tracker = turn_diff_tracker.lock().await;
-            tracker.get_unified_diff()
+            let mut tracker = turn_diff_tracker.lock().await;
+            tracker.get_unified_diff().ok().flatten()
         };
         if let Some(unified_diff) = unified_diff {
             let msg = EventMsg::TurnDiff(TurnDiffEvent { unified_diff });

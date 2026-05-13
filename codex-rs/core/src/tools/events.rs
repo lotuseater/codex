@@ -76,7 +76,9 @@ enum TurnDiffTrackerUpdate<'a> {
 }
 
 fn tracker_update_for_known_delta(delta: &AppliedPatchDelta) -> TurnDiffTrackerUpdate<'_> {
-    if delta.is_exact() && delta.is_empty() {
+    if !delta.is_exact() {
+        TurnDiffTrackerUpdate::Invalidate
+    } else if delta.is_empty() {
         TurnDiffTrackerUpdate::None
     } else {
         TurnDiffTrackerUpdate::Track(delta)
@@ -202,6 +204,9 @@ impl ToolEmitter {
                 },
                 ToolEventStage::Begin,
             ) => {
+                if let Some(tracker) = ctx.turn_diff_tracker {
+                    tracker.lock().await.on_patch_begin(changes);
+                }
                 ctx.session
                     .emit_turn_item_started(
                         ctx.turn,
@@ -575,7 +580,7 @@ async fn emit_patch_end(
     if let Some(tracker) = ctx.turn_diff_tracker {
         let (should_emit_turn_diff, unified_diff) = {
             let mut guard = tracker.lock().await;
-            let previous_diff = guard.get_unified_diff();
+            let previous_diff = guard.get_unified_diff().ok().flatten();
             let tracker_changed = match tracker_update {
                 TurnDiffTrackerUpdate::Track(delta) => {
                     guard.track_delta(delta);
@@ -587,7 +592,7 @@ async fn emit_patch_end(
                 }
                 TurnDiffTrackerUpdate::None => false,
             };
-            let unified_diff = guard.get_unified_diff();
+            let unified_diff = guard.get_unified_diff().ok().flatten();
             (
                 tracker_changed && (previous_diff.is_some() || unified_diff.is_some()),
                 unified_diff.unwrap_or_default(),

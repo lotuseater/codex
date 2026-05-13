@@ -1,21 +1,66 @@
 use super::*;
 use codex_apply_patch::AppliedPatchDelta;
+use codex_apply_patch::ApplyPatchAction;
+use codex_apply_patch::ApplyPatchFileChange;
 use codex_apply_patch::MaybeApplyPatchVerified;
 use codex_exec_server::LOCAL_FS;
+use codex_protocol::protocol::FileChange;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
+use std::path::PathBuf;
 use tempfile::tempdir;
+
+const REGULAR_FILE_MODE: &str = "100644";
 
 fn git_blob_sha1_hex(data: &str) -> String {
     git_blob_sha1_hex_bytes(data.as_bytes())
 }
 
-async fn apply_verified_patch(root: &Path, patch: &str) -> AppliedPatchDelta {
+fn protocol_changes(action: &ApplyPatchAction) -> HashMap<PathBuf, FileChange> {
+    action
+        .changes()
+        .iter()
+        .map(|(path, change)| {
+            let change = match change {
+                ApplyPatchFileChange::Add { content } => FileChange::Add {
+                    content: content.clone(),
+                },
+                ApplyPatchFileChange::Delete { content } => FileChange::Delete {
+                    content: content.clone(),
+                },
+                ApplyPatchFileChange::Update {
+                    unified_diff,
+                    move_path,
+                    ..
+                } => FileChange::Update {
+                    unified_diff: unified_diff.clone(),
+                    move_path: move_path.clone(),
+                },
+            };
+            (path.clone(), change)
+        })
+        .collect()
+}
+
+fn get_unified_diff(tracker: &mut TurnDiffTracker) -> Option<String> {
+    tracker.get_unified_diff().expect("diff should render")
+}
+
+fn normalize_diff_for_test(diff: &str, root: &Path) -> String {
+    diff.replace(&root.display().to_string().replace('\\', "/"), "<TMP>")
+}
+
+async fn apply_verified_patch(
+    tracker: &mut TurnDiffTracker,
+    root: &Path,
+    patch: &str,
+) -> AppliedPatchDelta {
     let cwd = AbsolutePathBuf::from_absolute_path(root).expect("absolute tempdir path");
     let argv = vec!["apply_patch".to_string(), patch.to_string()];
-    match codex_apply_patch::maybe_parse_apply_patch_verified(
+    let action = match codex_apply_patch::maybe_parse_apply_patch_verified(
         &argv,
         &cwd,
         LOCAL_FS.as_ref(),
@@ -23,9 +68,10 @@ async fn apply_verified_patch(root: &Path, patch: &str) -> AppliedPatchDelta {
     )
     .await
     {
-        MaybeApplyPatchVerified::Body(_) => {}
+        MaybeApplyPatchVerified::Body(action) => action,
         other => panic!("expected verified patch action, got {other:?}"),
-    }
+    };
+    tracker.on_patch_begin(&protocol_changes(&action));
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -47,6 +93,7 @@ async fn accumulates_add_then_update_as_single_add() {
     let mut tracker = TurnDiffTracker::with_display_root(dir.path().to_path_buf());
 
     let add = apply_verified_patch(
+        &mut tracker,
         dir.path(),
         "*** Begin Patch\n*** Add File: a.txt\n+foo\n*** End Patch",
     )
@@ -54,6 +101,7 @@ async fn accumulates_add_then_update_as_single_add() {
     tracker.track_delta(&add);
 
     let update = apply_verified_patch(
+        &mut tracker,
         dir.path(),
         "*** Begin Patch\n*** Update File: a.txt\n@@\n foo\n+bar\n*** End Patch",
     )
@@ -72,7 +120,7 @@ index {ZERO_OID}..{right_oid}
 +bar
 "#,
     );
-    assert_eq!(tracker.get_unified_diff(), Some(expected));
+    assert_eq!(get_unified_diff(&mut tracker), Some(expected));
 }
 
 #[tokio::test]
@@ -81,6 +129,7 @@ async fn invalidated_tracker_suppresses_existing_diff() {
     let mut tracker = TurnDiffTracker::with_display_root(dir.path().to_path_buf());
 
     let add = apply_verified_patch(
+        &mut tracker,
         dir.path(),
         "*** Begin Patch\n*** Add File: a.txt\n+foo\n*** End Patch",
     )
@@ -89,7 +138,7 @@ async fn invalidated_tracker_suppresses_existing_diff() {
 
     tracker.invalidate();
 
-    assert_eq!(tracker.get_unified_diff(), None);
+    assert_eq!(get_unified_diff(&mut tracker), None);
 }
 
 #[tokio::test]
@@ -99,6 +148,7 @@ async fn accumulates_delete() {
 
     let mut tracker = TurnDiffTracker::with_display_root(dir.path().to_path_buf());
     let delete = apply_verified_patch(
+        &mut tracker,
         dir.path(),
         "*** Begin Patch\n*** Delete File: b.txt\n*** End Patch",
     )
@@ -116,7 +166,7 @@ index {left_oid}..{ZERO_OID}
 -x
 "#,
     );
-    assert_eq!(tracker.get_unified_diff(), Some(expected));
+    assert_eq!(get_unified_diff(&mut tracker), Some(expected));
 }
 
 #[tokio::test]
@@ -126,6 +176,7 @@ async fn accumulates_move_and_update() {
 
     let mut tracker = TurnDiffTracker::with_display_root(dir.path().to_path_buf());
     let update = apply_verified_patch(
+        &mut tracker,
         dir.path(),
         "*** Begin Patch\n*** Update File: src.txt\n*** Move to: dst.txt\n@@\n-line\n+line2\n*** End Patch",
     )
@@ -144,7 +195,7 @@ index {left_oid}..{right_oid}
 +line2
 "#,
     );
-    assert_eq!(tracker.get_unified_diff(), Some(expected));
+    assert_eq!(get_unified_diff(&mut tracker), Some(expected));
 }
 
 #[tokio::test]
@@ -154,13 +205,14 @@ async fn pure_rename_yields_no_diff() {
 
     let mut tracker = TurnDiffTracker::with_display_root(dir.path().to_path_buf());
     let rename = apply_verified_patch(
+        &mut tracker,
         dir.path(),
         "*** Begin Patch\n*** Update File: old.txt\n*** Move to: new.txt\n@@\n same\n*** End Patch",
     )
     .await;
     tracker.track_delta(&rename);
 
-    assert_eq!(tracker.get_unified_diff(), None);
+    assert_eq!(get_unified_diff(&mut tracker), None);
 }
 
 #[tokio::test]
@@ -170,6 +222,7 @@ async fn add_over_existing_file_becomes_update() {
 
     let mut tracker = TurnDiffTracker::with_display_root(dir.path().to_path_buf());
     let add = apply_verified_patch(
+        &mut tracker,
         dir.path(),
         "*** Begin Patch\n*** Add File: dup.txt\n+after\n*** End Patch",
     )
@@ -188,7 +241,26 @@ index {left_oid}..{right_oid}
 +after
 "#,
     );
-    assert_eq!(tracker.get_unified_diff(), Some(expected));
+    assert_eq!(get_unified_diff(&mut tracker), Some(expected));
+}
+
+#[tokio::test]
+async fn non_git_display_root_keeps_diff_paths_relative() {
+    let dir = tempdir().expect("tempdir");
+    fs::write(dir.path().join("file.txt"), "before\n").expect("seed file");
+
+    let mut tracker = TurnDiffTracker::with_display_root(dir.path().to_path_buf());
+    let update = apply_verified_patch(
+        &mut tracker,
+        dir.path(),
+        "*** Begin Patch\n*** Update File: file.txt\n@@\n-before\n+after\n*** End Patch",
+    )
+    .await;
+    tracker.track_delta(&update);
+
+    let diff = get_unified_diff(&mut tracker).expect("diff should render");
+    assert!(!diff.contains(&dir.path().display().to_string().replace('\\', "/")));
+    assert!(diff.contains("diff --git a/file.txt b/file.txt"));
 }
 
 #[tokio::test]
@@ -198,6 +270,7 @@ async fn delete_then_readd_same_path_becomes_update() {
 
     let mut tracker = TurnDiffTracker::with_display_root(dir.path().to_path_buf());
     let delete = apply_verified_patch(
+        &mut tracker,
         dir.path(),
         "*** Begin Patch\n*** Delete File: cycle.txt\n*** End Patch",
     )
@@ -205,6 +278,7 @@ async fn delete_then_readd_same_path_becomes_update() {
     tracker.track_delta(&delete);
 
     let add = apply_verified_patch(
+        &mut tracker,
         dir.path(),
         "*** Begin Patch\n*** Add File: cycle.txt\n+after\n*** End Patch",
     )
@@ -223,7 +297,7 @@ index {left_oid}..{right_oid}
 +after
 "#,
     );
-    assert_eq!(tracker.get_unified_diff(), Some(expected));
+    assert_eq!(get_unified_diff(&mut tracker), Some(expected));
 }
 
 #[tokio::test]
@@ -234,6 +308,7 @@ async fn move_over_existing_destination_without_content_change_deletes_source_on
 
     let mut tracker = TurnDiffTracker::with_display_root(dir.path().to_path_buf());
     let move_overwrite = apply_verified_patch(
+        &mut tracker,
         dir.path(),
         "*** Begin Patch\n*** Update File: a.txt\n*** Move to: b.txt\n@@\n same\n*** End Patch",
     )
@@ -251,7 +326,7 @@ index {left_oid}..{ZERO_OID}
 -same
 "#,
     );
-    assert_eq!(tracker.get_unified_diff(), Some(expected));
+    assert_eq!(get_unified_diff(&mut tracker), Some(expected));
 }
 
 #[test]
@@ -304,6 +379,7 @@ async fn preserves_committed_change_order_with_delete_then_move_overwrite() {
 
     let mut tracker = TurnDiffTracker::with_display_root(dir.path().to_path_buf());
     let ordered_patch = apply_verified_patch(
+        &mut tracker,
         dir.path(),
         "*** Begin Patch\n*** Delete File: b.txt\n*** Update File: a.txt\n*** Move to: b.txt\n@@\n-from\n+new\n*** End Patch",
     )
@@ -330,5 +406,5 @@ index {left_oid_b}..{right_oid_b}
 +new
 "#,
     );
-    assert_eq!(tracker.get_unified_diff(), Some(expected));
+    assert_eq!(get_unified_diff(&mut tracker), Some(expected));
 }

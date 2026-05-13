@@ -25,7 +25,6 @@ use windows_sys::Win32::Security::Authorization::TRUSTEE_IS_UNKNOWN;
 use windows_sys::Win32::Security::Authorization::TRUSTEE_W;
 use windows_sys::Win32::Security::DACL_SECURITY_INFORMATION;
 use windows_sys::Win32::System::StationsAndDesktops::CloseDesktop;
-use windows_sys::Win32::System::StationsAndDesktops::HDESK;
 use windows_sys::Win32::System::StationsAndDesktops::CreateDesktopW;
 use windows_sys::Win32::System::StationsAndDesktops::DESKTOP_CREATEMENU;
 use windows_sys::Win32::System::StationsAndDesktops::DESKTOP_CREATEWINDOW;
@@ -40,6 +39,7 @@ use windows_sys::Win32::System::StationsAndDesktops::DESKTOP_SWITCHDESKTOP;
 use windows_sys::Win32::System::StationsAndDesktops::DESKTOP_WRITE_DAC;
 use windows_sys::Win32::System::StationsAndDesktops::DESKTOP_WRITE_OWNER;
 use windows_sys::Win32::System::StationsAndDesktops::DESKTOP_WRITEOBJECTS;
+use windows_sys::Win32::System::StationsAndDesktops::HDESK;
 
 const DESKTOP_ALL_ACCESS: u32 = DESKTOP_READOBJECTS
     | DESKTOP_CREATEWINDOW
