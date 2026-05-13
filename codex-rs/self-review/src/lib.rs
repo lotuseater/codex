@@ -10,7 +10,15 @@ pub const PLAN_UPDATED_MESSAGE: &str = "Plan updated";
 pub const SELF_REVIEW_CHECKPOINT_MESSAGE: &str = "\
 Plan updated
 
-Self-review checkpoint before continuing: actively review the plan as if the user had asked \"review and improve the plan\". First compare the plan to the user's prompt and confirm it actually plans the requested work. Then check task order, missing verification, risky assumptions, stale context, user constraints, and user/remote overlap. Revise the plan first if any issue is found.";
+Self-review checkpoint before continuing: actively review the plan as if the user had asked \"review and improve the plan\". First compare the plan to the user's prompt and confirm it actually plans the requested work. Then check task order, missing verification, risky assumptions, stale context, user constraints, and user/remote overlap. Revise the plan first if any issue is found.
+
+<prototype_first_policy>
+For feature, tool/runtime, memory, agent, DAB, cache, prompt/context-reducer, or expensive-verification work, first consider whether a tiny demo, canary, fixture, or lab script would reduce risk, tokens, or build cost before changing the main path. Use the prototype when it is worthwhile; skip it for trivial edits, exact narrow fixes, or when a direct small test is cheaper.
+</prototype_first_policy>
+
+<bounded_repair_policy>
+When self-review finds a concrete, repo-controlled caveat that is directly fixable and verifiable, prefer one bounded repair pass before proceeding. Stop instead of repairing when the blocker is external, destructive, or not reproducible from current evidence.
+</bounded_repair_policy>";
 
 #[derive(Debug, Default, Clone)]
 pub struct SelfReviewTracker {
@@ -104,6 +112,8 @@ Ground the review in repository state, not full conversation history:
 - If the tree is clean or the notes indicate committed work, inspect the relevant commit with `git show --stat --oneline HEAD` and targeted `git show HEAD -- <path>`.
 - Use the compact work notes below only as orientation; they are intentionally small so this still works after compaction.
 - Check correctness, regressions, user constraints, missing tests, and whether verification is sufficient.
+- For feature, tool/runtime, memory, agent, DAB, cache, prompt/context-reducer, or expensive-verification work, check whether a tiny demo, canary, fixture, or lab script should have come first; skip this for trivial edits, exact narrow fixes, or when a direct small test is cheaper.
+- If the review finds a concrete repo-controlled caveat, apply one bounded repair pass and rerun the smallest relevant verification before finalizing.
 - Return prioritized review findings. If there are no findings, say that in the review output.
 
 Compact work notes:
@@ -159,7 +169,7 @@ pub fn plan_self_review_prompt(plan_markdown: &str) -> String {
         "\
 Self-review the plan below before implementation.
 
-Read through the plan against the current conversation and repository context. Start by comparing the plan to the user's prompt: identify the requested outcome, required constraints, and important details, then verify the plan actually covers them without drifting into adjacent work. Use targeted file reads or searches only if the context is insufficient. Improve task order, missing verification, risky assumptions, stale context, and user constraints. Keep the result practical and implementation-ready.
+Read through the plan against the current conversation and repository context. Start by comparing the plan to the user's prompt: identify the requested outcome, required constraints, and important details, then verify the plan actually covers them without drifting into adjacent work. Use targeted file reads or searches only if the context is insufficient. Improve task order, missing verification, risky assumptions, stale context, user constraints, and whether feature/tool/runtime/context work should start with a small demo, canary, fixture, or lab script. Keep the result practical and implementation-ready.
 
 Return the revised plan as the next proposed plan. If the plan is already strong, keep it and add only the minimal clarifications needed.
 
@@ -290,6 +300,16 @@ mod tests {
     }
 
     #[test]
+    fn review_prompt_includes_prototype_first_policy() {
+        let tracker = SelfReviewTracker::default();
+        let instructions = tracker.review_instructions();
+
+        assert!(instructions.contains("tiny demo, canary, fixture, or lab script"));
+        assert!(instructions.contains("prompt/context-reducer"));
+        assert!(instructions.contains("direct small test is cheaper"));
+    }
+
+    #[test]
     fn trivial_plan_keeps_compact_output() {
         assert!(!is_plan_review_candidate(1, None, false));
         assert_eq!(plan_tool_response(false), PLAN_UPDATED_MESSAGE);
@@ -300,6 +320,7 @@ mod tests {
         assert!(is_plan_review_candidate(2, None, false));
         assert_eq!(plan_tool_response(true), SELF_REVIEW_CHECKPOINT_MESSAGE);
         assert_eq!(plan_tool_response(false), PLAN_UPDATED_MESSAGE);
+        assert!(SELF_REVIEW_CHECKPOINT_MESSAGE.contains("<prototype_first_policy>"));
     }
 
     #[test]
@@ -323,6 +344,7 @@ mod tests {
         assert!(prompt.contains("Self-review the plan"));
         assert!(prompt.contains("comparing the plan to the user's prompt"));
         assert!(prompt.contains("without drifting into adjacent work"));
+        assert!(prompt.contains("small demo, canary, fixture, or lab script"));
         assert!(prompt.contains("# Plan\n- inspect"));
     }
 
