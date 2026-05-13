@@ -125,6 +125,8 @@ mod imp {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use std::io::Write;
+        use std::path::Path;
 
         #[test]
         fn parse_bridge_stdout_reports_empty_output() {
@@ -151,13 +153,14 @@ mod imp {
 
         #[test]
         fn bridge_script_guards_targeted_foreground_actions() {
-            assert!(BRIDGE_SCRIPT.contains(
+            let bridge_script = BRIDGE_SCRIPT.replace("\r\n", "\n");
+            assert!(bridge_script.contains(
                 "'dab_click' {\n            $hasTarget = Test-HasTarget $ArgsObj\n            $window = if ($hasTarget) { Resolve-TargetWindow $ArgsObj } else { $null }\n            if ($hasTarget -and $null -eq $window) { Write-DabResult ([pscustomobject]@{ ok = $false; error = 'target window not found' }); break }"
             ));
-            assert!(BRIDGE_SCRIPT.contains(
+            assert!(bridge_script.contains(
                 "'dab_send_keys' {\n            $hasTarget = Test-HasTarget $ArgsObj\n            $window = if ($hasTarget) { Resolve-TargetWindow $ArgsObj } else { $null }\n            if ($hasTarget -and $null -eq $window) { Write-DabResult ([pscustomobject]@{ ok = $false; error = 'target window not found' }); break }"
             ));
-            assert!(BRIDGE_SCRIPT.contains(
+            assert!(bridge_script.contains(
                 "'dab_screenshot' {\n            $hasTarget = Test-HasTarget $ArgsObj\n            $window = if ($hasTarget) { Resolve-TargetWindow $ArgsObj } else { $null }\n            if ($hasTarget -and $null -eq $window) { Write-DabResult ([pscustomobject]@{ ok = $false; error = 'target window not found' }); break }"
             ));
         }
@@ -167,8 +170,16 @@ mod imp {
             for needle in [
                 "'dab_drag' {",
                 "'dab_scroll' {",
+                "'dab_prepare_window' {",
+                "'dab_locate_visual' {",
                 "'dab_terminal_tabs' {",
                 "'dab_terminal_focus' {",
+                "CodexDabVision",
+                "outer_rect",
+                "click_point",
+                "Test-RectOffScreen",
+                "MoveWindow",
+                "IsIconic",
                 "Get-MissingNumericFields $ArgsObj @('x', 'y', 'end_x', 'end_y')",
                 "missing or invalid numeric drag fields",
                 "Convert-UiRectNumber $rect.X",
@@ -180,6 +191,159 @@ mod imp {
                     "bridge script should contain {needle:?}"
                 );
             }
+        }
+
+        fn write_visual_fixture_bmp(path: &Path) {
+            const WIDTH: usize = 420;
+            const HEIGHT: usize = 180;
+            let mut pixels = vec![255_u8; WIDTH * HEIGHT * 3];
+
+            let mut set_pixel = |x: usize, y: usize, rgb: [u8; 3]| {
+                if x >= WIDTH || y >= HEIGHT {
+                    return;
+                }
+                let idx = (y * WIDTH + x) * 3;
+                pixels[idx] = rgb[0];
+                pixels[idx + 1] = rgb[1];
+                pixels[idx + 2] = rgb[2];
+            };
+
+            let mut draw_rect = |left: usize,
+                                 top: usize,
+                                 right: usize,
+                                 bottom: usize,
+                                 rgb: [u8; 3],
+                                 thickness: usize| {
+                for t in 0..thickness {
+                    for x in left..=right {
+                        set_pixel(x, top + t, rgb);
+                        set_pixel(x, bottom.saturating_sub(t), rgb);
+                    }
+                    for y in top..=bottom {
+                        set_pixel(left + t, y, rgb);
+                        set_pixel(right.saturating_sub(t), y, rgb);
+                    }
+                }
+            };
+
+            draw_rect(24, 36, 350, 96, [45, 45, 45], 2);
+            draw_rect(44, 54, 70, 80, [0, 0, 0], 2);
+            draw_rect(84, 54, 304, 80, [215, 215, 215], 1);
+
+            for (x, y) in [
+                (50, 68),
+                (52, 70),
+                (54, 72),
+                (56, 74),
+                (58, 72),
+                (60, 70),
+                (62, 66),
+                (64, 62),
+                (66, 58),
+            ] {
+                set_pixel(x, y, [35, 35, 35]);
+                set_pixel(x + 1, y, [35, 35, 35]);
+            }
+
+            let row_stride = (WIDTH * 3).div_ceil(4) * 4;
+            let pixel_bytes = row_stride * HEIGHT;
+            let file_size = 14 + 40 + pixel_bytes;
+            let mut file = Vec::with_capacity(file_size);
+            file.extend_from_slice(b"BM");
+            file.extend_from_slice(&(file_size as u32).to_le_bytes());
+            file.extend_from_slice(&[0, 0, 0, 0]);
+            file.extend_from_slice(&(54_u32).to_le_bytes());
+            file.extend_from_slice(&(40_u32).to_le_bytes());
+            file.extend_from_slice(&(WIDTH as i32).to_le_bytes());
+            file.extend_from_slice(&(HEIGHT as i32).to_le_bytes());
+            file.extend_from_slice(&(1_u16).to_le_bytes());
+            file.extend_from_slice(&(24_u16).to_le_bytes());
+            file.extend_from_slice(&(0_u32).to_le_bytes());
+            file.extend_from_slice(&(pixel_bytes as u32).to_le_bytes());
+            file.extend_from_slice(&(2835_i32).to_le_bytes());
+            file.extend_from_slice(&(2835_i32).to_le_bytes());
+            file.extend_from_slice(&(0_u32).to_le_bytes());
+            file.extend_from_slice(&(0_u32).to_le_bytes());
+
+            let padding = vec![0_u8; row_stride - WIDTH * 3];
+            for y in (0..HEIGHT).rev() {
+                for x in 0..WIDTH {
+                    let idx = (y * WIDTH + x) * 3;
+                    file.push(pixels[idx + 2]);
+                    file.push(pixels[idx + 1]);
+                    file.push(pixels[idx]);
+                }
+                file.extend_from_slice(&padding);
+            }
+
+            let mut handle = std::fs::File::create(path).expect("create visual fixture bmp");
+            handle.write_all(&file).expect("write visual fixture bmp");
+        }
+
+        #[test]
+        fn execute_dab_locate_visual_detects_challenge_box() {
+            let path = std::env::temp_dir().join(format!(
+                "codex-dab-visual-fixture-{}.bmp",
+                std::process::id()
+            ));
+            write_visual_fixture_bmp(&path);
+
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("create DAB locator test runtime");
+            let result = runtime.block_on(async {
+                execute_dab_tool(
+                    "dab_locate_visual",
+                    serde_json::json!({
+                        "path": path.to_string_lossy(),
+                        "kind": "captcha",
+                        "max_candidates": 3,
+                    }),
+                )
+                .await
+                .expect("dab_locate_visual should return JSON")
+            });
+            let _ = std::fs::remove_file(&path);
+
+            assert!(result.ok);
+            assert_eq!(
+                result.output.get("kind").and_then(Value::as_str),
+                Some("captcha")
+            );
+            assert!(
+                result
+                    .output
+                    .get("elapsed_ms")
+                    .and_then(Value::as_f64)
+                    .is_some_and(|elapsed| elapsed < 100.0),
+                "visual locator should do the image analysis in under 100 ms: {:?}",
+                result.output.get("elapsed_ms")
+            );
+
+            let candidates = result
+                .output
+                .get("candidates")
+                .and_then(Value::as_array)
+                .expect("visual locator should return candidates");
+            let first = candidates
+                .first()
+                .expect("visual locator should find challenge");
+            assert_eq!(first.get("kind").and_then(Value::as_str), Some("captcha"));
+            assert!(first.get("outer_rect").is_some());
+            assert!(first.get("inner_rect").is_some());
+            let click_x = first
+                .get("click_point")
+                .and_then(|point| point.get("x"))
+                .and_then(Value::as_i64)
+                .expect("challenge candidate should include click x");
+            let click_y = first
+                .get("click_point")
+                .and_then(|point| point.get("y"))
+                .and_then(Value::as_i64)
+                .expect("challenge candidate should include click y");
+            assert!((55..=58).contains(&click_x));
+            assert!((65..=68).contains(&click_y));
         }
 
         #[test]

@@ -14,7 +14,9 @@ use thiserror::Error;
 pub const AUTOMATION_HARNESS_DETECT_TOOL: &str = "automation_harness_detect";
 pub const DAB_FIND_WINDOW_TOOL: &str = "dab_find_window";
 pub const DAB_WINDOW_CHECK_TOOL: &str = "dab_window_check";
+pub const DAB_PREPARE_WINDOW_TOOL: &str = "dab_prepare_window";
 pub const DAB_SCREENSHOT_TOOL: &str = "dab_screenshot";
+pub const DAB_LOCATE_VISUAL_TOOL: &str = "dab_locate_visual";
 pub const DAB_OCR_TOOL: &str = "dab_ocr";
 pub const DAB_VISUAL_SCAN_TOOL: &str = "dab_visual_scan";
 pub const DAB_ELEMENT_MAP_TOOL: &str = "dab_element_map";
@@ -32,7 +34,9 @@ pub const DAB_TOOL_NAMES: &[&str] = &[
     AUTOMATION_HARNESS_DETECT_TOOL,
     DAB_FIND_WINDOW_TOOL,
     DAB_WINDOW_CHECK_TOOL,
+    DAB_PREPARE_WINDOW_TOOL,
     DAB_SCREENSHOT_TOOL,
+    DAB_LOCATE_VISUAL_TOOL,
     DAB_OCR_TOOL,
     DAB_VISUAL_SCAN_TOOL,
     DAB_ELEMENT_MAP_TOOL,
@@ -93,7 +97,8 @@ pub fn is_supported_tool(tool_name: &str) -> bool {
 pub fn is_mutating_tool(tool_name: &str) -> bool {
     matches!(
         tool_name,
-        DAB_NAVIGATE_TOOL
+        DAB_PREPARE_WINDOW_TOOL
+            | DAB_NAVIGATE_TOOL
             | DAB_SMART_CLICK_TOOL
             | DAB_CLICK_TOOL
             | DAB_DRAG_TOOL

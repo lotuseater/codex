@@ -691,6 +691,17 @@ fn desktop_automation_tools_respect_config() {
             .any(|tool| tool.name() == "dab_terminal_tabs"),
         cfg!(windows)
     );
+    assert_eq!(
+        enabled_tools
+            .iter()
+            .any(|tool| tool.name() == "dab_locate_visual"),
+        cfg!(windows)
+    );
+    assert!(
+        !enabled_tools
+            .iter()
+            .any(|tool| tool.name() == "dab_prepare_window")
+    );
     assert!(!enabled_tools.iter().any(|tool| tool.name() == "dab_click"));
     assert!(!enabled_tools.iter().any(|tool| tool.name() == "dab_drag"));
     assert!(
@@ -702,6 +713,12 @@ fn desktop_automation_tools_respect_config() {
         enabled_handlers
             .iter()
             .any(|handler| handler.name.name == "dab_find_window"),
+        cfg!(windows)
+    );
+    assert_eq!(
+        enabled_handlers
+            .iter()
+            .any(|handler| handler.name.name == "dab_locate_visual"),
         cfg!(windows)
     );
 
@@ -726,6 +743,11 @@ fn desktop_automation_tools_respect_config() {
     );
 
     let input_tool_specs = create_desktop_automation_tools(/*allow_input*/ true);
+    assert!(
+        input_tool_specs
+            .iter()
+            .any(|tool| tool.name() == "dab_prepare_window")
+    );
     if let Some(dab_drag) = input_tool_specs
         .iter()
         .find(|tool| tool.name() == "dab_drag")

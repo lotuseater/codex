@@ -43,6 +43,16 @@ pub fn create_desktop_automation_tools(allow_input: bool) -> Vec<ToolSpec> {
             ]),
         ),
         create_tool(
+            "dab_locate_visual",
+            "Locate visual UI boxes from a window capture or PNG path and return outer_rect, inner_rect, and click_point candidates.",
+            target_schema([
+                ("path", JsonSchema::string(Some("Optional image path. If omitted, capture the target window first.".to_string()))),
+                ("kind", JsonSchema::string(Some("Element kind: checkbox, button, input, generic_box, captcha, capture, challenge, or turnstile.".to_string()))),
+                ("roi", JsonSchema::string(Some("Optional ROI as 'x,y,w,h' or JSON with x/y/w/h or left/top/right/bottom.".to_string()))),
+                ("max_candidates", JsonSchema::integer(Some("Maximum candidates to return. Defaults to 5.".to_string()))),
+            ]),
+        ),
+        create_tool(
             "dab_ocr",
             "Extract visible text from a target window using UI Automation metadata, with an optional screenshot for visual context.",
             target_schema([
@@ -80,6 +90,17 @@ pub fn create_desktop_automation_tools(allow_input: bool) -> Vec<ToolSpec> {
 
     if allow_input {
         tools.extend([
+            create_tool(
+                "dab_prepare_window",
+                "Restore or move a target window onto a visible monitor before visual capture, returning before/after window state.",
+                target_schema([
+                    ("x", JsonSchema::integer(Some("Target screen X coordinate if the window must be moved.".to_string()))),
+                    ("y", JsonSchema::integer(Some("Target screen Y coordinate if the window must be moved.".to_string()))),
+                    ("width", JsonSchema::integer(Some("Target window width if the window must be moved.".to_string()))),
+                    ("height", JsonSchema::integer(Some("Target window height if the window must be moved.".to_string()))),
+                    ("focus", JsonSchema::boolean(Some("Bring the window foreground after preparing it. Defaults to true.".to_string()))),
+                ]),
+            ),
             create_tool(
                 "dab_navigate",
                 "Send a named navigation shortcut to a target window, such as command_palette, find, save, open, new_tab, close_tab, address_bar, or terminal.",

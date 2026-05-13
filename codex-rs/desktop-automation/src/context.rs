@@ -50,11 +50,11 @@ fn desktop_automation_context_for_prompt_with_availability(
         );
     }
     lines.push(
-        "For live Windows app state, inspect first with dab_find_window, dab_window_check, dab_visual_scan, dab_ocr, dab_screenshot, or dab_element_map instead of guessing from shell state.".to_string(),
+        "For live Windows app state, inspect first with dab_find_window, dab_window_check, dab_visual_scan, dab_ocr, dab_screenshot, dab_locate_visual, or dab_element_map instead of guessing from shell state.".to_string(),
     );
     if config.allow_input {
         lines.push(
-            "Use dab_smart_click, dab_send_keys, dab_navigate, dab_drag, dab_scroll, dab_terminal_tabs, dab_terminal_focus, or coordinate clicks only after inspection identifies the target window or element.".to_string(),
+            "Use dab_prepare_window before visual capture when a target is minimized/off-screen, then use dab_smart_click, dab_send_keys, dab_navigate, dab_drag, dab_scroll, dab_terminal_tabs, dab_terminal_focus, or coordinate clicks only after inspection identifies the target window or element.".to_string(),
         );
     } else {
         lines.push("Input DAB tools are disabled; keep automation read-only.".to_string());
@@ -253,6 +253,8 @@ mod tests {
 
         assert!(context.contains("automation_harness_detect"));
         assert!(context.contains("dab_visual_scan"));
+        assert!(context.contains("dab_locate_visual"));
+        assert!(context.contains("dab_prepare_window"));
         assert!(context.contains("dab_smart_click"));
         assert!(context.contains("dab_drag"));
         assert!(context.contains("dab_terminal_focus"));
