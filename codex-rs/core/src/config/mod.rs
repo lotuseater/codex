@@ -42,6 +42,7 @@ use codex_config::profile_toml::ConfigProfile;
 use codex_config::sandbox_mode_requirement_for_permission_profile;
 use codex_config::types::ApprovalsReviewer;
 use codex_config::types::AuthCredentialsStoreMode;
+use codex_config::types::BlackboardConfig;
 use codex_config::types::History;
 use codex_config::types::McpServerConfig;
 use codex_config::types::McpServerDisabledReason;
@@ -637,6 +638,9 @@ pub struct Config {
 
     /// Memories subsystem settings.
     pub memories: MemoriesConfig,
+
+    /// Repo-local blackboard coordination settings.
+    pub blackboard: BlackboardConfig,
 
     /// Directory containing all Codex state (defaults to `~/.codex` but can be
     /// overridden by the `CODEX_HOME` environment variable).
@@ -3231,6 +3235,7 @@ impl Config {
             agent_max_depth,
             agent_roles,
             memories: cfg.memories.unwrap_or_default().into(),
+            blackboard: cfg.blackboard.unwrap_or_default().into(),
             agent_job_max_runtime_seconds,
             agent_interrupt_message_enabled,
             codex_home,

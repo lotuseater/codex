@@ -209,6 +209,16 @@ fn to_abs_path(cwd: &AbsolutePathBuf, path: &Path) -> Option<AbsolutePathBuf> {
     Some(AbsolutePathBuf::resolve_path_against_base(path, cwd))
 }
 
+async fn observe_blackboard_paths(session: &Arc<Session>, file_paths: &[AbsolutePathBuf]) {
+    for file_path in file_paths {
+        session
+            .services
+            .blackboard
+            .observe_path(file_path.as_ref())
+            .await;
+    }
+}
+
 fn write_permissions_for_paths(
     file_paths: &[AbsolutePathBuf],
     file_system_sandbox_policy: &codex_protocol::permissions::FileSystemSandboxPolicy,
@@ -389,6 +399,7 @@ impl ToolHandler for ApplyPatchHandler {
             codex_apply_patch::MaybeApplyPatchVerified::Body(changes) => {
                 let (file_paths, effective_additional_permissions, file_system_sandbox_policy) =
                     effective_patch_permissions(session.as_ref(), turn.as_ref(), &changes).await;
+                observe_blackboard_paths(&session, &file_paths).await;
                 match apply_patch::apply_patch(turn.as_ref(), &file_system_sandbox_policy, changes)
                     .await
                 {
@@ -501,6 +512,7 @@ pub(crate) async fn intercept_apply_patch(
                 .await;
             let (approval_keys, effective_additional_permissions, file_system_sandbox_policy) =
                 effective_patch_permissions(session.as_ref(), turn.as_ref(), &changes).await;
+            observe_blackboard_paths(&session, &approval_keys).await;
             match apply_patch::apply_patch(turn.as_ref(), &file_system_sandbox_policy, changes)
                 .await
             {

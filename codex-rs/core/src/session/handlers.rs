@@ -662,6 +662,7 @@ pub async fn shutdown(sess: &Arc<Session>, sub_id: String) -> bool {
         };
         sess.send_event_raw(event).await;
     }
+    sess.services.blackboard.shutdown().await;
 
     let event = Event {
         id: sub_id,

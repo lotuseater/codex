@@ -318,6 +318,73 @@
       },
       "type": "object"
     },
+    "BlackboardToml": {
+      "additionalProperties": false,
+      "description": "Repo-local coordination blackboard settings loaded from config.toml.",
+      "properties": {
+        "enabled": {
+          "description": "When `false`, disables repo blackboard coordination.",
+          "type": "boolean"
+        },
+        "global_index_path": {
+          "description": "Codex-home-relative path for the cross-repo session index.",
+          "type": "string"
+        },
+        "heartbeat_interval_seconds": {
+          "description": "Heartbeat interval for refreshing this session's repo leases.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_entry_chars": {
+          "description": "Maximum characters mirrored from one user/assistant message.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_file_bytes": {
+          "description": "Maximum blackboard file size before cleanup is attempted.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_injected_bytes": {
+          "description": "Maximum bytes injected into model context for one blackboard update.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_joined_repos": {
+          "description": "Maximum number of repos a session can join at once.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "path": {
+          "description": "Repo-relative path for the ignored blackboard file.",
+          "type": "string"
+        },
+        "poll_interval_ms": {
+          "description": "Poll interval for detecting updates from other sessions.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "recent_window_seconds": {
+          "description": "Window for surfacing recent external updates.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "stale_after_seconds": {
+          "description": "Lease and stale-lock timeout.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "BundledSkillsConfig": {
       "additionalProperties": false,
       "properties": {
@@ -4026,6 +4093,14 @@
       "format": "uint64",
       "minimum": 0.0,
       "type": "integer"
+    },
+    "blackboard": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/BlackboardToml"
+        }
+      ],
+      "description": "Repo-local blackboard coordination settings."
     },
     "chatgpt_base_url": {
       "description": "Base URL for requests to ChatGPT (as opposed to the OpenAI API).",

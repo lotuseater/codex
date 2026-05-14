@@ -325,15 +325,23 @@ pub(crate) async fn run_turn(
             turn_context.config.desktop_automation,
             prompt.as_str(),
         );
+        let blackboard_context = sess
+            .services
+            .blackboard
+            .context_for_turn(turn_context.cwd.as_path(), prompt.as_str())
+            .await;
         let user_prompt_submit_outcome =
             run_user_prompt_submit_hooks(&sess, &turn_context, prompt).await;
-        let additional_contexts = merge_desktop_automation_context(
+        let mut additional_contexts = merge_desktop_automation_context(
             desktop_automation_context,
             merge_first_moves_context(
                 first_moves_context,
                 user_prompt_submit_outcome.additional_contexts,
             ),
         );
+        if let Some(blackboard_context) = blackboard_context {
+            additional_contexts.push(blackboard_context);
+        }
         if user_prompt_submit_outcome.should_stop {
             record_additional_contexts(&sess, &turn_context, additional_contexts).await;
             return None;

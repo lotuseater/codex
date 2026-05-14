@@ -2197,6 +2197,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-blackboard"
+version = "0.0.0"
+dependencies = [
+ "hex",
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+ "sha1 0.11.0",
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "codex-builtin-mcps"
 version = "0.0.0"
 dependencies = [
@@ -2544,6 +2557,7 @@ dependencies = [
  "codex-app-server-protocol",
  "codex-apply-patch",
  "codex-async-utils",
+ "codex-blackboard",
  "codex-code-mode",
  "codex-config",
  "codex-connectors",

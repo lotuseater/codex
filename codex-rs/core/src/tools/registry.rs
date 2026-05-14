@@ -383,6 +383,12 @@ impl ToolRegistry {
 
         let is_mutating = handler.is_mutating(&invocation).await;
         let operation_cache_cwd = operation_cache_cwd(&invocation);
+        invocation
+            .session
+            .services
+            .blackboard
+            .observe_path(operation_cache_cwd.as_path())
+            .await;
         if !is_mutating
             && let Some(pre_tool_use_payload) = &pre_tool_use_payload
             && let Some(cache_hit) =

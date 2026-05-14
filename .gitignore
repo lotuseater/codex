@@ -43,6 +43,8 @@ AGENTS.override.md
 .jest/
 *.tsbuildinfo
 .first_moves.db
+.codex/blackboard.md
+.codex/blackboard.lock
 
 # logs
 logs/
