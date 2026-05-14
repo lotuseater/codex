@@ -1,5 +1,6 @@
 pub(crate) mod agent_jobs;
 pub(crate) mod apply_patch;
+mod cognos_ops;
 mod context_ops;
 mod desktop_automation;
 mod dynamic;
@@ -42,6 +43,7 @@ pub(crate) use crate::tools::code_mode::CodeModeWaitHandler;
 pub use apply_patch::ApplyPatchHandler;
 use codex_protocol::models::AdditionalPermissionProfile;
 use codex_protocol::protocol::AskForApproval;
+pub use cognos_ops::CognosOpsHandler;
 pub use context_ops::ContextOpsHandler;
 pub use desktop_automation::DesktopAutomationHandler;
 pub use dynamic::DynamicToolHandler;

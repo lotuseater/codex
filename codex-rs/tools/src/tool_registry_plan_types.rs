@@ -16,6 +16,7 @@ pub enum ToolHandlerKind {
     CodeModeExecute,
     CodeModeWait,
     ContainerExec,
+    CognosOps,
     ContextOps,
     CreateGoal,
     DynamicTool,

@@ -1459,8 +1459,34 @@ fn context_ops_feature_includes_compact_context_tools() {
         &[],
     );
 
-    assert_contains_tool_names(&tools, &["file_outline", "search_text"]);
+    assert_contains_tool_names(
+        &tools,
+        &[
+            "agent_graph_scout",
+            "code_relation_scout",
+            "evidence_fusion_summary",
+            "file_outline",
+            "mission_trace_export",
+            "operation_cache_stats",
+            "problem_memory_lookup",
+            "search_text",
+        ],
+    );
     assert!(find_tool(&tools, "file_outline").supports_parallel_tool_calls);
+    for tool_name in [
+        "agent_graph_scout",
+        "code_relation_scout",
+        "evidence_fusion_summary",
+        "mission_trace_export",
+        "operation_cache_stats",
+        "problem_memory_lookup",
+    ] {
+        assert!(
+            handlers.iter().any(|handler| handler.name.name == tool_name
+                && handler.kind == ToolHandlerKind::CognosOps),
+            "missing cognos ops handler for {tool_name}"
+        );
+    }
     for tool_name in ["file_outline", "search_text"] {
         assert!(
             handlers.iter().any(|handler| handler.name.name == tool_name
