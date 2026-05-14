@@ -257,7 +257,9 @@ pub fn clear_if_no_active_external(
     blackboard_path: &Path,
     own_session_id: &str,
     now: i64,
-) -> io::Result<bool> {
+    stale_lock_after: Duration,
+) -> Result<bool> {
+    let _guard = LockGuard::acquire(&repo_lock_path(blackboard_path), stale_lock_after)?;
     let events = read_events(blackboard_path)?;
     if has_active_external_session(&events, own_session_id, now) {
         return Ok(false);
@@ -265,7 +267,7 @@ pub fn clear_if_no_active_external(
     match fs::remove_file(blackboard_path) {
         Ok(()) => Ok(true),
         Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(false),
-        Err(err) => Err(err),
+        Err(err) => Err(BlackboardError::Io(err)),
     }
 }
 
@@ -480,6 +482,32 @@ mod tests {
 
             assert!(!has_active_external_session(&events, "own", 120));
         }
+    }
+
+    #[test]
+    fn clear_if_no_active_external_keeps_active_external_under_lock() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join(".codex/blackboard.md");
+        append_event(
+            &path,
+            Duration::from_secs(0),
+            1024 * 1024,
+            &event(BlackboardEventKind::Join, "own", 100),
+        )
+        .unwrap();
+        append_event(
+            &path,
+            Duration::from_secs(0),
+            1024 * 1024,
+            &event(BlackboardEventKind::Intent, "external", 110),
+        )
+        .unwrap();
+
+        let cleared =
+            clear_if_no_active_external(&path, "own", 120, Duration::from_secs(0)).unwrap();
+
+        assert!(!cleared);
+        assert_eq!(read_events(&path).unwrap().len(), 2);
     }
 
     #[test]

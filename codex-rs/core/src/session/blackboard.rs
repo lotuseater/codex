@@ -429,6 +429,7 @@ impl BlackboardSession {
                     &joined.blackboard_path,
                     &self.identity.session_id,
                     now,
+                    Duration::from_secs(self.config.stale_after_seconds),
                 ) {
                     warn!(
                         "failed to clear oversized blackboard {}: {err}",
@@ -454,9 +455,12 @@ impl BlackboardSession {
             repo.clone()
         };
         let now = now_unix_seconds();
-        if let Err(err) =
-            clear_if_no_active_external(&joined.blackboard_path, &self.identity.session_id, now)
-        {
+        if let Err(err) = clear_if_no_active_external(
+            &joined.blackboard_path,
+            &self.identity.session_id,
+            now,
+            Duration::from_secs(self.config.stale_after_seconds),
+        ) {
             debug!("failed to delete idle blackboard: {err}");
         }
     }
