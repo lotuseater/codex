@@ -48,6 +48,16 @@ pub const DEFAULT_MEMORIES_MIN_ROLLOUT_IDLE_HOURS: i64 = 6;
 pub const DEFAULT_MEMORIES_MIN_RATE_LIMIT_REMAINING_PERCENT: i64 = 25;
 pub const DEFAULT_MEMORIES_MAX_RAW_MEMORIES_FOR_CONSOLIDATION: usize = 256;
 pub const DEFAULT_MEMORIES_MAX_UNUSED_DAYS: i64 = 30;
+pub const DEFAULT_BLACKBOARD_REPO_PATH: &str = ".codex/blackboard.md";
+pub const DEFAULT_BLACKBOARD_GLOBAL_INDEX_PATH: &str = "blackboard/index.jsonl";
+pub const DEFAULT_BLACKBOARD_POLL_INTERVAL_MS: u64 = 2_000;
+pub const DEFAULT_BLACKBOARD_HEARTBEAT_INTERVAL_SECONDS: u64 = 30;
+pub const DEFAULT_BLACKBOARD_STALE_AFTER_SECONDS: u64 = 180;
+pub const DEFAULT_BLACKBOARD_RECENT_WINDOW_SECONDS: u64 = 600;
+pub const DEFAULT_BLACKBOARD_MAX_INJECTED_BYTES: usize = 2_048;
+pub const DEFAULT_BLACKBOARD_MAX_ENTRY_CHARS: usize = 4_096;
+pub const DEFAULT_BLACKBOARD_MAX_FILE_BYTES: usize = 262_144;
+pub const DEFAULT_BLACKBOARD_MAX_JOINED_REPOS: usize = 16;
 const MIN_MEMORIES_MAX_RAW_MEMORIES_FOR_CONSOLIDATION: usize = 1;
 const MAX_MEMORIES_MAX_RAW_MEMORIES_FOR_CONSOLIDATION: usize = 4096;
 const MIN_MEMORIES_MAX_ROLLOUTS_PER_STARTUP: usize = 1;
@@ -252,6 +262,117 @@ pub struct ToolSuggestConfig {
     pub discoverables: Vec<ToolSuggestDiscoverable>,
     #[serde(default)]
     pub disabled_tools: Vec<ToolSuggestDisabledTool>,
+}
+
+/// Repo-local coordination blackboard settings loaded from config.toml.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct BlackboardToml {
+    /// When `false`, disables repo blackboard coordination.
+    pub enabled: Option<bool>,
+    /// Repo-relative path for the ignored blackboard file.
+    pub path: Option<String>,
+    /// Codex-home-relative path for the cross-repo session index.
+    pub global_index_path: Option<String>,
+    /// Poll interval for detecting updates from other sessions.
+    pub poll_interval_ms: Option<u64>,
+    /// Heartbeat interval for refreshing this session's repo leases.
+    pub heartbeat_interval_seconds: Option<u64>,
+    /// Lease and stale-lock timeout.
+    pub stale_after_seconds: Option<u64>,
+    /// Window for surfacing recent external updates.
+    pub recent_window_seconds: Option<u64>,
+    /// Maximum bytes injected into model context for one blackboard update.
+    pub max_injected_bytes: Option<usize>,
+    /// Maximum characters mirrored from one user/assistant message.
+    pub max_entry_chars: Option<usize>,
+    /// Maximum blackboard file size before cleanup is attempted.
+    pub max_file_bytes: Option<usize>,
+    /// Maximum number of repos a session can join at once.
+    pub max_joined_repos: Option<usize>,
+}
+
+/// Effective repo blackboard settings after defaults are applied.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct BlackboardConfig {
+    pub enabled: bool,
+    pub path: String,
+    pub global_index_path: String,
+    pub poll_interval_ms: u64,
+    pub heartbeat_interval_seconds: u64,
+    pub stale_after_seconds: u64,
+    pub recent_window_seconds: u64,
+    pub max_injected_bytes: usize,
+    pub max_entry_chars: usize,
+    pub max_file_bytes: usize,
+    pub max_joined_repos: usize,
+}
+
+impl Default for BlackboardConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            path: DEFAULT_BLACKBOARD_REPO_PATH.to_string(),
+            global_index_path: DEFAULT_BLACKBOARD_GLOBAL_INDEX_PATH.to_string(),
+            poll_interval_ms: DEFAULT_BLACKBOARD_POLL_INTERVAL_MS,
+            heartbeat_interval_seconds: DEFAULT_BLACKBOARD_HEARTBEAT_INTERVAL_SECONDS,
+            stale_after_seconds: DEFAULT_BLACKBOARD_STALE_AFTER_SECONDS,
+            recent_window_seconds: DEFAULT_BLACKBOARD_RECENT_WINDOW_SECONDS,
+            max_injected_bytes: DEFAULT_BLACKBOARD_MAX_INJECTED_BYTES,
+            max_entry_chars: DEFAULT_BLACKBOARD_MAX_ENTRY_CHARS,
+            max_file_bytes: DEFAULT_BLACKBOARD_MAX_FILE_BYTES,
+            max_joined_repos: DEFAULT_BLACKBOARD_MAX_JOINED_REPOS,
+        }
+    }
+}
+
+impl From<BlackboardToml> for BlackboardConfig {
+    fn from(toml: BlackboardToml) -> Self {
+        let defaults = Self::default();
+        Self {
+            enabled: toml.enabled.unwrap_or(defaults.enabled),
+            path: toml
+                .path
+                .filter(|path| !path.trim().is_empty())
+                .unwrap_or(defaults.path),
+            global_index_path: toml
+                .global_index_path
+                .filter(|path| !path.trim().is_empty())
+                .unwrap_or(defaults.global_index_path),
+            poll_interval_ms: toml
+                .poll_interval_ms
+                .unwrap_or(defaults.poll_interval_ms)
+                .clamp(250, 60_000),
+            heartbeat_interval_seconds: toml
+                .heartbeat_interval_seconds
+                .unwrap_or(defaults.heartbeat_interval_seconds)
+                .clamp(5, 3_600),
+            stale_after_seconds: toml
+                .stale_after_seconds
+                .unwrap_or(defaults.stale_after_seconds)
+                .clamp(30, 86_400),
+            recent_window_seconds: toml
+                .recent_window_seconds
+                .unwrap_or(defaults.recent_window_seconds)
+                .clamp(30, 86_400),
+            max_injected_bytes: toml
+                .max_injected_bytes
+                .unwrap_or(defaults.max_injected_bytes)
+                .clamp(256, 16 * 1024),
+            max_entry_chars: toml
+                .max_entry_chars
+                .unwrap_or(defaults.max_entry_chars)
+                .clamp(64, 32 * 1024),
+            max_file_bytes: toml
+                .max_file_bytes
+                .unwrap_or(defaults.max_file_bytes)
+                .clamp(4 * 1024, 4 * 1024 * 1024),
+            max_joined_repos: toml
+                .max_joined_repos
+                .unwrap_or(defaults.max_joined_repos)
+                .clamp(1, 128),
+        }
+    }
 }
 
 /// Memories settings loaded from config.toml.

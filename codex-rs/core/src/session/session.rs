@@ -1,5 +1,6 @@
 use super::*;
 use crate::goals::GoalRuntimeState;
+use crate::session::blackboard::BlackboardSession;
 use codex_protocol::SessionId;
 use codex_protocol::config_types::ContextBudgetMode;
 use codex_protocol::config_types::ServiceTier;
@@ -819,6 +820,12 @@ impl Session {
             let agent_control = agent_control.with_session_id(session_id);
             let session_extension_data = codex_extension_api::ExtensionData::new();
             let thread_extension_data = codex_extension_api::ExtensionData::new();
+            let blackboard = BlackboardSession::new(
+                config.as_ref(),
+                session_id.to_string(),
+                thread_id.to_string(),
+                &session_configuration.session_source,
+            );
             for contributor in extensions.thread_start_contributors() {
                 contributor.contribute(
                     config.as_ref(),
@@ -887,6 +894,7 @@ impl Session {
                     attestation_provider,
                 ),
                 code_mode_service: crate::tools::code_mode::CodeModeService::new(),
+                blackboard,
                 environment_manager,
             };
             services
@@ -920,6 +928,11 @@ impl Session {
                 let mut guard = network_policy_decider_session.write().await;
                 *guard = Arc::downgrade(&sess);
             }
+            sess.services.blackboard.start();
+            sess.services
+                .blackboard
+                .observe_path(config.cwd.as_ref())
+                .await;
             sess.refresh_git_checkpoint_baseline(config.cwd.as_ref()).await;
             // Dispatch the SessionConfiguredEvent first and then report any errors.
             // If resuming, include converted initial messages in the payload so UIs can render them immediately.

@@ -88,6 +88,7 @@ use codex_protocol::config_types::Settings;
 use codex_protocol::config_types::WebSearchMode;
 use codex_protocol::dynamic_tools::DynamicToolResponse;
 use codex_protocol::dynamic_tools::DynamicToolSpec;
+use codex_protocol::items::AgentMessageContent;
 use codex_protocol::items::TurnItem;
 use codex_protocol::items::UserMessageItem;
 use codex_protocol::mcp::CallToolResult;
@@ -187,6 +188,7 @@ use codex_protocol::error::Result as CodexResult;
 #[cfg(test)]
 use codex_protocol::exec_output::StreamOutput;
 
+pub(crate) mod blackboard;
 mod checkpoint_git;
 pub(crate) mod checkpoint_policy;
 mod checkpoint_scratchpad;
@@ -3213,6 +3215,20 @@ impl Session {
 
         // Derive a turn item and emit lifecycle events if applicable.
         if let Some(item) = parse_turn_item(&response_item) {
+            if let TurnItem::AgentMessage(agent_message) = &item {
+                let message = agent_message
+                    .content
+                    .iter()
+                    .map(|content| match content {
+                        AgentMessageContent::Text { text } => text.as_str(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                self.services
+                    .blackboard
+                    .record_assistant_proposal(turn_context.cwd.as_path(), &message)
+                    .await;
+            }
             self.emit_turn_item_started(turn_context, &item).await;
             self.emit_turn_item_completed(turn_context, item).await;
         }
