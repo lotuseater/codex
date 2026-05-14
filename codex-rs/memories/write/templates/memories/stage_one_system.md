@@ -224,15 +224,30 @@ Return exactly one JSON object with required keys:
 - `rollout_summary` (string)
 - `rollout_slug` (string)
 - `raw_memory` (string)
+- `metadata` (object)
 
 `rollout_summary` and `raw_memory` formats are below. `rollout_slug` is a
 filesystem-safe stable slug to best describe the rollout (lowercase, hyphen/underscore, <= 80 chars).
+`metadata` is structured routing evidence used for project/problem recall. Fill it only with
+facts supported by the rollout; use empty arrays or null when evidence is absent.
 
 Rules:
 
-- Empty-field no-op must use empty strings for all three fields.
+- Empty-field no-op must use empty strings for `rollout_summary`, `rollout_slug`, and `raw_memory`.
+- Empty-field no-op must set `metadata.project_key` to null and every metadata list to `[]`.
 - No additional keys.
 - No prose outside JSON.
+
+`metadata` fields:
+
+- `project_key`: stable repo or project identifier, for example a repo name or absolute path fragment.
+- `problem_families`: recurring problem categories such as build failure, GUI automation, memory indexing, or agent orchestration.
+- `symptoms`: concrete error text, visible behavior, failed commands, or user-described symptoms.
+- `edit_surfaces`: files, modules, tools, configs, or UI areas that were actually involved.
+- `verified_commands`: commands or harnesses that were run successfully or failed with useful evidence.
+- `failure_modes`: durable hazards and causes a future agent should check before acting.
+- `routing_keywords`: exact symbols, command names, paths, tool names, or concepts useful for retrieval.
+- `staleness_notes`: facts likely to drift, such as current branch state, live sessions, service availability, or temporary blockers.
 
 ============================================================
 `rollout_summary` FORMAT

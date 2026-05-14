@@ -126,7 +126,11 @@ pub fn render_entrypoint_hint(project_root: &Path, path_budget: usize) -> Option
         "canonical first-reads for broad repo exploration:".to_string(),
     ];
     for path in paths {
-        lines.push(format!("- {path}"));
+        let role = context_pack_path_role(path.as_str());
+        lines.push(format!(
+            "- {path} | role={role} | relation_reason={}",
+            context_pack_relation_reason(role)
+        ));
     }
     lines.push(
         "usage: read one or two only if the current broad search is not already enough."
@@ -153,6 +157,7 @@ pub fn has_scout_context(message: &str) -> bool {
         || lower.contains("first_moves_evidence:")
         || lower.contains("routing_evidence:")
         || lower.contains("context_scout_evidence:")
+        || lower.contains("agent_graph_scout")
         || lower.contains("first_moves_predict")
         || lower.contains("repo_context_scout")
 }
@@ -353,7 +358,11 @@ fn render_scout_pack(paths: &[String]) -> String {
         "SCOUT_HINT (candidate paths from a static term-matching heuristic):".to_string(),
     ];
     for path in paths {
-        lines.push(format!("- {path}"));
+        let role = context_pack_path_role(path);
+        lines.push(format!(
+            "- {path} | role={role} | relation_reason={}",
+            context_pack_relation_reason(role)
+        ));
     }
     lines.push(
         "USAGE: open these only if existing context is insufficient; do not pre-emptively read every listed path.".to_string(),
@@ -390,6 +399,39 @@ fn render_exact_pack(paths: &[String]) -> String {
 struct FileCandidate {
     path: String,
     score: i64,
+}
+
+fn context_pack_path_role(path: &str) -> &'static str {
+    let lower = path.to_ascii_lowercase();
+    if lower.contains("/test") || lower.contains("_test") || lower.ends_with("tests.rs") {
+        "test"
+    } else if lower.ends_with(".md") || lower.contains("/docs/") {
+        "docs"
+    } else if lower.ends_with(".toml")
+        || lower.ends_with(".json")
+        || lower.ends_with(".yml")
+        || lower.ends_with(".yaml")
+    {
+        "config"
+    } else if lower.ends_with("mod.rs") || lower.ends_with("lib.rs") || lower.ends_with("main.rs") {
+        "entrypoint"
+    } else if lower.ends_with(".h") || lower.ends_with(".hpp") || lower.contains("/protocol/") {
+        "interface"
+    } else {
+        "implementation"
+    }
+}
+
+fn context_pack_relation_reason(role: &str) -> &'static str {
+    match role {
+        "entrypoint" => "likely module or runtime entrypoint",
+        "interface" => "likely API or type boundary",
+        "implementation" => "likely behavior implementation",
+        "test" => "likely verification surface",
+        "config" => "likely build or runtime configuration",
+        "docs" => "likely design or usage context",
+        _ => "candidate path relation",
+    }
 }
 
 fn resolve_explicit_paths(files: &[FileCandidate], prompt: &str, limit: usize) -> Vec<String> {

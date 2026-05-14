@@ -286,3 +286,94 @@ fn write_permissions_for_paths_keep_dirs_outside_workspace_root() {
         Some(vec![expected_outside])
     );
 }
+
+async fn committed_delta_for_test(path: &str) -> codex_apply_patch::AppliedPatchDelta {
+    let tmp = TempDir::new().expect("tmp");
+    let cwd = tmp.path().abs();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    codex_apply_patch::apply_patch(
+        &format!("*** Begin Patch\n*** Add File: {path}\n+content\n*** End Patch"),
+        &cwd,
+        &mut stdout,
+        &mut stderr,
+        LOCAL_FS.as_ref(),
+        /*sandbox*/ None,
+    )
+    .await
+    .expect("apply patch")
+}
+
+#[tokio::test]
+async fn apply_patch_preserves_committed_delta_on_rejected_error() {
+    let delta = committed_delta_for_test("rejected.txt").await;
+    let mut runtime = ApplyPatchRuntime::new();
+    runtime.append_committed_delta_for_test(delta.clone());
+
+    let (out, reported_delta) = apply_patch_finish_parts(
+        Err(ToolError::Rejected("rejected by user".to_string())),
+        &runtime,
+    );
+
+    assert!(matches!(out, Err(ToolError::Rejected(_))));
+    assert_eq!(reported_delta, Some(delta));
+}
+
+#[tokio::test]
+async fn apply_patch_preserves_committed_delta_on_sandbox_denied() {
+    let delta = committed_delta_for_test("denied.txt").await;
+    let mut runtime = ApplyPatchRuntime::new();
+    runtime.append_committed_delta_for_test(delta.clone());
+
+    let (out, reported_delta) = apply_patch_finish_parts(
+        Err(ToolError::Codex(codex_protocol::error::CodexErr::Sandbox(
+            codex_protocol::error::SandboxErr::Denied {
+                output: Box::<ExecToolCallOutput>::default(),
+                network_policy_decision: None,
+            },
+        ))),
+        &runtime,
+    );
+
+    assert!(matches!(
+        out,
+        Err(ToolError::Codex(codex_protocol::error::CodexErr::Sandbox(
+            codex_protocol::error::SandboxErr::Denied { .. }
+        )))
+    ));
+    assert_eq!(reported_delta, Some(delta));
+}
+
+#[test]
+fn apply_patch_preserves_no_delta_for_exact_empty_error() {
+    let runtime = ApplyPatchRuntime::new();
+
+    let (out, reported_delta) = apply_patch_finish_parts(
+        Err(ToolError::Rejected("rejected by user".to_string())),
+        &runtime,
+    );
+
+    assert!(matches!(out, Err(ToolError::Rejected(_))));
+    assert_eq!(reported_delta, None);
+}
+
+#[tokio::test]
+async fn apply_patch_success_prefers_output_delta() {
+    let runtime_delta = committed_delta_for_test("runtime.txt").await;
+    let output_delta = committed_delta_for_test("output.txt").await;
+    let mut runtime = ApplyPatchRuntime::new();
+    runtime.append_committed_delta_for_test(runtime_delta);
+
+    let (_out, reported_delta) = apply_patch_finish_parts(
+        Ok(OrchestratorRunResult {
+            output: ApplyPatchRuntimeOutput {
+                exec_output: ExecToolCallOutput::default(),
+                delta: output_delta.clone(),
+            },
+            deferred_network_approval: None,
+        }),
+        &runtime,
+    );
+
+    assert_eq!(reported_delta, Some(output_delta));
+}

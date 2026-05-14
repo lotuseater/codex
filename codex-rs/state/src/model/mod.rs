@@ -24,6 +24,7 @@ pub use memories::MemoryStatusSnapshot;
 pub use memories::Phase2JobClaimOutcome;
 pub use memories::Stage1JobClaim;
 pub use memories::Stage1JobClaimOutcome;
+pub use memories::Stage1MemoryMetadata;
 pub use memories::Stage1Output;
 pub use memories::Stage1StartupClaimParams;
 pub use thread_goal::ThreadGoal;

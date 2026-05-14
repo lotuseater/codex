@@ -86,3 +86,27 @@ fn memories_config_clamps_rate_limit_remaining_threshold() {
         }
     );
 }
+
+#[test]
+fn memories_config_project_problem_options_default_and_clamp() {
+    let defaults = MemoriesConfig::from(MemoriesToml::default());
+    assert!(defaults.project_problem_index);
+    assert!(defaults.project_problem_context);
+    assert_eq!(defaults.project_problem_max_matches, 3);
+
+    let config = MemoriesConfig::from(MemoriesToml {
+        project_problem_index: Some(false),
+        project_problem_context: Some(false),
+        project_problem_max_matches: Some(0),
+        ..Default::default()
+    });
+    assert!(!config.project_problem_index);
+    assert!(!config.project_problem_context);
+    assert_eq!(config.project_problem_max_matches, 1);
+
+    let config = MemoriesConfig::from(MemoriesToml {
+        project_problem_max_matches: Some(99),
+        ..Default::default()
+    });
+    assert_eq!(config.project_problem_max_matches, 20);
+}

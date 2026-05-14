@@ -1,4 +1,7 @@
+use crate::logic::LogicInput;
+use crate::logic::assess_candidate;
 use crate::predict::Candidate;
+use crate::predict::Intent;
 use crate::predict::repo_structure_score;
 use crate::storage::normalize_path_text;
 use crate::storage::short_hash;
@@ -18,6 +21,7 @@ use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
 const VARIANT_PATH_LEXICAL: &str = "path_lexical";
+const VARIANT_LOGIC_EVIDENCE: &str = "logic_evidence";
 const VARIANT_CONTENT_SEEDED_COMPONENT_MERGE: &str = "content_seeded_component_merge";
 
 pub(crate) struct ShadowPredictInput<'a> {
@@ -29,6 +33,8 @@ pub(crate) struct ShadowPredictInput<'a> {
     pub(crate) candidates: &'a [Candidate],
     pub(crate) prompt_terms: &'a HashSet<String>,
     pub(crate) already_loaded: &'a HashSet<String>,
+    pub(crate) memory_hints: &'a HashSet<String>,
+    pub(crate) intent: Intent,
     pub(crate) native_moves: &'a [FirstMove],
 }
 
@@ -76,6 +82,12 @@ pub(crate) fn record_shadow_prediction(input: ShadowPredictInput<'_>) -> Result<
         shadow_variant(
             VARIANT_PATH_LEXICAL,
             rank_path_lexical(&input),
+            &native_paths,
+            input.config.max_candidates,
+        ),
+        shadow_variant(
+            VARIANT_LOGIC_EVIDENCE,
+            rank_logic_evidence(&input),
             &native_paths,
             input.config.max_candidates,
         ),
@@ -177,6 +189,38 @@ fn rank_path_lexical(input: &ShadowPredictInput<'_>) -> Vec<ShadowCandidate> {
         .filter_map(|candidate| {
             let mut reasons = Vec::new();
             let score = lexical_score(candidate, &prompt_lower, input.prompt_terms, &mut reasons);
+            (score > 0.0).then(|| ShadowCandidate {
+                path: candidate.rel_path.clone(),
+                score,
+                reasons,
+            })
+        })
+        .collect::<Vec<_>>()
+        .tap_sort()
+}
+
+fn rank_logic_evidence(input: &ShadowPredictInput<'_>) -> Vec<ShadowCandidate> {
+    let prompt_lower = input.prompt.to_ascii_lowercase().replace('\\', "/");
+    let logic_input = LogicInput {
+        intent: input.intent,
+        prompt_lower: &prompt_lower,
+        prompt_terms: input.prompt_terms,
+        memory_hints: input.memory_hints,
+    };
+
+    input
+        .candidates
+        .iter()
+        .filter(|candidate| !path_is_loaded(&candidate.rel_path, input.already_loaded))
+        .filter_map(|candidate| {
+            let mut reasons = Vec::new();
+            let lexical = lexical_score(candidate, &prompt_lower, input.prompt_terms, &mut reasons);
+            let logic = assess_candidate(candidate, &logic_input);
+            for reason in logic.reasons {
+                add_reason(&mut reasons, reason);
+            }
+            let score =
+                lexical + repo_structure_score(candidate) * 100.0 + logic.score_delta * 1_000.0;
             (score > 0.0).then(|| ShadowCandidate {
                 path: candidate.rel_path.clone(),
                 score,
@@ -463,6 +507,7 @@ mod tests {
         let candidates = vec![candidate("AGENTS.md"), candidate("src/target.rs")];
         let prompt_terms = HashSet::from(["inspect".to_string(), "target".to_string()]);
         let already_loaded = HashSet::from(["agents.md".to_string()]);
+        let memory_hints = HashSet::new();
         let storage = storage();
         let input = ShadowPredictInput {
             codex_home: Path::new("unused"),
@@ -473,6 +518,8 @@ mod tests {
             candidates: &candidates,
             prompt_terms: &prompt_terms,
             already_loaded: &already_loaded,
+            memory_hints: &memory_hints,
+            intent: Intent::General,
             native_moves: &[],
         };
 
@@ -495,6 +542,7 @@ mod tests {
             "first_moves".to_string(),
         ]);
         let already_loaded = HashSet::new();
+        let memory_hints = HashSet::new();
         let storage = storage();
         let input = ShadowPredictInput {
             codex_home: Path::new("unused"),
@@ -505,6 +553,8 @@ mod tests {
             candidates: &candidates,
             prompt_terms: &prompt_terms,
             already_loaded: &already_loaded,
+            memory_hints: &memory_hints,
+            intent: Intent::FirstMoves,
             native_moves: &[],
         };
 
@@ -546,6 +596,7 @@ mod tests {
         let candidates = vec![candidate("src/lib.rs")];
         let prompt_terms = HashSet::from(["lib".to_string()]);
         let already_loaded = HashSet::new();
+        let memory_hints = HashSet::new();
         let native_moves = vec![FirstMove {
             kind: FirstMoveKind::Read,
             confidence: 0.9,
@@ -566,6 +617,8 @@ mod tests {
             candidates: &candidates,
             prompt_terms: &prompt_terms,
             already_loaded: &already_loaded,
+            memory_hints: &memory_hints,
+            intent: Intent::General,
             native_moves: &native_moves,
         })
         .expect("shadow record");
@@ -578,5 +631,6 @@ mod tests {
         let text = std::fs::read_to_string(path).expect("shadow jsonl");
         assert!(text.contains("\"type\":\"first_moves_shadow\""));
         assert!(text.contains("\"src/lib.rs\""));
+        assert!(text.contains("\"logic_evidence\""));
     }
 }

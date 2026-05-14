@@ -52,6 +52,9 @@ fn desktop_automation_context_for_prompt_with_availability(
     lines.push(
         "For live Windows app state, inspect first with dab_find_window, dab_window_check, dab_visual_scan, dab_ocr, dab_screenshot, dab_locate_visual, or dab_element_map instead of guessing from shell state.".to_string(),
     );
+    lines.push(
+        "For visual-quality work such as pixel art, blurry UI, washed-out colors, game screenshots, or canvas appearance, capture and inspect screenshots before and after changes before claiming completion.".to_string(),
+    );
     if config.allow_input {
         lines.push(
             "Use dab_prepare_window before visual capture when a target is minimized/off-screen, then use dab_smart_click, dab_send_keys, dab_navigate, dab_drag, dab_scroll, dab_terminal_tabs, dab_terminal_focus, or coordinate clicks only after inspection identifies the target window or element.".to_string(),
@@ -155,6 +158,22 @@ fn looks_like_desktop_automation_prompt(prompt: &str) -> bool {
         // --- visual verbs ---
         "snapshot",
         "capture screen",
+        "screen capture",
+        "screen capturing",
+        "inspect screenshots",
+        "game screenshot",
+        "pixel art",
+        "visual look",
+        "looks blurry",
+        "blurry",
+        "low detail",
+        "low-detail",
+        "washed out",
+        "canvas looks",
+        "visual quality",
+        "visual regression",
+        "gamma",
+        "color palette",
         "on screen",
         "on my screen",
         "active window",
@@ -308,6 +327,10 @@ mod tests {
             "Click in the system tray",
             "Automate the build pipeline through the UI",
             "Run this on Windows 11",
+            "Improve this pixel art and inspect screenshots each time",
+            "The game screenshot looks blurry and low detail",
+            "The canvas looks washed out; compare before and after screen captures",
+            "Fix the visual quality and color palette",
             // --- Ukrainian, ти-form ---
             "Перетягни цей файл — потрібен скріншот вікна",
             "Що зараз на екрані?",

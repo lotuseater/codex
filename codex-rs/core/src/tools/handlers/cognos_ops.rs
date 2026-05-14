@@ -197,11 +197,11 @@ async fn handle_problem_memory_lookup(
             if !memory_entry_matches_project_scope(cwd.as_str(), project_root_text.as_str()) {
                 continue;
             }
-            let scoped = !cwd.is_empty();
-            let score = score_terms(&terms, &haystack) + if scoped { 4 } else { 0 };
-            if score == 0 {
+            let Some(score) =
+                score_problem_memory_candidate(&terms, haystack.as_str(), !cwd.is_empty())
+            else {
                 continue;
-            }
+            };
             candidates.push((score, index_name, value));
         }
     }
@@ -668,6 +668,14 @@ fn score_terms(terms: &[String], haystack: &str) -> i32 {
         .count() as i32
 }
 
+fn score_problem_memory_candidate(terms: &[String], haystack: &str, scoped: bool) -> Option<i32> {
+    let term_hits = score_terms(terms, haystack);
+    if term_hits == 0 {
+        return None;
+    }
+    Some(term_hits + if scoped { 4 } else { 0 })
+}
+
 fn memory_entry_matches_project_scope(cwd: &str, project_root: &str) -> bool {
     if cwd.is_empty() {
         return true;
@@ -739,6 +747,7 @@ mod tests {
         for tests in [
             vec!["cargo test passed with no errors".to_string()],
             vec!["no failures".to_string()],
+            vec!["error count: 0".to_string()],
             vec!["test result: ok. 10 passed; 0 failed".to_string()],
             vec!["all tests passed".to_string()],
         ] {
@@ -775,6 +784,28 @@ mod tests {
                 }
             );
         }
+    }
+
+    #[test]
+    fn problem_memory_lookup_scope_boost_requires_term_match() {
+        let terms = terms("donut physics");
+
+        assert_eq!(
+            score_problem_memory_candidate(
+                &terms,
+                "same repo memory about deployment wrappers",
+                true,
+            ),
+            None
+        );
+        assert_eq!(
+            score_problem_memory_candidate(
+                &terms,
+                "same repo memory about donut rendering physics",
+                true,
+            ),
+            Some(6)
+        );
     }
 
     #[test]

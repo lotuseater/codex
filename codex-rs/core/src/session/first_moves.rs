@@ -11,6 +11,8 @@ use codex_first_moves::format_first_moves_context;
 use codex_first_moves::is_legacy_first_moves_context;
 use codex_first_moves::is_whole_repo_exploration_prompt;
 use codex_first_moves::predict;
+use codex_memories_context::ProjectProblemMemoryContextRequest;
+use codex_memories_context::build_project_problem_memory_context;
 use codex_protocol::config_types::ContextBudgetMode;
 use codex_protocol::items::TurnItem;
 use codex_protocol::permissions::FileSystemSandboxKind;
@@ -47,6 +49,7 @@ pub(super) async fn first_moves_context_for_fresh_turn(
     }
 
     let context_pack = context_pack_for_fresh_turn(turn_context, prompt);
+    let project_problem_context = project_problem_memory_context(turn_context, prompt).await;
     let session_id = sess.conversation_id.to_string();
     let first_moves_context = match predict(PredictRequest {
         project_root: turn_context.cwd.as_path(),
@@ -62,13 +65,16 @@ pub(super) async fn first_moves_context_for_fresh_turn(
         Ok(bundle) => bundle,
         Err(err) => {
             tracing::trace!("native first-moves prediction skipped: {err}");
-            return context_pack;
+            return combine_contexts(context_pack, project_problem_context);
         }
     };
 
-    combine_context_pack_and_first_moves(
-        context_pack,
-        format_first_moves_context(&first_moves_context, &config),
+    combine_contexts(
+        combine_context_pack_and_first_moves(
+            context_pack,
+            format_first_moves_context(&first_moves_context, &config),
+        ),
+        project_problem_context,
     )
 }
 
@@ -120,6 +126,34 @@ fn combine_context_pack_and_first_moves(
         (None, Some(first_moves_context)) => Some(first_moves_context),
         (None, None) => None,
     }
+}
+
+fn combine_contexts(left: Option<String>, right: Option<String>) -> Option<String> {
+    match (left, right) {
+        (Some(left), Some(right)) => Some(format!("{left}\n\n{right}")),
+        (Some(left), None) => Some(left),
+        (None, Some(right)) => Some(right),
+        (None, None) => None,
+    }
+}
+
+async fn project_problem_memory_context(
+    turn_context: &Arc<TurnContext>,
+    prompt: &str,
+) -> Option<String> {
+    if !turn_context.config.memories.use_memories
+        || !turn_context.config.memories.project_problem_context
+    {
+        return None;
+    }
+
+    build_project_problem_memory_context(ProjectProblemMemoryContextRequest {
+        codex_home: &turn_context.config.codex_home,
+        project_root: turn_context.cwd.as_path(),
+        prompt,
+        max_matches: turn_context.config.memories.project_problem_max_matches,
+    })
+    .await
 }
 
 pub(super) async fn spawn_repo_context_scout_shadow_for_fresh_turn(

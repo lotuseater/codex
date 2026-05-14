@@ -1413,6 +1413,21 @@
           "format": "int64",
           "type": "integer"
         },
+        "project_problem_context": {
+          "description": "Inject project/problem memory hints when they match the current turn.",
+          "type": "boolean"
+        },
+        "project_problem_index": {
+          "description": "Write project/problem JSONL indexes during Phase 2.",
+          "type": "boolean"
+        },
+        "project_problem_max_matches": {
+          "description": "Maximum project/problem matches to inject or return by default.",
+          "format": "uint",
+          "maximum": 20.0,
+          "minimum": 1.0,
+          "type": "integer"
+        },
         "use_memories": {
           "description": "When `false`, skip injecting memory usage instructions into developer prompts.",
           "type": "boolean"

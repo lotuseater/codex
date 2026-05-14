@@ -2562,6 +2562,7 @@ dependencies = [
  "codex-hooks",
  "codex-login",
  "codex-mcp",
+ "codex-memories-context",
  "codex-memories-read",
  "codex-model-provider",
  "codex-model-provider-info",
@@ -3235,6 +3236,17 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "wiremock",
+]
+
+[[package]]
+name = "codex-memories-context"
+version = "0.0.0"
+dependencies = [
+ "codex-utils-absolute-path",
+ "pretty_assertions",
+ "serde_json",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

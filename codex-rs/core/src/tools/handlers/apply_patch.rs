@@ -23,6 +23,7 @@ use crate::tools::events::ToolEventCtx;
 use crate::tools::handlers::apply_granted_turn_permissions;
 use crate::tools::handlers::parse_arguments;
 use crate::tools::hook_names::HookToolName;
+use crate::tools::orchestrator::OrchestratorRunResult;
 use crate::tools::orchestrator::ToolOrchestrator;
 use crate::tools::registry::PostToolUsePayload;
 use crate::tools::registry::PreToolUsePayload;
@@ -31,13 +32,17 @@ use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
 use crate::tools::runtimes::apply_patch::ApplyPatchRequest;
 use crate::tools::runtimes::apply_patch::ApplyPatchRuntime;
+use crate::tools::runtimes::apply_patch::ApplyPatchRuntimeOutput;
 use crate::tools::sandboxing::ToolCtx;
+use crate::tools::sandboxing::ToolError;
+use codex_apply_patch::AppliedPatchDelta;
 use codex_apply_patch::ApplyPatchAction;
 use codex_apply_patch::ApplyPatchFileChange;
 use codex_apply_patch::Hunk;
 use codex_apply_patch::StreamingPatchParser;
 use codex_exec_server::ExecutorFileSystem;
 use codex_features::Feature;
+use codex_protocol::exec_output::ExecToolCallOutput;
 use codex_protocol::models::AdditionalPermissionProfile;
 use codex_protocol::models::FileSystemPermissions;
 use codex_protocol::protocol::EventMsg;
@@ -53,6 +58,19 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 const APPLY_PATCH_ARGUMENT_DIFF_BUFFER_INTERVAL: Duration = Duration::from_millis(500);
 
 pub struct ApplyPatchHandler;
+
+fn apply_patch_finish_parts(
+    out: Result<OrchestratorRunResult<ApplyPatchRuntimeOutput>, ToolError>,
+    runtime: &ApplyPatchRuntime,
+) -> (
+    Result<ExecToolCallOutput, ToolError>,
+    Option<AppliedPatchDelta>,
+) {
+    match out {
+        Ok(r) => (Ok(r.output.exec_output), Some(r.output.delta)),
+        Err(e) => (Err(e), runtime.committed_delta_for_reporting().cloned()),
+    }
+}
 
 #[derive(Default)]
 struct ApplyPatchArgumentDiffConsumer {
@@ -436,10 +454,7 @@ impl ToolHandler for ApplyPatchHandler {
                                 turn.approval_policy.value(),
                             )
                             .await;
-                        let (out, delta) = match out {
-                            Ok(r) => (Ok(r.output.exec_output), Some(r.output.delta)),
-                            Err(e) => (Err(e), None),
-                        };
+                        let (out, delta) = apply_patch_finish_parts(out, &runtime);
                         let event_ctx = ToolEventCtx::new(
                             session.as_ref(),
                             turn.as_ref(),
@@ -547,10 +562,7 @@ pub(crate) async fn intercept_apply_patch(
                             turn.approval_policy.value(),
                         )
                         .await;
-                    let (out, delta) = match out {
-                        Ok(r) => (Ok(r.output.exec_output), Some(r.output.delta)),
-                        Err(e) => (Err(e), None),
-                    };
+                    let (out, delta) = apply_patch_finish_parts(out, &runtime);
                     let event_ctx = ToolEventCtx::new(
                         session.as_ref(),
                         turn.as_ref(),

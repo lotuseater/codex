@@ -358,6 +358,7 @@ fn mentions_scout_tool(section: &str) -> bool {
         "<first_moves",
         "context scout",
         "repo_context_scout",
+        "agent_graph_scout",
         "repo navigation index",
         "code_knowledge_base",
         "smart_context",
@@ -375,6 +376,7 @@ fn starts_with_scout_step(section: &str) -> bool {
         "tool_search",
         "context scout",
         "repo_context_scout",
+        "agent_graph_scout",
         "repo navigation index",
         "code_knowledge_base",
         "smart_context",
@@ -815,6 +817,20 @@ mod tests {
                 role_name: Some("helper"),
                 task_name: "helper_repo_check",
                 message: "CONTEXT_AREA: whole repo\nSCOUT_EVIDENCE: first_moves_predict returned codex-rs/agent-policy/src/lib.rs with high confidence\nWHY_AGENT / ROI: reuse check found no relevant existing helper; independent helper verification with loop_followup_gain=3, net=+3, and a 12k token budget while root keeps implementation local\nFIRST_READS: first_moves_predict output only\nTOOL_HINTS: use optimized context tools before shell search\nTOKEN_TIP: stop if the scout is enough\nVERIFICATION: report policy files only",
+                first_moves_enabled: true,
+                whole_repo_exploration_prompt: false,
+            }),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn spawn_policy_allows_budgeted_helper_after_agent_graph_scout() {
+        assert_eq!(
+            evaluate_spawn_policy(SpawnPolicyInput {
+                role_name: Some("helper"),
+                task_name: "helper_agent_reuse",
+                message: "CONTEXT_AREA: agent reuse only\nSCOUT_EVIDENCE: agent_graph_scout reported one idle reusable helper with matching context\nWHY_AGENT / ROI: reuse check found a relevant helper; independent follow-up with reuse_cost=1, loop_followup_gain=3, net=+4, and a 6k token budget\nFIRST_READS: agent_graph_scout output only\nTOOL_HINTS: do not inspect repository files\nTOKEN_TIP: stop after reuse recommendation\nVERIFICATION: report reuse action only",
                 first_moves_enabled: true,
                 whole_repo_exploration_prompt: false,
             }),

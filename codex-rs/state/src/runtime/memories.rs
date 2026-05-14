@@ -9,6 +9,7 @@ use crate::model::MemoryStatusSnapshot;
 use crate::model::Phase2JobClaimOutcome;
 use crate::model::Stage1JobClaim;
 use crate::model::Stage1JobClaimOutcome;
+use crate::model::Stage1MemoryMetadata;
 use crate::model::Stage1Output;
 use crate::model::Stage1OutputRow;
 use crate::model::Stage1StartupClaimParams;
@@ -315,6 +316,7 @@ SELECT
     so.raw_memory,
     so.rollout_summary,
     so.rollout_slug,
+    so.metadata_json,
     so.generated_at,
     COALESCE(t.cwd, '') AS cwd,
     t.git_branch AS git_branch
@@ -413,6 +415,7 @@ SELECT
     selected.raw_memory,
     selected.rollout_summary,
     selected.rollout_slug,
+    selected.metadata_json,
     selected.generated_at,
     selected.cwd,
     selected.git_branch
@@ -424,6 +427,7 @@ FROM (
         so.raw_memory,
         so.rollout_summary,
         so.rollout_slug,
+        so.metadata_json,
         so.generated_at,
         COALESCE(t.cwd, '') AS cwd,
         t.git_branch AS git_branch
@@ -719,8 +723,32 @@ WHERE kind = ? AND job_key = ?
         rollout_summary: &str,
         rollout_slug: Option<&str>,
     ) -> anyhow::Result<bool> {
+        self.mark_stage1_job_succeeded_with_metadata(
+            thread_id,
+            ownership_token,
+            source_updated_at,
+            raw_memory,
+            rollout_summary,
+            rollout_slug,
+            &Stage1MemoryMetadata::default(),
+        )
+        .await
+    }
+
+    /// Marks a claimed stage-1 job successful and stores structured routing metadata.
+    pub async fn mark_stage1_job_succeeded_with_metadata(
+        &self,
+        thread_id: ThreadId,
+        ownership_token: &str,
+        source_updated_at: i64,
+        raw_memory: &str,
+        rollout_summary: &str,
+        rollout_slug: Option<&str>,
+        metadata: &Stage1MemoryMetadata,
+    ) -> anyhow::Result<bool> {
         let now = Utc::now().timestamp();
         let thread_id = thread_id.to_string();
+        let metadata_json = metadata.to_json_string()?;
 
         let mut tx = self.pool.begin().await?;
         let rows_affected = sqlx::query(
@@ -757,13 +785,15 @@ INSERT INTO stage1_outputs (
     raw_memory,
     rollout_summary,
     rollout_slug,
+    metadata_json,
     generated_at
-) VALUES (?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(thread_id) DO UPDATE SET
     source_updated_at = excluded.source_updated_at,
     raw_memory = excluded.raw_memory,
     rollout_summary = excluded.rollout_summary,
     rollout_slug = excluded.rollout_slug,
+    metadata_json = excluded.metadata_json,
     generated_at = excluded.generated_at
 WHERE excluded.source_updated_at >= stage1_outputs.source_updated_at
             "#,
@@ -773,6 +803,7 @@ WHERE excluded.source_updated_at >= stage1_outputs.source_updated_at
         .bind(raw_memory)
         .bind(rollout_summary)
         .bind(rollout_slug)
+        .bind(metadata_json)
         .bind(now)
         .execute(&mut *tx)
         .await?;
@@ -1331,6 +1362,7 @@ mod tests {
     use super::test_support::unique_temp_dir;
     use crate::model::Phase2JobClaimOutcome;
     use crate::model::Stage1JobClaimOutcome;
+    use crate::model::Stage1MemoryMetadata;
     use crate::model::Stage1StartupClaimParams;
     use chrono::Duration;
     use chrono::Utc;
@@ -2765,13 +2797,18 @@ WHERE kind = 'memory_stage1'
         };
         assert!(
             runtime
-                .mark_stage1_job_succeeded(
+                .mark_stage1_job_succeeded_with_metadata(
                     thread_id_b,
                     ownership_token.as_str(),
                     /*source_updated_at*/ 101,
                     "raw memory b",
                     "summary b",
                     Some("rollout-b"),
+                    &Stage1MemoryMetadata {
+                        project_key: Some("workspace-b".to_string()),
+                        problem_families: vec!["merge reconciliation".to_string()],
+                        ..Stage1MemoryMetadata::default()
+                    },
                 )
                 .await
                 .expect("mark stage1 succeeded b"),
@@ -2786,6 +2823,14 @@ WHERE kind = 'memory_stage1'
         assert_eq!(outputs[0].thread_id, thread_id_b);
         assert_eq!(outputs[0].rollout_summary, "summary b");
         assert_eq!(outputs[0].rollout_slug.as_deref(), Some("rollout-b"));
+        assert_eq!(
+            outputs[0].metadata,
+            Stage1MemoryMetadata {
+                project_key: Some("workspace-b".to_string()),
+                problem_families: vec!["merge reconciliation".to_string()],
+                ..Stage1MemoryMetadata::default()
+            }
+        );
         assert_eq!(outputs[0].cwd, codex_home.join("workspace-b"));
         assert_eq!(outputs[0].git_branch.as_deref(), Some("feature/stage1-b"));
         assert_eq!(outputs[1].thread_id, thread_id_a);

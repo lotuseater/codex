@@ -192,34 +192,30 @@ function Test-ContainsText {
         ($Haystack.IndexOf($Needle, [System.StringComparison]::OrdinalIgnoreCase) -ge 0)
 }
 
-function Test-CodexCargoCommandLine {
-    param([string]$CommandLine)
+function Test-ContainsPathWithBoundary {
+    param(
+        [string]$Haystack,
+        [string]$Path
+    )
 
-    if ([string]::IsNullOrWhiteSpace($CommandLine)) {
+    if ([string]::IsNullOrWhiteSpace($Haystack) -or [string]::IsNullOrWhiteSpace($Path)) {
         return $false
     }
 
-    $lower = $CommandLine.ToLowerInvariant()
-    $isCargo = (Test-ContainsText -Haystack $lower -Needle "cargo.exe") -or
-        (Test-ContainsText -Haystack $lower -Needle "\cargo") -or
-        $lower.StartsWith("cargo ")
-    $targetsCodexPackage = (Test-ContainsText -Haystack $lower -Needle "-p codex-") -or
-        (Test-ContainsText -Haystack $lower -Needle "--package codex-")
-
-    return $isCargo -and $targetsCodexPackage
-}
-
-function Test-CodexRustcCommandLine {
-    param([string]$CommandLine)
-
-    if ([string]::IsNullOrWhiteSpace($CommandLine)) {
+    $haystackText = $Haystack.Replace("/", "\")
+    $pathText = $Path.Replace("/", "\").TrimEnd("\")
+    $index = $haystackText.IndexOf($pathText, [System.StringComparison]::OrdinalIgnoreCase)
+    if ($index -lt 0) {
         return $false
     }
 
-    $lower = $CommandLine.ToLowerInvariant()
-    return ((Test-ContainsText -Haystack $lower -Needle "rustc.exe") -or
-        (Test-ContainsText -Haystack $lower -Needle "\rustc")) -and
-        (Test-ContainsText -Haystack $lower -Needle "--crate-name codex_")
+    $afterIndex = $index + $pathText.Length
+    if ($afterIndex -ge $haystackText.Length) {
+        return $true
+    }
+
+    $after = $haystackText[$afterIndex]
+    return $after -eq "\" -or $after -eq '"' -or [char]::IsWhiteSpace($after)
 }
 
 function Get-RepoBuildProcesses {
@@ -238,10 +234,8 @@ function Get-RepoBuildProcesses {
 
     foreach ($process in $processes) {
         $commandLine = [string]$process.CommandLine
-        if ((Test-ContainsText -Haystack $commandLine -Needle $Root) -or
-            (Test-ContainsText -Haystack $commandLine -Needle $codexRs) -or
-            (Test-CodexCargoCommandLine -CommandLine $commandLine) -or
-            (Test-CodexRustcCommandLine -CommandLine $commandLine)) {
+        if ((Test-ContainsPathWithBoundary -Haystack $commandLine -Path $Root) -or
+            (Test-ContainsPathWithBoundary -Haystack $commandLine -Path $codexRs)) {
             $matching[[int]$process.ProcessId] = $true
             if ($process.ParentProcessId) {
                 $matching[[int]$process.ParentProcessId] = $true
@@ -621,10 +615,14 @@ function Get-ReleaseTestArtifactFiles {
     foreach ($exe in @(Get-ChildItem -LiteralPath $deps -File -Filter "*.exe" -ErrorAction SilentlyContinue)) {
         $candidatePaths.Add($exe.FullName)
     }
+    foreach ($object in @(Get-ChildItem -LiteralPath $deps -File -Filter "all-*.rcgu.o" -ErrorAction SilentlyContinue)) {
+        $candidatePaths.Add($object.FullName)
+    }
 
     $pathsWithSidecars = New-Object System.Collections.Generic.List[string]
     foreach ($path in $candidatePaths) {
-        foreach ($candidate in @($path, [System.IO.Path]::ChangeExtension($path, ".pdb"), [System.IO.Path]::ChangeExtension($path, ".d"))) {
+        $pathsWithSidecars.Add($path)
+        foreach ($candidate in @([System.IO.Path]::ChangeExtension($path, ".pdb"), [System.IO.Path]::ChangeExtension($path, ".d"))) {
             if (Test-Path -LiteralPath $candidate) {
                 $pathsWithSidecars.Add($candidate)
             }

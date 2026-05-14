@@ -302,6 +302,9 @@ consolidation_model = "gpt-5.2"
             min_rate_limit_remaining_percent: Some(12),
             extract_model: Some("gpt-5-mini".to_string()),
             consolidation_model: Some("gpt-5.2".to_string()),
+            project_problem_index: None,
+            project_problem_context: None,
+            project_problem_max_matches: None,
         }),
         memories_cfg.memories
     );
@@ -327,6 +330,9 @@ consolidation_model = "gpt-5.2"
             min_rate_limit_remaining_percent: 12,
             extract_model: Some("gpt-5-mini".to_string()),
             consolidation_model: Some("gpt-5.2".to_string()),
+            project_problem_index: true,
+            project_problem_context: true,
+            project_problem_max_matches: 3,
         }
     );
 

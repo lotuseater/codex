@@ -62,6 +62,19 @@ impl ApplyPatchRuntime {
         Self::default()
     }
 
+    pub(crate) fn committed_delta_for_reporting(&self) -> Option<&AppliedPatchDelta> {
+        if self.committed_delta.is_empty() && self.committed_delta.is_exact() {
+            None
+        } else {
+            Some(&self.committed_delta)
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn append_committed_delta_for_test(&mut self, delta: AppliedPatchDelta) {
+        self.committed_delta.append(delta);
+    }
+
     fn build_guardian_review_request(
         req: &ApplyPatchRequest,
         call_id: &str,

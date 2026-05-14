@@ -6,6 +6,8 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::ensure_layout;
+use crate::project_problem_problem_index_file;
+use crate::project_problem_project_index_file;
 use crate::raw_memories_file;
 use crate::rollout_summaries_dir;
 
@@ -37,6 +39,63 @@ pub async fn sync_rollout_summaries_from_memories(
     for memory in retained {
         write_rollout_summary_for_thread(root, memory).await?;
     }
+
+    Ok(())
+}
+
+/// Writes compact JSONL indexes for project/problem memory lookup.
+pub async fn sync_project_problem_indexes_from_memories(
+    root: &Path,
+    memories: &[Stage1Output],
+    max_raw_memories_for_consolidation: usize,
+) -> std::io::Result<()> {
+    ensure_layout(root).await?;
+
+    let retained = retained_memories(memories, max_raw_memories_for_consolidation);
+    let mut project_lines = Vec::new();
+    let mut problem_lines = Vec::new();
+
+    for memory in retained {
+        if !memory.metadata.has_signal() {
+            continue;
+        }
+
+        let base = serde_json::json!({
+            "thread_id": memory.thread_id.to_string(),
+            "source_updated_at": memory.source_updated_at.to_rfc3339(),
+            "cwd": memory.cwd.display().to_string(),
+            "git_branch": memory.git_branch.as_deref(),
+            "rollout_summary_file": format!("{}.md", rollout_summary_file_stem(memory)),
+            "rollout_summary": &memory.rollout_summary,
+            "metadata": &memory.metadata,
+        });
+
+        if memory
+            .metadata
+            .project_key
+            .as_deref()
+            .is_some_and(|key| !key.trim().is_empty())
+        {
+            project_lines.push(serde_json::to_string(&base).map_err(jsonl_format_error)?);
+        }
+
+        for family in &memory.metadata.problem_families {
+            let mut problem = base.clone();
+            problem["problem_family"] = serde_json::json!(family);
+            problem_lines.push(serde_json::to_string(&problem).map_err(jsonl_format_error)?);
+        }
+    }
+
+    tokio::fs::write(
+        project_problem_project_index_file(root),
+        jsonl_body(project_lines),
+    )
+    .await?;
+    tokio::fs::write(
+        project_problem_problem_index_file(root),
+        jsonl_body(problem_lines),
+    )
+    .await?;
 
     Ok(())
 }
@@ -144,6 +203,18 @@ fn retained_memories(
 
 fn raw_memories_format_error(err: std::fmt::Error) -> std::io::Error {
     std::io::Error::other(format!("format raw memories: {err}"))
+}
+
+fn jsonl_format_error(error: serde_json::Error) -> std::io::Error {
+    std::io::Error::other(format!("failed formatting memory index JSONL: {error}"))
+}
+
+fn jsonl_body(lines: Vec<String>) -> String {
+    if lines.is_empty() {
+        String::new()
+    } else {
+        format!("{}\n", lines.join("\n"))
+    }
 }
 
 fn rollout_summary_format_error(err: std::fmt::Error) -> std::io::Error {

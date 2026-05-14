@@ -1,4 +1,5 @@
 mod format;
+mod logic;
 mod predict;
 mod shadow;
 mod storage;

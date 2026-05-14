@@ -41,6 +41,7 @@ codex-feedback = { workspace = true }
 codex-first-moves = { workspace = true }
 codex-repo-context-scout = { workspace = true }
 codex-login = { workspace = true }
+codex-memories-context = { workspace = true }
 codex-memories-read = { workspace = true }
 codex-mcp = { workspace = true }
 codex-model-provider-info = { workspace = true }

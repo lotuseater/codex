@@ -1,13 +1,17 @@
 use super::rollout_summary_file_stem;
 use crate::ensure_layout;
+use crate::project_problem_problem_index_file;
+use crate::project_problem_project_index_file;
 use crate::raw_memories_file;
 use crate::rebuild_raw_memories_file_from_memories;
 use crate::rollout_summaries_dir;
+use crate::sync_project_problem_indexes_from_memories;
 use crate::sync_rollout_summaries_from_memories;
 use chrono::TimeZone;
 use chrono::Utc;
 use codex_config::types::DEFAULT_MEMORIES_MAX_RAW_MEMORIES_FOR_CONSOLIDATION;
 use codex_protocol::ThreadId;
+use codex_state::Stage1MemoryMetadata;
 use codex_state::Stage1Output;
 use pretty_assertions::assert_eq;
 use std::path::PathBuf;
@@ -22,6 +26,7 @@ fn stage1_output_with_slug(thread_id: ThreadId, rollout_slug: Option<&str>) -> S
         raw_memory: "raw memory".to_string(),
         rollout_summary: "summary".to_string(),
         rollout_slug: rollout_slug.map(ToString::to_string),
+        metadata: Stage1MemoryMetadata::default(),
         rollout_path: PathBuf::from("/tmp/rollout.jsonl"),
         cwd: PathBuf::from("/tmp/workspace"),
         git_branch: None,
@@ -91,6 +96,7 @@ async fn sync_rollout_summaries_and_raw_memories_file_keeps_latest_memories_only
         raw_memory: "raw memory".to_string(),
         rollout_summary: "short summary".to_string(),
         rollout_slug: None,
+        metadata: Stage1MemoryMetadata::default(),
         rollout_path: PathBuf::from("/tmp/rollout-100.jsonl"),
         cwd: PathBuf::from("/tmp/workspace"),
         git_branch: None,
@@ -146,4 +152,67 @@ async fn sync_rollout_summaries_and_raw_memories_file_keeps_latest_memories_only
     assert!(raw_memories.contains(&format!(
         "rollout_summary_file: {canonical_rollout_summary_file}"
     )));
+}
+
+#[tokio::test]
+async fn sync_project_problem_indexes_writes_only_memories_with_metadata_signal() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path().join("memory");
+
+    let mut indexed = stage1_output_with_slug(fixed_thread_id(), Some("indexed-memory"));
+    indexed.metadata = Stage1MemoryMetadata {
+        project_key: Some("open_ai/codex".to_string()),
+        problem_families: vec![
+            "merge reconciliation".to_string(),
+            "release build".to_string(),
+        ],
+        routing_keywords: vec!["apply_patch".to_string()],
+        ..Stage1MemoryMetadata::default()
+    };
+    let unindexed = stage1_output_with_slug(ThreadId::default(), Some("no-signal"));
+
+    sync_project_problem_indexes_from_memories(
+        &root,
+        &[indexed, unindexed],
+        DEFAULT_MEMORIES_MAX_RAW_MEMORIES_FOR_CONSOLIDATION,
+    )
+    .await
+    .expect("sync project/problem indexes");
+
+    let project_index = tokio::fs::read_to_string(project_problem_project_index_file(&root))
+        .await
+        .expect("read project index");
+    let project_lines = project_index.lines().collect::<Vec<_>>();
+    assert_eq!(project_lines.len(), 1);
+    let project_entry: serde_json::Value =
+        serde_json::from_str(project_lines[0]).expect("parse project entry");
+    assert_eq!(
+        project_entry["metadata"]["project_key"],
+        serde_json::json!("open_ai/codex")
+    );
+    assert_eq!(
+        project_entry["rollout_summary_file"],
+        serde_json::json!("2025-02-11T15-35-19-jqmb-indexed_memory.md")
+    );
+
+    let problem_index = tokio::fs::read_to_string(project_problem_problem_index_file(&root))
+        .await
+        .expect("read problem index");
+    let problem_lines = problem_index.lines().collect::<Vec<_>>();
+    assert_eq!(problem_lines.len(), 2);
+    let problem_families = problem_lines
+        .iter()
+        .map(|line| {
+            serde_json::from_str::<serde_json::Value>(line).expect("parse problem entry")
+                ["problem_family"]
+                .clone()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        problem_families,
+        vec![
+            serde_json::json!("merge reconciliation"),
+            serde_json::json!("release build")
+        ]
+    );
 }

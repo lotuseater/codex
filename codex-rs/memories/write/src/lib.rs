@@ -27,6 +27,7 @@ pub use prompts::build_stage_one_input_message;
 pub use start::start_memories_startup_task;
 pub use storage::rebuild_raw_memories_file_from_memories;
 pub use storage::rollout_summary_file_stem;
+pub use storage::sync_project_problem_indexes_from_memories;
 pub use storage::sync_rollout_summaries_from_memories;
 
 #[cfg(test)]
@@ -36,6 +37,8 @@ mod artifacts {
     pub(super) const EXTENSIONS_SUBDIR: &str = "extensions";
     pub(super) const ROLLOUT_SUMMARIES_SUBDIR: &str = "rollout_summaries";
     pub(super) const RAW_MEMORIES_FILENAME: &str = "raw_memories.md";
+    pub(super) const PROJECT_INDEX_FILENAME: &str = "project_index.jsonl";
+    pub(super) const PROBLEM_INDEX_FILENAME: &str = "problem_index.jsonl";
 }
 
 mod extension_resources {
@@ -129,6 +132,14 @@ pub fn memory_extensions_root(root: &Path) -> PathBuf {
 
 pub fn raw_memories_file(root: &Path) -> PathBuf {
     root.join(artifacts::RAW_MEMORIES_FILENAME)
+}
+
+pub fn project_problem_project_index_file(root: &Path) -> PathBuf {
+    root.join(artifacts::PROJECT_INDEX_FILENAME)
+}
+
+pub fn project_problem_problem_index_file(root: &Path) -> PathBuf {
+    root.join(artifacts::PROBLEM_INDEX_FILENAME)
 }
 
 pub async fn ensure_layout(root: &Path) -> std::io::Result<()> {

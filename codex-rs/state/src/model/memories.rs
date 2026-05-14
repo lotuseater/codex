@@ -2,11 +2,63 @@ use anyhow::Result;
 use chrono::DateTime;
 use chrono::Utc;
 use codex_protocol::ThreadId;
+use serde::Deserialize;
+use serde::Serialize;
 use sqlx::Row;
 use sqlx::sqlite::SqliteRow;
 use std::path::PathBuf;
 
 use super::ThreadMetadata;
+
+/// Optional structured routing metadata extracted with a stage-1 memory.
+///
+/// Consumers should treat this as routing evidence, not authority.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Stage1MemoryMetadata {
+    #[serde(default)]
+    pub project_key: Option<String>,
+    #[serde(default)]
+    pub problem_families: Vec<String>,
+    #[serde(default)]
+    pub symptoms: Vec<String>,
+    #[serde(default)]
+    pub edit_surfaces: Vec<String>,
+    #[serde(default)]
+    pub verified_commands: Vec<String>,
+    #[serde(default)]
+    pub failure_modes: Vec<String>,
+    #[serde(default)]
+    pub routing_keywords: Vec<String>,
+    #[serde(default)]
+    pub staleness_notes: Vec<String>,
+}
+
+impl Stage1MemoryMetadata {
+    pub fn from_json_str(value: &str) -> Result<Self> {
+        if value.trim().is_empty() {
+            return Ok(Self::default());
+        }
+
+        Ok(serde_json::from_str(value)?)
+    }
+
+    pub fn to_json_string(&self) -> Result<String> {
+        Ok(serde_json::to_string(self)?)
+    }
+
+    pub fn has_signal(&self) -> bool {
+        self.project_key
+            .as_deref()
+            .is_some_and(|key| !key.trim().is_empty())
+            || !self.problem_families.is_empty()
+            || !self.symptoms.is_empty()
+            || !self.edit_surfaces.is_empty()
+            || !self.verified_commands.is_empty()
+            || !self.failure_modes.is_empty()
+            || !self.routing_keywords.is_empty()
+            || !self.staleness_notes.is_empty()
+    }
+}
 
 /// Stored stage-1 memory extraction output for a single thread.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,6 +69,7 @@ pub struct Stage1Output {
     pub raw_memory: String,
     pub rollout_summary: String,
     pub rollout_slug: Option<String>,
+    pub metadata: Stage1MemoryMetadata,
     pub cwd: PathBuf,
     pub git_branch: Option<String>,
     pub generated_at: DateTime<Utc>,
@@ -74,6 +127,7 @@ pub(crate) struct Stage1OutputRow {
     raw_memory: String,
     rollout_summary: String,
     rollout_slug: Option<String>,
+    metadata_json: String,
     cwd: String,
     git_branch: Option<String>,
     generated_at: i64,
@@ -88,6 +142,9 @@ impl Stage1OutputRow {
             raw_memory: row.try_get("raw_memory")?,
             rollout_summary: row.try_get("rollout_summary")?,
             rollout_slug: row.try_get("rollout_slug")?,
+            metadata_json: row
+                .try_get("metadata_json")
+                .unwrap_or_else(|_| "{}".to_string()),
             cwd: row.try_get("cwd")?,
             git_branch: row.try_get("git_branch")?,
             generated_at: row.try_get("generated_at")?,
@@ -106,6 +163,7 @@ impl TryFrom<Stage1OutputRow> for Stage1Output {
             raw_memory: row.raw_memory,
             rollout_summary: row.rollout_summary,
             rollout_slug: row.rollout_slug,
+            metadata: Stage1MemoryMetadata::from_json_str(&row.metadata_json)?,
             cwd: PathBuf::from(row.cwd),
             git_branch: row.git_branch,
             generated_at: epoch_seconds_to_datetime(row.generated_at)?,

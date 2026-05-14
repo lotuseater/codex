@@ -284,6 +284,13 @@ pub struct MemoriesToml {
     pub extract_model: Option<String>,
     /// Model used for memory consolidation.
     pub consolidation_model: Option<String>,
+    /// Write project/problem JSONL indexes during Phase 2.
+    pub project_problem_index: Option<bool>,
+    /// Inject project/problem memory hints when they match the current turn.
+    pub project_problem_context: Option<bool>,
+    /// Maximum project/problem matches to inject or return by default.
+    #[schemars(range(min = 1, max = 20))]
+    pub project_problem_max_matches: Option<usize>,
 }
 
 /// Effective memories settings after defaults are applied.
@@ -300,6 +307,9 @@ pub struct MemoriesConfig {
     pub min_rate_limit_remaining_percent: i64,
     pub extract_model: Option<String>,
     pub consolidation_model: Option<String>,
+    pub project_problem_index: bool,
+    pub project_problem_context: bool,
+    pub project_problem_max_matches: usize,
 }
 
 impl Default for MemoriesConfig {
@@ -316,6 +326,9 @@ impl Default for MemoriesConfig {
             min_rate_limit_remaining_percent: DEFAULT_MEMORIES_MIN_RATE_LIMIT_REMAINING_PERCENT,
             extract_model: None,
             consolidation_model: None,
+            project_problem_index: true,
+            project_problem_context: true,
+            project_problem_max_matches: 3,
         }
     }
 }
@@ -361,6 +374,16 @@ impl From<MemoriesToml> for MemoriesConfig {
                 .clamp(0, 100),
             extract_model: toml.extract_model,
             consolidation_model: toml.consolidation_model,
+            project_problem_index: toml
+                .project_problem_index
+                .unwrap_or(defaults.project_problem_index),
+            project_problem_context: toml
+                .project_problem_context
+                .unwrap_or(defaults.project_problem_context),
+            project_problem_max_matches: toml
+                .project_problem_max_matches
+                .unwrap_or(defaults.project_problem_max_matches)
+                .clamp(1, 20),
         }
     }
 }

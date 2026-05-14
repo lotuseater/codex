@@ -1,3 +1,5 @@
+use crate::logic::LogicInput;
+use crate::logic::assess_candidate;
 use crate::shadow::ShadowPredictInput;
 use crate::shadow::record_shadow_prediction;
 use crate::storage::PathLearning;
@@ -13,6 +15,7 @@ use crate::types::FirstMovesBundle;
 use crate::types::FirstMovesConfig;
 use crate::types::PredictRequest;
 use crate::types::Result;
+use serde_json::Value;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fs;
@@ -63,7 +66,7 @@ pub(crate) struct Candidate {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Intent {
+pub(crate) enum Intent {
     BuildTest,
     Cache,
     Debug,
@@ -146,11 +149,19 @@ pub async fn predict(request: PredictRequest<'_>) -> Result<FirstMovesBundle> {
     let prompt_terms = tokenize(request.prompt);
     let already_loaded = already_loaded_paths(&request.already_loaded_paths);
     let learning = load_learning(&storage).await;
+    let memory_hints =
+        project_problem_memory_hints(request.codex_home, &project_root, &prompt_terms);
     let mut notes = vec![format!(
         "native predictor scanned repo namespace {repo_key}"
     )];
     if storage.repo_db_exists {
         notes.push("repo .first_moves.db detected and read for learning".to_string());
+    }
+    if !memory_hints.is_empty() {
+        notes.push(format!(
+            "project/problem memory hint fragments: {}",
+            memory_hints.len()
+        ));
     }
 
     let candidates = scan_candidates(&project_root, &config);
@@ -160,6 +171,7 @@ pub async fn predict(request: PredictRequest<'_>) -> Result<FirstMovesBundle> {
         &prompt_terms,
         &already_loaded,
         &learning,
+        &memory_hints,
         intent,
         candidates.clone(),
     );
@@ -207,6 +219,8 @@ pub async fn predict(request: PredictRequest<'_>) -> Result<FirstMovesBundle> {
             candidates: &candidates,
             prompt_terms: &prompt_terms,
             already_loaded: &already_loaded,
+            memory_hints: &memory_hints,
+            intent,
             native_moves: &bundle.moves,
         })
     {
@@ -291,6 +305,7 @@ fn score_candidates(
     prompt_terms: &HashSet<String>,
     already_loaded: &HashSet<String>,
     learning: &HashMap<String, PathLearning>,
+    memory_hints: &HashSet<String>,
     intent: Intent,
     candidates: Vec<Candidate>,
 ) -> Vec<FirstMove> {
@@ -323,6 +338,14 @@ fn score_candidates(
             reasons.push(reason);
         }
 
+        if memory_hints
+            .iter()
+            .any(|hint| hint.len() >= 3 && rel_lower.contains(hint))
+        {
+            score += 0.18;
+            reasons.push("project/problem memory routing hint");
+        }
+
         if let Some(learning) = learning.get(&normalize_path_text(&candidate.rel_path)) {
             if learning.hits > 0 {
                 score += ((learning.hits as f64) * 0.08).min(0.20);
@@ -332,6 +355,18 @@ fn score_candidates(
             if misses > 0 {
                 score -= ((misses as f64) * 0.02).min(0.12);
             }
+        }
+
+        let logic_input = LogicInput {
+            intent,
+            prompt_lower: &prompt_lower,
+            prompt_terms,
+            memory_hints,
+        };
+        let logic_assessment = assess_candidate(&candidate, &logic_input);
+        if !logic_assessment.is_empty() {
+            score += logic_assessment.score_delta;
+            reasons.extend(logic_assessment.reasons);
         }
 
         if score < 0.25 {
@@ -354,6 +389,80 @@ fn score_candidates(
         });
     }
     moves
+}
+
+fn project_problem_memory_hints(
+    codex_home: &Path,
+    project_root: &Path,
+    prompt_terms: &HashSet<String>,
+) -> HashSet<String> {
+    if prompt_terms.is_empty() {
+        return HashSet::new();
+    }
+
+    let memory_root = codex_home.join("memories");
+    let project_root = normalize_path_text(&project_root.display().to_string());
+    let mut hints = HashSet::new();
+    for file_name in ["project_index.jsonl", "problem_index.jsonl"] {
+        let Ok(contents) = fs::read_to_string(memory_root.join(file_name)) else {
+            continue;
+        };
+        for line in contents.lines().filter(|line| !line.trim().is_empty()) {
+            let Ok(value) = serde_json::from_str::<Value>(line) else {
+                continue;
+            };
+            let line_text = value.to_string().to_ascii_lowercase();
+            if !prompt_terms.iter().any(|term| line_text.contains(term)) {
+                continue;
+            }
+            let cwd = value
+                .get("cwd")
+                .and_then(Value::as_str)
+                .map(normalize_path_text)
+                .unwrap_or_default();
+            if !memory_entry_matches_project_scope(cwd.as_str(), project_root.as_str()) {
+                continue;
+            }
+            collect_memory_hint_array(&value, "edit_surfaces", &mut hints);
+            collect_memory_hint_array(&value, "routing_keywords", &mut hints);
+        }
+    }
+    hints
+}
+
+fn collect_memory_hint_array(value: &Value, key: &str, hints: &mut HashSet<String>) {
+    let Some(items) = value
+        .get("metadata")
+        .and_then(|metadata| metadata.get(key))
+        .and_then(Value::as_array)
+    else {
+        return;
+    };
+
+    for item in items.iter().filter_map(Value::as_str) {
+        let normalized = normalize_path_text(item);
+        if normalized.len() >= 3 {
+            hints.insert(normalized);
+        }
+    }
+}
+
+fn memory_entry_matches_project_scope(cwd: &str, project_root: &str) -> bool {
+    if cwd.is_empty() {
+        return true;
+    }
+
+    path_text_has_boundary_prefix(cwd, project_root)
+        || path_text_has_boundary_prefix(project_root, cwd)
+}
+
+fn path_text_has_boundary_prefix(path: &str, prefix: &str) -> bool {
+    let path = path.trim_end_matches('/');
+    let prefix = prefix.trim_end_matches('/');
+    path == prefix
+        || path
+            .strip_prefix(prefix)
+            .is_some_and(|suffix| suffix.starts_with('/'))
 }
 
 fn baseline_score(candidate: &Candidate) -> f64 {
@@ -459,6 +568,16 @@ fn source_layer(confidence: f64, reasons: &[&str]) -> &'static str {
         .any(|reason| reason.contains("confirmed local hit"))
     {
         "repo_learning"
+    } else if reasons
+        .iter()
+        .any(|reason| reason.starts_with("logic gate"))
+    {
+        "logic_gate"
+    } else if reasons
+        .iter()
+        .any(|reason| reason.starts_with("probabilistic evidence"))
+    {
+        "probabilistic_evidence"
     } else if confidence >= 0.55 {
         "intent"
     } else {
@@ -642,6 +761,26 @@ mod tests {
         assert!(!is_whole_repo_exploration_prompt("/review"));
     }
 
+    #[test]
+    fn project_problem_memory_scope_uses_path_boundaries() {
+        assert!(memory_entry_matches_project_scope(
+            "c:/users/oleh/documents/github/open_ai/codex/codex-rs",
+            "c:/users/oleh/documents/github/open_ai/codex"
+        ));
+        assert!(memory_entry_matches_project_scope(
+            "c:/users/oleh/documents/github/open_ai",
+            "c:/users/oleh/documents/github/open_ai/codex"
+        ));
+        assert!(memory_entry_matches_project_scope(
+            "",
+            "c:/users/oleh/documents/github/open_ai/codex"
+        ));
+        assert!(!memory_entry_matches_project_scope(
+            "c:/users/oleh/documents/github/open_ai/codex-old",
+            "c:/users/oleh/documents/github/open_ai/codex"
+        ));
+    }
+
     #[tokio::test]
     async fn explicit_path_mentions_rank_first_and_agents_is_skipped() {
         let temp = tempfile::tempdir().expect("temp dir");
@@ -705,6 +844,106 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn project_problem_memory_hints_boost_matching_surface() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let project = temp.path().join("repo");
+        let codex_home = temp.path().join("codex-home");
+        std::fs::create_dir_all(project.join("codex-rs/core/src/session")).expect("session dir");
+        std::fs::create_dir_all(project.join("codex-rs/core/src/tools")).expect("tools dir");
+        std::fs::create_dir_all(codex_home.join("memories")).expect("memories dir");
+        std::fs::write(project.join("Cargo.toml"), "[package]\nname = \"repo\"\n")
+            .expect("cargo toml");
+        std::fs::write(
+            project.join("codex-rs/core/src/session/first_moves.rs"),
+            "pub fn first_moves_memory_route() {}\n",
+        )
+        .expect("first moves");
+        std::fs::write(
+            project.join("codex-rs/core/src/tools/spec.rs"),
+            "pub fn tool_spec() {}\n",
+        )
+        .expect("spec");
+
+        let index_line = serde_json::json!({
+            "cwd": project.display().to_string(),
+            "metadata": {
+                "problem_families": ["first moves routing"],
+                "edit_surfaces": ["codex-rs/core/src/session"],
+                "routing_keywords": ["first_moves"]
+            }
+        });
+        std::fs::write(
+            codex_home.join("memories/project_index.jsonl"),
+            format!("{index_line}\n"),
+        )
+        .expect("project index");
+
+        let bundle = predict(PredictRequest {
+            project_root: &project,
+            codex_home: &codex_home,
+            prompt: "fix first moves routing",
+            session_id: Some("session"),
+            config: FirstMovesConfig::default(),
+            already_loaded_paths: Vec::new(),
+            record_prediction: false,
+        })
+        .await
+        .expect("prediction");
+
+        let first = bundle.moves.first().expect("at least one move");
+        assert_eq!(
+            first.path,
+            Some(PathBuf::from("codex-rs/core/src/session/first_moves.rs"))
+        );
+        assert!(first.reason.contains("project/problem memory routing hint"));
+    }
+
+    #[tokio::test]
+    async fn logic_overlay_boosts_source_over_shallow_docs_for_first_moves_work() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let project = temp.path().join("repo");
+        let codex_home = temp.path().join("codex-home");
+        std::fs::create_dir_all(project.join("codex-rs/first-moves/src")).expect("src dir");
+        std::fs::create_dir_all(project.join("docs")).expect("docs dir");
+        std::fs::write(project.join("Cargo.toml"), "[package]\nname = \"repo\"\n")
+            .expect("cargo toml");
+        std::fs::write(
+            project.join("codex-rs/first-moves/src/predict.rs"),
+            "pub fn predict() {}\n",
+        )
+        .expect("predict source");
+        std::fs::write(
+            project.join("docs/first-moves-logic-overlay.md"),
+            "# First moves logic overlay\n",
+        )
+        .expect("docs");
+
+        let bundle = predict(PredictRequest {
+            project_root: &project,
+            codex_home: &codex_home,
+            prompt: "implement first moves logic overlay",
+            session_id: Some("session"),
+            config: FirstMovesConfig::default(),
+            already_loaded_paths: Vec::new(),
+            record_prediction: false,
+        })
+        .await
+        .expect("prediction");
+
+        let first = bundle.moves.first().expect("at least one move");
+        assert_eq!(
+            first.path,
+            Some(PathBuf::from("codex-rs/first-moves/src/predict.rs"))
+        );
+        assert_eq!(first.source_layer, "probabilistic_evidence");
+        assert!(
+            first
+                .reason
+                .contains("probabilistic evidence: intent/path fit")
+        );
+    }
+
+    #[tokio::test]
     async fn record_prediction_writes_shadow_without_changing_bundle() {
         let temp = tempfile::tempdir().expect("temp dir");
         let project = temp.path().join("repo");
@@ -732,6 +971,7 @@ mod tests {
         let shadow = std::fs::read_to_string(shadow_path).expect("shadow jsonl");
         assert!(shadow.contains("\"type\":\"first_moves_shadow\""));
         assert!(shadow.contains("\"path_lexical\""));
+        assert!(shadow.contains("\"logic_evidence\""));
         assert!(shadow.contains("\"content_seeded_component_merge\""));
     }
 }

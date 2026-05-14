@@ -18,6 +18,7 @@ use codex_protocol::protocol::TokenUsage;
 use codex_rollout::INTERACTIVE_SESSION_SOURCES;
 use codex_rollout::should_persist_response_item_for_memories;
 use codex_secrets::redact_secrets;
+use codex_state::Stage1MemoryMetadata;
 use futures::StreamExt;
 use serde::Deserialize;
 use serde_json::Value;
@@ -60,6 +61,9 @@ struct StageOneOutput {
     /// Optional slug used to derive rollout summary artifact filenames.
     #[serde(default, rename = "rollout_slug")]
     pub(crate) rollout_slug: Option<String>,
+    /// Optional structured routing metadata for project/problem recall.
+    #[serde(default, rename = "metadata")]
+    pub(crate) metadata: Stage1MemoryMetadata,
 }
 
 /// Runs memory phase 1 in strict step order:
@@ -138,9 +142,33 @@ pub fn output_schema() -> Value {
         "properties": {
             "rollout_summary": { "type": "string" },
             "rollout_slug": { "type": ["string", "null"] },
-            "raw_memory": { "type": "string" }
+            "raw_memory": { "type": "string" },
+            "metadata": {
+                "type": "object",
+                "properties": {
+                    "project_key": { "type": ["string", "null"] },
+                    "problem_families": { "type": "array", "items": { "type": "string" } },
+                    "symptoms": { "type": "array", "items": { "type": "string" } },
+                    "edit_surfaces": { "type": "array", "items": { "type": "string" } },
+                    "verified_commands": { "type": "array", "items": { "type": "string" } },
+                    "failure_modes": { "type": "array", "items": { "type": "string" } },
+                    "routing_keywords": { "type": "array", "items": { "type": "string" } },
+                    "staleness_notes": { "type": "array", "items": { "type": "string" } }
+                },
+                "required": [
+                    "project_key",
+                    "problem_families",
+                    "symptoms",
+                    "edit_surfaces",
+                    "verified_commands",
+                    "failure_modes",
+                    "routing_keywords",
+                    "staleness_notes"
+                ],
+                "additionalProperties": false
+            }
         },
-        "required": ["rollout_summary", "rollout_slug", "raw_memory"],
+        "required": ["rollout_summary", "rollout_slug", "raw_memory", "metadata"],
         "additionalProperties": false
     })
 }
@@ -268,6 +296,7 @@ mod job {
                 &stage_one_output.raw_memory,
                 &stage_one_output.rollout_summary,
                 stage_one_output.rollout_slug.as_deref(),
+                &stage_one_output.metadata,
             )
             .await,
             token_usage,
@@ -313,8 +342,26 @@ mod job {
         output.raw_memory = redact_secrets(output.raw_memory);
         output.rollout_summary = redact_secrets(output.rollout_summary);
         output.rollout_slug = output.rollout_slug.map(redact_secrets);
+        output.metadata = redact_stage_one_metadata(output.metadata);
 
         Ok((output, token_usage))
+    }
+
+    fn redact_stage_one_metadata(metadata: Stage1MemoryMetadata) -> Stage1MemoryMetadata {
+        Stage1MemoryMetadata {
+            project_key: metadata.project_key.map(redact_secrets),
+            problem_families: redact_metadata_strings(metadata.problem_families),
+            symptoms: redact_metadata_strings(metadata.symptoms),
+            edit_surfaces: redact_metadata_strings(metadata.edit_surfaces),
+            verified_commands: redact_metadata_strings(metadata.verified_commands),
+            failure_modes: redact_metadata_strings(metadata.failure_modes),
+            routing_keywords: redact_metadata_strings(metadata.routing_keywords),
+            staleness_notes: redact_metadata_strings(metadata.staleness_notes),
+        }
+    }
+
+    fn redact_metadata_strings(values: Vec<String>) -> Vec<String> {
+        values.into_iter().map(redact_secrets).collect()
     }
 
     mod result {
@@ -367,19 +414,21 @@ mod job {
             raw_memory: &str,
             rollout_summary: &str,
             rollout_slug: Option<&str>,
+            metadata: &Stage1MemoryMetadata,
         ) -> JobOutcome {
             let Some(state_db) = context.state_db() else {
                 return JobOutcome::Failed;
             };
 
             if state_db
-                .mark_stage1_job_succeeded(
+                .mark_stage1_job_succeeded_with_metadata(
                     thread_id,
                     ownership_token,
                     source_updated_at,
                     raw_memory,
                     rollout_summary,
                     rollout_slug,
+                    metadata,
                 )
                 .await
                 .unwrap_or(false)
@@ -541,9 +590,76 @@ mod job {
 
             assert_eq!(
                 required_keys,
-                vec!["raw_memory", "rollout_slug", "rollout_summary"]
+                vec!["metadata", "raw_memory", "rollout_slug", "rollout_summary"]
             );
             assert_eq!(rollout_slug_types, vec!["null", "string"]);
+            assert!(
+                properties.contains_key("metadata"),
+                "schema should declare structured metadata"
+            );
+        }
+
+        #[test]
+        fn stage_one_output_accepts_empty_noop_metadata() {
+            let output: StageOneOutput = serde_json::from_value(json!({
+                "raw_memory": "",
+                "rollout_summary": "",
+                "rollout_slug": null,
+                "metadata": {
+                    "project_key": null,
+                    "problem_families": [],
+                    "symptoms": [],
+                    "edit_surfaces": [],
+                    "verified_commands": [],
+                    "failure_modes": [],
+                    "routing_keywords": [],
+                    "staleness_notes": []
+                }
+            }))
+            .expect("stage-one no-op output with metadata should deserialize");
+
+            assert_eq!(output.metadata, Stage1MemoryMetadata::default());
+        }
+
+        #[test]
+        fn stage_one_output_defaults_missing_metadata() {
+            let output: StageOneOutput = serde_json::from_value(json!({
+                "raw_memory": "memory",
+                "rollout_summary": "summary",
+                "rollout_slug": null,
+            }))
+            .expect("stage-one output without metadata should deserialize");
+
+            assert_eq!(output.metadata, Stage1MemoryMetadata::default());
+        }
+
+        #[test]
+        fn stage_one_metadata_is_redacted_before_persistence() {
+            let metadata = Stage1MemoryMetadata {
+                project_key: Some("token=abcdef1234567890".to_string()),
+                symptoms: vec!["observed sk-abcdefghijklmnopqrstuvwxyz123456".to_string()],
+                verified_commands: vec![
+                    "curl -H 'Authorization: Bearer abcdefghijklmnop'".to_string(),
+                ],
+                routing_keywords: vec!["password=hunter222222".to_string()],
+                ..Stage1MemoryMetadata::default()
+            };
+
+            let redacted = redact_stage_one_metadata(metadata);
+
+            assert_eq!(
+                redacted.project_key.as_deref(),
+                Some("token=[REDACTED_SECRET]")
+            );
+            assert_eq!(redacted.symptoms, vec!["observed [REDACTED_SECRET]"]);
+            assert_eq!(
+                redacted.verified_commands,
+                vec!["curl -H 'Authorization: Bearer [REDACTED_SECRET]'"]
+            );
+            assert_eq!(
+                redacted.routing_keywords,
+                vec!["password=[REDACTED_SECRET]"]
+            );
         }
     }
 }
