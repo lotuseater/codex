@@ -1,0 +1,24 @@
+[package]
+name = "codex-network-proxy-config"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[lib]
+name = "codex_network_proxy_config"
+path = "src/lib.rs"
+doctest = false
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+codex-utils-absolute-path = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+tracing = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+serde_json = { workspace = true }

@@ -2,26 +2,27 @@ use crate::function_tool::FunctionCallError;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
+use crate::tools::handlers::plan_spec::create_update_plan_tool;
+use crate::tools::registry::ToolExecutor;
 use crate::tools::registry::ToolHandler;
-use crate::tools::registry::ToolKind;
 use codex_protocol::config_types::ModeKind;
 use codex_protocol::models::FunctionCallOutputPayload;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::plan_tool::UpdatePlanArgs;
 use codex_protocol::protocol::EventMsg;
-use codex_self_review::plan_tool_response;
 use codex_tools::ToolName;
+use codex_tools::ToolSpec;
 use serde_json::Value as JsonValue;
 
 pub struct PlanHandler;
 
-pub struct PlanToolOutput {
-    message: String,
-}
+pub struct PlanToolOutput;
+
+const PLAN_UPDATED_MESSAGE: &str = "Plan updated";
 
 impl ToolOutput for PlanToolOutput {
     fn log_preview(&self) -> String {
-        self.message.clone()
+        PLAN_UPDATED_MESSAGE.to_string()
     }
 
     fn success_for_logging(&self) -> bool {
@@ -29,7 +30,7 @@ impl ToolOutput for PlanToolOutput {
     }
 
     fn to_response_item(&self, call_id: &str, _payload: &ToolPayload) -> ResponseInputItem {
-        let mut output = FunctionCallOutputPayload::from_text(self.message.clone());
+        let mut output = FunctionCallOutputPayload::from_text(PLAN_UPDATED_MESSAGE.to_string());
         output.success = Some(true);
 
         ResponseInputItem::FunctionCallOutput {
@@ -43,15 +44,15 @@ impl ToolOutput for PlanToolOutput {
     }
 }
 
-impl ToolHandler for PlanHandler {
+impl ToolExecutor<ToolInvocation> for PlanHandler {
     type Output = PlanToolOutput;
 
     fn tool_name(&self) -> ToolName {
         ToolName::plain("update_plan")
     }
 
-    fn kind(&self) -> ToolKind {
-        ToolKind::Function
+    fn spec(&self) -> Option<ToolSpec> {
+        Some(create_update_plan_tool())
     }
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {
@@ -79,32 +80,18 @@ impl ToolHandler for PlanHandler {
         }
 
         let args = parse_update_plan_arguments(&arguments)?;
-        let include_self_review_checkpoint = plan_update_needs_self_review(&args)
-            && session.take_plan_self_review_checkpoint_slot().await;
-        let message = plan_tool_response(include_self_review_checkpoint);
         session
             .send_event(turn.as_ref(), EventMsg::PlanUpdate(args))
             .await;
 
-        Ok(PlanToolOutput { message })
+        Ok(PlanToolOutput)
     }
 }
+
+impl ToolHandler for PlanHandler {}
 
 fn parse_update_plan_arguments(arguments: &str) -> Result<UpdatePlanArgs, FunctionCallError> {
     serde_json::from_str::<UpdatePlanArgs>(arguments).map_err(|e| {
         FunctionCallError::RespondToModel(format!("failed to parse function arguments: {e}"))
     })
-}
-
-fn plan_update_needs_self_review(args: &UpdatePlanArgs) -> bool {
-    codex_self_review::is_plan_review_candidate(
-        args.plan.len(),
-        args.explanation.as_deref(),
-        args.plan.iter().any(|item| {
-            matches!(
-                item.status,
-                codex_protocol::plan_tool::StepStatus::Completed
-            )
-        }),
-    )
 }

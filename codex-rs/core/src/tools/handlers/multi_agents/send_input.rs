@@ -1,22 +1,20 @@
 use super::*;
 use crate::agent::control::render_input_preview;
+use crate::tools::handlers::multi_agents_spec::create_send_input_tool_v1;
 use crate::turn_timing::now_unix_timestamp_ms;
+use codex_tools::ToolSpec;
 
 pub(crate) struct Handler;
 
-impl ToolHandler for Handler {
+impl ToolExecutor<ToolInvocation> for Handler {
     type Output = SendInputResult;
 
     fn tool_name(&self) -> ToolName {
         ToolName::plain("send_input")
     }
 
-    fn kind(&self) -> ToolKind {
-        ToolKind::Function
-    }
-
-    fn matches_kind(&self, payload: &ToolPayload) -> bool {
-        matches!(payload, ToolPayload::Function { .. })
+    fn spec(&self) -> Option<ToolSpec> {
+        Some(create_send_input_tool_v1())
     }
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {
@@ -37,6 +35,19 @@ impl ToolHandler for Handler {
             .agent_control
             .get_agent_metadata(receiver_thread_id)
             .unwrap_or_default();
+        let receiver_config = session
+            .services
+            .agent_control
+            .get_agent_config_snapshot(receiver_thread_id)
+            .await;
+        let receiver_model = receiver_config
+            .as_ref()
+            .map(|snapshot| snapshot.model.clone())
+            .or_else(|| receiver_agent.model.clone());
+        let receiver_reasoning_effort = receiver_config
+            .as_ref()
+            .and_then(|snapshot| snapshot.reasoning_effort)
+            .or(receiver_agent.reasoning_effort);
         if args.interrupt {
             session
                 .services
@@ -54,8 +65,8 @@ impl ToolHandler for Handler {
                     sender_thread_id: session.conversation_id,
                     receiver_thread_id,
                     prompt: prompt.clone(),
-                    model: None,
-                    reasoning_effort: None,
+                    model: receiver_model.clone(),
+                    reasoning_effort: receiver_reasoning_effort,
                 }
                 .into(),
             )
@@ -82,8 +93,8 @@ impl ToolHandler for Handler {
                     receiver_agent_role: receiver_agent.agent_role,
                     prompt,
                     status,
-                    model: None,
-                    reasoning_effort: None,
+                    model: receiver_model,
+                    reasoning_effort: receiver_reasoning_effort,
                 }
                 .into(),
             )
@@ -91,6 +102,12 @@ impl ToolHandler for Handler {
         let submission_id = result?;
 
         Ok(SendInputResult { submission_id })
+    }
+}
+
+impl ToolHandler for Handler {
+    fn matches_kind(&self, payload: &ToolPayload) -> bool {
+        matches!(payload, ToolPayload::Function { .. })
     }
 }
 

@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 
-use codex_network_proxy::NetworkDomainPermission as ProxyNetworkDomainPermission;
-use codex_network_proxy::NetworkMode;
-use codex_network_proxy::NetworkProxyConfig;
-use codex_network_proxy::NetworkUnixSocketPermission as ProxyNetworkUnixSocketPermission;
-use codex_network_proxy::normalize_host;
+use codex_network_proxy_config::NetworkDomainPermission as ProxyNetworkDomainPermission;
+use codex_network_proxy_config::NetworkMode;
+use codex_network_proxy_config::NetworkProxyConfig;
+use codex_network_proxy_config::NetworkUnixSocketPermission as ProxyNetworkUnixSocketPermission;
+use codex_network_proxy_config::normalize_host;
 use codex_protocol::permissions::FileSystemAccessMode;
 use schemars::JsonSchema;
 use serde::Deserialize;

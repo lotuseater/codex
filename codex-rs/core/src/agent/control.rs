@@ -235,34 +235,36 @@ impl AgentControl {
         // The same `AgentControl` is sent to spawn the thread.
         let new_thread = match (session_source, options.fork_mode.as_ref()) {
             (Some(session_source), Some(_)) => {
-                self.spawn_forked_thread(
+                Box::pin(self.spawn_forked_thread(
                     &state,
                     config,
                     session_source,
                     &options,
                     inherited_shell_snapshot,
                     inherited_exec_policy,
-                )
+                ))
                 .await?
             }
             (Some(session_source), None) => {
-                state
-                    .spawn_new_thread_with_source(
-                        config.clone(),
-                        self.clone(),
-                        session_source,
-                        /*thread_source*/ Some(ThreadSource::Subagent),
-                        /*persist_extended_history*/ false,
-                        /*metrics_service_name*/ None,
-                        inherited_shell_snapshot,
-                        inherited_exec_policy,
-                        options.environments.clone(),
-                    )
-                    .await?
+                Box::pin(state.spawn_new_thread_with_source(
+                    config.clone(),
+                    self.clone(),
+                    session_source,
+                    /*thread_source*/ Some(ThreadSource::Subagent),
+                    /*persist_extended_history*/ false,
+                    /*metrics_service_name*/ None,
+                    inherited_shell_snapshot,
+                    inherited_exec_policy,
+                    options.environments.clone(),
+                ))
+                .await?
             }
-            (None, _) => state.spawn_new_thread(config.clone(), self.clone()).await?,
+            (None, _) => Box::pin(state.spawn_new_thread(config.clone(), self.clone())).await?,
         };
+        let thread_config = new_thread.thread.codex.thread_config_snapshot().await;
         agent_metadata.agent_id = Some(new_thread.thread_id);
+        agent_metadata.model = Some(thread_config.model.clone());
+        agent_metadata.reasoning_effort = thread_config.reasoning_effort;
         reservation.commit(agent_metadata.clone());
 
         if let Some(SessionSource::SubAgent(
@@ -291,7 +293,6 @@ impl AgentControl {
                     }
                 }
             };
-            let thread_config = new_thread.thread.codex.thread_config_snapshot().await;
             emit_subagent_session_started(
                 &new_thread
                     .thread
@@ -302,7 +303,7 @@ impl AgentControl {
                 client_metadata,
                 new_thread.thread_id,
                 /*parent_thread_id*/ None,
-                thread_config,
+                thread_config.clone(),
                 subagent_source.clone(),
             );
         }
@@ -604,7 +605,10 @@ impl AgentControl {
             })
             .await?;
         let mut agent_metadata = agent_metadata;
+        let thread_config = resumed_thread.thread.codex.thread_config_snapshot().await;
         agent_metadata.agent_id = Some(resumed_thread.thread_id);
+        agent_metadata.model = Some(thread_config.model.clone());
+        agent_metadata.reasoning_effort = thread_config.reasoning_effort;
         reservation.commit(agent_metadata.clone());
         // Resumed threads are re-registered in-memory and need the same listener
         // attachment path as freshly spawned threads.
@@ -1108,6 +1112,8 @@ impl AgentControl {
             agent_path,
             agent_nickname,
             agent_role,
+            model: None,
+            reasoning_effort: None,
             last_task_message: None,
         };
         Ok((session_source, agent_metadata))

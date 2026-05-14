@@ -23,6 +23,7 @@ public static class CodexDabNative {
     [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool repaint);
     [DllImport("user32.dll")] public static extern int GetSystemMetrics(int nIndex);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
+    [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT lpPoint);
     [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, int data, UIntPtr extraInfo);
     [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] public static extern bool ScreenToClient(IntPtr hWnd, ref POINT point);
@@ -797,6 +798,41 @@ function Invoke-ForegroundClick($x, $y) {
     [void][CodexDabNative]::SetCursorPos([int]$x, [int]$y)
     [CodexDabNative]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
     Start-Sleep -Milliseconds 40
+    [CodexDabNative]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+}
+
+function Invoke-OrganicClick($x, $y) {
+    $targetX = [int]$x
+    $targetY = [int]$y
+
+    $startPt = New-Object CodexDabNative+POINT
+    [void][CodexDabNative]::GetCursorPos([ref]$startPt)
+
+    $sx = $startPt.X
+    $sy = $startPt.Y
+
+    $steps = Get-Random -Minimum 10 -Maximum 20
+    $cxDir = (Get-Random -Minimum 0 -Maximum 2) * 2 - 1
+    $cyDir = (Get-Random -Minimum 0 -Maximum 2) * 2 - 1
+    $amp = Get-Random -Minimum 10 -Maximum 40
+
+    for ($i = 0; $i -lt $steps; $i++) {
+        $t = $i / ($steps - 1)
+        $easeT = 1.0 - [Math]::Pow(1.0 - $t, 3.0)
+        $curveAmp = [Math]::Sin($t * [Math]::PI) * $amp
+
+        $curX = [int]($sx + ($targetX - $sx) * $easeT + ($curveAmp * $cxDir))
+        $curY = [int]($sy + ($targetY - $sy) * $easeT + ($curveAmp * $cyDir))
+
+        [void][CodexDabNative]::SetCursorPos($curX, $curY)
+        Start-Sleep -Milliseconds (Get-Random -Minimum 10 -Maximum 30)
+    }
+
+    [void][CodexDabNative]::SetCursorPos($targetX, $targetY)
+    Start-Sleep -Milliseconds (Get-Random -Minimum 100 -Maximum 300)
+
+    [CodexDabNative]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds (Get-Random -Minimum 70 -Maximum 150)
     [CodexDabNative]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
 }
 

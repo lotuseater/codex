@@ -122,10 +122,12 @@ pub(crate) async fn handle_message_string_tool(
         .await;
     let receiver_model = receiver_config
         .as_ref()
-        .map(|snapshot| snapshot.model.clone());
+        .map(|snapshot| snapshot.model.clone())
+        .or_else(|| receiver_agent.model.clone());
     let receiver_reasoning_effort = receiver_config
         .as_ref()
-        .and_then(|snapshot| snapshot.reasoning_effort);
+        .and_then(|snapshot| snapshot.reasoning_effort)
+        .or(receiver_agent.reasoning_effort);
     session
         .send_event(
             &turn,

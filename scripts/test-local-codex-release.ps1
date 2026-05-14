@@ -40,6 +40,14 @@ if ($Package -eq "codex-core" -and -not $Lib -and -not $AllowIntegrationTargets)
     throw "Refusing to run codex-core package tests without -Lib. This would compile core/tests/all.rs before applying any filter. Use -Lib for unit tests or -AllowIntegrationTargets when intentionally testing integration targets."
 }
 
+if (-not $NoCleanup) {
+    Write-Host "Pre-test cleanup: pruning orphaned release dependency artifacts."
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $buildScript -Mode PruneReleaseDeps
+    if ($LASTEXITCODE -ne 0) {
+        exit $LASTEXITCODE
+    }
+}
+
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $safePackage = $Package -replace '[^A-Za-z0-9_.-]', '-'
 $safeFilter = if ([string]::IsNullOrWhiteSpace($Filter)) { "all" } else { $Filter -replace '[^A-Za-z0-9_.-]', '-' }
@@ -90,6 +98,13 @@ if ($testExit -eq 0 -and -not $NoCleanup) {
 }
 elseif ($testExit -ne 0) {
     Write-Host "Release test failed; keeping test artifacts for diagnosis."
+    if (-not $NoCleanup) {
+        Write-Host "Post-test cleanup: pruning orphaned release dependency artifacts while preserving test artifacts."
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $buildScript -Mode PruneReleaseDeps
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
+    }
 }
 
 exit $testExit

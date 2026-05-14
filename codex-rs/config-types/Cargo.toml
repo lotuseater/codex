@@ -1,0 +1,21 @@
+[package]
+name = "codex-config-types"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[lib]
+name = "codex_config_types"
+path = "src/lib.rs"
+doctest = false
+
+[lints]
+workspace = true
+
+[dependencies]
+schemars = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+ts-rs = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

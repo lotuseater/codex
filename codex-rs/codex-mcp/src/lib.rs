@@ -26,11 +26,6 @@ pub use codex_apps::CodexAppsToolsCacheState;
 pub use codex_apps::CodexAppsToolsCacheStatus;
 pub use codex_apps::codex_apps_tools_cache_key;
 pub use codex_apps::codex_apps_tools_cache_status;
-pub use codex_builtin_mcps::BuiltinMcpServer;
-pub use codex_builtin_mcps::BuiltinMcpServerOptions;
-pub use codex_builtin_mcps::MEMORIES_MCP_SERVER_NAME;
-pub use codex_builtin_mcps::enabled_builtin_mcp_servers;
-
 pub use mcp::configured_mcp_servers;
 pub use mcp::effective_mcp_servers;
 pub use mcp::effective_mcp_servers_from_configured;
@@ -60,7 +55,6 @@ pub use mcp::qualified_mcp_tool_name_prefix;
 pub use tools::declared_openai_file_input_param_names;
 
 pub(crate) mod auth_elicitation;
-pub(crate) mod builtin;
 pub(crate) mod codex_apps;
 pub(crate) mod connection_manager;
 pub(crate) mod elicitation;

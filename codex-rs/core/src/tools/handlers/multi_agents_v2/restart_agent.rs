@@ -2,26 +2,24 @@ use super::resume_agent::persisted_agent_metadata;
 use super::resume_agent::resolve_resume_target;
 use super::resume_agent::try_resume_closed_agent;
 use super::*;
+use crate::tools::handlers::multi_agents_spec::create_restart_agent_tool;
 use crate::turn_timing::now_unix_timestamp_ms;
 use codex_protocol::error::CodexErr;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::protocol::InterAgentCommunication;
+use codex_tools::ToolSpec;
 
 pub(crate) struct Handler;
 
-impl ToolHandler for Handler {
+impl ToolExecutor<ToolInvocation> for Handler {
     type Output = RestartAgentResult;
 
     fn tool_name(&self) -> ToolName {
         ToolName::plain("restart_agent")
     }
 
-    fn kind(&self) -> ToolKind {
-        ToolKind::Function
-    }
-
-    fn matches_kind(&self, payload: &ToolPayload) -> bool {
-        matches!(payload, ToolPayload::Function { .. })
+    fn spec(&self) -> Option<ToolSpec> {
+        Some(create_restart_agent_tool())
     }
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {
@@ -187,6 +185,12 @@ impl ToolHandler for Handler {
             previous_status,
             status,
         })
+    }
+}
+
+impl ToolHandler for Handler {
+    fn matches_kind(&self, payload: &ToolPayload) -> bool {
+        matches!(payload, ToolPayload::Function { .. })
     }
 }
 

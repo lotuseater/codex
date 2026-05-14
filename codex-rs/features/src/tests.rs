@@ -160,13 +160,6 @@ fn responses_websocket_response_processed_is_under_development() {
 }
 
 #[test]
-fn builtin_mcp_is_under_development() {
-    assert_eq!(Feature::BuiltInMcp.stage(), Stage::UnderDevelopment);
-    assert_eq!(Feature::BuiltInMcp.default_enabled(), false);
-    assert_eq!(feature_for_key("builtin_mcp"), Some(Feature::BuiltInMcp));
-}
-
-#[test]
 fn terminal_resize_reflow_is_experimental_and_enabled_by_default() {
     assert_eq!(
         feature_for_key("terminal_resize_reflow"),
@@ -183,6 +176,19 @@ fn terminal_resize_reflow_is_experimental_and_enabled_by_default() {
 fn tool_suggest_is_stable_and_enabled_by_default() {
     assert_eq!(Feature::ToolSuggest.stage(), Stage::Stable);
     assert_eq!(Feature::ToolSuggest.default_enabled(), true);
+}
+
+#[test]
+fn network_proxy_is_experimental_and_disabled_by_default() {
+    assert_eq!(
+        feature_for_key("network_proxy"),
+        Some(Feature::NetworkProxy)
+    );
+    assert!(matches!(
+        Feature::NetworkProxy.stage(),
+        Stage::Experimental { .. }
+    ));
+    assert_eq!(Feature::NetworkProxy.default_enabled(), false);
 }
 
 #[test]
@@ -225,6 +231,12 @@ fn context_ops_replace_is_enabled_by_default_for_promoted_local_replacements() {
     );
     assert_eq!(Feature::ContextOpsReplace.stage(), Stage::UnderDevelopment);
     assert_eq!(Feature::ContextOpsReplace.default_enabled(), true);
+}
+
+#[test]
+fn plugin_hooks_are_stable_and_enabled_by_default() {
+    assert_eq!(Feature::PluginHooks.stage(), Stage::Stable);
+    assert_eq!(Feature::PluginHooks.default_enabled(), true);
 }
 
 #[test]
@@ -331,9 +343,24 @@ fn auth_elicitation_is_under_development() {
 }
 
 #[test]
-fn remote_control_is_under_development() {
-    assert_eq!(Feature::RemoteControl.stage(), Stage::UnderDevelopment);
+fn remote_control_is_removed_and_disabled_by_default() {
+    assert_eq!(Feature::RemoteControl.stage(), Stage::Removed);
     assert_eq!(Feature::RemoteControl.default_enabled(), false);
+    assert_eq!(
+        feature_for_key("remote_control"),
+        Some(Feature::RemoteControl)
+    );
+}
+
+#[test]
+fn remote_control_config_is_ignored() {
+    let mut entries = BTreeMap::new();
+    entries.insert("remote_control".to_string(), true);
+
+    let mut features = Features::with_defaults();
+    features.apply_map(&entries);
+
+    assert_eq!(features.enabled(Feature::RemoteControl), false);
 }
 
 #[test]
@@ -431,7 +458,6 @@ fn from_sources_applies_base_profile_and_overrides() {
         },
         FeatureOverrides {
             web_search_request: Some(false),
-            ..Default::default()
         },
     );
 
@@ -520,11 +546,14 @@ fn multi_agent_v2_feature_config_deserializes_table() {
 enabled = true
 max_concurrent_threads_per_session = 4
 min_wait_timeout_ms = 2500
+max_wait_timeout_ms = 120000
+default_wait_timeout_ms = 30000
 usage_hint_enabled = false
 usage_hint_text = "Custom delegation guidance."
 root_agent_usage_hint_text = "Root guidance."
 subagent_usage_hint_text = "Subagent guidance."
 hide_spawn_agent_metadata = true
+non_code_mode_only = true
 "#,
     )
     .expect("features table should deserialize");
@@ -539,11 +568,14 @@ hide_spawn_agent_metadata = true
             enabled: Some(true),
             max_concurrent_threads_per_session: Some(4),
             min_wait_timeout_ms: Some(2500),
+            max_wait_timeout_ms: Some(120000),
+            default_wait_timeout_ms: Some(30000),
             usage_hint_enabled: Some(false),
             usage_hint_text: Some("Custom delegation guidance.".to_string()),
             root_agent_usage_hint_text: Some("Root guidance.".to_string()),
             subagent_usage_hint_text: Some("Subagent guidance.".to_string()),
             hide_spawn_agent_metadata: Some(true),
+            non_code_mode_only: Some(true),
         }))
     );
 }
@@ -574,11 +606,14 @@ usage_hint_enabled = false
             enabled: None,
             max_concurrent_threads_per_session: None,
             min_wait_timeout_ms: None,
+            max_wait_timeout_ms: None,
+            default_wait_timeout_ms: None,
             usage_hint_enabled: Some(false),
             usage_hint_text: None,
             root_agent_usage_hint_text: None,
             subagent_usage_hint_text: None,
             hide_spawn_agent_metadata: None,
+            non_code_mode_only: None,
         }))
     );
 }
@@ -588,12 +623,18 @@ fn materialize_resolved_enabled_writes_all_features_and_preserves_custom_config(
     let mut features = Features::with_defaults();
     features.enable(Feature::CodeMode);
     features.enable(Feature::MultiAgentV2);
+    features.enable(Feature::NetworkProxy);
     features.disable(Feature::ToolSearch);
 
     let mut features_toml = FeaturesToml {
         multi_agent_v2: Some(FeatureToml::Config(crate::MultiAgentV2ConfigToml {
             enabled: Some(false),
             min_wait_timeout_ms: Some(2500),
+            ..Default::default()
+        })),
+        network_proxy: Some(FeatureToml::Config(crate::NetworkProxyConfigToml {
+            enabled: Some(false),
+            proxy_url: Some("http://127.0.0.1:43128".to_string()),
             ..Default::default()
         })),
         entries: BTreeMap::from([("include_apply_patch_tool".to_string(), true)]),
@@ -617,6 +658,14 @@ fn materialize_resolved_enabled_writes_all_features_and_preserves_custom_config(
         Some(FeatureToml::Config(crate::MultiAgentV2ConfigToml {
             enabled: Some(true),
             min_wait_timeout_ms: Some(2500),
+            ..Default::default()
+        }))
+    );
+    assert_eq!(
+        features_toml.network_proxy,
+        Some(FeatureToml::Config(crate::NetworkProxyConfigToml {
+            enabled: Some(true),
+            proxy_url: Some("http://127.0.0.1:43128".to_string()),
             ..Default::default()
         }))
     );

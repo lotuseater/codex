@@ -13,9 +13,14 @@ doctest = false
 [[bin]]
 name = "codex-execpolicy"
 path = "src/main.rs"
+required-features = ["starlark-parser"]
 
 [lints]
 workspace = true
+
+[features]
+default = ["starlark-parser"]
+starlark-parser = ["dep:starlark"]
 
 [dependencies]
 anyhow = { workspace = true }
@@ -25,7 +30,7 @@ multimap = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 shlex = { workspace = true }
-starlark = { workspace = true }
+starlark = { workspace = true, optional = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

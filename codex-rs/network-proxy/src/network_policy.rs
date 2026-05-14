@@ -6,6 +6,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 use chrono::SecondsFormat;
 use chrono::Utc;
+use codex_network_proxy_config::NetworkDecisionSource;
+use codex_network_proxy_config::NetworkPolicyDecision;
 use std::future::Future;
 use std::sync::Arc;
 
@@ -34,42 +36,6 @@ impl NetworkProtocol {
             Self::HttpsConnect => "https_connect",
             Self::Socks5Tcp => "socks5_tcp",
             Self::Socks5Udp => "socks5_udp",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum NetworkPolicyDecision {
-    Deny,
-    Ask,
-}
-
-impl NetworkPolicyDecision {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Deny => "deny",
-            Self::Ask => "ask",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum NetworkDecisionSource {
-    BaselinePolicy,
-    ModeGuard,
-    ProxyState,
-    Decider,
-}
-
-impl NetworkDecisionSource {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::BaselinePolicy => "baseline_policy",
-            Self::ModeGuard => "mode_guard",
-            Self::ProxyState => "proxy_state",
-            Self::Decider => "decider",
         }
     }
 }

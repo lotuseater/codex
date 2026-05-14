@@ -1,6 +1,6 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [ValidateSet("Status", "Diagnose", "Progress", "CleanSafe", "FastRelease", "LowMemRelease", "DevRelease", "FullRelease", "DeployOnly", "Rollback")]
+    [ValidateSet("Status", "Diagnose", "Progress", "CleanSafe", "PruneReleaseDeps", "FastRelease", "LowMemRelease", "DevRelease", "FullRelease", "DeployOnly", "Rollback")]
     [string]$Mode = "Status",
 
     [string]$RepoRoot,
@@ -28,6 +28,8 @@ param(
     [double]$DiskRequiredGB = 5,
 
     [double]$DiskWarnGB = 8,
+
+    [int]$DuplicateAuditLimit = 12,
 
     [switch]$UseSccache,
 
@@ -401,6 +403,10 @@ function Test-AndFreeDiskSpace {
             Write-Host ("  - reclaimed {0,7:N1} MB from release test executable artifacts" -f $testCleanup["reclaimed_mb"])
         }
     }
+    $depsCleanup = Invoke-ReleaseDepsOrphanCleanup -RepoRoot $RepoRoot
+    if ($depsCleanup["reclaimed_mb"] -gt 0) {
+        Write-Host ("  - reclaimed {0,7:N1} MB from orphaned release deps artifacts" -f $depsCleanup["reclaimed_mb"])
+    }
 
     foreach ($entry in $reclaimable) {
         if (-not (Test-Path -LiteralPath $entry.Path)) { continue }
@@ -666,6 +672,22 @@ function Invoke-ReleaseTestArtifactCleanup {
     }
 }
 
+function Invoke-ReleaseDepsOrphanCleanup {
+    param([string]$RepoRoot)
+
+    $deps = Join-Path $RepoRoot "codex-rs\target\release\deps"
+    if (-not (Test-Path -LiteralPath $deps)) {
+        return [ordered]@{ removed = 0; skipped = 0; reclaimed_mb = 0; status = "missing" }
+    }
+
+    return [ordered]@{
+        removed = 0
+        skipped = 0
+        reclaimed_mb = 0
+        status = "disabled: Cargo dep-info files do not identify live rlib/rmeta outputs"
+    }
+}
+
 function Invoke-SafeLocalCleanup {
     param(
         [string]$RepoRoot,
@@ -706,6 +728,8 @@ function Invoke-SafeLocalCleanup {
     }
 
     $afterBytes = (Get-PSDrive C).Free
+    $depsCleanup = Invoke-ReleaseDepsOrphanCleanup -RepoRoot $RepoRoot
+    $afterBytes = (Get-PSDrive C).Free
     return [ordered]@{
         status = "ok"
         mode = "CleanSafe"
@@ -714,6 +738,7 @@ function Invoke-SafeLocalCleanup {
         reclaimed_mb = [math]::Round(($afterBytes - $beforeBytes) / 1MB, 1)
         generated_paths = $cleanup
         release_pdb_cleanup = $pdbCleanup
+        release_deps_orphan_cleanup = $depsCleanup
         release_test_artifacts_before = $testArtifactsBefore
         release_test_artifact_cleanup = $testCleanup
     }
@@ -745,6 +770,10 @@ function Invoke-PostBuildDiskCleanup {
         $pdbCleanup = Invoke-ReleasePdbCleanup -RepoRoot $RepoRoot
         if ($pdbCleanup["reclaimed_mb"] -gt 0) {
             Write-Host ("Post-build cleanup: reclaimed {0:N1} MB from release PDB files." -f $pdbCleanup["reclaimed_mb"])
+        }
+        $depsCleanup = Invoke-ReleaseDepsOrphanCleanup -RepoRoot $RepoRoot
+        if ($depsCleanup["reclaimed_mb"] -gt 0) {
+            Write-Host ("Post-build cleanup: reclaimed {0:N1} MB from orphaned release deps artifacts." -f $depsCleanup["reclaimed_mb"])
         }
     }
 }
@@ -869,7 +898,7 @@ function Get-ReleaseDepsDuplicateSummary {
     }
 
     $items = Get-ChildItem -LiteralPath $deps -File -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -match '^(?<base>.+)-[0-9a-f]{16}\.(?<ext>rlib|rmeta|d|pdb|dll|exe|lib|exp)$' } |
+        Where-Object { $_.Name -match '^(?<base>lib.+)-[0-9a-f]{16}\.(?<ext>rlib|rmeta)$' } |
         ForEach-Object {
             [pscustomobject]@{
                 key = "$($matches.base).$($matches.ext)"
@@ -880,19 +909,146 @@ function Get-ReleaseDepsDuplicateSummary {
 
     return $items |
         Group-Object key |
-        Where-Object { $_.Count -gt 2 } |
+        Where-Object { $_.Count -gt 1 } |
         ForEach-Object {
             $group = @($_.Group)
+            $old = @($group | Sort-Object last_write_time -Descending | Select-Object -Skip 1)
             [ordered]@{
                 key = $_.Name
                 generations = $_.Count
                 total_mb = [math]::Round(($group | Measure-Object length -Sum).Sum / 1MB, 1)
+                older_mb = [math]::Round(($old | Measure-Object length -Sum).Sum / 1MB, 1)
+                cleanup_policy = "inspect_only; PruneReleaseDeps deletes only dep-info orphans"
                 newest = ($group | Sort-Object last_write_time -Descending | Select-Object -First 1).last_write_time.ToString("o")
                 oldest = ($group | Sort-Object last_write_time | Select-Object -First 1).last_write_time.ToString("o")
             }
         } |
         Sort-Object { $_["total_mb"] } -Descending |
         Select-Object -First $Limit
+}
+
+function Get-KnownDuplicateDependencyAllowlist {
+    $entries = @(
+        @{ Name = "windows-sys"; Reason = "windows crate ecosystem transition; active target variants can coexist" },
+        @{ Name = "windows-targets"; Reason = "windows crate ecosystem transition; platform target crates follow upstream transitive versions" },
+        @{ Name = "windows_aarch64_gnullvm"; Reason = "windows target crate pulled transitively by multiple windows crate generations" },
+        @{ Name = "windows_aarch64_msvc"; Reason = "windows target crate pulled transitively by multiple windows crate generations" },
+        @{ Name = "windows_i686_gnu"; Reason = "windows target crate pulled transitively by multiple windows crate generations" },
+        @{ Name = "windows_i686_gnullvm"; Reason = "windows target crate pulled transitively by multiple windows crate generations" },
+        @{ Name = "windows_i686_msvc"; Reason = "windows target crate pulled transitively by multiple windows crate generations" },
+        @{ Name = "windows_x86_64_gnu"; Reason = "windows target crate pulled transitively by multiple windows crate generations" },
+        @{ Name = "windows_x86_64_gnullvm"; Reason = "windows target crate pulled transitively by multiple windows crate generations" },
+        @{ Name = "windows_x86_64_msvc"; Reason = "windows target crate pulled transitively by multiple windows crate generations" },
+        @{ Name = "syn"; Reason = "proc-macro ecosystem still has v1/v2 transitive users" },
+        @{ Name = "thiserror"; Reason = "transitive ecosystem still has v1/v2 users" },
+        @{ Name = "thiserror-impl"; Reason = "transitive ecosystem still has v1/v2 users" },
+        @{ Name = "schemars"; Reason = "schema ecosystem has incompatible major versions in active transitive users" },
+        @{ Name = "schemars_derive"; Reason = "schema ecosystem has incompatible major versions in active transitive users" },
+        @{ Name = "digest"; Reason = "crypto ecosystem major-version transition in transitive dependencies" },
+        @{ Name = "block-buffer"; Reason = "crypto ecosystem major-version transition in transitive dependencies" },
+        @{ Name = "crypto-common"; Reason = "crypto ecosystem major-version transition in transitive dependencies" },
+        @{ Name = "hmac"; Reason = "crypto ecosystem major-version transition in transitive dependencies" },
+        @{ Name = "pbkdf2"; Reason = "crypto ecosystem major-version transition in transitive dependencies" },
+        @{ Name = "sha1"; Reason = "crypto ecosystem major-version transition in transitive dependencies" },
+        @{ Name = "sha2"; Reason = "crypto ecosystem major-version transition in transitive dependencies" },
+        @{ Name = "constant_time_eq"; Reason = "crypto/compression transitive users require incompatible versions" },
+        @{ Name = "untrusted"; Reason = "TLS stack has incompatible transitive versions" },
+        @{ Name = "getrandom"; Reason = "randomness ecosystem major-version transition in transitive dependencies" },
+        @{ Name = "rand"; Reason = "randomness ecosystem major-version transition in transitive dependencies" },
+        @{ Name = "rand_chacha"; Reason = "randomness ecosystem major-version transition in transitive dependencies" },
+        @{ Name = "rand_core"; Reason = "randomness ecosystem major-version transition in transitive dependencies" },
+        @{ Name = "tokio-tungstenite"; Reason = "temporary fork/upstream websocket split during remote-control merge" },
+        @{ Name = "tungstenite"; Reason = "temporary fork/upstream websocket split during remote-control merge" }
+    )
+
+    $known = [ordered]@{}
+    foreach ($entry in $entries) {
+        $known[$entry.Name] = $entry.Reason
+    }
+    return $known
+}
+
+function Get-CargoLockDuplicateVersionAudit {
+    param(
+        [string]$RepoRoot,
+        [int]$Limit = 20
+    )
+
+    $lockPath = Join-Path $RepoRoot "codex-rs\Cargo.lock"
+    if (-not (Test-Path -LiteralPath $lockPath)) {
+        return [ordered]@{ status = "missing"; path = $lockPath }
+    }
+
+    $packages = New-Object System.Collections.Generic.List[object]
+    $current = $null
+    foreach ($line in Get-Content -LiteralPath $lockPath) {
+        if ($line -eq "[[package]]") {
+            if ($current -and $current.Contains("name") -and $current.Contains("version")) {
+                [void]$packages.Add([pscustomobject]$current)
+            }
+            $current = @{}
+            continue
+        }
+        if ($null -eq $current) {
+            continue
+        }
+        if ($line -match '^name = "(.+)"$') {
+            $current["name"] = $matches[1]
+            continue
+        }
+        if ($line -match '^version = "(.+)"$') {
+            $current["version"] = $matches[1]
+            continue
+        }
+        if ($line -match '^source = "(.+)"$') {
+            $current["source"] = $matches[1]
+        }
+    }
+    if ($current -and $current.Contains("name") -and $current.Contains("version")) {
+        [void]$packages.Add([pscustomobject]$current)
+    }
+
+    $known = Get-KnownDuplicateDependencyAllowlist
+    $duplicates = @(
+        $packages |
+            Group-Object name |
+            ForEach-Object {
+                $versions = @(
+                    $_.Group |
+                        ForEach-Object {
+                            if ($_.source) { "$($_.version) [$($_.source)]" } else { $_.version }
+                        } |
+                        Sort-Object -Unique
+                )
+                if ($versions.Count -gt 1) {
+                    $name = $_.Name
+                    $reason = if ($known.Contains($name)) { [string]$known[$name] } else { $null }
+                    [pscustomobject]@{
+                        name = $name
+                        count = $versions.Count
+                        versions = $versions
+                        classification = if ($reason) { "known_unavoidable" } else { "action_required" }
+                        reason = $reason
+                    }
+                }
+            }
+    )
+
+    $actionRequired = @($duplicates | Where-Object { $_.classification -eq "action_required" } | Sort-Object name)
+    $knownUnavoidable = @($duplicates | Where-Object { $_.classification -eq "known_unavoidable" } | Sort-Object name)
+    $limitedActionRequired = if ($Limit -le 0) { $actionRequired } else { @($actionRequired | Select-Object -First $Limit) }
+    $limitedKnownUnavoidable = if ($Limit -le 0) { $knownUnavoidable } else { @($knownUnavoidable | Select-Object -First $Limit) }
+
+    return [ordered]@{
+        status = "ok"
+        path = $lockPath
+        duplicate_package_names = $duplicates.Count
+        action_required_count = $actionRequired.Count
+        known_unavoidable_count = $knownUnavoidable.Count
+        action_required = @($limitedActionRequired)
+        known_unavoidable_sample = @($limitedKnownUnavoidable)
+        known_allowlist_names = @($known.Keys | Sort-Object)
+    }
 }
 
 function Get-ReleaseProfileStampPath {
@@ -1353,10 +1509,11 @@ if ($Mode -in @("Status", "Diagnose")) {
         $statusPayload["target_debug_gb"] = Get-DirectorySizeGB -Path (Join-Path $RepoRoot "codex-rs\target\debug")
         $statusPayload["target_dev_small_gb"] = Get-DirectorySizeGB -Path (Join-Path $RepoRoot "codex-rs\target\dev-small")
         $statusPayload["memory"] = Get-PageFileSnapshot
-        $statusPayload["release_deps_prune"] = "disabled: Cargo can still reference older hashed deps artifacts from live fingerprints"
+        $statusPayload["release_deps_prune"] = "disabled: Cargo dep-info files do not identify live rlib/rmeta outputs"
         $statusPayload["release_pdb_gb"] = Get-ReleasePdbSizeGB -RepoRoot $RepoRoot
         $statusPayload["release_test_artifacts"] = Get-ReleaseTestArtifactSummary -RepoRoot $RepoRoot
         $statusPayload["release_deps_duplicate_summary"] = @(Get-ReleaseDepsDuplicateSummary -RepoRoot $RepoRoot -Limit 12)
+        $statusPayload["cargo_lock_duplicate_versions"] = Get-CargoLockDuplicateVersionAudit -RepoRoot $RepoRoot -Limit $DuplicateAuditLimit
         $statusPayload["recent_logs"] = @(Get-RecentBuildLogSummaries -Root $RepoRoot)
     }
     $statusPayload | ConvertTo-Json -Depth 8
@@ -1425,6 +1582,20 @@ if ($Mode -eq "CleanSafe") {
     return
 }
 
+if ($Mode -eq "PruneReleaseDeps") {
+    if ($activeBuilds.Count -gt 0) {
+        $ids = ($activeBuilds | ForEach-Object { $_["process_id"] }) -join ", "
+        throw "Repo-local cargo/rustc build process already active ($ids). Run Status to inspect it; PruneReleaseDeps will not remove artifacts while a build is active."
+    }
+    [ordered]@{
+        status = "ok"
+        mode = "PruneReleaseDeps"
+        release_deps_orphan_cleanup = Invoke-ReleaseDepsOrphanCleanup -RepoRoot $RepoRoot
+        free_c_drive_gb = [math]::Round((Get-PSDrive C).Free / 1GB, 2)
+    } | ConvertTo-Json -Depth 8
+    return
+}
+
 if ($Mode -eq "Rollback") {
     Invoke-Rollback | ConvertTo-Json -Depth 6
     return
@@ -1486,6 +1657,10 @@ if ($profileState["stamp_exists"] -and -not $profileState["matches"]) {
 #      build, so the user catches "WIZARD_CODEX_CACHE_BRIDGE_PY missing"
 #      style problems in 1 second instead of 30 minutes from now.
 Invoke-CrossModeCleanup -RepoRoot $RepoRoot -ActiveMode $Mode
+$releaseDepsCleanup = Invoke-ReleaseDepsOrphanCleanup -RepoRoot $RepoRoot
+if ($releaseDepsCleanup["reclaimed_mb"] -gt 0) {
+    Write-Host ("Pre-build cleanup: reclaimed {0:N1} MB from orphaned release deps artifacts." -f $releaseDepsCleanup["reclaimed_mb"])
+}
 Test-AndFreeDiskSpace -RepoRoot $RepoRoot -RequiredGB $DiskRequiredGB -WarnGB $DiskWarnGB
 if ($envPath) {
     Test-WrapperEnvSanity -WrapperEnvPath $envPath

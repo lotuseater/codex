@@ -5,27 +5,25 @@ use crate::agent::exceeds_thread_spawn_depth_limit;
 use crate::agent::next_thread_spawn_depth;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
+use crate::tools::handlers::multi_agents_spec::create_resume_agent_tool_v2;
 use crate::turn_timing::now_unix_timestamp_ms;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
+use codex_tools::ToolSpec;
 use std::sync::Arc;
 
 pub(crate) struct Handler;
 
-impl ToolHandler for Handler {
+impl ToolExecutor<ToolInvocation> for Handler {
     type Output = ResumeAgentResult;
 
     fn tool_name(&self) -> ToolName {
         ToolName::plain("resume_agent")
     }
 
-    fn kind(&self) -> ToolKind {
-        ToolKind::Function
-    }
-
-    fn matches_kind(&self, payload: &ToolPayload) -> bool {
-        matches!(payload, ToolPayload::Function { .. })
+    fn spec(&self) -> Option<ToolSpec> {
+        Some(create_resume_agent_tool_v2())
     }
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {
@@ -140,6 +138,12 @@ impl ToolHandler for Handler {
             .counter("codex.multi_agent.resume", /*inc*/ 1, &[]);
 
         Ok(ResumeAgentResult { status })
+    }
+}
+
+impl ToolHandler for Handler {
+    fn matches_kind(&self, payload: &ToolPayload) -> bool {
+        matches!(payload, ToolPayload::Function { .. })
     }
 }
 
@@ -295,6 +299,8 @@ pub(super) async fn persisted_agent_metadata(
         agent_path,
         agent_nickname: metadata.agent_nickname.or(source_agent_nickname),
         agent_role: metadata.agent_role.or(source_agent_role),
+        model: metadata.model,
+        reasoning_effort: metadata.reasoning_effort,
         last_task_message: None,
     })
 }

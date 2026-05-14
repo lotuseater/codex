@@ -106,12 +106,14 @@ impl TranscriptState {
         self.saw_copy_source_this_turn = false;
     }
 
-    pub(super) fn reset_turn_flags(&mut self) {
+    pub(super) fn reset_turn_flags(&mut self, preserve_latest_proposed_plan: bool) {
         self.saw_copy_source_this_turn = false;
         self.saw_plan_update_this_turn = false;
         self.saw_plan_item_this_turn = false;
         self.had_work_activity = false;
-        self.latest_proposed_plan_markdown = None;
+        if !preserve_latest_proposed_plan {
+            self.latest_proposed_plan_markdown = None;
+        }
         self.plan_delta_buffer.clear();
         self.plan_item_active = false;
     }

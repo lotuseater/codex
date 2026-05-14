@@ -15,6 +15,8 @@ mod socks5;
 mod state;
 mod upstream;
 
+pub use codex_network_proxy_config::NetworkDecisionSource;
+pub use codex_network_proxy_config::NetworkPolicyDecision;
 pub use config::NetworkDomainPermission;
 pub use config::NetworkDomainPermissionEntry;
 pub use config::NetworkDomainPermissions;
@@ -24,9 +26,7 @@ pub use config::NetworkUnixSocketPermission;
 pub use config::NetworkUnixSocketPermissions;
 pub use config::host_and_port_from_network_addr;
 pub use network_policy::NetworkDecision;
-pub use network_policy::NetworkDecisionSource;
 pub use network_policy::NetworkPolicyDecider;
-pub use network_policy::NetworkPolicyDecision;
 pub use network_policy::NetworkPolicyRequest;
 pub use network_policy::NetworkPolicyRequestArgs;
 pub use network_policy::NetworkProtocol;

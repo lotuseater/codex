@@ -34,6 +34,10 @@ struct AppServerArgs {
     #[command(flatten)]
     auth: AppServerWebsocketAuthArgs,
 
+    /// Fail if config.toml contains unknown configuration fields.
+    #[arg(long = "strict-config", default_value_t = false)]
+    strict_config: bool,
+
     /// Hidden test hook used by integration tests that spawn the production
     /// app-server binary.
     #[arg(long = "disable-plugin-startup-tasks-for-tests", hide = true)]
@@ -57,6 +61,10 @@ struct AppServerArgs {
         conflicts_with = "disable_managed_config_for_tests"
     )]
     managed_config_path_for_tests: Option<PathBuf>,
+
+    /// Enable remote control for this app-server process.
+    #[arg(long = "remote-control", hide = true)]
+    remote_control: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -70,11 +78,13 @@ fn main() -> anyhow::Result<()> {
         if args.disable_plugin_startup_tasks_for_tests {
             runtime_options.plugin_startup_tasks = PluginStartupTasks::Skip;
         }
+        runtime_options.remote_control_enabled = args.remote_control;
 
         run_main_with_transport_options(
             arg0_paths,
             CliConfigOverrides::default(),
             loader_overrides,
+            args.strict_config,
             /*default_analytics_enabled*/ false,
             transport,
             session_source,

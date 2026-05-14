@@ -7,7 +7,6 @@ members = [
     "agent-policy",
     "backend-client",
     "blackboard",
-    "builtin-mcps",
     "bwrap",
     "ansi-escape",
     "async-utils",
@@ -36,6 +35,7 @@ members = [
     "collaboration-mode-templates",
     "connectors",
     "config",
+    "config-types",
     "context-pack",
     "context-ops-impl",
     "desktop-automation",
@@ -54,7 +54,8 @@ members = [
     "execpolicy",
     "execpolicy-legacy",
     "ext/extension-api",
-    "ext/git-attribution",
+    "ext/guardian",
+    "ext/memories",
     "external-agent-migration",
     "external-agent-sessions",
     "keyring-store",
@@ -71,6 +72,7 @@ members = [
     "memories/write",
     "model-provider-info",
     "models-manager",
+    "network-proxy-config",
     "network-proxy",
     "ollama",
     "operation-cache",
@@ -122,7 +124,6 @@ members = [
     "test-binary-support",
     "thread-manager-sample",
     "thread-store",
-    "tool-api",
     "tool-schema",
     "uds",
     "codex-experimental-api-macros",
@@ -161,7 +162,6 @@ codex-arg0 = { path = "arg0" }
 codex-async-utils = { path = "async-utils" }
 codex-backend-client = { path = "backend-client" }
 codex-blackboard = { path = "blackboard" }
-codex-builtin-mcps = { path = "builtin-mcps" }
 codex-chatgpt = { path = "chatgpt" }
 codex-cli = { path = "cli" }
 codex-client = { path = "codex-client" }
@@ -172,6 +172,7 @@ codex-cloud-tasks-mock-client = { path = "cloud-tasks-mock-client" }
 codex-code-mode = { path = "code-mode" }
 codex-code-mode-spec = { path = "code-mode-spec" }
 codex-config = { path = "config" }
+codex-config-types = { path = "config-types" }
 codex-connectors = { path = "connectors" }
 codex-context-pack = { path = "context-pack" }
 codex-context-ops-impl = { path = "context-ops-impl" }
@@ -183,9 +184,9 @@ codex-desktop-automation = { path = "desktop-automation" }
 codex-exec = { path = "exec" }
 codex-file-system = { path = "file-system" }
 codex-exec-server = { path = "exec-server" }
-codex-execpolicy = { path = "execpolicy" }
+codex-execpolicy = { path = "execpolicy", default-features = false }
 codex-extension-api = { path = "ext/extension-api" }
-codex-git-attribution = { path = "ext/git-attribution" }
+codex-guardian = { path = "ext/guardian" }
 codex-external-agent-migration = { path = "external-agent-migration" }
 codex-external-agent-sessions = { path = "external-agent-sessions" }
 codex-experimental-api-macros = { path = "codex-experimental-api-macros" }
@@ -205,12 +206,14 @@ codex-login = { path = "login" }
 codex-message-history = { path = "message-history" }
 codex-memories-context = { path = "memories/context" }
 codex-memories-mcp = { path = "memories/mcp" }
+codex-memories-extension = { path = "ext/memories" }
 codex-memories-read = { path = "memories/read" }
 codex-memories-write = { path = "memories/write" }
 codex-mcp = { path = "codex-mcp" }
 codex-mcp-server = { path = "mcp-server" }
 codex-model-provider-info = { path = "model-provider-info" }
 codex-models-manager = { path = "models-manager" }
+codex-network-proxy-config = { path = "network-proxy-config" }
 codex-network-proxy = { path = "network-proxy" }
 codex-ollama = { path = "ollama" }
 codex-otel = { path = "otel" }
@@ -239,7 +242,6 @@ codex-stdio-to-uds = { path = "stdio-to-uds" }
 codex-terminal-detection = { path = "terminal-detection" }
 codex-test-binary-support = { path = "test-binary-support" }
 codex-thread-store = { path = "thread-store" }
-codex-tool-api = { path = "tool-api" }
 codex-tool-schema = { path = "tool-schema" }
 codex-tools = { path = "tools" }
 codex-tui = { path = "tui" }
@@ -259,7 +261,6 @@ codex-utils-output-truncation = { path = "utils/output-truncation" }
 codex-utils-path = { path = "utils/path-utils" }
 codex-utils-plugins = { path = "utils/plugins" }
 codex-utils-pty = { path = "utils/pty" }
-codex-utils-readiness = { path = "utils/readiness" }
 codex-utils-rustls-provider = { path = "utils/rustls-provider" }
 codex-utils-sandbox-summary = { path = "utils/sandbox-summary" }
 codex-utils-sleep-inhibitor = { path = "utils/sleep-inhibitor" }
@@ -362,7 +363,7 @@ portable-pty = "0.9"
 predicates = "3"
 pretty_assertions = "1"
 pulldown-cmark = "0.10"
-quick-xml = "0.38"
+quick-xml = "0.39"
 rand = { version = "0.9", default-features = false, features = [
     "os_rng",
     "small_rng",
@@ -400,6 +401,7 @@ sentry = { version = "0.46", default-features = false, features = [
     "rustls",
 ] }
 serde = "1"
+serde_ignored = "0.1.14"
 serde_json = "1"
 serde_path_to_error = "0.1"
 serde_with = "3.17"
@@ -521,7 +523,7 @@ unwrap_used = "deny"
 [workspace.metadata.cargo-shear]
 ignored = [
     "codex-agent-graph-store",
-    "codex-tool-api",
+    "codex-memories-extension",
     "icu_provider",
     "openssl-sys",
     "codex-v8-poc",

@@ -43,31 +43,13 @@ async fn invocation_for_payload(payload: ToolPayload) -> ToolInvocation {
 }
 
 #[tokio::test]
-async fn pre_tool_use_payload_uses_json_patch_input() {
-    let patch = sample_patch();
-    let payload = ToolPayload::Function {
-        arguments: json!({ "input": patch }).to_string(),
-    };
-    let invocation = invocation_for_payload(payload).await;
-    let handler = ApplyPatchHandler;
-
-    assert_eq!(
-        handler.pre_tool_use_payload(&invocation),
-        Some(PreToolUsePayload {
-            tool_name: HookToolName::apply_patch(),
-            tool_input: json!({ "command": patch }),
-        })
-    );
-}
-
-#[tokio::test]
 async fn pre_tool_use_payload_uses_freeform_patch_input() {
     let patch = sample_patch();
     let payload = ToolPayload::Custom {
         input: patch.to_string(),
     };
     let invocation = invocation_for_payload(payload).await;
-    let handler = ApplyPatchHandler;
+    let handler = ApplyPatchHandler::default();
 
     assert_eq!(
         handler.pre_tool_use_payload(&invocation),
@@ -86,7 +68,7 @@ async fn post_tool_use_payload_uses_patch_input_and_tool_output() {
     };
     let invocation = invocation_for_payload(payload).await;
     let output = ApplyPatchToolOutput::from_text("Success. Updated files.".to_string());
-    let handler = ApplyPatchHandler;
+    let handler = ApplyPatchHandler::default();
 
     assert_eq!(
         handler.post_tool_use_payload(&invocation, &output),
@@ -96,24 +78,6 @@ async fn post_tool_use_payload_uses_patch_input_and_tool_output() {
             tool_input: json!({ "command": patch }),
             tool_response: json!("Success. Updated files."),
         })
-    );
-}
-
-#[test]
-fn diff_consumer_does_not_stream_json_tool_call_arguments() {
-    let mut consumer = ApplyPatchArgumentDiffConsumer::default();
-    assert!(
-        consumer
-            .push_delta("call-1".to_string(), r#"{"input":"*** Begin Patch\n"#)
-            .is_none()
-    );
-    assert!(
-        consumer
-            .push_delta(
-                "call-1".to_string(),
-                r#"*** Add File: hello.txt\n+hello\n*** End Patch\n"}"#
-            )
-            .is_none()
     );
 }
 
@@ -172,6 +136,32 @@ fn diff_consumer_streams_apply_patch_changes() {
 }
 
 #[test]
+fn diff_consumer_streams_apply_patch_changes_with_environment_header() {
+    let mut consumer = ApplyPatchArgumentDiffConsumer::default();
+    assert!(
+        consumer
+            .push_delta(
+                "call-1".to_string(),
+                "*** Begin Patch\n*** Environment ID: remote\n",
+            )
+            .is_none()
+    );
+
+    let event = consumer
+        .push_delta("call-1".to_string(), "*** Add File: hello.txt\n+hello")
+        .expect("progress event");
+    assert_eq!(
+        event.changes,
+        HashMap::from([(
+            PathBuf::from("hello.txt"),
+            FileChange::Add {
+                content: String::new(),
+            },
+        )])
+    );
+}
+
+#[test]
 fn diff_consumer_sends_next_update_after_buffer_interval() {
     let mut consumer = ApplyPatchArgumentDiffConsumer::default();
     consumer.push_delta("call-1".to_string(), "*** Begin Patch\n");
@@ -201,6 +191,22 @@ fn diff_consumer_sends_next_update_after_buffer_interval() {
                 content: "hello\n".to_string(),
             },
         )])
+    );
+}
+
+#[test]
+fn reconcile_environment_id_requires_selection_when_enabled() {
+    assert_eq!(
+        require_environment_id(Some("remote"), /*allow_environment_id*/ false),
+        Err(FunctionCallError::RespondToModel(
+            "apply_patch environment selection is unavailable for this turn".to_string(),
+        ))
+    );
+    assert_eq!(
+        require_environment_id(
+            /*parsed_environment_id*/ None, /*allow_environment_id*/ true
+        ),
+        Ok(None)
     );
 }
 
@@ -285,95 +291,4 @@ fn write_permissions_for_paths_keep_dirs_outside_workspace_root() {
             .and_then(|(_read, write)| write),
         Some(vec![expected_outside])
     );
-}
-
-async fn committed_delta_for_test(path: &str) -> codex_apply_patch::AppliedPatchDelta {
-    let tmp = TempDir::new().expect("tmp");
-    let cwd = tmp.path().abs();
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    codex_apply_patch::apply_patch(
-        &format!("*** Begin Patch\n*** Add File: {path}\n+content\n*** End Patch"),
-        &cwd,
-        &mut stdout,
-        &mut stderr,
-        LOCAL_FS.as_ref(),
-        /*sandbox*/ None,
-    )
-    .await
-    .expect("apply patch")
-}
-
-#[tokio::test]
-async fn apply_patch_preserves_committed_delta_on_rejected_error() {
-    let delta = committed_delta_for_test("rejected.txt").await;
-    let mut runtime = ApplyPatchRuntime::new();
-    runtime.append_committed_delta_for_test(delta.clone());
-
-    let (out, reported_delta) = apply_patch_finish_parts(
-        Err(ToolError::Rejected("rejected by user".to_string())),
-        &runtime,
-    );
-
-    assert!(matches!(out, Err(ToolError::Rejected(_))));
-    assert_eq!(reported_delta, Some(delta));
-}
-
-#[tokio::test]
-async fn apply_patch_preserves_committed_delta_on_sandbox_denied() {
-    let delta = committed_delta_for_test("denied.txt").await;
-    let mut runtime = ApplyPatchRuntime::new();
-    runtime.append_committed_delta_for_test(delta.clone());
-
-    let (out, reported_delta) = apply_patch_finish_parts(
-        Err(ToolError::Codex(codex_protocol::error::CodexErr::Sandbox(
-            codex_protocol::error::SandboxErr::Denied {
-                output: Box::<ExecToolCallOutput>::default(),
-                network_policy_decision: None,
-            },
-        ))),
-        &runtime,
-    );
-
-    assert!(matches!(
-        out,
-        Err(ToolError::Codex(codex_protocol::error::CodexErr::Sandbox(
-            codex_protocol::error::SandboxErr::Denied { .. }
-        )))
-    ));
-    assert_eq!(reported_delta, Some(delta));
-}
-
-#[test]
-fn apply_patch_preserves_no_delta_for_exact_empty_error() {
-    let runtime = ApplyPatchRuntime::new();
-
-    let (out, reported_delta) = apply_patch_finish_parts(
-        Err(ToolError::Rejected("rejected by user".to_string())),
-        &runtime,
-    );
-
-    assert!(matches!(out, Err(ToolError::Rejected(_))));
-    assert_eq!(reported_delta, None);
-}
-
-#[tokio::test]
-async fn apply_patch_success_prefers_output_delta() {
-    let runtime_delta = committed_delta_for_test("runtime.txt").await;
-    let output_delta = committed_delta_for_test("output.txt").await;
-    let mut runtime = ApplyPatchRuntime::new();
-    runtime.append_committed_delta_for_test(runtime_delta);
-
-    let (_out, reported_delta) = apply_patch_finish_parts(
-        Ok(OrchestratorRunResult {
-            output: ApplyPatchRuntimeOutput {
-                exec_output: ExecToolCallOutput::default(),
-                delta: output_delta.clone(),
-            },
-            deferred_network_approval: None,
-        }),
-        &runtime,
-    );
-
-    assert_eq!(reported_delta, Some(output_delta));
 }
