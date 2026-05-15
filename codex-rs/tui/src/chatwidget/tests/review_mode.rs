@@ -1495,6 +1495,26 @@ async fn budget_limited_turn_restores_queued_input_without_submitting() {
     assert_no_submit_op(&mut op_rx);
 }
 
+#[tokio::test]
+async fn automatic_self_review_prompt_survives_interrupt_without_empty_restore() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.queue_automatic_self_review_prompt("please review the recent changes".to_string());
+
+    handle_turn_started(&mut chat, "turn-1");
+    handle_turn_interrupted(&mut chat, "turn-1");
+
+    assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
+    let queued = chat
+        .input_queue
+        .queued_user_messages
+        .front()
+        .expect("automatic review remains queued");
+    assert_eq!(queued.action, QueuedInputAction::AutomaticSelfReview);
+    assert_eq!(queued.text, "please review the recent changes");
+    assert!(chat.bottom_pane.composer_text().is_empty());
+    assert_no_submit_op(&mut op_rx);
+}
+
 // Snapshot test: interrupting specifically to submit pending steers shows an
 // informational banner instead of the generic "tell the model what to do
 // differently" error prompt.
