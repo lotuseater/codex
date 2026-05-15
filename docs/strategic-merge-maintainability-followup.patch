@@ -1,0 +1,95 @@
+diff --git a/scripts/check-cargo-dependency-boundaries.ps1 b/scripts/check-cargo-dependency-boundaries.ps1
+new file mode 100644
+--- /dev/null
++++ b/scripts/check-cargo-dependency-boundaries.ps1
+@@ -0,0 +1,85 @@
++param(
++    [string]$ManifestPath = (Join-Path $PSScriptRoot "..\codex-rs\Cargo.toml"),
++
++    [string[]]$Package = @("codex-config"),
++
++    [string[]]$ForbiddenPackage = @(
++        "codex-network-proxy",
++        "rama-*",
++        "starlark"
++    )
++)
++
++$ErrorActionPreference = "Stop"
++
++function Invoke-CargoTree {
++    param(
++        [string]$ManifestPath,
++        [string]$Package
++    )
++
++    $args = @(
++        "tree",
++        "--manifest-path",
++        $ManifestPath,
++        "-p",
++        $Package,
++        "--edges",
++        "normal,build"
++    )
++    $output = & cargo @args 2>&1
++    if ($LASTEXITCODE -ne 0) {
++        $message = $output -join [Environment]::NewLine
++        throw "cargo tree failed for package '$Package':$([Environment]::NewLine)$message"
++    }
++    $output
++}
++
++function Get-CargoTreePackageName {
++    param([string]$Line)
++
++    $trimmed = $Line -replace '^[\s│├└─]+', ''
++    if ([string]::IsNullOrWhiteSpace($trimmed)) {
++        return $null
++    }
++    ($trimmed -split '\s+', 2)[0]
++}
++
++function Test-WildcardMatch {
++    param(
++        [string]$Value,
++        [string]$Pattern
++    )
++
++    $wildcard = [System.Management.Automation.WildcardPattern]::new(
++        $Pattern,
++        [System.Management.Automation.WildcardOptions]::IgnoreCase
++    )
++    $wildcard.IsMatch($Value)
++}
++
++$failures = New-Object System.Collections.Generic.List[object]
++
++foreach ($packageName in $Package) {
++    Write-Host "Checking dependency boundary for $packageName"
++    $tree = Invoke-CargoTree -ManifestPath $ManifestPath -Package $packageName
++    foreach ($line in $tree) {
++        $dependencyName = Get-CargoTreePackageName -Line $line
++        if ($null -eq $dependencyName) {
++            continue
++        }
++        foreach ($forbidden in $ForbiddenPackage) {
++            if (Test-WildcardMatch -Value $dependencyName -Pattern $forbidden) {
++                $failures.Add([pscustomobject]@{
++                    Package = $packageName
++                    Forbidden = $forbidden
++                    Dependency = $dependencyName
++                    TreeLine = $line
++                })
++            }
++        }
++    }
++}
++
++if ($failures.Count -gt 0) {
++    Write-Error "Dependency boundary check failed: runtime-heavy crates are reachable from lightweight package(s)."
++    $failures | Format-Table -AutoSize | Out-String | Write-Error
++    exit 1
++}
++
++Write-Host "Dependency boundary check passed."

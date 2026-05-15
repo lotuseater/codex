@@ -26,7 +26,38 @@ impl ChatWidget {
                         .queued_user_message_history_records
                         .pop_front()
                         .unwrap_or(UserMessageHistoryRecord::UserMessageText);
-                    (user_message, history_record)
+                    if user_message.action != QueuedInputAction::Plain {
+                        return (user_message, history_record);
+                    }
+
+                    let mut messages = vec![(user_message.into_user_message(), history_record)];
+                    while self
+                        .input_queue
+                        .queued_user_messages
+                        .front()
+                        .is_some_and(|message| message.action == QueuedInputAction::Plain)
+                    {
+                        let message = self
+                            .input_queue
+                            .queued_user_messages
+                            .pop_front()
+                            .expect("front checked");
+                        let history_record = self
+                            .input_queue
+                            .queued_user_message_history_records
+                            .pop_front()
+                            .unwrap_or(UserMessageHistoryRecord::UserMessageText);
+                        messages.push((message.into_user_message(), history_record));
+                    }
+
+                    if messages.len() == 1 {
+                        let (message, history_record) = messages.pop().expect("message exists");
+                        (QueuedUserMessage::from(message), history_record)
+                    } else {
+                        let (message, history_record) =
+                            merge_user_messages_with_delimiters(messages);
+                        (QueuedUserMessage::from(message), history_record)
+                    }
                 })
         } else {
             let rejected_messages = self
@@ -60,6 +91,15 @@ impl ChatWidget {
                 .queued_user_message_history_records
                 .pop_back()
                 .unwrap_or(UserMessageHistoryRecord::UserMessageText);
+            if user_message.action == QueuedInputAction::AutomaticSelfReview {
+                self.input_queue
+                    .queued_user_messages
+                    .push_back(user_message);
+                self.input_queue
+                    .queued_user_message_history_records
+                    .push_back(history_record);
+                return None;
+            }
             Some(user_message_for_restore(
                 user_message.into_user_message(),
                 &history_record,
@@ -199,14 +239,19 @@ impl ChatWidget {
             queued_messages.len(),
             UserMessageHistoryRecord::UserMessageText,
         );
-        to_merge.extend(
-            queued_messages
-                .into_iter()
-                .zip(queued_history_records.iter())
-                .map(|(message, history_record)| {
-                    user_message_for_restore(message.into_user_message(), history_record)
-                }),
-        );
+        for (message, history_record) in queued_messages.into_iter().zip(queued_history_records) {
+            if message.action == QueuedInputAction::AutomaticSelfReview {
+                self.input_queue.queued_user_messages.push_back(message);
+                self.input_queue
+                    .queued_user_message_history_records
+                    .push_back(history_record);
+            } else {
+                to_merge.push(user_message_for_restore(
+                    message.into_user_message(),
+                    &history_record,
+                ));
+            }
+        }
         if !existing_message.text.is_empty()
             || !existing_message.local_images.is_empty()
             || !existing_message.remote_image_urls.is_empty()

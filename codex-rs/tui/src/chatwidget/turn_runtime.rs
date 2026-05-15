@@ -203,6 +203,12 @@ impl ChatWidget {
         let had_pending_steers = !self.input_queue.pending_steers.is_empty();
         self.refresh_pending_input_preview();
 
+        if !from_replay && self.automatic_self_review_turn_active {
+            self.automatic_self_review_turn_active = false;
+            self.refresh_self_review_anchor();
+            self.auto_loop_after_self_review = AutoLoopAfterSelfReview::Ready;
+        }
+
         let auto_loop_after_self_review_requested = !from_replay
             && !self.plan_completion_followup_pending
             && self.maybe_request_auto_loop_after_self_review();
@@ -404,15 +410,21 @@ impl ChatWidget {
         if !self.self_review_tracker.should_remind(now) {
             return false;
         }
+        let instructions = self.self_review_tracker.review_instructions();
         self.add_to_history(history_cell::new_self_review_reminder_line(
             self.self_review_tracker.reminder_message(),
         ));
-        self.app_event_tx.review(ReviewTarget::Custom {
-            instructions: self.self_review_tracker.review_instructions(),
-        });
         self.self_review_tracker.note_automatic_review_started(now);
-        self.auto_loop_after_self_review = AutoLoopAfterSelfReview::AwaitingReviewExit;
+        self.queue_automatic_self_review_prompt(instructions);
+        self.maybe_send_next_queued_input();
         true
+    }
+
+    pub(super) fn refresh_self_review_anchor(&mut self) {
+        let Some(cwd) = self.current_cwd.clone() else {
+            return;
+        };
+        self.self_review_tracker.refresh_review_anchor_at_cwd(cwd);
     }
 
     pub(super) fn maybe_request_auto_loop_after_self_review(&mut self) -> bool {

@@ -33,6 +33,7 @@ impl ChatWidget {
         self.current_rollout_path = session.rollout_path.clone();
         self.current_cwd = Some(session.cwd.to_path_buf());
         self.config.cwd = session.cwd.clone();
+        self.refresh_self_review_anchor();
         self.effective_service_tier = session.service_tier.clone();
         if let Err(err) = self
             .config

@@ -1,5 +1,12 @@
+mod git_evidence;
+
+use std::path::PathBuf;
 use std::time::Duration;
 use std::time::Instant;
+
+use git_evidence::GitReviewAnchor;
+pub use git_evidence::ReviewAnchor;
+pub use git_evidence::ReviewWorkSlice;
 
 const SELF_REVIEW_COOLDOWN: Duration = Duration::from_secs(10 * 60);
 const MAX_RECORDED_COMMANDS: usize = 6;
@@ -20,7 +27,7 @@ For feature, tool/runtime, memory, agent, DAB, cache, prompt/context-reducer, or
 When self-review finds a concrete, repo-controlled caveat that is directly fixable and verifiable, prefer one bounded repair pass before proceeding. Stop instead of repairing when the blocker is external, destructive, or not reproducible from current evidence.
 </bounded_repair_policy>";
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub struct SelfReviewTracker {
     command_count: usize,
     patch_count: usize,
@@ -31,17 +38,54 @@ pub struct SelfReviewTracker {
     suppress_current_turn: bool,
     suppress_next_turn: bool,
     last_auto_review_started_at: Option<Instant>,
+    cwd: Option<PathBuf>,
+    git_anchor: Option<GitReviewAnchor>,
 }
 
 impl SelfReviewTracker {
+    pub fn new(cwd: impl Into<PathBuf>) -> Self {
+        let cwd = cwd.into();
+        let mut tracker = Self::default();
+        tracker.git_anchor = Some(GitReviewAnchor::capture(cwd.clone()));
+        tracker.cwd = Some(cwd);
+        tracker
+    }
+
+    pub fn set_cwd(&mut self, cwd: impl Into<PathBuf>) {
+        let cwd = cwd.into();
+        if self.cwd.as_ref() == Some(&cwd) && self.git_anchor.is_some() {
+            return;
+        }
+        self.cwd = Some(cwd);
+        self.refresh_review_anchor();
+    }
+
+    pub fn refresh_review_anchor_at_cwd(&mut self, cwd: impl Into<PathBuf>) {
+        self.cwd = Some(cwd.into());
+        self.refresh_review_anchor();
+    }
+
+    pub fn refresh_review_anchor(&mut self) {
+        if let Some(anchor) = self.git_anchor.take() {
+            anchor.cleanup();
+        }
+        self.git_anchor = self
+            .cwd
+            .as_ref()
+            .map(|cwd| GitReviewAnchor::capture(cwd.clone()));
+    }
+
     pub fn reset_turn(&mut self) {
         let last_auto_review_started_at = self.last_auto_review_started_at;
         let suppress_current_turn = self.suppress_next_turn;
-        *self = Self {
-            suppress_current_turn,
-            last_auto_review_started_at,
-            ..Self::default()
-        };
+        let cwd = self.cwd.clone();
+        let git_anchor = self.git_anchor.take();
+        let mut reset = Self::default();
+        reset.suppress_current_turn = suppress_current_turn;
+        reset.last_auto_review_started_at = last_auto_review_started_at;
+        reset.cwd = cwd;
+        reset.git_anchor = git_anchor;
+        *self = reset;
     }
 
     pub fn note_plan_update(&mut self) {
@@ -100,6 +144,10 @@ impl SelfReviewTracker {
     }
 
     pub fn review_instructions(&self) -> String {
+        if let Some(anchor) = &self.git_anchor {
+            return anchor.prompt(&self.compact_work_notes());
+        }
+
         format!(
             "\
 Automatic self-review of the just-completed work slice.
@@ -143,6 +191,14 @@ Compact work notes:
             .map(|note| format!("- {note}"))
             .collect::<Vec<_>>()
             .join("\n")
+    }
+}
+
+impl Drop for SelfReviewTracker {
+    fn drop(&mut self) {
+        if let Some(anchor) = &self.git_anchor {
+            anchor.cleanup();
+        }
     }
 }
 

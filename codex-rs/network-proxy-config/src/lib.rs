@@ -399,7 +399,7 @@ fn clamp_non_loopback(
     SocketAddr::from(([127, 0, 0, 1], addr.port()))
 }
 
-pub(crate) fn clamp_bind_addrs(
+pub fn clamp_bind_addrs(
     http_addr: SocketAddr,
     socks_addr: SocketAddr,
     cfg: &NetworkProxySettings,
@@ -477,12 +477,21 @@ impl ValidatedUnixSocketPath {
     }
 }
 
-pub(crate) fn validate_unix_socket_allowlist_paths(cfg: &NetworkProxyConfig) -> Result<()> {
+pub fn validate_unix_socket_allowlist_paths(cfg: &NetworkProxyConfig) -> Result<()> {
     for (index, socket_path) in cfg.network.allow_unix_sockets().iter().enumerate() {
         ValidatedUnixSocketPath::parse(socket_path)
             .with_context(|| format!("invalid network.allow_unix_sockets[{index}]"))?;
     }
     Ok(())
+}
+
+pub fn parse_native_unix_socket_allowlist_path(
+    socket_path: &str,
+) -> Result<Option<AbsolutePathBuf>> {
+    match ValidatedUnixSocketPath::parse(socket_path)? {
+        ValidatedUnixSocketPath::Native(path) => Ok(Some(path)),
+        ValidatedUnixSocketPath::UnixStyleAbsolute(_) => Ok(None),
+    }
 }
 
 pub fn resolve_runtime(cfg: &NetworkProxyConfig) -> Result<RuntimeConfig> {

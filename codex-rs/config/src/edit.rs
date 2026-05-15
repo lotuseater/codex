@@ -104,6 +104,14 @@ pub fn session_picker_view_edit(mode: SessionPickerViewMode) -> ConfigEdit {
     }
 }
 
+/// Produces a config edit that sets `[tui].pet = "<pet>"`.
+pub fn tui_pet_edit(pet: &str) -> ConfigEdit {
+    ConfigEdit::SetPath {
+        segments: vec!["tui".to_string(), "pet".to_string()],
+        value: value(pet.to_string()),
+    }
+}
+
 /// Produces a config edit that sets `[tui].status_line` to an explicit ordered list.
 ///
 /// The array is written even when it is empty so "hide the status line" stays

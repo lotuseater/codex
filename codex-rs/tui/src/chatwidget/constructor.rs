@@ -81,6 +81,7 @@ impl ChatWidget {
             &chat_keymap.edit_queued_message,
             current_terminal_info,
         );
+        let self_review_cwd = config.cwd.to_path_buf();
         pets::start_configured_pet_load_if_needed(
             &config,
             /*ambient_pet_missing*/ true,
@@ -192,10 +193,11 @@ impl ChatWidget {
             quit_shortcut_expires_at: None,
             quit_shortcut_key: None,
             auto_loop_after_self_review: AutoLoopAfterSelfReview::Idle,
+            automatic_self_review_turn_active: false,
             plan_completed_this_turn: false,
             plan_completion_followup_pending: false,
             turn_runtime_metrics: RuntimeMetricsSummary::default(),
-            self_review_tracker: codex_self_review::SelfReviewTracker::default(),
+            self_review_tracker: codex_self_review::SelfReviewTracker::new(self_review_cwd),
             last_rendered_width: std::cell::Cell::new(None),
             feedback,
             current_rollout_path: None,

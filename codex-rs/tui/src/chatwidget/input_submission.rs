@@ -345,6 +345,7 @@ impl ChatWidget {
             effective_mode.reasoning_effort(),
             /*summary*/ None,
             service_tier,
+            self.current_context_budget_mode(),
             /*final_output_json_schema*/ None,
             collaboration_mode,
             personality,

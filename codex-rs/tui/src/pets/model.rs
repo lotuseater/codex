@@ -11,6 +11,7 @@
 //! built-in pet has been downloaded before asking the model layer to load it.
 
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::Component;
 use std::path::Path;
@@ -103,8 +104,12 @@ impl Pet {
         let bytes = fs::read(&self.spritesheet_path)
             .with_context(|| format!("read {}", self.spritesheet_path.display()))?;
         let digest = Sha256::digest(&bytes);
+        let mut digest_hex = String::with_capacity(digest.len() * 2);
+        for byte in digest {
+            let _ = write!(&mut digest_hex, "{byte:02x}");
+        }
         Ok(format!(
-            "sha256-{digest:x}-{}x{}-{}x{}",
+            "sha256-{digest_hex}-{}x{}-{}x{}",
             self.frame_width, self.frame_height, self.columns, self.rows
         ))
     }

@@ -14,6 +14,7 @@ use crate::bottom_pane::slash_commands::BuiltinCommandFlags;
 use crate::bottom_pane::slash_commands::ServiceTierCommand;
 use crate::bottom_pane::slash_commands::SlashCommandItem;
 use crate::bottom_pane::slash_commands::find_slash_command;
+use codex_protocol::config_types::ContextBudgetMode;
 use codex_protocol::config_types::ServiceTier;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

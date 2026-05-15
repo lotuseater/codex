@@ -295,6 +295,7 @@ pub enum InputResult {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QueuedInputAction {
     Plain,
+    AutomaticSelfReview,
     ParseSlash,
     RunShell,
 }

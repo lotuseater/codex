@@ -1,5 +1,3 @@
-use crate::network_policy::NetworkDecisionSource;
-use crate::network_policy::NetworkPolicyDecision;
 use crate::network_policy::NetworkProtocol;
 use crate::reasons::REASON_DENIED;
 use crate::reasons::REASON_METHOD_NOT_ALLOWED;
@@ -7,6 +5,8 @@ use crate::reasons::REASON_MITM_REQUIRED;
 use crate::reasons::REASON_NOT_ALLOWED;
 use crate::reasons::REASON_NOT_ALLOWED_LOCAL;
 use crate::reasons::REASON_PROXY_DISABLED;
+use codex_network_proxy_config::NetworkDecisionSource;
+use codex_network_proxy_config::NetworkPolicyDecision;
 use rama_http::Body;
 use rama_http::Response;
 use rama_http::StatusCode;

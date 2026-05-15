@@ -15,6 +15,8 @@ param(
 
     [switch]$AllowIntegrationTargets,
 
+    [switch]$AllowBroadTuiUnitTests,
+
     [switch]$NoCleanup,
 
     [int]$CleanTestArtifactsBelowGB = 0
@@ -38,6 +40,15 @@ if ($status.active_build_processes.Count -gt 0) {
 
 if ($Package -eq "codex-core" -and -not $Lib -and -not $AllowIntegrationTargets) {
     throw "Refusing to run codex-core package tests without -Lib. This would compile core/tests/all.rs before applying any filter. Use -Lib for unit tests or -AllowIntegrationTargets when intentionally testing integration targets."
+}
+
+if ($Package -eq "codex-tui" -and -not [string]::IsNullOrWhiteSpace($Filter) -and -not $AllowBroadTuiUnitTests) {
+    $hasExplicitCargoTarget = $ExtraCargoArgs -contains "--test" -or
+        $ExtraCargoArgs -contains "--bin" -or
+        $ExtraCargoArgs -contains "--example"
+    if (-not $hasExplicitCargoTarget) {
+        throw "Refusing filtered codex-tui package/unit test without -AllowBroadTuiUnitTests. Cargo compiles the full codex-tui test harness and heavy dependency graph before applying the filter. Prefer the smaller owning crate test, an explicit --test target via -ExtraCargoArgs, or pass -AllowBroadTuiUnitTests when this expensive canary is intentional."
+    }
 }
 
 if (-not $NoCleanup) {

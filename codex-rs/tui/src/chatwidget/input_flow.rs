@@ -72,6 +72,19 @@ impl ChatWidget {
         self.queue_user_message_with_options(user_message, QueuedInputAction::Plain);
     }
 
+    pub(super) fn queue_automatic_self_review_prompt(&mut self, prompt: String) {
+        self.input_queue
+            .queued_user_messages
+            .push_front(QueuedUserMessage::new(
+                UserMessage::from(prompt),
+                QueuedInputAction::AutomaticSelfReview,
+            ));
+        self.input_queue
+            .queued_user_message_history_records
+            .push_front(UserMessageHistoryRecord::UserMessageText);
+        self.refresh_pending_input_preview();
+    }
+
     pub(super) fn queue_user_message_with_options(
         &mut self,
         user_message: UserMessage,
@@ -104,11 +117,16 @@ impl ChatWidget {
                 break;
             };
             match queued_message.action {
-                QueuedInputAction::Plain => {
+                QueuedInputAction::Plain | QueuedInputAction::AutomaticSelfReview => {
+                    let automatic_self_review =
+                        queued_message.action == QueuedInputAction::AutomaticSelfReview;
                     submitted_follow_up = self.submit_user_message_with_history_record(
                         queued_message.into_user_message(),
                         history_record,
                     );
+                    if submitted_follow_up && automatic_self_review {
+                        self.automatic_self_review_turn_active = true;
+                    }
                     break;
                 }
                 QueuedInputAction::ParseSlash => {

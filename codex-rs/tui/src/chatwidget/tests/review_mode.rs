@@ -372,22 +372,56 @@ async fn self_review_starts_after_patch_without_review() {
         .join("\n");
     assert!(rendered.contains("Self-review required"));
 
-    loop {
-        match op_rx.try_recv() {
-            Ok(Op::Review { target }) => {
-                let ReviewTarget::Custom { instructions } = target else {
-                    panic!("expected automatic self-review custom prompt, got {target:?}");
-                };
-                assert!(instructions.contains("Automatic self-review"));
-                assert!(instructions.contains("git status --short"));
-                assert!(instructions.contains("foo.txt"));
-                break;
-            }
-            Ok(_) => continue,
-            Err(TryRecvError::Empty) => panic!("expected automatic self-review op"),
-            Err(TryRecvError::Disconnected) => panic!("expected self-review op but channel closed"),
+    assert_automatic_review_requested(&mut op_rx);
+}
+
+#[tokio::test]
+async fn queued_plain_messages_merge_with_delimiters() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    push_queued_message(&mut chat, "first queued prompt", QueuedInputAction::Plain);
+    push_queued_message(&mut chat, "second queued prompt", QueuedInputAction::Plain);
+
+    assert!(chat.maybe_send_next_queued_input());
+
+    match next_submit_op(&mut op_rx) {
+        Op::UserTurn { items, .. } => {
+            let text = match items.as_slice() {
+                [UserInput::Text { text, .. }] => text,
+                other => panic!("expected merged queued prompt, got {other:?}"),
+            };
+            assert!(text.contains("--- queued prompt 1/2 ---"));
+            assert!(text.contains("first queued prompt"));
+            assert!(text.contains("--- queued prompt 2/2 ---"));
+            assert!(text.contains("second queued prompt"));
         }
+        other => panic!("expected merged queued user turn, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn queued_slash_and_shell_actions_remain_separate() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    push_queued_message(&mut chat, "plain one", QueuedInputAction::Plain);
+    push_queued_message(&mut chat, "/review", QueuedInputAction::ParseSlash);
+    push_queued_message(&mut chat, "!pwd", QueuedInputAction::RunShell);
+    push_queued_message(&mut chat, "plain two", QueuedInputAction::Plain);
+
+    let (first, _) = chat.pop_next_queued_user_message().expect("plain message");
+    assert_eq!(first.action, QueuedInputAction::Plain);
+    assert_eq!(first.text, "plain one");
+
+    let (second, _) = chat.pop_next_queued_user_message().expect("slash message");
+    assert_eq!(second.action, QueuedInputAction::ParseSlash);
+    assert_eq!(second.text, "/review");
+
+    let (third, _) = chat.pop_next_queued_user_message().expect("shell message");
+    assert_eq!(third.action, QueuedInputAction::RunShell);
+    assert_eq!(third.text, "!pwd");
+
+    let (fourth, _) = chat.pop_next_queued_user_message().expect("plain message");
+    assert_eq!(fourth.action, QueuedInputAction::Plain);
+    assert_eq!(fourth.text, "plain two");
 }
 
 #[tokio::test]
@@ -413,8 +447,6 @@ async fn automatic_self_review_requests_auto_loop_after_review_complete() {
     assert_automatic_review_requested(&mut op_rx);
 
     handle_turn_started(&mut chat, "review-turn");
-    handle_entered_review_mode(&mut chat, "automatic self-review of current changes");
-    handle_exited_review_mode(&mut chat);
     assert!(!take_auto_loop_after_self_review_event(&mut rx));
 
     handle_turn_completed(&mut chat, "review-turn", /*duration_ms*/ None);
@@ -459,8 +491,6 @@ async fn automatic_self_review_does_not_queue_auto_loop_when_blocked() {
     assert_automatic_review_requested(&mut op_rx);
 
     handle_turn_started(&mut chat, "review-turn");
-    handle_entered_review_mode(&mut chat, "automatic self-review of current changes");
-    handle_exited_review_mode(&mut chat);
     chat.bottom_pane
         .set_composer_text("draft blocks loop".to_string(), Vec::new(), Vec::new());
     handle_turn_completed(&mut chat, "review-turn", /*duration_ms*/ None);
@@ -1664,16 +1694,26 @@ fn complete_turn(chat: &mut ChatWidget, turn_id: &str) {
     });
 }
 
+fn push_queued_message(chat: &mut ChatWidget, text: &str, action: QueuedInputAction) {
+    chat.input_queue
+        .queued_user_messages
+        .push_back(QueuedUserMessage::new(UserMessage::from(text), action));
+    chat.input_queue
+        .queued_user_message_history_records
+        .push_back(UserMessageHistoryRecord::UserMessageText);
+}
+
 fn assert_automatic_review_requested(op_rx: &mut tokio::sync::mpsc::UnboundedReceiver<Op>) {
     loop {
         match op_rx.try_recv() {
-            Ok(Op::Review { target }) => {
-                let ReviewTarget::Custom { instructions } = target else {
-                    panic!("expected automatic self-review custom prompt, got {target:?}");
+            Ok(Op::UserTurn { items, .. }) => {
+                let text = match items.as_slice() {
+                    [UserInput::Text { text, .. }] => text,
+                    other => panic!("expected automatic self-review user turn, got {other:?}"),
                 };
-                assert!(instructions.contains("Automatic self-review"));
-                assert!(instructions.contains("git status --short"));
-                assert!(instructions.contains("foo.txt"));
+                assert!(text.contains("review the changes done since the last self-review"));
+                assert!(text.contains("git status --short"));
+                assert!(text.contains("foo.txt"));
                 break;
             }
             Ok(_) => continue,

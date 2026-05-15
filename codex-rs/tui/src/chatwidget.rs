@@ -316,9 +316,11 @@ use crate::status_indicator_widget::STATUS_DETAILS_DEFAULT_MAX_LINES;
 use crate::status_indicator_widget::StatusDetailsCapitalization;
 use crate::text_formatting::truncate_text;
 use crate::tui::FrameRequester;
+mod collab_agents;
 mod command_lifecycle;
 mod connectors;
 mod constructor;
+mod context_budget;
 use self::connectors::ConnectorsState;
 mod exec_state;
 use self::exec_state::RunningCommand;
@@ -426,6 +428,7 @@ use self::user_messages::UserMessageHistoryRecord;
 use self::user_messages::app_server_text_elements;
 pub(crate) use self::user_messages::create_initial_user_message;
 use self::user_messages::merge_user_messages;
+use self::user_messages::merge_user_messages_with_delimiters;
 use self::user_messages::merge_user_messages_with_history_record;
 #[cfg(test)]
 use self::user_messages::remap_placeholders_for_message;
@@ -654,6 +657,8 @@ pub(crate) struct ChatWidget {
     quit_shortcut_key: Option<KeyBinding>,
     // Tracks automatic self-review so loop mode can continue immediately after a successful review.
     auto_loop_after_self_review: AutoLoopAfterSelfReview,
+    // True while a queued automatic self-review prompt is the active user turn.
+    automatic_self_review_turn_active: bool,
     // Whether this turn marked every item in the current `update_plan` checklist completed.
     plan_completed_this_turn: bool,
     // Whether post-plan follow-up consideration is waiting for review/blockers to clear.
@@ -900,6 +905,7 @@ impl ChatWidget {
             AgentMetadata {
                 agent_nickname,
                 agent_role,
+                ..AgentMetadata::default()
             },
         );
     }
@@ -1211,11 +1217,14 @@ impl ChatWidget {
         self.request_redraw();
     }
 
-    fn exit_review_mode_after_item(&mut self) {
+    fn exit_review_mode_after_item(&mut self, from_replay: bool) {
         self.flush_answer_stream_with_separator();
         self.flush_interrupt_queue();
         self.flush_active_cell();
         self.review.is_review_mode = false;
+        if !from_replay {
+            self.refresh_self_review_anchor();
+        }
         if self.auto_loop_after_self_review == AutoLoopAfterSelfReview::AwaitingReviewExit {
             self.auto_loop_after_self_review = AutoLoopAfterSelfReview::Ready;
         }

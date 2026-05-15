@@ -492,6 +492,80 @@ pub(super) fn merge_user_messages_with_history_record(
     )
 }
 
+pub(super) fn merge_user_messages_with_delimiters(
+    messages: Vec<(UserMessage, UserMessageHistoryRecord)>,
+) -> (UserMessage, UserMessageHistoryRecord) {
+    if messages.len() <= 1 {
+        return merge_user_messages_with_history_record(messages);
+    }
+
+    let total = messages.len();
+    let messages = remap_user_messages_with_history_records(messages);
+    let mut combined = UserMessage {
+        text: String::new(),
+        text_elements: Vec::new(),
+        local_images: Vec::new(),
+        remote_image_urls: Vec::new(),
+        mention_bindings: Vec::new(),
+    };
+    let mut history_text = String::new();
+    let mut history_text_elements = Vec::new();
+
+    for (idx, (message, history_record)) in messages.into_iter().enumerate() {
+        if idx > 0 {
+            combined.text.push('\n');
+            history_text.push('\n');
+        }
+        let delimiter = format!("--- queued prompt {}/{} ---\n", idx + 1, total);
+        combined.text.push_str(&delimiter);
+        history_text.push_str(&delimiter);
+
+        let UserMessage {
+            text,
+            text_elements,
+            local_images,
+            remote_image_urls,
+            mention_bindings,
+        } = message;
+        append_text_with_rebased_elements(
+            &mut combined.text,
+            &mut combined.text_elements,
+            &text,
+            text_elements.clone(),
+        );
+        combined.local_images.extend(local_images);
+        combined.remote_image_urls.extend(remote_image_urls);
+        combined.mention_bindings.extend(mention_bindings);
+
+        match history_record {
+            UserMessageHistoryRecord::Override(history) if !history.text.is_empty() => {
+                append_text_with_rebased_elements(
+                    &mut history_text,
+                    &mut history_text_elements,
+                    &history.text,
+                    history.text_elements,
+                );
+            }
+            UserMessageHistoryRecord::Override(_) | UserMessageHistoryRecord::UserMessageText => {
+                append_text_with_rebased_elements(
+                    &mut history_text,
+                    &mut history_text_elements,
+                    &text,
+                    text_elements,
+                );
+            }
+        }
+    }
+
+    (
+        combined,
+        UserMessageHistoryRecord::Override(UserMessageHistoryOverride {
+            text: history_text,
+            text_elements: history_text_elements,
+        }),
+    )
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct UserMessageDisplay {
     pub(super) message: String,

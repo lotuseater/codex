@@ -1459,7 +1459,7 @@ async fn completed_plan_followup_waits_for_regular_self_review() {
         "expected automatic self-review before plan completion follow-up"
     );
 
-    chat.exit_review_mode_after_item();
+    chat.exit_review_mode_after_item(/*from_replay*/ false);
 
     match next_submit_op(&mut op_rx) {
         Op::UserTurn { items, .. } => {
@@ -1507,7 +1507,7 @@ async fn completed_plan_followup_survives_self_review_action_turn() {
     );
 
     chat.on_task_started();
-    chat.exit_review_mode_after_item();
+    chat.exit_review_mode_after_item(/*from_replay*/ false);
     assert!(
         op_rx.try_recv().is_err(),
         "expected no follow-up while self-review action turn is still running"
