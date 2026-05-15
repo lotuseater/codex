@@ -1,5 +1,5 @@
 [package]
-name = "codex-blackboard"
+name = "codex-cognos-ops"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,14 +8,10 @@ license.workspace = true
 workspace = true
 
 [dependencies]
-hex = { workspace = true }
+codex-operation-cache = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-sha1 = { workspace = true }
-thiserror = { workspace = true }
-tokio = { workspace = true, features = ["macros", "sync", "time", "rt"] }
-tokio-util = { workspace = true }
-tracing = { workspace = true }
+tokio = { workspace = true, features = ["fs", "rt"] }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }

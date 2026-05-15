@@ -121,6 +121,7 @@ members = [
     "utils/template",
     "codex-client",
     "codex-api",
+    "cognos-ops",
     "state",
     "task-memory",
     "terminal-detection",
@@ -129,6 +130,7 @@ members = [
     "thread-manager-sample",
     "thread-store",
     "tool-schema",
+    "turn-diff",
     "uds",
     "codex-experimental-api-macros",
     "plugin",
@@ -177,6 +179,7 @@ codex-code-mode = { path = "code-mode" }
 codex-code-mode-spec = { path = "code-mode-spec" }
 codex-config = { path = "config" }
 codex-config-types = { path = "config-types" }
+codex-cognos-ops = { path = "cognos-ops" }
 codex-connectors = { path = "connectors" }
 codex-context-pack = { path = "context-pack" }
 codex-context-ops-impl = { path = "context-ops-impl" }
@@ -252,6 +255,7 @@ codex-thread-config-remote = { path = "thread-config-remote" }
 codex-thread-store = { path = "thread-store" }
 codex-tool-schema = { path = "tool-schema" }
 codex-tools = { path = "tools" }
+codex-turn-diff = { path = "turn-diff" }
 codex-tui = { path = "tui" }
 codex-uds = { path = "uds" }
 codex-utils-absolute-path = { path = "utils/absolute-path" }

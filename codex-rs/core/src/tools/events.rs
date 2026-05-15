@@ -205,7 +205,9 @@ impl ToolEmitter {
                 ToolEventStage::Begin,
             ) => {
                 if let Some(tracker) = ctx.turn_diff_tracker {
-                    tracker.lock().await.on_patch_begin(changes);
+                    let tracked_changes =
+                        crate::turn_diff_tracker::tracked_file_changes_from_protocol(changes);
+                    tracker.lock().await.on_patch_begin(&tracked_changes);
                 }
                 ctx.session
                     .emit_turn_item_started(
@@ -583,7 +585,11 @@ async fn emit_patch_end(
             let previous_diff = guard.get_unified_diff().ok().flatten();
             let tracker_changed = match tracker_update {
                 TurnDiffTrackerUpdate::Track(delta) => {
-                    guard.track_delta(delta);
+                    let changes =
+                        crate::turn_diff_tracker::committed_file_changes_from_apply_patch_delta(
+                            delta,
+                        );
+                    guard.track_delta(&changes);
                     true
                 }
                 TurnDiffTrackerUpdate::Invalidate => {

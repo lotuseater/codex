@@ -2242,6 +2242,9 @@ dependencies = [
  "sha1 0.11.0",
  "tempfile",
  "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]
@@ -2481,6 +2484,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-cognos-ops"
+version = "0.0.0"
+dependencies = [
+ "codex-operation-cache",
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "codex-collaboration-mode-templates"
 version = "0.0.0"
 
@@ -2600,6 +2615,7 @@ dependencies = [
  "codex-async-utils",
  "codex-blackboard",
  "codex-code-mode",
+ "codex-cognos-ops",
  "codex-config",
  "codex-connectors",
  "codex-context-ops-impl",
@@ -2644,6 +2660,7 @@ dependencies = [
  "codex-thread-store",
  "codex-tool-schema",
  "codex-tools",
+ "codex-turn-diff",
  "codex-utils-absolute-path",
  "codex-utils-cache",
  "codex-utils-cargo-bin",
@@ -4169,6 +4186,19 @@ dependencies = [
  "windows-sys 0.61.2",
  "winsplit",
  "wiremock",
+]
+
+[[package]]
+name = "codex-turn-diff"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "hex",
+ "pretty_assertions",
+ "sha1 0.11.0",
+ "similar 3.1.0",
+ "tempfile",
+ "uuid",
 ]
 
 [[package]]

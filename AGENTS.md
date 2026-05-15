@@ -38,6 +38,13 @@ In the codex-rs folder where the rust code lives:
 - For dependency and architecture findings, fix the ownership boundary rather than hiding the issue
   behind compatibility imports, re-export crutches, or local workarounds. Separate crates/modules
   are preferred when they reduce merge pressure and make future integration cleaner.
+- Prefer decoupled, modular code with clear ownership and small files/functions. Put new feature
+  logic in a dedicated crate, module, file, class, or policy object instead of expanding high-touch
+  orchestration files; keep central files as thin adapters so future merges, changes, and tests stay
+  localized.
+- During recurring `main` merges or broad refactors, check `docs/fork-feature-inventory.md` and
+  preserve the listed local fork features unless intentionally removing one. If conflicts touch a
+  feature's owner path, run that feature family's focused health checks before build/deploy.
 - If you change `ConfigToml` or nested config types, run `just write-config-schema` to update `codex-rs/core/config.schema.json`.
 - When working with MCP tool calls, prefer using `codex-rs/codex-mcp/src/mcp_connection_manager.rs` to handle mutation of tools and tool calls. Avoid incidental plumbing through multiple levels of function calls, but refactor the ownership boundary when that is the maintainable fix.
 - If you change Rust dependencies (`Cargo.toml` or `Cargo.lock`), run `just bazel-lock-update` from the

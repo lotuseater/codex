@@ -13,6 +13,13 @@ use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use thiserror::Error;
 
+mod session;
+
+pub use session::BlackboardSession;
+pub use session::BlackboardSessionConfig;
+pub use session::BlackboardSessionMode;
+pub use session::BlackboardSessionOptions;
+
 const MARKER_PREFIX: &str = "<!-- codex:blackboard ";
 const MARKER_SUFFIX: &str = " -->";
 const HEADER: &str = "# Codex Blackboard\n\nThis ignored runtime file lets Codex sessions coordinate parallel work in this checkout.\n\n";

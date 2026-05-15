@@ -1,6 +1,6 @@
 use super::*;
 use crate::goals::GoalRuntimeState;
-use crate::session::blackboard::BlackboardSession;
+use crate::session::blackboard::new_blackboard_session;
 use codex_protocol::SessionId;
 use codex_protocol::config_types::ContextBudgetMode;
 use codex_protocol::config_types::ServiceTier;
@@ -831,7 +831,7 @@ impl Session {
                 codex_extension_api::ExtensionData::new(session_id.to_string());
             let thread_extension_data =
                 codex_extension_api::ExtensionData::new(thread_id.to_string());
-            let blackboard = BlackboardSession::new(
+            let blackboard = new_blackboard_session(
                 config.as_ref(),
                 session_id.to_string(),
                 thread_id.to_string(),

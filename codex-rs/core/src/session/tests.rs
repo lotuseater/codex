@@ -6,7 +6,7 @@ use crate::context::ContextualUserFragment;
 use crate::context::TurnAborted;
 use crate::exec::ExecCapturePolicy;
 use crate::function_tool::FunctionCallError;
-use crate::session::blackboard::BlackboardSession;
+use crate::session::blackboard::new_blackboard_session;
 use crate::shell::default_user_shell;
 use crate::skills::SkillRenderSideEffects;
 use crate::skills::render::SkillMetadataBudget;
@@ -3906,7 +3906,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
             /*attestation_provider*/ None,
         ),
         code_mode_service: crate::tools::code_mode::CodeModeService::new(),
-        blackboard: BlackboardSession::new(
+        blackboard: new_blackboard_session(
             config.as_ref(),
             SessionId::from(thread_id).to_string(),
             thread_id.to_string(),
@@ -5687,7 +5687,7 @@ where
             /*attestation_provider*/ None,
         ),
         code_mode_service: crate::tools::code_mode::CodeModeService::new(),
-        blackboard: BlackboardSession::new(
+        blackboard: new_blackboard_session(
             config.as_ref(),
             SessionId::from(thread_id).to_string(),
             thread_id.to_string(),
