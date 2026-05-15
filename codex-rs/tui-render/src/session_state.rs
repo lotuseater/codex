@@ -1,0 +1,50 @@
+//! Canonical TUI session state shared across app-server routing, chat display, and status UI.
+//!
+//! The app-server API is the boundary for session lifecycle events. Once those responses enter
+//! TUI, this module holds the small internal state shape used by app orchestration and widgets.
+
+use std::path::PathBuf;
+
+use codex_protocol::ThreadId;
+use codex_protocol::models::ActivePermissionProfile;
+use codex_protocol::models::PermissionProfile;
+use codex_protocol::protocol::AskForApproval;
+use codex_utils_absolute_path::AbsolutePathBuf;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SessionNetworkProxyRuntime {
+    pub http_addr: String,
+    pub socks_addr: String,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MessageHistoryMetadata {
+    pub log_id: u64,
+    pub entry_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ThreadSessionState {
+    pub thread_id: ThreadId,
+    pub forked_from_id: Option<ThreadId>,
+    pub fork_parent_title: Option<String>,
+    pub thread_name: Option<String>,
+    pub model: String,
+    pub model_provider_id: String,
+    pub service_tier: Option<String>,
+    pub approval_policy: AskForApproval,
+    pub approvals_reviewer: codex_protocol::config_types::ApprovalsReviewer,
+    /// Canonical active permissions for this session. Legacy app-server
+    /// responses are converted to a profile at ingestion time using the
+    /// response cwd so cached sessions do not reinterpret cwd-bound grants.
+    pub permission_profile: PermissionProfile,
+    /// Named or implicit built-in profile that produced `permission_profile`,
+    /// when the server knows it.
+    pub active_permission_profile: Option<ActivePermissionProfile>,
+    pub cwd: AbsolutePathBuf,
+    pub instruction_source_paths: Vec<AbsolutePathBuf>,
+    pub reasoning_effort: Option<codex_protocol::openai_models::ReasoningEffort>,
+    pub message_history: Option<MessageHistoryMetadata>,
+    pub network_proxy: Option<SessionNetworkProxyRuntime>,
+    pub rollout_path: Option<PathBuf>,
+}

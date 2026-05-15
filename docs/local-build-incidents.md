@@ -30,6 +30,20 @@ expensive or unsafe lanes.
 - If `target/debug` appears, remove it with `build-local-codex.ps1 -Mode CleanSafe`; local schema
   and generated-artifact recipes must use release Cargo commands.
 
+## Long Compile/Test Refactor Backlog
+
+Use this section for Cargo packages or test lanes that are not merely slow once, but repeatedly
+compile a wider graph than the feature being verified. Each entry should name the command, the
+crate or dependency observed compiling, and the ownership refactor that would make the lane smaller.
+
+| Date | Lane | Slow signal | Refactor target |
+| --- | --- | --- | --- |
+| 2026-05-15 | `cargo test -p codex-tui-render --release -j 1` via `scripts\test-local-codex-release.ps1 -Package codex-tui-render` | After the new render crate split, the test lane was still compiling `codex_app_server_protocol` for a long period, then moved on to crypto/network graph crates such as `curve25519-dalek`; the log `logs\test-local-release-codex-tui-render-all-20260515-215904.log` stayed empty while rustc was active. The app-server/`rmcp`/`codex-otel`/`codex-core`/`codex-config`/`rama`/crypto edges were removed in the follow-up render-boundary pass; `reqwest` still enters through `codex-protocol`. | Keep `codex-tui-render` independent from TUI/core/app-server/config. Next, reduce protocol/network weight by replacing remaining display-only protocol inputs with render-owned view models or lighter DTO crates, avoid pulling schema/export-heavy DTOs into pure snapshot tests, and keep MCP/network helpers out of render tests unless the test is explicitly about those integrations. |
+| 2026-05-16 | `scripts\test-local-codex-release.ps1 -Package codex-app-server-protocol -ExtraCargoArgs @('--features','rmcp-conversions')` | The optional RMCP conversion feature check exceeded the 15-minute command timeout while `rustc` was still compiling `codex_app_server_protocol` with `rmcp-conversions`; the repo-local cargo/rustc pair was then stopped intentionally. | Treat this as an overbroad optional canary, not a routine verification lane. Move RMCP conversion shims and tests out of pure app-server schema ownership into a runtime/MCP adapter crate, leaving `codex-app-server-protocol` focused on wire DTOs, serde, schema, and TS export. Until that split exists, run this lane only when editing RMCP conversion code. |
+| 2026-05-15 | Filtered `codex-tui` history-cell tests | Even narrow TUI filters compile the broad TUI/runtime graph before the harness filter is applied. | Finish moving transcript/history rendering, formatting policy, hook persistence display rules, and snapshot fixtures into `codex-tui-render`; keep `codex-tui` tests as final integration canaries only. |
+| 2026-05-15 | Filtered `codex-tui` self-review/queue tests | Queue/self-review behavior used to require broad TUI tests for most coverage. | Keep queue ordering in `codex-input-queue` and move remaining automatic prompt/review evidence state machines into lightweight owner crates; use TUI only for one end-to-end queue canary. |
+| 2026-05-05 | `cargo test -p codex-core --release <filter>` | Cargo compiled integration targets such as `core/tests/all.rs` before applying the runtime filter, making small memory/session tests expensive. | Keep the `-Lib` guard, and continue extracting feature logic into owner crates such as `codex-turn-diff`, `codex-cognos-ops`, `codex-blackboard`, `codex-memories-context`, and future session-policy crates. |
+
 ## Incidents
 
 | Date | Command/log | Symptom | Action |

@@ -2642,6 +2642,7 @@ dependencies = [
  "codex-operation-cache",
  "codex-otel",
  "codex-plugin",
+ "codex-prompt-reducer",
  "codex-protocol",
  "codex-replacement-shadow",
  "codex-repo-context-scout",
@@ -3580,6 +3581,7 @@ dependencies = [
  "codex-api",
  "codex-app-server-protocol",
  "codex-protocol",
+ "codex-runtime-metrics-types",
  "codex-utils-absolute-path",
  "codex-utils-string",
  "eventsource-stream",
@@ -3636,6 +3638,17 @@ version = "0.0.0"
 dependencies = [
  "libc",
  "pretty_assertions",
+]
+
+[[package]]
+name = "codex-prompt-reducer"
+version = "0.0.0"
+dependencies = [
+ "codex-protocol",
+ "pretty_assertions",
+ "serde_json",
+ "sha1 0.11.0",
+ "tempfile",
 ]
 
 [[package]]
@@ -3833,6 +3846,10 @@ dependencies = [
  "tracing",
  "uuid",
 ]
+
+[[package]]
+name = "codex-runtime-metrics-types"
+version = "0.0.0"
 
 [[package]]
 name = "codex-sandboxing"
@@ -4120,6 +4137,7 @@ dependencies = [
  "codex-shell-command",
  "codex-state",
  "codex-terminal-detection",
+ "codex-tui-render",
  "codex-utils-absolute-path",
  "codex-utils-approval-presets",
  "codex-utils-cargo-bin",
@@ -4186,6 +4204,54 @@ dependencies = [
  "windows-sys 0.61.2",
  "winsplit",
  "wiremock",
+]
+
+[[package]]
+name = "codex-tui-render"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "codex-ansi-escape",
+ "codex-git-utils",
+ "codex-install-context",
+ "codex-permission-types",
+ "codex-protocol",
+ "codex-runtime-metrics-types",
+ "codex-shell-command",
+ "codex-terminal-detection",
+ "codex-utils-absolute-path",
+ "codex-utils-cargo-bin",
+ "codex-utils-cli",
+ "codex-utils-elapsed",
+ "codex-utils-string",
+ "crossterm",
+ "diffy",
+ "dirs",
+ "image",
+ "insta",
+ "itertools 0.14.0",
+ "libc",
+ "pathdiff",
+ "pretty_assertions",
+ "pulldown-cmark",
+ "ratatui",
+ "ratatui-macros",
+ "regex-lite",
+ "serde",
+ "serde_json",
+ "shlex",
+ "supports-color 3.0.2",
+ "syntect",
+ "tempfile",
+ "textwrap",
+ "tokio",
+ "tracing",
+ "two-face",
+ "unicode-segmentation",
+ "unicode-width 0.2.2",
+ "url",
+ "urlencoding",
 ]
 
 [[package]]

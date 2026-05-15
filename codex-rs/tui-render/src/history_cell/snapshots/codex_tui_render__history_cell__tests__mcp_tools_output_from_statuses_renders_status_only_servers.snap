@@ -1,0 +1,13 @@
+---
+source: tui-render/src/history_cell/tests.rs
+assertion_line: 816
+expression: rendered
+---
+/mcp
+
+🔌  MCP Tools
+
+  • plugin_docs
+    • Auth: Unsupported
+    • Command: docs-server --stdio
+    • Tools: lookup

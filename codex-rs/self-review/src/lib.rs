@@ -17,10 +17,10 @@ pub const PLAN_UPDATED_MESSAGE: &str = "Plan updated";
 pub const SELF_REVIEW_CHECKPOINT_MESSAGE: &str = "\
 Plan updated
 
-Self-review checkpoint before continuing: actively review the plan as if the user had asked \"review and improve the plan\". First compare the plan to the user's prompt and confirm it actually plans the requested work. Then check task order, missing verification, risky assumptions, stale context, user constraints, and user/remote overlap. Revise the plan first if any issue is found.
+Self-review checkpoint before continuing: actively review the plan as if the user had asked \"review and improve the plan\". First compare the plan to the user's prompt and confirm it actually plans the requested work. Then check task order, missing verification, assumptions that materially affect value/correctness/integration, stale context, user constraints, and user/remote overlap. Revise the plan first if any issue is found.
 
 <prototype_first_policy>
-For feature, tool/runtime, memory, agent, DAB, cache, prompt/context-reducer, or expensive-verification work, first consider whether a focused demo, canary, fixture, or lab script would reduce risk, tokens, or build cost before changing the main path. Use the prototype when it is worthwhile; skip it for trivial edits, exact narrow fixes, or when a direct targeted test is cheaper.
+For feature, tool/runtime, memory, agent, DAB, cache, prompt/context-reducer, or expensive-verification work, first consider whether a focused demo, canary, fixture, or lab script would make the highest-value path cheaper, more observable, or easier to verify before changing the main path. Use the prototype to enable the right architectural move when it is worthwhile; skip it for trivial edits, exact narrow fixes, or when a direct targeted test is cheaper.
 </prototype_first_policy>
 
 <coherent_repair_policy>
@@ -160,7 +160,7 @@ Ground the review in repository state, not full conversation history:
 - If the tree is clean or the notes indicate committed work, inspect the relevant commit with `git show --stat --oneline HEAD` and targeted `git show HEAD -- <path>`.
 - Use the compact work notes below only as orientation; they are intentionally concise so this still works after compaction.
 - Check correctness, regressions, user constraints, missing tests, and whether verification is sufficient.
-- For feature, tool/runtime, memory, agent, DAB, cache, prompt/context-reducer, or expensive-verification work, check whether a focused demo, canary, fixture, or lab script should have come first; skip this for trivial edits, exact narrow fixes, or when a direct targeted test is cheaper.
+- For feature, tool/runtime, memory, agent, DAB, cache, prompt/context-reducer, or expensive-verification work, check whether a focused demo, canary, fixture, or lab script would have made the highest-value path cheaper, more observable, or easier to verify; skip this for trivial edits, exact narrow fixes, or when a direct targeted test is cheaper.
 - If the review finds a concrete repo-controlled caveat, apply one coherent repair pass and rerun the most relevant targeted verification before finalizing.
 - Return prioritized review findings. If there are no findings, say that in the review output.
 
@@ -225,7 +225,7 @@ pub fn plan_self_review_prompt(plan_markdown: &str) -> String {
         "\
 Self-review the plan below before implementation.
 
-Read through the plan against the current conversation and repository context. Start by comparing the plan to the user's prompt: identify the requested outcome, required constraints, and important details, then verify the plan actually covers them without drifting into adjacent work. Use targeted file reads or searches only if the context is insufficient. Improve task order, missing verification, risky assumptions, stale context, user constraints, and whether feature/tool/runtime/context work should start with a small demo, canary, fixture, or lab script. Keep the result practical and implementation-ready.
+Read through the plan against the current conversation and repository context. Start by comparing the plan to the user's prompt: identify the requested outcome, required constraints, and important details, then verify the plan actually covers them without drifting into adjacent work. Use targeted file reads or searches only if the context is insufficient. Improve task order, missing verification, assumptions that materially affect value/correctness/integration, stale context, user constraints, and whether feature/tool/runtime/context work should start with a focused demo, canary, fixture, or lab script. Do not downgrade a valuable architectural fix to a safest-looking patch when ownership evidence supports the larger coherent slice. Keep the result practical and implementation-ready.
 
 Return the revised plan as the next proposed plan. If the plan is already strong, keep it and add only the minimal clarifications needed.
 
@@ -249,7 +249,7 @@ Review the completed work against the user's request and repository state. Decid
 
 If a self-review just ran, first account for its findings and any actions already taken or still needed. Do not open unrelated follow-up scope until review findings are resolved or represented in the next plan.
 
-If another iteration is needed, return the next proposed plan. That next plan should go through the normal cycle: first proposed plan, plan self-review, revised plan if needed, then bounded worker/subagent execution and supervision. If no follow-up is needed, say that directly and summarize the final readiness/verification state.{completed_plan_section}"
+If another iteration is needed, return the next proposed plan. That next plan should go through the normal cycle: first proposed plan, plan self-review, revised plan if needed, then coherent worker/subagent execution and supervision. If no follow-up is needed, say that directly and summarize the final readiness/verification state.{completed_plan_section}"
     )
 }
 
@@ -401,7 +401,8 @@ mod tests {
         assert!(prompt.contains("Self-review the plan"));
         assert!(prompt.contains("comparing the plan to the user's prompt"));
         assert!(prompt.contains("without drifting into adjacent work"));
-        assert!(prompt.contains("small demo, canary, fixture, or lab script"));
+        assert!(prompt.contains("focused demo, canary, fixture, or lab script"));
+        assert!(prompt.contains("safest-looking patch"));
         assert!(prompt.contains("# Plan\n- inspect"));
     }
 
@@ -413,7 +414,7 @@ mod tests {
         assert!(prompt.contains("follow-up planning iteration"));
         assert!(prompt.contains("first account for its findings"));
         assert!(prompt.contains("first proposed plan, plan self-review"));
-        assert!(prompt.contains("bounded worker/subagent execution and supervision"));
+        assert!(prompt.contains("coherent worker/subagent execution and supervision"));
         assert!(prompt.contains("- completed: Inspect"));
     }
 }

@@ -1,0 +1,6 @@
+---
+source: tui-render/src/history_cell/tests.rs
+assertion_line: 1091
+expression: rendered
+---
+• Calling search.find_docs({"query":"ratatui styling","limit":3})

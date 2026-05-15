@@ -46,7 +46,6 @@ pub(super) use codex_app_server_protocol::CollabAgentTool as AppServerCollabAgen
 pub(super) use codex_app_server_protocol::CollabAgentToolCallStatus as AppServerCollabAgentToolCallStatus;
 pub(super) use codex_app_server_protocol::CommandAction as AppServerCommandAction;
 pub(super) use codex_app_server_protocol::CommandExecutionRequestApprovalParams as AppServerCommandExecutionRequestApprovalParams;
-pub(super) use codex_app_server_protocol::CommandExecutionSource as ExecCommandSource;
 pub(super) use codex_app_server_protocol::CommandExecutionSource as AppServerCommandExecutionSource;
 pub(super) use codex_app_server_protocol::CommandExecutionStatus as AppServerCommandExecutionStatus;
 pub(super) use codex_app_server_protocol::ConfigWarningNotification;
@@ -164,6 +163,7 @@ pub(super) use codex_protocol::parse_command::ParsedCommand;
 pub(super) use codex_protocol::plan_tool::PlanItemArg;
 pub(super) use codex_protocol::plan_tool::StepStatus;
 pub(super) use codex_protocol::plan_tool::UpdatePlanArgs;
+pub(super) use codex_protocol::protocol::ExecCommandSource;
 pub(super) use codex_protocol::request_permissions::RequestPermissionProfile;
 pub(super) use codex_protocol::user_input::TextElement;
 pub(super) use codex_terminal_detection::Multiplexer;

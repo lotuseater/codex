@@ -754,8 +754,10 @@ impl RequestUserInputOverlay {
         );
         self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
             history_cell::RequestUserInputResultCell {
-                questions: self.request.questions.clone(),
-                answers,
+                questions: history_cell::request_user_input_questions_from_app_server(
+                    self.request.questions.clone(),
+                ),
+                answers: history_cell::request_user_input_answers_from_app_server(answers),
                 interrupted: false,
             },
         )));

@@ -56,7 +56,7 @@ pub const DEFAULT_BLACKBOARD_STALE_AFTER_SECONDS: u64 = 180;
 pub const DEFAULT_BLACKBOARD_RECENT_WINDOW_SECONDS: u64 = 600;
 pub const DEFAULT_BLACKBOARD_MAX_INJECTED_BYTES: usize = 2_048;
 pub const DEFAULT_BLACKBOARD_MAX_ENTRY_CHARS: usize = 4_096;
-pub const DEFAULT_BLACKBOARD_MAX_FILE_BYTES: usize = 262_144;
+pub const DEFAULT_BLACKBOARD_MAX_FILE_BYTES: u64 = 262_144;
 pub const DEFAULT_BLACKBOARD_MAX_JOINED_REPOS: usize = 16;
 const MIN_MEMORIES_MAX_RAW_MEMORIES_FOR_CONSOLIDATION: usize = 1;
 const MAX_MEMORIES_MAX_RAW_MEMORIES_FOR_CONSOLIDATION: usize = 4096;
@@ -191,6 +191,14 @@ pub enum HistoryPersistence {
     None,
 }
 
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Default, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PromptReductionModeToml {
+    Off,
+    #[default]
+    Conservative,
+}
+
 // ===== Analytics configuration =====
 
 /// Analytics settings loaded from config.toml. Fields are optional so we can apply defaults.
@@ -287,7 +295,7 @@ pub struct BlackboardToml {
     /// Maximum characters mirrored from one user/assistant message.
     pub max_entry_chars: Option<usize>,
     /// Maximum blackboard file size before cleanup is attempted.
-    pub max_file_bytes: Option<usize>,
+    pub max_file_bytes: Option<u64>,
     /// Maximum number of repos a session can join at once.
     pub max_joined_repos: Option<usize>,
 }
@@ -304,7 +312,7 @@ pub struct BlackboardConfig {
     pub recent_window_seconds: u64,
     pub max_injected_bytes: usize,
     pub max_entry_chars: usize,
-    pub max_file_bytes: usize,
+    pub max_file_bytes: u64,
     pub max_joined_repos: usize,
 }
 

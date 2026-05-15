@@ -31,8 +31,9 @@ impl ChatWidget {
         };
         let (_command, parsed_cmd) = command_execution_command_and_parsed(command, command_actions);
         self.flush_answer_stream_with_separator();
-        if is_unified_exec_source(*source) {
-            if *source == ExecCommandSource::UnifiedExecStartup {
+        let source = source.to_core();
+        if is_unified_exec_source(source) {
+            if source == ExecCommandSource::UnifiedExecStartup {
                 self.track_unified_exec_process_begin(id, process_id.as_deref(), command);
             }
             if !self.bottom_pane.is_task_running() {
@@ -137,7 +138,8 @@ impl ChatWidget {
         else {
             return;
         };
-        if is_unified_exec_source(*source) {
+        let source = source.to_core();
+        if is_unified_exec_source(source) {
             if let Some(process_id) = process_id.as_deref()
                 && self
                     .unified_exec_wait_streak
@@ -246,6 +248,7 @@ impl ChatWidget {
         else {
             return;
         };
+        let source = source.to_core();
         let (command, parsed_cmd) =
             command_execution_command_and_parsed(&command, &command_actions);
         // Ensure the status indicator is visible while the command runs.
@@ -340,6 +343,7 @@ impl ChatWidget {
         else {
             return;
         };
+        let source = source.to_core();
         let event_command = split_command_string(&command);
         let event_parsed = command_actions
             .into_iter()

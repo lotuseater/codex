@@ -27,7 +27,7 @@ use crate::metrics::WEBSOCKET_EVENT_COUNT_METRIC;
 use crate::metrics::WEBSOCKET_EVENT_DURATION_METRIC;
 use crate::metrics::WEBSOCKET_REQUEST_COUNT_METRIC;
 use crate::metrics::WEBSOCKET_REQUEST_DURATION_METRIC;
-use crate::metrics::runtime_metrics::RuntimeMetricsSummary;
+use crate::metrics::runtime_metrics::runtime_metrics_summary_from_snapshot;
 use crate::metrics::timer::Timer;
 use crate::provider::OtelProvider;
 use crate::sanitize_metric_tag_value;
@@ -42,6 +42,7 @@ use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::user_input::UserInput;
+use codex_runtime_metrics_types::RuntimeMetricsSummary;
 use eventsource_stream::Event as StreamEvent;
 use eventsource_stream::EventStreamError as StreamError;
 use opentelemetry_sdk::metrics::data::ResourceMetrics;
@@ -270,7 +271,7 @@ impl SessionTelemetry {
                 return None;
             }
         };
-        let summary = RuntimeMetricsSummary::from_snapshot(&snapshot);
+        let summary = runtime_metrics_summary_from_snapshot(&snapshot);
         if summary.is_empty() {
             None
         } else {

@@ -74,12 +74,15 @@ use codex_analytics::InvocationType;
 use codex_analytics::TurnResolvedConfigFact;
 use codex_analytics::build_track_events_context;
 use codex_async_utils::OrCancelExt;
+use codex_config::types::PromptReductionModeToml;
 use codex_features::Feature;
 use codex_git_utils::get_git_repo_root;
 use codex_hooks::HookEvent;
 use codex_hooks::HookEventAfterAgent;
 use codex_hooks::HookPayload;
 use codex_hooks::HookResult;
+use codex_prompt_reducer::PromptReductionConfig;
+use codex_prompt_reducer::PromptReductionStats;
 use codex_protocol::config_types::ContextBudgetMode;
 use codex_protocol::config_types::ModeKind;
 use codex_protocol::config_types::ServiceTier;
@@ -103,6 +106,7 @@ use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::PlanDeltaEvent;
 use codex_protocol::protocol::ReasoningContentDeltaEvent;
 use codex_protocol::protocol::ReasoningRawContentDeltaEvent;
+use codex_protocol::protocol::ThreadSource;
 use codex_protocol::protocol::TurnDiffEvent;
 use codex_protocol::protocol::WarningEvent;
 use codex_protocol::user_input::UserInput;
@@ -1169,6 +1173,134 @@ pub(crate) fn build_prompt(
     }
 }
 
+#[derive(Debug)]
+struct PromptReductionNotice {
+    original_prompt_tokens: usize,
+    reduced_prompt_tokens: usize,
+    stats: PromptReductionStats,
+}
+
+fn reduce_prompt_input_for_model(
+    mut input: Vec<ResponseItem>,
+    turn_context: &TurnContext,
+) -> (Vec<ResponseItem>, Option<PromptReductionNotice>) {
+    match turn_context.config.prompt_reduction_mode {
+        PromptReductionModeToml::Off => (input, None),
+        PromptReductionModeToml::Conservative => {
+            let reduction_config = PromptReductionConfig::for_turn(&turn_context.sub_id);
+            let original_input_tokens = estimate_serialized_tokens(&input);
+            match codex_prompt_reducer::reduce_prompt_items(&mut input, &reduction_config) {
+                Ok(stats) => {
+                    let reduced_input_tokens = estimate_serialized_tokens(&input);
+                    if stats.reductions > 0 {
+                        trace!(
+                            turn_id = %turn_context.sub_id,
+                            reductions = stats.reductions,
+                            artifacts = stats.artifacts,
+                            original_tokens = stats.original_tokens,
+                            reduced_tokens = stats.reduced_tokens,
+                            saved_tokens = stats.saved_tokens,
+                            artifact_dir = %reduction_config.artifact_dir.display(),
+                            "reduced prompt input"
+                        );
+                    }
+                    let notice = PromptReductionNotice {
+                        original_prompt_tokens: original_input_tokens,
+                        reduced_prompt_tokens: reduced_input_tokens,
+                        stats,
+                    };
+                    (input, Some(notice))
+                }
+                Err(err) => {
+                    warn!(
+                        turn_id = %turn_context.sub_id,
+                        error = %err,
+                        "failed to reduce prompt input"
+                    );
+                    (input, None)
+                }
+            }
+        }
+    }
+}
+
+fn estimate_serialized_tokens<T: serde::Serialize>(value: &T) -> usize {
+    serde_json::to_string(value)
+        .map(|text| approx_tokens(&text))
+        .unwrap_or_default()
+}
+
+fn approx_tokens(text: &str) -> usize {
+    text.chars().count().div_ceil(4)
+}
+
+fn add_static_prompt_tokens(
+    notice: &mut PromptReductionNotice,
+    router: &ToolRouter,
+    turn_context: &TurnContext,
+    base_instructions: &BaseInstructions,
+) {
+    let static_tokens = approx_tokens(&base_instructions.text)
+        .saturating_add(estimate_serialized_tokens(&router.model_visible_specs()))
+        .saturating_add(estimate_serialized_tokens(
+            &turn_context.final_output_json_schema,
+        ));
+    notice.original_prompt_tokens = notice.original_prompt_tokens.saturating_add(static_tokens);
+    notice.reduced_prompt_tokens = notice.reduced_prompt_tokens.saturating_add(static_tokens);
+}
+
+async fn maybe_send_prompt_reduction_notice(
+    sess: &Session,
+    turn_context: &TurnContext,
+    notice: Option<PromptReductionNotice>,
+) {
+    let Some(notice) = notice else {
+        return;
+    };
+    if !should_show_prompt_reduction_notice(turn_context) || notice.original_prompt_tokens == 0 {
+        return;
+    }
+
+    let message = prompt_reduction_notice_message(&notice);
+    // This is a client event, not a prompt item, so it is user-visible without
+    // becoming model-visible context on later turns.
+    sess.send_event(turn_context, EventMsg::Warning(WarningEvent { message }))
+        .await;
+}
+
+fn should_show_prompt_reduction_notice(turn_context: &TurnContext) -> bool {
+    !turn_context.session_source.is_non_root_agent()
+        && !crate::guardian::is_guardian_reviewer_source(&turn_context.session_source)
+        && matches!(turn_context.thread_source, None | Some(ThreadSource::User))
+}
+
+fn prompt_reduction_notice_message(notice: &PromptReductionNotice) -> String {
+    let saved_tokens = notice
+        .original_prompt_tokens
+        .saturating_sub(notice.reduced_prompt_tokens);
+    let saved_percent = saved_tokens as f64 * 100.0 / notice.original_prompt_tokens as f64;
+    let original = format_compact_tokens(notice.original_prompt_tokens);
+    let reduced = format_compact_tokens(notice.reduced_prompt_tokens);
+    if notice.stats.reductions == 0 {
+        format!("Prompt reducer: sent prompt unchanged (0.0%; {original} estimated tokens).")
+    } else {
+        format!(
+            "Prompt reducer: sent prompt reduced by {saved_percent:.1}% ({original} -> {reduced} estimated tokens; {} artifacts).",
+            notice.stats.artifacts
+        )
+    }
+}
+
+fn format_compact_tokens(tokens: usize) -> String {
+    if tokens >= 1_000_000 {
+        format!("{:.1}M", tokens as f64 / 1_000_000.0)
+    } else if tokens >= 1_000 {
+        format!("{:.1}k", tokens as f64 / 1_000.0)
+    } else {
+        tokens.to_string()
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 #[allow(deprecated)]
 #[instrument(level = "trace",
@@ -1221,6 +1353,7 @@ async fn run_sampling_request(
     let mut retries = 0;
     let mut initial_input = Some(input);
     loop {
+        let first_request_for_user_turn = initial_input.is_some();
         let prompt_input = if let Some(input) = initial_input.take() {
             input
         } else {
@@ -1228,6 +1361,24 @@ async fn run_sampling_request(
                 .await
                 .for_prompt(&turn_context.model_info.input_modalities)
         };
+        let (prompt_input, mut reduction_notice) =
+            reduce_prompt_input_for_model(prompt_input, turn_context.as_ref());
+        if let Some(notice) = reduction_notice.as_mut() {
+            add_static_prompt_tokens(
+                notice,
+                router.as_ref(),
+                turn_context.as_ref(),
+                &base_instructions,
+            );
+        }
+        if first_request_for_user_turn {
+            maybe_send_prompt_reduction_notice(
+                sess.as_ref(),
+                turn_context.as_ref(),
+                reduction_notice,
+            )
+            .await;
+        }
         let prompt = build_prompt(
             prompt_input,
             router.as_ref(),

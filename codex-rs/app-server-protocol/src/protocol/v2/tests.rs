@@ -1813,6 +1813,7 @@ fn turn_start_params_round_trips_context_budget_mode() {
 }
 
 #[test]
+#[cfg(feature = "rmcp-conversions")]
 fn mcp_server_elicitation_response_round_trips_rmcp_result() {
     let rmcp_result = rmcp::model::CreateElicitationResult {
         action: rmcp::model::ElicitationAction::Accept,

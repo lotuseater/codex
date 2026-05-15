@@ -28,13 +28,18 @@ In the codex-rs folder where the rust code lives:
 - When writing tests, prefer comparing the equality of entire objects over fields one by one.
 - Do not add general product or user-facing documentation to the `docs/` folder. The official Codex documentation lives elsewhere. The exception is app-server API documentation, which is covered by the app-server guidance below.
 - Prefer private modules and explicitly exported public crate API.
-- Prefer the best long-term functional design over the shortest compile-only patch. When merging
+- Optimize for expected long-term value and maintainable functionality, not minimum risk or the
+  safest-looking compile-only patch. Safety, reversibility, and verification are constraints used
+  to make ambitious work practical; they are not the optimization target. When merging
   or repairing code, preserve real behavior and data flow through the proper API/model when the
   information exists or can be cleanly carried; use placeholders, dropped fields, or `None` only
   when the source data genuinely does not exist or a broader refactor is explicitly out of scope.
   Do not use "broader refactor out of scope" as the default escape hatch: when the right fix is
   architectural, decompose it into coherent subprojects, tools, canaries, and checkpoints, then
   implement the largest coherent verified slice that materially improves long-term maintainability.
+- Pick the next engineering step by impact, dependency order, ownership clarity, reversibility,
+  and verification path. Prefer steps that unlock downstream work and reduce repeated merge,
+  build, or test friction.
 - For dependency and architecture findings, fix the ownership boundary rather than hiding the issue
   behind compatibility imports, re-export crutches, or local workarounds. Separate crates/modules
   are preferred when they reduce merge pressure and make future integration cleaner.

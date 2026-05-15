@@ -1,0 +1,8 @@
+---
+source: tui-render/src/history_cell/tests.rs
+assertion_line: 2088
+expression: rendered
+---
+• Updated Plan
+  └ □ Define error taxonomy
+    □ Implement mapping to user messages

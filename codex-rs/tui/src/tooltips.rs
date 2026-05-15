@@ -49,7 +49,7 @@ fn experimental_tooltips() -> Vec<&'static str> {
 }
 
 /// Pick a random tooltip to show to the user when starting Codex.
-pub(crate) fn get_tooltip(plan: Option<PlanType>, fast_mode_enabled: bool) -> Option<String> {
+pub fn get_tooltip(plan: Option<PlanType>, fast_mode_enabled: bool) -> Option<String> {
     let mut rng = rand::rng();
 
     if let Some(announcement) = announcement::fetch_announcement_tip(plan) {
@@ -120,7 +120,7 @@ fn pick_tooltip<R: Rng + ?Sized>(rng: &mut R) -> Option<&'static str> {
     }
 }
 
-pub(crate) mod announcement {
+pub mod announcement {
     use crate::tooltips::ANNOUNCEMENT_TIP_URL;
     use crate::version::CODEX_CLI_VERSION;
     use chrono::NaiveDate;
@@ -136,12 +136,12 @@ pub(crate) mod announcement {
     const CURRENT_OS: TargetOs = TargetOs::current();
 
     /// Prewarm the cache of the announcement tip.
-    pub(crate) fn prewarm() {
+    pub fn prewarm() {
         let _ = thread::spawn(|| ANNOUNCEMENT_TIP.get_or_init(init_announcement_tip_in_thread));
     }
 
     /// Fetch the announcement tip, return None if the prewarm is not done yet.
-    pub(crate) fn fetch_announcement_tip(plan: Option<PlanType>) -> Option<String> {
+    pub fn fetch_announcement_tip(plan: Option<PlanType>) -> Option<String> {
         ANNOUNCEMENT_TIP
             .get()
             .cloned()
@@ -220,10 +220,7 @@ pub(crate) mod announcement {
         response.error_for_status().ok()?.text().ok()
     }
 
-    pub(crate) fn parse_announcement_tip_toml(
-        text: &str,
-        plan: Option<PlanType>,
-    ) -> Option<String> {
+    pub fn parse_announcement_tip_toml(text: &str, plan: Option<PlanType>) -> Option<String> {
         let announcements = toml::from_str::<AnnouncementTipDocument>(text)
             .map(|doc| doc.announcements)
             .or_else(|_| toml::from_str::<Vec<AnnouncementTipRaw>>(text))

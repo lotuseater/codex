@@ -3730,12 +3730,12 @@ async fn render_clear_ui_header_after_long_transcript_for_snapshot() -> String {
             rollout_path: Some(PathBuf::new()),
         };
         Arc::new(new_session_info(
-            app.chat_widget.config_ref(),
+            &app.chat_widget.config_ref().cwd,
+            app.chat_widget.config_ref().show_tooltips,
             app.chat_widget.current_model(),
             &session,
             is_first,
             /*tooltip_override*/ None,
-            /*auth_plan*/ None,
             /*show_fast_status*/ false,
         )) as Arc<dyn HistoryCell>
     };
@@ -4609,12 +4609,12 @@ async fn backtrack_selection_with_duplicate_history_targets_unique_turn() {
             rollout_path: Some(PathBuf::new()),
         };
         Arc::new(new_session_info(
-            app.chat_widget.config_ref(),
+            &app.chat_widget.config_ref().cwd,
+            app.chat_widget.config_ref().show_tooltips,
             app.chat_widget.current_model(),
             &session,
             is_first,
             /*tooltip_override*/ None,
-            /*auth_plan*/ None,
             /*show_fast_status*/ false,
         )) as Arc<dyn HistoryCell>
     };

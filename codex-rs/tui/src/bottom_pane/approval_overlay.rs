@@ -355,7 +355,7 @@ impl ApprovalOverlay {
         };
         if request.thread_label().is_none() {
             let cell = history_cell::new_approval_decision_cell(
-                command.to_vec(),
+                history_cell::ApprovalDecisionSubject::Command(command.to_vec()),
                 command_decision_to_review_decision(&decision),
                 history_cell::ApprovalDecisionActor::User,
             );
@@ -2086,7 +2086,7 @@ mod tests {
             "git add tui/src/render/mod.rs tui/src/render/renderable.rs".into(),
         ];
         let cell = history_cell::new_approval_decision_cell(
-            command,
+            history_cell::ApprovalDecisionSubject::Command(command),
             ReviewDecision::Approved,
             history_cell::ApprovalDecisionActor::User,
         );

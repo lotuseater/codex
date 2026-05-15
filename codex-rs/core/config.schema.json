@@ -344,7 +344,7 @@
         },
         "max_file_bytes": {
           "description": "Maximum blackboard file size before cleanup is attempted.",
-          "format": "uint",
+          "format": "uint64",
           "minimum": 0.0,
           "type": "integer"
         },
@@ -2276,6 +2276,13 @@
       },
       "type": "object"
     },
+    "PromptReductionModeToml": {
+      "enum": [
+        "off",
+        "conservative"
+      ],
+      "type": "string"
+    },
     "RawMcpServerConfig": {
       "additionalProperties": false,
       "description": "Raw MCP config shape used for deserialization and supported-field JSON Schema generation.\n\nFields that are accepted only to produce targeted validation errors should be skipped in the generated schema.\n\nKeep `TryFrom<RawMcpServerConfig> for McpServerConfig` exhaustively destructuring this struct so new TOML fields cannot be added here without updating the validation/mapping logic that produces [`McpServerConfig`].",
@@ -2495,7 +2502,7 @@
       "type": "string"
     },
     "ReasoningSummary": {
-      "description": "See https://platform.openai.com/docs/guides/reasoning?api-mode=responses#reasoning-summaries",
+      "description": "A summary of the reasoning performed by the model. This can be useful for debugging and understanding the model's reasoning process. See https://platform.openai.com/docs/guides/reasoning?api-mode=responses#reasoning-summaries",
       "oneOf": [
         {
           "enum": [
@@ -4978,6 +4985,14 @@
         "$ref": "#/definitions/ProjectConfig"
       },
       "type": "object"
+    },
+    "prompt_reduction_mode": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/PromptReductionModeToml"
+        }
+      ],
+      "description": "Prompt-clone reduction mode. Defaults to conservative reduction when omitted."
     },
     "realtime": {
       "allOf": [

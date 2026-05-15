@@ -285,6 +285,7 @@ impl McpServerElicitationAction {
     }
 }
 
+#[cfg(feature = "rmcp-conversions")]
 impl From<McpServerElicitationAction> for rmcp::model::ElicitationAction {
     fn from(value: McpServerElicitationAction) -> Self {
         match value {
@@ -295,6 +296,7 @@ impl From<McpServerElicitationAction> for rmcp::model::ElicitationAction {
     }
 }
 
+#[cfg(feature = "rmcp-conversions")]
 impl From<rmcp::model::ElicitationAction> for McpServerElicitationAction {
     fn from(value: rmcp::model::ElicitationAction) -> Self {
         match value {
@@ -712,6 +714,7 @@ pub struct McpServerElicitationRequestResponse {
     pub meta: Option<JsonValue>,
 }
 
+#[cfg(feature = "rmcp-conversions")]
 impl From<McpServerElicitationRequestResponse> for rmcp::model::CreateElicitationResult {
     fn from(value: McpServerElicitationRequestResponse) -> Self {
         Self {
@@ -721,6 +724,7 @@ impl From<McpServerElicitationRequestResponse> for rmcp::model::CreateElicitatio
     }
 }
 
+#[cfg(feature = "rmcp-conversions")]
 impl From<rmcp::model::CreateElicitationResult> for McpServerElicitationRequestResponse {
     fn from(value: rmcp::model::CreateElicitationResult) -> Self {
         Self {

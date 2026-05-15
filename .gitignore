@@ -45,6 +45,7 @@ AGENTS.override.md
 .first_moves.db
 .codex/blackboard.md
 .codex/blackboard.lock
+.gsd/exec/
 
 # logs
 logs/

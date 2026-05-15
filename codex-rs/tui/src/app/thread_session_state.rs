@@ -1,11 +1,11 @@
 use super::App;
 use crate::session_resume::read_session_model;
 use crate::session_state::ThreadSessionState;
-use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::Thread;
 use codex_protocol::ThreadId;
 use codex_protocol::models::ActivePermissionProfile;
 use codex_protocol::models::PermissionProfile;
+use codex_protocol::protocol::AskForApproval;
 
 impl App {
     pub(super) async fn sync_active_thread_permission_settings_to_cached_session(&mut self) {
@@ -190,7 +190,7 @@ mod tests {
         app.side_threads
             .insert(side_thread_id, SideThreadState::new(main_thread_id));
         app.config.permissions.approval_policy =
-            codex_config::Constrained::allow_any(AskForApproval::OnRequest.to_core());
+            codex_config::Constrained::allow_any(AskForApproval::OnRequest);
         app.config.approvals_reviewer = ApprovalsReviewer::AutoReview;
         let expected_permission_profile = PermissionProfile::workspace_write();
         app.chat_widget.handle_thread_session(main_session.clone());
@@ -279,7 +279,7 @@ mod tests {
         );
         app.chat_widget.handle_thread_session(session.clone());
         app.config.permissions.approval_policy =
-            codex_config::Constrained::allow_any(AskForApproval::OnRequest.to_core());
+            codex_config::Constrained::allow_any(AskForApproval::OnRequest);
 
         app.sync_active_thread_permission_settings_to_cached_session()
             .await;

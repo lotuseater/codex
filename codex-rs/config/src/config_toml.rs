@@ -21,6 +21,7 @@ use crate::types::Notice;
 use crate::types::OAuthCredentialsStoreMode;
 use crate::types::OtelConfigToml;
 use crate::types::PluginConfig;
+use crate::types::PromptReductionModeToml;
 use crate::types::SandboxWorkspaceWrite;
 use crate::types::ShellEnvironmentPolicyToml;
 use crate::types::SkillsConfig;
@@ -105,6 +106,9 @@ pub struct ConfigToml {
 
     /// Token usage threshold triggering auto-compaction of conversation history.
     pub model_auto_compact_token_limit: Option<i64>,
+
+    /// Prompt-clone reduction mode. Defaults to conservative reduction when omitted.
+    pub prompt_reduction_mode: Option<PromptReductionModeToml>,
 
     /// Default approval policy for executing commands.
     pub approval_policy: Option<AskForApproval>,

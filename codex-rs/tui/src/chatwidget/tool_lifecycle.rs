@@ -80,6 +80,7 @@ impl ChatWidget {
         query: String,
         action: codex_app_server_protocol::WebSearchAction,
     ) {
+        let action = history_cell::web_search_action_from_app_server(action);
         self.flush_answer_stream_with_separator();
         let mut handled = false;
         if let Some(cell) = self

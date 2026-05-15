@@ -1,0 +1,10 @@
+---
+source: tui-render/src/markdown_render_tests.rs
+assertion_line: 1153
+expression: "lines.join(\"\\n\")"
+---
+1. First:
+
+   fn first() {}
+
+2. Second:

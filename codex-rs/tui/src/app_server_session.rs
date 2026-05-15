@@ -1548,7 +1548,7 @@ async fn thread_session_state_from_thread_response(
         model,
         model_provider_id,
         service_tier,
-        approval_policy,
+        approval_policy: approval_policy.to_core(),
         approvals_reviewer,
         permission_profile,
         active_permission_profile,

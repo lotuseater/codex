@@ -81,6 +81,7 @@ members = [
     "permission-types",
     "process-hardening",
     "protocol",
+    "prompt-reducer",
     "replacement-shadow",
     "realtime-webrtc",
     "reasoning-logic",
@@ -89,6 +90,7 @@ members = [
     "rmcp-client",
     "responses-api-proxy",
     "response-debug-context",
+    "runtime-metrics-types",
     "sandboxing",
     "self-review",
     "stdio-to-uds",
@@ -131,6 +133,7 @@ members = [
     "thread-store",
     "tool-schema",
     "turn-diff",
+    "tui-render",
     "uds",
     "codex-experimental-api-macros",
     "plugin",
@@ -232,11 +235,13 @@ codex-operation-cache = { path = "operation-cache" }
 codex-permission-types = { path = "permission-types" }
 codex-process-hardening = { path = "process-hardening" }
 codex-protocol = { path = "protocol" }
+codex-prompt-reducer = { path = "prompt-reducer" }
 codex-replacement-shadow = { path = "replacement-shadow" }
 codex-realtime-webrtc = { path = "realtime-webrtc" }
 codex-reasoning-logic = { path = "reasoning-logic" }
 codex-responses-api-proxy = { path = "responses-api-proxy" }
 codex-response-debug-context = { path = "response-debug-context" }
+codex-runtime-metrics-types = { path = "runtime-metrics-types" }
 codex-rmcp-client = { path = "rmcp-client" }
 codex-rollout = { path = "rollout" }
 codex-rollout-trace = { path = "rollout-trace" }
@@ -256,6 +261,7 @@ codex-thread-store = { path = "thread-store" }
 codex-tool-schema = { path = "tool-schema" }
 codex-tools = { path = "tools" }
 codex-turn-diff = { path = "turn-diff" }
+codex-tui-render = { path = "tui-render" }
 codex-tui = { path = "tui" }
 codex-uds = { path = "uds" }
 codex-utils-absolute-path = { path = "utils/absolute-path" }
