@@ -75,13 +75,13 @@ impl ChatWidget {
     pub(super) fn queue_automatic_self_review_prompt(&mut self, prompt: String) {
         self.input_queue
             .queued_user_messages
-            .push_front(QueuedUserMessage::new(
-                UserMessage::from(prompt),
-                QueuedInputAction::AutomaticSelfReview,
-            ));
-        self.input_queue
-            .queued_user_message_history_records
-            .push_front(UserMessageHistoryRecord::UserMessageText);
+            .push_front_with_history(
+                QueuedUserMessage::new(
+                    UserMessage::from(prompt),
+                    QueuedInputAction::AutomaticSelfReview,
+                ),
+                UserMessageHistoryRecord::UserMessageText,
+            );
         self.refresh_pending_input_preview();
     }
 
@@ -94,9 +94,6 @@ impl ChatWidget {
             self.input_queue
                 .queued_user_messages
                 .push_back(QueuedUserMessage::new(user_message, action));
-            self.input_queue
-                .queued_user_message_history_records
-                .push_back(UserMessageHistoryRecord::UserMessageText);
             self.refresh_pending_input_preview();
         } else {
             self.submit_user_message(user_message);

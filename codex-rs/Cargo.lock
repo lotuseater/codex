@@ -3137,6 +3137,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-input-queue"
+version = "0.0.0"
+dependencies = [
+ "pretty_assertions",
+]
+
+[[package]]
 name = "codex-install-context"
 version = "0.0.0"
 dependencies = [
@@ -4079,6 +4086,7 @@ dependencies = [
  "codex-feedback",
  "codex-file-search",
  "codex-git-utils",
+ "codex-input-queue",
  "codex-install-context",
  "codex-login",
  "codex-mcp",

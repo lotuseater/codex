@@ -353,16 +353,7 @@ async fn self_review_starts_after_patch_without_review() {
     );
     let _ = drain_insert_history(&mut rx);
 
-    chat.handle_codex_event(Event {
-        id: "turn-complete".into(),
-        msg: EventMsg::TurnComplete(TurnCompleteEvent {
-            turn_id: "turn-1".to_string(),
-            last_agent_message: None,
-            completed_at: None,
-            duration_ms: None,
-            time_to_first_token_ms: None,
-        }),
-    });
+    handle_turn_completed(&mut chat, "turn-1", /*duration_ms*/ None);
 
     let inserted = drain_insert_history(&mut rx);
     let rendered = inserted
@@ -376,26 +367,36 @@ async fn self_review_starts_after_patch_without_review() {
 }
 
 #[tokio::test]
-async fn queued_plain_messages_merge_with_delimiters() {
+async fn queued_plain_messages_remain_separate_turns() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());
     push_queued_message(&mut chat, "first queued prompt", QueuedInputAction::Plain);
     push_queued_message(&mut chat, "second queued prompt", QueuedInputAction::Plain);
 
     assert!(chat.maybe_send_next_queued_input());
+    match next_submit_op(&mut op_rx) {
+        Op::UserTurn { items, .. } => {
+            let text = match items.as_slice() {
+                [UserInput::Text { text, .. }] => text,
+                other => panic!("expected first queued prompt, got {other:?}"),
+            };
+            assert_eq!(text, "first queued prompt");
+        }
+        other => panic!("expected first queued user turn, got {other:?}"),
+    }
+
+    handle_turn_started(&mut chat, "queued-turn-1");
+    handle_turn_completed(&mut chat, "queued-turn-1", /*duration_ms*/ None);
 
     match next_submit_op(&mut op_rx) {
         Op::UserTurn { items, .. } => {
             let text = match items.as_slice() {
                 [UserInput::Text { text, .. }] => text,
-                other => panic!("expected merged queued prompt, got {other:?}"),
+                other => panic!("expected second queued prompt, got {other:?}"),
             };
-            assert!(text.contains("--- queued prompt 1/2 ---"));
-            assert!(text.contains("first queued prompt"));
-            assert!(text.contains("--- queued prompt 2/2 ---"));
-            assert!(text.contains("second queued prompt"));
+            assert_eq!(text, "second queued prompt");
         }
-        other => panic!("expected merged queued user turn, got {other:?}"),
+        other => panic!("expected second queued user turn, got {other:?}"),
     }
 }
 
@@ -516,25 +517,10 @@ async fn explicit_review_suppresses_self_review_reminder() {
         changes,
         AppServerPatchApplyStatus::Completed,
     );
-    chat.handle_codex_event(Event {
-        id: "review-start".into(),
-        msg: EventMsg::EnteredReviewMode(ReviewRequest {
-            target: codex_protocol::protocol::ReviewTarget::UncommittedChanges,
-            user_facing_hint: None,
-        }),
-    });
+    handle_entered_review_mode(&mut chat, "manual review");
     let _ = drain_insert_history(&mut rx);
 
-    chat.handle_codex_event(Event {
-        id: "turn-complete".into(),
-        msg: EventMsg::TurnComplete(TurnCompleteEvent {
-            turn_id: "turn-1".to_string(),
-            last_agent_message: None,
-            completed_at: None,
-            duration_ms: None,
-            time_to_first_token_ms: None,
-        }),
-    });
+    handle_turn_completed(&mut chat, "turn-1", /*duration_ms*/ None);
 
     let inserted = drain_insert_history(&mut rx);
     let rendered = inserted
@@ -556,9 +542,11 @@ async fn restore_thread_input_state_restores_pending_steers_without_downgrading_
     };
     let mut pending_steer_compare_keys = VecDeque::new();
     pending_steer_compare_keys.push_back(expected_compare_key.clone());
-    let mut rejected_steers_queue = VecDeque::new();
-    rejected_steers_queue.push_back(UserMessage::from("already rejected"));
-    let mut queued_user_messages = VecDeque::new();
+    let mut rejected_steers_queue =
+        codex_input_queue::InputQueue::<QueuedUserMessage, UserMessageHistoryRecord>::default();
+    rejected_steers_queue.push_back(UserMessage::from("already rejected").into());
+    let mut queued_user_messages =
+        codex_input_queue::InputQueue::<QueuedUserMessage, UserMessageHistoryRecord>::default();
     queued_user_messages.push_back(UserMessage::from("queued draft").into());
 
     chat.restore_thread_input_state(Some(ThreadInputState {
@@ -567,9 +555,7 @@ async fn restore_thread_input_state_restores_pending_steers_without_downgrading_
         pending_steer_history_records: VecDeque::new(),
         pending_steer_compare_keys,
         rejected_steers_queue,
-        rejected_steer_history_records: VecDeque::new(),
         queued_user_messages,
-        queued_user_message_history_records: VecDeque::new(),
         user_turn_pending_start: false,
         current_collaboration_mode: chat.current_collaboration_mode.clone(),
         active_collaboration_mask: chat.active_collaboration_mask.clone(),
@@ -1682,25 +1668,13 @@ async fn review_queues_user_messages_snapshot() {
 }
 
 fn complete_turn(chat: &mut ChatWidget, turn_id: &str) {
-    chat.handle_codex_event(Event {
-        id: format!("{turn_id}-complete"),
-        msg: EventMsg::TurnComplete(TurnCompleteEvent {
-            turn_id: turn_id.to_string(),
-            last_agent_message: None,
-            completed_at: None,
-            duration_ms: None,
-            time_to_first_token_ms: None,
-        }),
-    });
+    handle_turn_completed(chat, turn_id, /*duration_ms*/ None);
 }
 
 fn push_queued_message(chat: &mut ChatWidget, text: &str, action: QueuedInputAction) {
     chat.input_queue
         .queued_user_messages
         .push_back(QueuedUserMessage::new(UserMessage::from(text), action));
-    chat.input_queue
-        .queued_user_message_history_records
-        .push_back(UserMessageHistoryRecord::UserMessageText);
 }
 
 fn assert_automatic_review_requested(op_rx: &mut tokio::sync::mpsc::UnboundedReceiver<Op>) {

@@ -30,7 +30,6 @@ const COLLAB_AGENT_ERROR_PREVIEW_GRAPHEMES: usize = 160;
 const COLLAB_AGENT_RESPONSE_PREVIEW_GRAPHEMES: usize = 240;
 mod activity;
 
-pub(crate) use activity::subagent_activity_history_cell;
 pub(crate) use activity::subagent_activity_history_cell_for_notification;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -769,6 +768,7 @@ fn error_summary_spans(error: &str) -> Vec<Span<'static>> {
 mod tests {
     use super::*;
     use crate::history_cell::HistoryCell;
+    use crate::multi_agents::activity::subagent_activity_history_cell;
     use codex_app_server_protocol::CommandExecutionOutputDeltaNotification;
     use codex_app_server_protocol::CommandExecutionStatus;
     use codex_app_server_protocol::ServerNotification;

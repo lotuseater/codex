@@ -21,6 +21,7 @@ This note tracks maintainability issues found during the `slow-context-budget-mo
 - The config trust path no longer depends on `codex-git-utils`; the needed filesystem-only worktree root resolver is local to the config loader, so `gix` is no longer compiled for config-only checks.
 - `codex-model-provider-info` is now split between a lightweight default path and an opt-in `runtime` feature for API/app-server/header conversion helpers.
 - `codex-features` no longer depends on `codex-otel` or `codex-protocol`; runtime event emission is owned by `codex-core`.
+- TUI queued-input ordering policy moved into `codex-input-queue`, a lightweight zero-dependency crate. Normal queued prompts now remain separate model turns, while rejected-steer retry batches remain explicit retry batches; `codex-tui` keeps only UI-specific preview, composer restore, and command submission behavior.
 
 ## Boundary Results
 
@@ -33,7 +34,7 @@ This note tracks maintainability issues found during the `slow-context-budget-mo
 
 - Split more protocol-owned surfaces into owner crates only when a concrete broad consumer benefits. The remaining `codex-protocol` weight is mixed across HTTP errors, image helpers, XML serialization, ICU formatting, policy matching, schema/TS derivation, and event models.
 - Continue extracting runtime-specific behavior out of broad crates. `codex-core`, app-server client paths, and full TUI tests still compile large runtime graphs and should gain narrower owner crates or pure state-machine crates.
-- Keep TUI unit-testable state machines outside the broad `codex-tui` test graph where possible. Queue ordering, automatic prompt construction, and review evidence should be tested in lightweight owner crates, with full TUI tests used as final canaries.
+- Keep TUI unit-testable state machines outside the broad `codex-tui` test graph where possible. Queue ordering now has a lightweight owner crate; automatic prompt construction and review evidence should follow the same pattern, with full TUI tests used as final canaries.
 - Keep MultiAgentV2 tool definitions, implementation handlers, tool docs, and registry specs generated from or backed by one canonical source.
 - Keep the release cleanup policy dep-info-aware: prune orphaned deps and disposable test executables, classify duplicate dependency versions, but do not delete active same-name hashed variants or known unavoidable duplicate-version cases.
 
@@ -42,5 +43,6 @@ This note tracks maintainability issues found during the `slow-context-budget-mo
 - Run `powershell -ExecutionPolicy Bypass -File scripts\check-cargo-dependency-boundaries.ps1 -Package codex-config`.
 - Run `rg -n "codex_protocol::|codex_app_server_protocol::" codex-rs\config\src` and expect no matches.
 - Run release checks for changed owner crates: `codex-config-types`, `codex-permission-types`, `codex-git-types`, `codex-features`, `codex-model-provider-info`, `codex-file-system`, `codex-git-utils`, `codex-thread-config-remote`, and `codex-config`.
+- Run `powershell -ExecutionPolicy Bypass -File scripts\test-local-codex-release.ps1 -Package codex-input-queue` for queue policy, then use a narrow `codex-tui` filter only as the integration canary.
 - Run app-server/protocol canaries after DTO moves because they preserve public wire compatibility through re-exports.
 - Run `just fmt`, scoped `just fix -p` for changed crates, `just write-config-schema`, `just bazel-lock-update`, `just bazel-lock-check`, `git diff --check`, then FastRelease build/deploy.

@@ -106,10 +106,7 @@ impl ChatWidget {
             tracing::warn!("cannot submit user message before session is configured; queueing");
             self.input_queue
                 .queued_user_messages
-                .push_front(QueuedUserMessage::from(user_message));
-            self.input_queue
-                .queued_user_message_history_records
-                .push_front(history_record);
+                .push_front_with_history(QueuedUserMessage::from(user_message), history_record);
             self.refresh_pending_input_preview();
             return (true, None);
         }

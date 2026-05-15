@@ -239,6 +239,7 @@ use codex_app_server_protocol::AppInfo;
 use codex_core_skills::model::SkillInterface;
 use codex_core_skills::model::SkillMetadata;
 use codex_file_search::FileMatch;
+use codex_input_queue::QueuedInputAction;
 #[cfg(test)]
 use codex_plugin::AppConnectorId;
 use codex_plugin::PluginCapabilitySummary;
@@ -290,14 +291,6 @@ pub enum InputResult {
     /// committed only if dispatch accepts it.
     CommandWithArgs(SlashCommand, String, Vec<TextElement>),
     None,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum QueuedInputAction {
-    Plain,
-    AutomaticSelfReview,
-    ParseSlash,
-    RunShell,
 }
 
 #[derive(Clone, Debug, PartialEq)]

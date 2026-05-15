@@ -15,6 +15,7 @@ use crate::bottom_pane::MentionBinding;
 use crate::bottom_pane::QueuedInputAction;
 use codex_app_server_protocol::TextElement as AppServerTextElement;
 use codex_app_server_protocol::UserInput;
+use codex_input_queue::InputQueue;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::CollaborationModeMask;
 use codex_protocol::models::local_image_label_text;
@@ -37,8 +38,9 @@ pub(crate) struct UserMessage {
     pub(super) mention_bindings: Vec<MentionBinding>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(super) enum UserMessageHistoryRecord {
+    #[default]
     UserMessageText,
     Override(UserMessageHistoryOverride),
 }
@@ -121,10 +123,8 @@ pub(crate) struct ThreadInputState {
     pub(super) pending_steers: VecDeque<UserMessage>,
     pub(super) pending_steer_history_records: VecDeque<UserMessageHistoryRecord>,
     pub(super) pending_steer_compare_keys: VecDeque<PendingSteerCompareKey>,
-    pub(super) rejected_steers_queue: VecDeque<UserMessage>,
-    pub(super) rejected_steer_history_records: VecDeque<UserMessageHistoryRecord>,
-    pub(super) queued_user_messages: VecDeque<QueuedUserMessage>,
-    pub(super) queued_user_message_history_records: VecDeque<UserMessageHistoryRecord>,
+    pub(super) rejected_steers_queue: InputQueue<QueuedUserMessage, UserMessageHistoryRecord>,
+    pub(super) queued_user_messages: InputQueue<QueuedUserMessage, UserMessageHistoryRecord>,
     pub(super) user_turn_pending_start: bool,
     pub(super) current_collaboration_mode: CollaborationMode,
     pub(super) active_collaboration_mask: Option<CollaborationModeMask>,
@@ -489,80 +489,6 @@ pub(super) fn merge_user_messages_with_history_record(
     (
         merge_remapped_user_messages(messages.into_iter().map(|(message, _)| message)),
         history_record,
-    )
-}
-
-pub(super) fn merge_user_messages_with_delimiters(
-    messages: Vec<(UserMessage, UserMessageHistoryRecord)>,
-) -> (UserMessage, UserMessageHistoryRecord) {
-    if messages.len() <= 1 {
-        return merge_user_messages_with_history_record(messages);
-    }
-
-    let total = messages.len();
-    let messages = remap_user_messages_with_history_records(messages);
-    let mut combined = UserMessage {
-        text: String::new(),
-        text_elements: Vec::new(),
-        local_images: Vec::new(),
-        remote_image_urls: Vec::new(),
-        mention_bindings: Vec::new(),
-    };
-    let mut history_text = String::new();
-    let mut history_text_elements = Vec::new();
-
-    for (idx, (message, history_record)) in messages.into_iter().enumerate() {
-        if idx > 0 {
-            combined.text.push('\n');
-            history_text.push('\n');
-        }
-        let delimiter = format!("--- queued prompt {}/{} ---\n", idx + 1, total);
-        combined.text.push_str(&delimiter);
-        history_text.push_str(&delimiter);
-
-        let UserMessage {
-            text,
-            text_elements,
-            local_images,
-            remote_image_urls,
-            mention_bindings,
-        } = message;
-        append_text_with_rebased_elements(
-            &mut combined.text,
-            &mut combined.text_elements,
-            &text,
-            text_elements.clone(),
-        );
-        combined.local_images.extend(local_images);
-        combined.remote_image_urls.extend(remote_image_urls);
-        combined.mention_bindings.extend(mention_bindings);
-
-        match history_record {
-            UserMessageHistoryRecord::Override(history) if !history.text.is_empty() => {
-                append_text_with_rebased_elements(
-                    &mut history_text,
-                    &mut history_text_elements,
-                    &history.text,
-                    history.text_elements,
-                );
-            }
-            UserMessageHistoryRecord::Override(_) | UserMessageHistoryRecord::UserMessageText => {
-                append_text_with_rebased_elements(
-                    &mut history_text,
-                    &mut history_text_elements,
-                    &text,
-                    text_elements,
-                );
-            }
-        }
-    }
-
-    (
-        combined,
-        UserMessageHistoryRecord::Override(UserMessageHistoryOverride {
-            text: history_text,
-            text_elements: history_text_elements,
-        }),
     )
 }
 

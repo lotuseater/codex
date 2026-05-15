@@ -428,7 +428,6 @@ use self::user_messages::UserMessageHistoryRecord;
 use self::user_messages::app_server_text_elements;
 pub(crate) use self::user_messages::create_initial_user_message;
 use self::user_messages::merge_user_messages;
-use self::user_messages::merge_user_messages_with_delimiters;
 use self::user_messages::merge_user_messages_with_history_record;
 #[cfg(test)]
 use self::user_messages::remap_placeholders_for_message;
@@ -1633,6 +1632,11 @@ impl ChatWidget {
     #[cfg(test)]
     pub(crate) fn is_task_running_for_test(&self) -> bool {
         self.bottom_pane.is_task_running()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_thread_id_for_test(&mut self, thread_id: Option<ThreadId>) {
+        self.thread_id = thread_id;
     }
 
     pub(crate) fn toggle_vim_mode_and_notify(&mut self) {

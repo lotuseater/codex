@@ -1,6 +1,8 @@
 //! Input queue restore and thread-input snapshot behavior for `ChatWidget`.
 
 use super::*;
+use codex_input_queue::NextQueuedInput;
+use codex_input_queue::pop_next_or_rejected_batch;
 
 impl ChatWidget {
     pub(crate) fn set_initial_user_message_submit_suppressed(&mut self, suppressed: bool) {
@@ -16,88 +18,33 @@ impl ChatWidget {
     pub(super) fn pop_next_queued_user_message(
         &mut self,
     ) -> Option<(QueuedUserMessage, UserMessageHistoryRecord)> {
-        if self.input_queue.rejected_steers_queue.is_empty() {
-            self.input_queue
-                .queued_user_messages
-                .pop_front()
-                .map(|user_message| {
-                    let history_record = self
-                        .input_queue
-                        .queued_user_message_history_records
-                        .pop_front()
-                        .unwrap_or(UserMessageHistoryRecord::UserMessageText);
-                    if user_message.action != QueuedInputAction::Plain {
-                        return (user_message, history_record);
-                    }
-
-                    let mut messages = vec![(user_message.into_user_message(), history_record)];
-                    while self
-                        .input_queue
-                        .queued_user_messages
-                        .front()
-                        .is_some_and(|message| message.action == QueuedInputAction::Plain)
-                    {
-                        let message = self
-                            .input_queue
-                            .queued_user_messages
-                            .pop_front()
-                            .expect("front checked");
-                        let history_record = self
-                            .input_queue
-                            .queued_user_message_history_records
-                            .pop_front()
-                            .unwrap_or(UserMessageHistoryRecord::UserMessageText);
-                        messages.push((message.into_user_message(), history_record));
-                    }
-
-                    if messages.len() == 1 {
-                        let (message, history_record) = messages.pop().expect("message exists");
-                        (QueuedUserMessage::from(message), history_record)
-                    } else {
-                        let (message, history_record) =
-                            merge_user_messages_with_delimiters(messages);
-                        (QueuedUserMessage::from(message), history_record)
-                    }
-                })
-        } else {
-            let rejected_messages = self
-                .input_queue
-                .rejected_steers_queue
-                .drain(..)
-                .collect::<Vec<_>>();
-            let mut history_records = self
-                .input_queue
-                .rejected_steer_history_records
-                .drain(..)
-                .collect::<Vec<_>>();
-            history_records.resize(
-                rejected_messages.len(),
-                UserMessageHistoryRecord::UserMessageText,
-            );
-            let (message, history_record) = merge_user_messages_with_history_record(
-                rejected_messages
-                    .into_iter()
-                    .zip(history_records)
-                    .collect::<Vec<_>>(),
-            );
-            Some((QueuedUserMessage::from(message), history_record))
+        match pop_next_or_rejected_batch(
+            &mut self.input_queue.queued_user_messages,
+            &mut self.input_queue.rejected_steers_queue,
+        )? {
+            NextQueuedInput::Queued(message) => Some(message.into_parts()),
+            NextQueuedInput::RejectedBatch(messages) => {
+                let (message, history_record) = merge_user_messages_with_history_record(
+                    messages
+                        .into_iter()
+                        .map(|message| {
+                            let (message, history_record) = message.into_parts();
+                            (message.into_user_message(), history_record)
+                        })
+                        .collect::<Vec<_>>(),
+                );
+                Some((QueuedUserMessage::from(message), history_record))
+            }
         }
     }
 
     pub(super) fn pop_latest_queued_user_message(&mut self) -> Option<UserMessage> {
         if let Some(user_message) = self.input_queue.queued_user_messages.pop_back() {
-            let history_record = self
-                .input_queue
-                .queued_user_message_history_records
-                .pop_back()
-                .unwrap_or(UserMessageHistoryRecord::UserMessageText);
+            let (user_message, history_record) = user_message.into_parts();
             if user_message.action == QueuedInputAction::AutomaticSelfReview {
                 self.input_queue
                     .queued_user_messages
-                    .push_back(user_message);
-                self.input_queue
-                    .queued_user_message_history_records
-                    .push_back(history_record);
+                    .push_back_with_history(user_message, history_record);
                 return None;
             }
             Some(user_message_for_restore(
@@ -106,12 +53,11 @@ impl ChatWidget {
             ))
         } else {
             let user_message = self.input_queue.rejected_steers_queue.pop_back()?;
-            let history_record = self
-                .input_queue
-                .rejected_steer_history_records
-                .pop_back()
-                .unwrap_or(UserMessageHistoryRecord::UserMessageText);
-            Some(user_message_for_restore(user_message, &history_record))
+            let (user_message, history_record) = user_message.into_parts();
+            Some(user_message_for_restore(
+                user_message.into_user_message(),
+                &history_record,
+            ))
         }
     }
 
@@ -124,10 +70,7 @@ impl ChatWidget {
         };
         self.input_queue
             .rejected_steers_queue
-            .push_back(pending_steer.user_message);
-        self.input_queue
-            .rejected_steer_history_records
-            .push_back(pending_steer.history_record);
+            .push_back_with_history(pending_steer.user_message, pending_steer.history_record);
         self.refresh_pending_input_preview();
         true
     }
@@ -200,24 +143,13 @@ impl ChatWidget {
             mention_bindings: self.bottom_pane.composer_mention_bindings(),
         };
 
-        let rejected_messages = self
-            .input_queue
-            .rejected_steers_queue
-            .drain(..)
-            .collect::<Vec<_>>();
-        let mut rejected_history_records = self
-            .input_queue
-            .rejected_steer_history_records
-            .drain(..)
-            .collect::<Vec<_>>();
-        rejected_history_records.resize(
-            rejected_messages.len(),
-            UserMessageHistoryRecord::UserMessageText,
-        );
+        let rejected_messages = self.input_queue.rejected_steers_queue.drain_all();
         let mut to_merge: Vec<UserMessage> = rejected_messages
             .into_iter()
-            .zip(rejected_history_records.iter())
-            .map(|(message, history_record)| user_message_for_restore(message, history_record))
+            .map(|message| {
+                let (message, history_record) = message.into_parts();
+                user_message_for_restore(message.into_user_message(), &history_record)
+            })
             .collect();
         to_merge.extend(
             self.input_queue
@@ -225,26 +157,13 @@ impl ChatWidget {
                 .drain(..)
                 .map(|steer| user_message_for_restore(steer.user_message, &steer.history_record)),
         );
-        let queued_messages = self
-            .input_queue
-            .queued_user_messages
-            .drain(..)
-            .collect::<Vec<_>>();
-        let mut queued_history_records = self
-            .input_queue
-            .queued_user_message_history_records
-            .drain(..)
-            .collect::<Vec<_>>();
-        queued_history_records.resize(
-            queued_messages.len(),
-            UserMessageHistoryRecord::UserMessageText,
-        );
-        for (message, history_record) in queued_messages.into_iter().zip(queued_history_records) {
+        let queued_messages = self.input_queue.queued_user_messages.drain_all();
+        for message in queued_messages {
+            let (message, history_record) = message.into_parts();
             if message.action == QueuedInputAction::AutomaticSelfReview {
-                self.input_queue.queued_user_messages.push_back(message);
                 self.input_queue
-                    .queued_user_message_history_records
-                    .push_back(history_record);
+                    .queued_user_messages
+                    .push_back_with_history(message, history_record);
             } else {
                 to_merge.push(user_message_for_restore(
                     message.into_user_message(),
@@ -257,6 +176,10 @@ impl ChatWidget {
             || !existing_message.remote_image_urls.is_empty()
         {
             to_merge.push(existing_message);
+        }
+
+        if to_merge.is_empty() {
+            return None;
         }
 
         Some(merge_user_messages(to_merge))
@@ -310,12 +233,7 @@ impl ChatWidget {
                 .map(|pending| pending.compare_key.clone())
                 .collect(),
             rejected_steers_queue: self.input_queue.rejected_steers_queue.clone(),
-            rejected_steer_history_records: self.input_queue.rejected_steer_history_records.clone(),
             queued_user_messages: self.input_queue.queued_user_messages.clone(),
-            queued_user_message_history_records: self
-                .input_queue
-                .queued_user_message_history_records
-                .clone(),
             user_turn_pending_start: self.input_queue.user_turn_pending_start,
             current_collaboration_mode: self.current_collaboration_mode.clone(),
             active_collaboration_mask: self.active_collaboration_mask.clone(),
@@ -382,19 +300,7 @@ impl ChatWidget {
                 })
                 .collect();
             self.input_queue.rejected_steers_queue = input_state.rejected_steers_queue;
-            self.input_queue.rejected_steer_history_records =
-                input_state.rejected_steer_history_records;
-            self.input_queue.rejected_steer_history_records.resize(
-                self.input_queue.rejected_steers_queue.len(),
-                UserMessageHistoryRecord::UserMessageText,
-            );
             self.input_queue.queued_user_messages = input_state.queued_user_messages;
-            self.input_queue.queued_user_message_history_records =
-                input_state.queued_user_message_history_records;
-            self.input_queue.queued_user_message_history_records.resize(
-                self.input_queue.queued_user_messages.len(),
-                UserMessageHistoryRecord::UserMessageText,
-            );
         } else {
             self.turn_lifecycle
                 .restore_running(/*running*/ false, Instant::now());
