@@ -7546,6 +7546,7 @@
             "type": "object"
           },
           {
+            "description": "Legacy managed config loaded from MDM.",
             "properties": {
               "type": {
                 "enum": [

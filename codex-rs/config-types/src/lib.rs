@@ -73,6 +73,8 @@ impl FromStr for ReasoningEffort {
             .map_err(|_| format!("invalid reasoning_effort: {s}"))
     }
 }
+/// A summary of the reasoning performed by the model. This can be useful for
+/// debugging and understanding the model's reasoning process.
 /// See https://platform.openai.com/docs/guides/reasoning?api-mode=responses#reasoning-summaries
 #[derive(
     Debug, Serialize, Deserialize, Default, Clone, Copy, PartialEq, Eq, Display, JsonSchema, TS,
@@ -570,18 +572,31 @@ pub enum ConfigLayerSource {
         file: AbsolutePathBuf,
     },
 
-    /// User config layer from $CODEX_HOME/config.toml.
-    User { file: AbsolutePathBuf },
+    /// User config layer from $CODEX_HOME/config.toml. This layer is special
+    /// in that it is expected to be:
+    /// - writable by the user
+    /// - generally outside the workspace directory
+    #[serde(rename_all = "camelCase")]
+    #[ts(rename_all = "camelCase")]
+    User {
+        /// This is the path to the user's config.toml file, though it is not
+        /// guaranteed to exist.
+        file: AbsolutePathBuf,
+    },
 
-    /// Project config discovered from a `.codex` folder.
+    /// Path to a .codex/ folder within a project. There could be multiple of
+    /// these between `cwd` and the project/repo root.
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
     Project { dot_codex_folder: AbsolutePathBuf },
 
-    /// Config values specified as CLI/session overrides.
+    /// Session-layer overrides supplied via `-c`/`--config`.
     SessionFlags,
 
-    /// Legacy managed config loaded from a user-specified file.
+    /// `managed_config.toml` was designed to be a config that was loaded
+    /// as the last layer on top of everything else. This scheme did not quite
+    /// work out as intended, but we keep this variant as a "best effort" while
+    /// we phase out `managed_config.toml` in favor of `requirements.toml`.
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
     LegacyManagedConfigTomlFromFile { file: AbsolutePathBuf },
