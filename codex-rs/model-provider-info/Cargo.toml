@@ -12,11 +12,21 @@ path = "src/lib.rs"
 [lints]
 workspace = true
 
+[features]
+default = []
+runtime = [
+    "dep:codex-api",
+    "dep:codex-app-server-protocol",
+    "dep:codex-protocol",
+    "dep:http",
+]
+
 [dependencies]
-codex-api = { workspace = true }
-codex-app-server-protocol = { workspace = true }
-codex-protocol = { workspace = true }
-http = { workspace = true }
+codex-api = { workspace = true, optional = true }
+codex-app-server-protocol = { workspace = true, optional = true }
+codex-config-types = { workspace = true }
+codex-protocol = { workspace = true, optional = true }
+http = { workspace = true, optional = true }
 schemars = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 

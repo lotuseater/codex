@@ -61,6 +61,7 @@ members = [
     "keyring-store",
     "file-search",
     "file-watcher",
+    "git-types",
     "linux-sandbox",
     "lmstudio",
     "login",
@@ -76,6 +77,7 @@ members = [
     "network-proxy",
     "ollama",
     "operation-cache",
+    "permission-types",
     "process-hardening",
     "protocol",
     "replacement-shadow",
@@ -122,6 +124,7 @@ members = [
     "task-memory",
     "terminal-detection",
     "test-binary-support",
+    "thread-config-remote",
     "thread-manager-sample",
     "thread-store",
     "tool-schema",
@@ -197,6 +200,7 @@ codex-repo-context-scout = { path = "repo-context-scout" }
 codex-install-context = { path = "install-context" }
 codex-file-search = { path = "file-search" }
 codex-file-watcher = { path = "file-watcher" }
+codex-git-types = { path = "git-types" }
 codex-git-utils = { path = "git-utils" }
 codex-hooks = { path = "hooks" }
 codex-keyring-store = { path = "keyring-store" }
@@ -220,6 +224,7 @@ codex-otel = { path = "otel" }
 codex-plugin = { path = "plugin" }
 codex-model-provider = { path = "model-provider" }
 codex-operation-cache = { path = "operation-cache" }
+codex-permission-types = { path = "permission-types" }
 codex-process-hardening = { path = "process-hardening" }
 codex-protocol = { path = "protocol" }
 codex-replacement-shadow = { path = "replacement-shadow" }
@@ -241,6 +246,7 @@ codex-task-memory = { path = "task-memory" }
 codex-stdio-to-uds = { path = "stdio-to-uds" }
 codex-terminal-detection = { path = "terminal-detection" }
 codex-test-binary-support = { path = "test-binary-support" }
+codex-thread-config-remote = { path = "thread-config-remote" }
 codex-thread-store = { path = "thread-store" }
 codex-tool-schema = { path = "tool-schema" }
 codex-tools = { path = "tools" }

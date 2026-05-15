@@ -3,10 +3,6 @@
 //! This crate defines the feature registry plus the logic used to resolve an
 //! effective feature set from config-like inputs.
 
-use codex_otel::SessionTelemetry;
-use codex_protocol::protocol::Event;
-use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::WarningEvent;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
@@ -385,22 +381,14 @@ impl Features {
         self.legacy_usages.iter()
     }
 
-    pub fn emit_metrics(&self, otel: &SessionTelemetry) {
-        for feature in FEATURES {
+    pub fn metric_states(&self) -> impl Iterator<Item = (&'static str, bool)> + '_ {
+        FEATURES.iter().filter_map(|feature| {
             if matches!(feature.stage, Stage::Removed) {
-                continue;
+                return None;
             }
-            if self.enabled(feature.id) != feature.default_enabled {
-                otel.counter(
-                    "codex.feature.state",
-                    /*inc*/ 1,
-                    &[
-                        ("feature", feature.key),
-                        ("value", &self.enabled(feature.id).to_string()),
-                    ],
-                );
-            }
-        }
+            let enabled = self.enabled(feature.id);
+            (enabled != feature.default_enabled).then_some((feature.key, enabled))
+        })
     }
 
     /// Apply a table of key -> bool toggles (e.g. from TOML).
@@ -798,7 +786,7 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::SemanticAutoCompact,
         key: "semantic_auto_compact",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Stable,
         default_enabled: true,
     },
     FeatureSpec {
@@ -1231,12 +1219,12 @@ pub const FEATURES: &[FeatureSpec] = &[
     },
 ];
 
-pub fn unstable_features_warning_event(
+pub fn unstable_features_warning_message(
     effective_features: Option<&Table>,
     suppress_unstable_features_warning: bool,
     features: &Features,
     config_path: &str,
-) -> Option<Event> {
+) -> Option<String> {
     if suppress_unstable_features_warning {
         return None;
     }
@@ -1264,13 +1252,9 @@ pub fn unstable_features_warning_event(
     }
 
     let under_development_feature_keys = under_development_feature_keys.join(", ");
-    let message = format!(
+    Some(format!(
         "Under-development features enabled: {under_development_feature_keys}. Under-development features are incomplete and may behave unpredictably. To suppress this warning, set `suppress_unstable_features_warning = true` in {config_path}."
-    );
-    Some(Event {
-        id: String::new(),
-        msg: EventMsg::Warning(WarningEvent { message }),
-    })
+    ))
 }
 
 #[cfg(test)]

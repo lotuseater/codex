@@ -1,11 +1,11 @@
 [package]
-name = "codex-config-types"
-edition.workspace = true
+name = "codex-permission-types"
 version.workspace = true
+edition.workspace = true
 license.workspace = true
 
 [lib]
-name = "codex_config_types"
+name = "codex_permission_types"
 path = "src/lib.rs"
 doctest = false
 
@@ -14,15 +14,14 @@ workspace = true
 
 [dependencies]
 codex-utils-absolute-path = { workspace = true }
-codex-permission-types = { workspace = true }
+globset = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-strum = { workspace = true }
 strum_macros = { workspace = true }
+tracing = { workspace = true }
 ts-rs = { workspace = true }
-wildmatch = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }
-serde_json = { workspace = true }
+tempfile = { workspace = true }

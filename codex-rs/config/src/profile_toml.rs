@@ -12,14 +12,14 @@ use crate::types::ApprovalsReviewer;
 use crate::types::Personality;
 use crate::types::SessionPickerViewMode;
 use crate::types::WindowsToml;
+use codex_config_types::ContextBudgetMode;
+use codex_config_types::ReasoningEffort;
+use codex_config_types::ReasoningSummary;
+use codex_config_types::SandboxMode;
+use codex_config_types::Verbosity;
+use codex_config_types::WebSearchMode;
 use codex_features::FeaturesToml;
-use codex_protocol::config_types::ContextBudgetMode;
-use codex_protocol::config_types::ReasoningSummary;
-use codex_protocol::config_types::SandboxMode;
-use codex_protocol::config_types::Verbosity;
-use codex_protocol::config_types::WebSearchMode;
-use codex_protocol::openai_models::ReasoningEffort;
-use codex_protocol::protocol::AskForApproval;
+use codex_permission_types::AskForApproval;
 
 /// Collection of common configuration options that a user can define as a unit
 /// in `config.toml`.
@@ -94,7 +94,7 @@ pub struct ProfileTui {
     pub session_picker_view: Option<SessionPickerViewMode>,
 }
 
-impl From<ConfigProfile> for codex_app_server_protocol::Profile {
+impl From<ConfigProfile> for codex_config_types::Profile {
     fn from(config_profile: ConfigProfile) -> Self {
         Self {
             model: config_profile.model,

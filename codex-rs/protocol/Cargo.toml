@@ -18,7 +18,9 @@ chrono = { workspace = true, features = ["serde"] }
 codex-async-utils = { workspace = true }
 codex-config-types = { workspace = true }
 codex-execpolicy = { workspace = true }
+codex-git-types = { workspace = true }
 codex-network-proxy-config = { workspace = true }
+codex-permission-types = { workspace = true }
 codex-utils-absolute-path = { workspace = true }
 codex-utils-image = { workspace = true }
 codex-utils-string = { workspace = true }

@@ -252,7 +252,7 @@ Exact diff commands to inspect:
 Review instructions:
 - Check for bugs, regressions, maintainability issues, missed tests, and long-term design problems.
 - Prefer targeted file reads and the diff commands above; do not broaden into unrelated repository areas.
-- If you find a concrete repo-controlled issue, apply one bounded repair pass and rerun the smallest relevant verification before finalizing.
+- If you find a concrete repo-controlled issue, apply one coherent repair pass and rerun the most relevant targeted verification before finalizing.
 - If there are no findings, say that explicitly and continue with queued work.
 
 Compact work notes:
@@ -281,8 +281,8 @@ Git evidence is limited: Codex could not capture a git review anchor for `{}` ({
 Review instructions:
 - First check whether this is expected for the current working directory.
 - If a git repository is available, start with `git status --short`, then inspect targeted diffs for the changed files.
-- Otherwise, use the compact work notes below and the smallest relevant file reads to review for bugs, regressions, maintainability issues, missed tests, and long-term design problems.
-- If you find a concrete repo-controlled issue, apply one bounded repair pass and rerun the smallest relevant verification before finalizing.
+- Otherwise, use the compact work notes below and the most relevant targeted file reads to review for bugs, regressions, maintainability issues, missed tests, and long-term design problems.
+- If you find a concrete repo-controlled issue, apply one coherent repair pass and rerun the most relevant targeted verification before finalizing.
 - If there are no findings, say that explicitly and continue with queued work.
 
 Compact work notes:

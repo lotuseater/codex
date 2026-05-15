@@ -2,17 +2,13 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use codex_app_server_protocol::ConfigLayerSource;
+use codex_config_types::ConfigLayerSource;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use thiserror::Error;
 use toml::Value as TomlValue;
 
 use crate::ConfigLayerEntry;
-
-mod remote;
-
-pub use remote::RemoteThreadConfigLoader;
 
 /// Context available to implementations when loading thread-scoped config.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

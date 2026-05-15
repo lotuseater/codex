@@ -56,7 +56,7 @@ use codex_exec_server::FileSystemSandboxContext;
 use codex_extension_api::PromptSlot;
 use codex_features::FEATURES;
 use codex_features::Feature;
-use codex_features::unstable_features_warning_event;
+use codex_features::unstable_features_warning_message;
 use codex_hooks::Hooks;
 use codex_hooks::HooksConfig;
 use codex_login::AuthManager;

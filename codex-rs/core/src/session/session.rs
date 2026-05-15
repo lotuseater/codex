@@ -593,7 +593,7 @@ impl Session {
                 });
             }
             let config_path = config.codex_home.join(CONFIG_TOML_FILE);
-            if let Some(event) = unstable_features_warning_event(
+            if let Some(message) = unstable_features_warning_message(
                 config
                     .config_layer_stack
                     .effective_config()
@@ -603,7 +603,10 @@ impl Session {
                 &config.features,
                 &config_path.display().to_string(),
             ) {
-                post_session_configured_events.push(event);
+                post_session_configured_events.push(Event {
+                    id: String::new(),
+                    msg: EventMsg::Warning(WarningEvent { message }),
+                });
             }
             if config.permissions.approval_policy.value() == AskForApproval::OnFailure {
                 post_session_configured_events.push(Event {
@@ -652,7 +655,13 @@ impl Session {
                 model: Some(session_model.clone()),
                 slug: Some(session_model),
             };
-            config.features.emit_metrics(&session_telemetry);
+            for (feature, enabled) in config.features.metric_states() {
+                session_telemetry.counter(
+                    "codex.feature.state",
+                    /*inc*/ 1,
+                    &[("feature", feature), ("value", &enabled.to_string())],
+                );
+            }
             session_telemetry.counter(
                 THREAD_STARTED_METRIC,
                 /*inc*/ 1,

@@ -4,7 +4,6 @@
 //! are used to preserve compatibility when older payloads omit newly introduced attributes.
 
 use std::collections::HashMap;
-use std::str::FromStr;
 
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -19,46 +18,10 @@ use crate::config_types::Personality;
 use crate::config_types::ReasoningSummary;
 use crate::config_types::ServiceTier;
 use crate::config_types::Verbosity;
+pub use codex_config_types::ReasoningEffort;
 
 const PERSONALITY_PLACEHOLDER: &str = "{{ personality }}";
 pub const SPEED_TIER_FAST: &str = "fast";
-
-/// See https://platform.openai.com/docs/guides/reasoning?api-mode=responses#get-started-with-reasoning
-#[derive(
-    Debug,
-    Serialize,
-    Deserialize,
-    Default,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Display,
-    JsonSchema,
-    TS,
-    EnumIter,
-    Hash,
-)]
-#[serde(rename_all = "lowercase")]
-#[strum(serialize_all = "lowercase")]
-pub enum ReasoningEffort {
-    None,
-    Minimal,
-    Low,
-    #[default]
-    Medium,
-    High,
-    XHigh,
-}
-
-impl FromStr for ReasoningEffort {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        serde_json::from_value(serde_json::Value::String(s.to_string()))
-            .map_err(|_| format!("invalid reasoning_effort: {s}"))
-    }
-}
 
 /// Canonical user-input modality tags advertised by a model.
 #[derive(

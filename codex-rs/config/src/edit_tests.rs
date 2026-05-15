@@ -3,9 +3,9 @@ use crate::types::AppToolApproval;
 use crate::types::McpServerToolConfig;
 use crate::types::McpServerTransportConfig;
 use crate::types::SessionPickerViewMode;
-use codex_protocol::config_types::ContextBudgetMode;
-use codex_protocol::config_types::ServiceTier;
-use codex_protocol::openai_models::ReasoningEffort;
+use codex_config_types::ContextBudgetMode;
+use codex_config_types::ReasoningEffort;
+use codex_config_types::ServiceTier;
 use pretty_assertions::assert_eq;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;

@@ -4,18 +4,18 @@ use std::num::NonZeroU64;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use codex_config::SessionThreadConfig;
+use codex_config::ThreadConfigContext;
+use codex_config::ThreadConfigLoadError;
+use codex_config::ThreadConfigLoadErrorCode;
+use codex_config::ThreadConfigLoader;
+use codex_config::ThreadConfigSource;
+use codex_config::UserThreadConfig;
+use codex_config_types::ModelProviderAuthInfo;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::WireApi;
-use codex_protocol::config_types::ModelProviderAuthInfo;
 use codex_utils_absolute_path::AbsolutePathBuf;
 
-use super::SessionThreadConfig;
-use super::ThreadConfigContext;
-use super::ThreadConfigLoadError;
-use super::ThreadConfigLoadErrorCode;
-use super::ThreadConfigLoader;
-use super::ThreadConfigSource;
-use super::UserThreadConfig;
 use proto::thread_config_loader_client::ThreadConfigLoaderClient;
 
 #[path = "proto/codex.thread_config.v1.rs"]
@@ -300,9 +300,11 @@ mod tests {
     use std::collections::HashMap;
     use std::num::NonZeroU64;
 
+    use codex_config::SessionThreadConfig;
+    use codex_config::UserThreadConfig;
+    use codex_config_types::ModelProviderAuthInfo;
     use codex_model_provider_info::ModelProviderInfo;
     use codex_model_provider_info::WireApi;
-    use codex_protocol::config_types::ModelProviderAuthInfo;
     use codex_utils_absolute_path::AbsolutePathBuf;
     use pretty_assertions::assert_eq;
     use tonic::Request;
@@ -313,8 +315,6 @@ mod tests {
     use super::proto::thread_config_loader_server;
     use super::proto::thread_config_loader_server::ThreadConfigLoaderServer;
     use super::*;
-    use crate::SessionThreadConfig;
-    use crate::UserThreadConfig;
 
     struct TestServer {
         sources: Vec<proto::ThreadConfigSource>,

@@ -10,15 +10,15 @@ pub use crate::mcp_types::McpServerEnvVar;
 pub use crate::mcp_types::McpServerToolConfig;
 pub use crate::mcp_types::McpServerTransportConfig;
 pub use crate::mcp_types::RawMcpServerConfig;
-pub use codex_protocol::config_types::AltScreenMode;
-pub use codex_protocol::config_types::ApprovalsReviewer;
-use codex_protocol::config_types::EnvironmentVariablePattern;
-pub use codex_protocol::config_types::ModeKind;
-pub use codex_protocol::config_types::Personality;
-pub use codex_protocol::config_types::ServiceTier;
-use codex_protocol::config_types::ShellEnvironmentPolicy;
-use codex_protocol::config_types::ShellEnvironmentPolicyInherit;
-pub use codex_protocol::config_types::WebSearchMode;
+pub use codex_config_types::AltScreenMode;
+pub use codex_config_types::ApprovalsReviewer;
+use codex_config_types::EnvironmentVariablePattern;
+pub use codex_config_types::ModeKind;
+pub use codex_config_types::Personality;
+pub use codex_config_types::ServiceTier;
+use codex_config_types::ShellEnvironmentPolicy;
+use codex_config_types::ShellEnvironmentPolicyInherit;
+pub use codex_config_types::WebSearchMode;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -1025,7 +1025,7 @@ pub struct SandboxWorkspaceWrite {
     pub exclude_slash_tmp: bool,
 }
 
-impl From<SandboxWorkspaceWrite> for codex_app_server_protocol::SandboxSettings {
+impl From<SandboxWorkspaceWrite> for codex_config_types::SandboxSettings {
     fn from(sandbox_workspace_write: SandboxWorkspaceWrite) -> Self {
         Self {
             writable_roots: sandbox_workspace_write.writable_roots,

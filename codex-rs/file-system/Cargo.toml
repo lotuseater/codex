@@ -9,7 +9,8 @@ workspace = true
 
 [dependencies]
 async-trait = { workspace = true }
-codex-protocol = { workspace = true }
+codex-config-types = { workspace = true }
+codex-permission-types = { workspace = true }
 codex-utils-absolute-path = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 

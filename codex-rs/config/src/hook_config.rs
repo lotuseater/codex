@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::path::PathBuf;
 
-use codex_protocol::protocol::HookEventName;
+use codex_config_types::HookEventName;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;

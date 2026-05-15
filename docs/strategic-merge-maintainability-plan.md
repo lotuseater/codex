@@ -1,64 +1,46 @@
 # Strategic Merge Maintainability Plan
 
-Date: 2026-05-14
+Date: 2026-05-15
 
-This note captures issues found during the `slow-context-budget-mode` merge with `origin/main` and the blackboard work. The purpose is to avoid short-term conflict resolutions that make future merges slower, heavier, or easier to regress.
+This note tracks maintainability issues found during the `slow-context-budget-mode` merge and the follow-up dependency refactor. The intent is to keep local feature work ahead of `main` without making future merges, builds, or verification lanes unnecessarily heavy.
 
 ## Current State
 
-- The branch is in an in-progress merge with `MERGE_HEAD` present.
-- No unmerged index entries were found during the latest inspection.
-- A stale `codex-tui auto_loop` release test was stopped because source files had changed after it started.
-- A fresh `codex-core --lib multi_agents` release canary was intentionally stopped after it began compiling heavy runtime dependencies (`rama-*`, `starlark`) unrelated to a narrow multi-agent canary.
+- The blackboard and `origin/main` merge has been completed; this document now tracks follow-up architecture work, not merge blockers.
+- The instruction and self-review prompt wording has been updated to prefer the largest coherent verified slice when it materially improves long-term design.
+- `codex-config` is now an enforced config-only boundary. It must not depend on `codex-protocol`, `codex-app-server-protocol`, `codex-api`, `codex-otel`, `codex-network-proxy`, `gix*`, `hyper*`, `prost*`, `rama-*`, `starlark*`, or `tonic*`.
+- `scripts\check-cargo-dependency-boundaries.ps1 -Package codex-config` is the durable canary for that boundary.
 
-## Immediate Commit Blockers
+## Completed Dependency Refactors
 
-- `git diff --cached --check` reported a whitespace failure in `codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__review_submission_warning_snapshot.snap`.
-- Several tracked module declarations reference files that were still untracked at audit time. Required spec/handler files must be staged with the merge, otherwise the commit will not build.
-- MultiAgentV2 lost part of the current supervision tool surface during the tool-registry merge. `compact_agent`, `restart_agent`, and `resume_agent` need to be registered or explicitly deferred with compatibility notes.
-- The new public `codex-tools::ToolExecutor` trait uses `#[async_trait]`. Convert it to the repo-preferred RPITIT shape before the API spreads.
+- Runtime network proxy ownership was split earlier: `codex-network-proxy-config` owns config/data DTOs, while `codex-network-proxy` remains the runtime crate.
+- Config and protocol DTO ownership was split further: `codex-config-types` now owns lightweight config/model/realtime/hook DTOs, and `codex-protocol` re-exports them only for compatibility.
+- Permission and sandbox DTO ownership was split into `codex-permission-types`; config and filesystem code import from that owner crate instead of `codex-protocol`.
+- Git SHA ownership was split into `codex-git-types`; `codex-git-utils` and `codex-protocol` use/re-export that owner type.
+- Remote thread-config gRPC code moved from `codex-config` into `codex-thread-config-remote`, so `tonic`, `prost`, and `hyper` are no longer compiled for config-only checks.
+- The config trust path no longer depends on `codex-git-utils`; the needed filesystem-only worktree root resolver is local to the config loader, so `gix` is no longer compiled for config-only checks.
+- `codex-model-provider-info` is now split between a lightweight default path and an opt-in `runtime` feature for API/app-server/header conversion helpers.
+- `codex-features` no longer depends on `codex-otel` or `codex-protocol`; runtime event emission is owned by `codex-core`.
 
-## Dependency Graph Findings
+## Boundary Results
 
-- `codex-config` was pulling the runtime-heavy `codex-network-proxy` crate, which brought in `rama-*` dependencies even for config-only consumers.
-- `codex-protocol` also depended on `codex-network-proxy` only for network policy DTOs, which reintroduced the same runtime-heavy proxy graph into `codex-config` through protocol dependencies.
-- A first split now moves network proxy config/data types into `codex-network-proxy-config`, while `codex-network-proxy` remains the runtime crate and re-exports the same public types.
-- A second split moves protocol-safe network policy DTOs (`NetworkPolicyDecision`, `NetworkDecisionSource`) into `codex-network-proxy-config`, allowing `codex-protocol` to avoid depending on the runtime proxy crate.
-- A third split moves the hot `ContextBudgetMode` DTO into `codex-config-types` and re-exports it from `codex-protocol`. This gives slow-mode default checks a tiny release canary instead of requiring a full `codex-protocol` test binary.
-- The automatic self-review follow-up exposed the same verification-boundary problem in `codex-tui`: `cargo test -p codex-tui --release self_review` still compiles the full TUI test harness and heavy normal graph before applying the filter. The release-test wrapper now refuses filtered `codex-tui` package/unit tests unless `-AllowBroadTuiUnitTests` is explicit; the cheap owner lane is `codex-self-review`.
-- `codex-self-review` is intentionally dependency-light. The git-grounded review evidence and prompt tests live there so self-review behavior can be verified without compiling TUI, app-server, protocol, TLS, image, Starlark, or core runtime crates.
-- Release artifact growth had two separate causes. Orphaned `target/release/deps/lib*.rlib` and `lib*.rmeta` files are now safe cleanup candidates only when their Cargo `.d` dep-info no longer references them; same-name hash variants must not be pruned blindly because they can represent active feature/build-unit variants.
-- `Cargo.lock` currently has duplicate package versions. The build diagnostic now classifies exact known unavoidable/transitional duplicates separately from action-required duplicates. Known examples include Windows target crates, common proc-macro/schema major-version transitions, crypto/randomness major-version transitions, and the temporary fork/upstream websocket split. This is an audit allowlist, not permission to delete active artifacts.
-- The current duplicate inventory is captured in `docs/cargo-duplicate-dependency-audit.md`. The quick direct duplicate `quick-xml 0.38.4` was removed by aligning the workspace dependency to the already-present `0.39.4`; remaining high-value action-required candidates include `which`, `unicode-width`, `toml`, `zip`, `zstd`, and `http`/`http-body`, but each now needs reverse-owner analysis before changing manifests.
-- Remaining heavy core compile cost is structural: `codex-core` directly owns shell execution, execpolicy, managed network proxy, sandboxing, protocol, and many runtime integrations. This cannot be fixed by version dedupe alone.
-- `codex-protocol` is still heavy because it owns unrelated API, error, image, XML, number-formatting, permissions, and policy DTO/runtime helpers in one crate (`reqwest`, `codex-utils-image`, `quick-xml`, ICU, `globset`, `codex-execpolicy`). The next decoupling target is a broader DTO split, not dependency version dedupe.
-
-## Merge Hotspots
-
-- `codex-rs/tui/src/chatwidget.rs` must remain main’s split-module orchestration shell. Local behavior should live in `chatwidget/*` leaf modules, not in a restored monolith.
-- Tool registry work currently has overlapping planning surfaces: older `codex-tools/src/tool_registry_plan.rs` and newer `codex-rs/core/src/tools/spec_plan.rs`. Collapse to one source of truth or clearly mark one transitional.
-- Local tool features should be preserved by clean registry integration, not by keeping orphaned files that are no longer compiled.
-- Generated files (`Cargo.lock`, config schema, app-server protocol schema, Bazel lock) should be regenerated only after source ownership is settled.
+- `cargo tree -p codex-config --edges normal,build` no longer includes `codex-protocol`, `codex-app-server-protocol`, `codex-api`, `codex-otel`, `codex-network-proxy`, `rama-*`, `starlark*`, `gix`, `tonic`, `prost`, or `hyper`.
+- `cargo check --release -p codex-config -j 1` completed successfully after the split and now reaches the crate quickly instead of compiling remote/protocol/runtime graphs first.
+- `cargo check --release -p codex-thread-config-remote -j 1` completed successfully, proving the remote-loader behavior remains available from its new owner crate.
+- `cargo check --release -p codex-protocol -p codex-app-server-protocol -p codex-file-system -p codex-git-utils -j 1` completed successfully after restoring omitted protocol-owned event/API types.
 
 ## Follow-Up Refactors
 
-- Move more config-only and protocol-only DTOs out of runtime crates when they are used by broad crates such as `codex-config` or `codex-protocol`.
-- Continue the config DTO split by moving `ReasoningEffort` or the full lightweight collaboration/config DTO group into a small crate, then switch config-only consumers away from `codex-protocol` imports.
-- Split `codex-protocol` into lighter DTO crates before attempting another dependency trim. Current heavy normal dependencies are structurally mixed: HTTP error types (`reqwest`), image prompt helpers (`codex-utils-image`), XML item serialization (`quick-xml`), number formatting (ICU), policy matching (`globset`/`codex-execpolicy`), and schema/TS derivation (`schemars`/`ts-rs`). Removing any one dependency safely requires moving the owning API surface, not just deleting a manifest entry.
-- Split TUI unit-testable state machines away from `codex-tui` when adding new behavior. Queue ordering, automatic prompt construction, and review evidence should live in small crates or pure helper modules with lightweight tests; keep full `codex-tui` tests as final canaries only.
-- Add a dependency-dedupe lane that records `scripts\build-local-codex.ps1 -Mode Diagnose` and, when needed, `cargo tree -d --workspace --edges normal,build`. Track action-required duplicate count separately from known unavoidable duplicates so the signal stays useful.
-- Extract shell/unified-exec/network proxy runtime ownership out of `codex-core` behind narrower crates or traits so core unit canaries do not compile the full runtime graph.
+- Split more protocol-owned surfaces into owner crates only when a concrete broad consumer benefits. The remaining `codex-protocol` weight is mixed across HTTP errors, image helpers, XML serialization, ICU formatting, policy matching, schema/TS derivation, and event models.
+- Continue extracting runtime-specific behavior out of broad crates. `codex-core`, app-server client paths, and full TUI tests still compile large runtime graphs and should gain narrower owner crates or pure state-machine crates.
+- Keep TUI unit-testable state machines outside the broad `codex-tui` test graph where possible. Queue ordering, automatic prompt construction, and review evidence should be tested in lightweight owner crates, with full TUI tests used as final canaries.
 - Keep MultiAgentV2 tool definitions, implementation handlers, tool docs, and registry specs generated from or backed by one canonical source.
-- Keep future feature work in separate crates/modules by default. Only add to `codex-core` when the feature truly requires core session ownership.
-- Add a cheap dependency canary for broad crates that asserts `codex-config` does not depend on runtime-heavy crates such as `codex-network-proxy`, `rama-*`, or `starlark`.
-- Keep the build/test scripts' release cleanup policy dep-info-aware: prune orphaned deps and disposable test executables, classify duplicate dependency versions, but do not delete active same-name hashed variants or known unavoidable duplicate-version cases.
+- Keep the release cleanup policy dep-info-aware: prune orphaned deps and disposable test executables, classify duplicate dependency versions, but do not delete active same-name hashed variants or known unavoidable duplicate-version cases.
 
 ## Verification Plan
 
-- Run `git diff --check` and fix whitespace before staging the merge.
-- Stage all required new spec/handler files and rerun a conflict-marker scan.
-- Run `scripts\test-local-codex-release.ps1 -Package codex-network-proxy-config`.
-- Run `scripts\test-local-codex-release.ps1 -Package codex-config-types` for slow-mode default and wire-format checks.
-- Run `scripts\test-local-codex-release.ps1 -Package codex-config -Filter network`.
-- Run a narrower dependency canary with `cargo tree -p codex-config -i codex-network-proxy` and expect no matching package in the graph.
-- After tool registry and MultiAgentV2 fixes, rerun `scripts\test-local-codex-release.ps1 -Package codex-core -Lib -Filter multi_agents`.
+- Run `powershell -ExecutionPolicy Bypass -File scripts\check-cargo-dependency-boundaries.ps1 -Package codex-config`.
+- Run `rg -n "codex_protocol::|codex_app_server_protocol::" codex-rs\config\src` and expect no matches.
+- Run release checks for changed owner crates: `codex-config-types`, `codex-permission-types`, `codex-git-types`, `codex-features`, `codex-model-provider-info`, `codex-file-system`, `codex-git-utils`, `codex-thread-config-remote`, and `codex-config`.
+- Run app-server/protocol canaries after DTO moves because they preserve public wire compatibility through re-exports.
+- Run `just fmt`, scoped `just fix -p` for changed crates, `just write-config-schema`, `just bazel-lock-update`, `just bazel-lock-check`, `git diff --check`, then FastRelease build/deploy.

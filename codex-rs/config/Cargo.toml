@@ -4,10 +4,6 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-[[example]]
-name = "generate-proto"
-path = "examples/generate-proto.rs"
-
 [[bin]]
 name = "codex-write-config-schema"
 path = "src/bin/config_schema.rs"
@@ -19,21 +15,19 @@ workspace = true
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 base64 = { workspace = true }
-codex-app-server-protocol = { workspace = true }
+codex-config-types = { workspace = true }
 codex-execpolicy = { workspace = true }
 codex-features = { workspace = true }
 codex-file-system = { workspace = true }
-codex-git-utils = { workspace = true }
 codex-model-provider-info = { workspace = true }
 codex-network-proxy-config = { workspace = true }
-codex-protocol = { workspace = true }
+codex-permission-types = { workspace = true }
 codex-utils-absolute-path = { workspace = true }
 codex-utils-path = { workspace = true }
 dunce = { workspace = true }
 futures = { workspace = true, features = ["alloc", "std"] }
 gethostname = { workspace = true }
 multimap = { workspace = true }
-prost = "0.14.3"
 schemars = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_ignored = { workspace = true }
@@ -41,11 +35,9 @@ serde_json = { workspace = true }
 serde_path_to_error = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["fs"] }
+tokio = { workspace = true, features = ["fs", "rt"] }
 toml = { workspace = true }
 toml_edit = { workspace = true }
-tonic = { workspace = true }
-tonic-prost = { workspace = true }
 tracing = { workspace = true }
 wildmatch = { workspace = true }
 
@@ -70,9 +62,6 @@ pretty_assertions = { workspace = true }
 similar = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
-tokio-stream = { workspace = true, features = ["net"] }
-tonic = { workspace = true, features = ["router", "transport"] }
-tonic-prost-build = { version = "0.14", default-features = false, features = ["transport"] }
 
 [lib]
 doctest = false

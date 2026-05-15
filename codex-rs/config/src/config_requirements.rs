@@ -1,8 +1,8 @@
-use codex_protocol::config_types::ApprovalsReviewer;
-use codex_protocol::config_types::SandboxMode;
-use codex_protocol::config_types::WebSearchMode;
-use codex_protocol::models::PermissionProfile;
-use codex_protocol::protocol::AskForApproval;
+use codex_config_types::ApprovalsReviewer;
+use codex_config_types::SandboxMode;
+use codex_config_types::WebSearchMode;
+use codex_permission_types::AskForApproval;
+use codex_permission_types::PermissionProfile;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use serde::Deserialize;
 use serde::Serialize;
@@ -1255,8 +1255,8 @@ mod tests {
     use codex_execpolicy::Decision;
     use codex_execpolicy::Evaluation;
     use codex_execpolicy::RuleMatch;
-    use codex_protocol::protocol::NetworkAccess;
-    use codex_protocol::protocol::SandboxPolicy;
+    use codex_permission_types::NetworkAccess;
+    use codex_permission_types::SandboxPolicy;
     use codex_utils_absolute_path::AbsolutePathBuf;
     use codex_utils_absolute_path::AbsolutePathBufGuard;
     use pretty_assertions::assert_eq;

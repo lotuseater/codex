@@ -32,8 +32,14 @@ In the codex-rs folder where the rust code lives:
   or repairing code, preserve real behavior and data flow through the proper API/model when the
   information exists or can be cleanly carried; use placeholders, dropped fields, or `None` only
   when the source data genuinely does not exist or a broader refactor is explicitly out of scope.
+  Do not use "broader refactor out of scope" as the default escape hatch: when the right fix is
+  architectural, decompose it into coherent subprojects, tools, canaries, and checkpoints, then
+  implement the largest coherent verified slice that materially improves long-term maintainability.
+- For dependency and architecture findings, fix the ownership boundary rather than hiding the issue
+  behind compatibility imports, re-export crutches, or local workarounds. Separate crates/modules
+  are preferred when they reduce merge pressure and make future integration cleaner.
 - If you change `ConfigToml` or nested config types, run `just write-config-schema` to update `codex-rs/core/config.schema.json`.
-- When working with MCP tool calls, prefer using `codex-rs/codex-mcp/src/mcp_connection_manager.rs` to handle mutation of tools and tool calls. Aim to minimize the footprint of changes and leverage existing abstractions rather than plumbing code through multiple levels of function calls.
+- When working with MCP tool calls, prefer using `codex-rs/codex-mcp/src/mcp_connection_manager.rs` to handle mutation of tools and tool calls. Avoid incidental plumbing through multiple levels of function calls, but refactor the ownership boundary when that is the maintainable fix.
 - If you change Rust dependencies (`Cargo.toml` or `Cargo.lock`), run `just bazel-lock-update` from the
   repo root to refresh `MODULE.bazel.lock`, and include that lockfile update in the same change.
 - After dependency changes, run `just bazel-lock-check` from the repo root so lockfile drift is caught

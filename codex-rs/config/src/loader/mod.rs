@@ -28,17 +28,17 @@ use crate::strict_config::ignored_toml_value_field;
 use crate::strict_config::unknown_feature_toml_value_field;
 use crate::thread_config::ThreadConfigContext;
 use crate::thread_config::ThreadConfigLoader;
-use codex_app_server_protocol::ConfigLayerSource;
+use codex_config_types::ApprovalsReviewer;
+use codex_config_types::ConfigLayerSource;
+use codex_config_types::SandboxMode;
+use codex_config_types::TrustLevel;
 use codex_file_system::ExecutorFileSystem;
-use codex_git_utils::resolve_root_git_project_for_trust;
-use codex_protocol::config_types::ApprovalsReviewer;
-use codex_protocol::config_types::SandboxMode;
-use codex_protocol::config_types::TrustLevel;
-use codex_protocol::protocol::AskForApproval;
+use codex_permission_types::AskForApproval;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::AbsolutePathBufGuard;
 use dunce::canonicalize as normalize_path;
 use serde::Deserialize;
+use std::ffi::OsStr;
 use std::io;
 use std::path::Path;
 #[cfg(windows)]
@@ -1052,6 +1052,53 @@ async fn find_git_checkout_root(
         let dot_git = dir.join(".git");
         if fs.get_metadata(&dot_git, /*sandbox*/ None).await.is_ok() {
             return Some(dir);
+        }
+    }
+    None
+}
+
+async fn resolve_root_git_project_for_trust(
+    fs: &dyn ExecutorFileSystem,
+    cwd: &AbsolutePathBuf,
+) -> Option<AbsolutePathBuf> {
+    let base = match fs.get_metadata(cwd, /*sandbox*/ None).await {
+        Ok(metadata) if metadata.is_directory => cwd.clone(),
+        _ => cwd.parent()?,
+    };
+    let (repo_root, dot_git) = find_ancestor_git_entry_with_fs(fs, &base).await?;
+    if fs
+        .get_metadata(&dot_git, /*sandbox*/ None)
+        .await
+        .ok()?
+        .is_directory
+    {
+        return Some(repo_root);
+    }
+
+    let git_dir_s = fs.read_file_text(&dot_git, /*sandbox*/ None).await.ok()?;
+    let git_dir_rel = git_dir_s.trim().strip_prefix("gitdir:")?.trim();
+    if git_dir_rel.is_empty() {
+        return None;
+    }
+
+    let git_dir_path = AbsolutePathBuf::resolve_path_against_base(git_dir_rel, repo_root.as_path());
+    let worktrees_dir = git_dir_path.parent()?;
+    if worktrees_dir.as_path().file_name() != Some(OsStr::new("worktrees")) {
+        return None;
+    }
+
+    let common_dir = worktrees_dir.parent()?;
+    common_dir.parent()
+}
+
+async fn find_ancestor_git_entry_with_fs(
+    fs: &dyn ExecutorFileSystem,
+    base_dir: &AbsolutePathBuf,
+) -> Option<(AbsolutePathBuf, AbsolutePathBuf)> {
+    for dir in base_dir.ancestors() {
+        let dot_git = dir.join(".git");
+        if fs.get_metadata(&dot_git, /*sandbox*/ None).await.is_ok() {
+            return Some((dir, dot_git));
         }
     }
     None

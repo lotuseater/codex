@@ -20,12 +20,12 @@ Plan updated
 Self-review checkpoint before continuing: actively review the plan as if the user had asked \"review and improve the plan\". First compare the plan to the user's prompt and confirm it actually plans the requested work. Then check task order, missing verification, risky assumptions, stale context, user constraints, and user/remote overlap. Revise the plan first if any issue is found.
 
 <prototype_first_policy>
-For feature, tool/runtime, memory, agent, DAB, cache, prompt/context-reducer, or expensive-verification work, first consider whether a tiny demo, canary, fixture, or lab script would reduce risk, tokens, or build cost before changing the main path. Use the prototype when it is worthwhile; skip it for trivial edits, exact narrow fixes, or when a direct small test is cheaper.
+For feature, tool/runtime, memory, agent, DAB, cache, prompt/context-reducer, or expensive-verification work, first consider whether a focused demo, canary, fixture, or lab script would reduce risk, tokens, or build cost before changing the main path. Use the prototype when it is worthwhile; skip it for trivial edits, exact narrow fixes, or when a direct targeted test is cheaper.
 </prototype_first_policy>
 
-<bounded_repair_policy>
-When self-review finds a concrete, repo-controlled caveat that is directly fixable and verifiable, prefer one bounded repair pass before proceeding. Stop instead of repairing when the blocker is external, destructive, or not reproducible from current evidence.
-</bounded_repair_policy>";
+<coherent_repair_policy>
+When self-review finds a concrete, repo-controlled caveat that is directly fixable and verifiable, prefer one coherent repair pass before proceeding. Stop instead of repairing when the blocker is external, destructive, or not reproducible from current evidence.
+</coherent_repair_policy>";
 
 #[derive(Debug, Default)]
 pub struct SelfReviewTracker {
@@ -152,16 +152,16 @@ impl SelfReviewTracker {
             "\
 Automatic self-review of the just-completed work slice.
 
-Do a bounded review as if the user asked: review your last actions since the previous explicit or automatic review and improve if needed.
+Do a focused review as if the user asked: review your last actions since the previous explicit or automatic review and improve if needed.
 
 Ground the review in repository state, not full conversation history:
 - Start with `git status --short`.
 - If there are uncommitted changes, inspect `git diff --stat` and then targeted `git diff -- <path>` for relevant files.
 - If the tree is clean or the notes indicate committed work, inspect the relevant commit with `git show --stat --oneline HEAD` and targeted `git show HEAD -- <path>`.
-- Use the compact work notes below only as orientation; they are intentionally small so this still works after compaction.
+- Use the compact work notes below only as orientation; they are intentionally concise so this still works after compaction.
 - Check correctness, regressions, user constraints, missing tests, and whether verification is sufficient.
-- For feature, tool/runtime, memory, agent, DAB, cache, prompt/context-reducer, or expensive-verification work, check whether a tiny demo, canary, fixture, or lab script should have come first; skip this for trivial edits, exact narrow fixes, or when a direct small test is cheaper.
-- If the review finds a concrete repo-controlled caveat, apply one bounded repair pass and rerun the smallest relevant verification before finalizing.
+- For feature, tool/runtime, memory, agent, DAB, cache, prompt/context-reducer, or expensive-verification work, check whether a focused demo, canary, fixture, or lab script should have come first; skip this for trivial edits, exact narrow fixes, or when a direct targeted test is cheaper.
+- If the review finds a concrete repo-controlled caveat, apply one coherent repair pass and rerun the most relevant targeted verification before finalizing.
 - Return prioritized review findings. If there are no findings, say that in the review output.
 
 Compact work notes:
@@ -340,7 +340,7 @@ mod tests {
     }
 
     #[test]
-    fn review_prompt_includes_bounded_work_notes() {
+    fn review_prompt_includes_compact_work_notes() {
         let mut tracker = SelfReviewTracker::default();
         tracker.note_plan_update();
         tracker.note_patch(vec!["src/lib.rs".to_string()]);
@@ -360,9 +360,9 @@ mod tests {
         let tracker = SelfReviewTracker::default();
         let instructions = tracker.review_instructions();
 
-        assert!(instructions.contains("tiny demo, canary, fixture, or lab script"));
+        assert!(instructions.contains("focused demo, canary, fixture, or lab script"));
         assert!(instructions.contains("prompt/context-reducer"));
-        assert!(instructions.contains("direct small test is cheaper"));
+        assert!(instructions.contains("direct targeted test is cheaper"));
     }
 
     #[test]
@@ -377,6 +377,7 @@ mod tests {
         assert_eq!(plan_tool_response(true), SELF_REVIEW_CHECKPOINT_MESSAGE);
         assert_eq!(plan_tool_response(false), PLAN_UPDATED_MESSAGE);
         assert!(SELF_REVIEW_CHECKPOINT_MESSAGE.contains("<prototype_first_policy>"));
+        assert!(SELF_REVIEW_CHECKPOINT_MESSAGE.contains("<coherent_repair_policy>"));
     }
 
     #[test]

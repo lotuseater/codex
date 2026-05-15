@@ -66,6 +66,7 @@ codex-rmcp-client = { workspace = true }
 codex-rollout = { workspace = true }
 codex-sandboxing = { workspace = true }
 codex-state = { workspace = true }
+codex-thread-config-remote = { workspace = true }
 codex-thread-store = { workspace = true }
 codex-tool-schema = { workspace = true }
 codex-utils-absolute-path = { workspace = true }

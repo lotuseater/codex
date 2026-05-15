@@ -5,7 +5,7 @@ use codex_network_proxy_config::NetworkMode;
 use codex_network_proxy_config::NetworkProxyConfig;
 use codex_network_proxy_config::NetworkUnixSocketPermission as ProxyNetworkUnixSocketPermission;
 use codex_network_proxy_config::normalize_host;
-use codex_protocol::permissions::FileSystemAccessMode;
+use codex_permission_types::FileSystemAccessMode;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;

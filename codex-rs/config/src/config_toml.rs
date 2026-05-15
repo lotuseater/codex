@@ -28,8 +28,19 @@ use crate::types::ToolSuggestConfig;
 use crate::types::Tui;
 use crate::types::UriBasedFileOpener;
 use crate::types::WindowsToml;
-use codex_app_server_protocol::Tools;
-use codex_app_server_protocol::UserSavedConfig;
+use codex_config_types::ContextBudgetMode;
+use codex_config_types::ForcedLoginMethod;
+use codex_config_types::Personality;
+use codex_config_types::ReasoningEffort;
+use codex_config_types::ReasoningSummary;
+use codex_config_types::SandboxMode;
+use codex_config_types::Tools;
+use codex_config_types::TrustLevel;
+use codex_config_types::UserSavedConfig;
+use codex_config_types::Verbosity;
+use codex_config_types::WebSearchMode;
+use codex_config_types::WebSearchToolConfig;
+use codex_config_types::WindowsSandboxLevel;
 use codex_features::FeaturesToml;
 use codex_model_provider_info::AMAZON_BEDROCK_PROVIDER_ID;
 use codex_model_provider_info::LEGACY_OLLAMA_CHAT_PROVIDER_ID;
@@ -38,20 +49,9 @@ use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::OLLAMA_CHAT_PROVIDER_REMOVED_ERROR;
 use codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID;
 use codex_model_provider_info::OPENAI_PROVIDER_ID;
-use codex_protocol::config_types::ContextBudgetMode;
-use codex_protocol::config_types::ForcedLoginMethod;
-use codex_protocol::config_types::Personality;
-use codex_protocol::config_types::ReasoningSummary;
-use codex_protocol::config_types::SandboxMode;
-use codex_protocol::config_types::TrustLevel;
-use codex_protocol::config_types::Verbosity;
-use codex_protocol::config_types::WebSearchMode;
-use codex_protocol::config_types::WebSearchToolConfig;
-use codex_protocol::config_types::WindowsSandboxLevel;
-use codex_protocol::models::PermissionProfile;
-use codex_protocol::openai_models::ReasoningEffort;
-use codex_protocol::permissions::NetworkSandboxPolicy;
-use codex_protocol::protocol::AskForApproval;
+use codex_permission_types::AskForApproval;
+use codex_permission_types::NetworkSandboxPolicy;
+use codex_permission_types::PermissionProfile;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path::normalize_for_path_comparison;
 use schemars::JsonSchema;
@@ -579,8 +579,8 @@ pub enum RealtimeTransport {
     Websocket,
 }
 
-pub use codex_protocol::protocol::RealtimeConversationVersion as RealtimeWsVersion;
-pub use codex_protocol::protocol::RealtimeVoice;
+pub use codex_config_types::RealtimeConversationVersion as RealtimeWsVersion;
+pub use codex_config_types::RealtimeVoice;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
 #[schemars(deny_unknown_fields)]

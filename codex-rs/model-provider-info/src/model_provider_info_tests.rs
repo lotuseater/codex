@@ -271,6 +271,7 @@ fn test_create_amazon_bedrock_provider() {
     );
 }
 
+#[cfg(feature = "runtime")]
 #[test]
 fn test_amazon_bedrock_provider_adds_mantle_client_agent_header() {
     let api_provider = ModelProviderInfo::create_amazon_bedrock_provider(/*aws*/ None)

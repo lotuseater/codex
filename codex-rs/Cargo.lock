@@ -1968,6 +1968,7 @@ dependencies = [
  "codex-sandboxing",
  "codex-shell-command",
  "codex-state",
+ "codex-thread-config-remote",
  "codex-thread-store",
  "codex-tool-schema",
  "codex-utils-absolute-path",
@@ -2018,6 +2019,7 @@ dependencies = [
  "codex-exec-server",
  "codex-feedback",
  "codex-protocol",
+ "codex-thread-config-remote",
  "codex-uds",
  "codex-utils-absolute-path",
  "codex-utils-rustls-provider",
@@ -2060,6 +2062,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap",
+ "codex-config-types",
  "codex-experimental-api-macros",
  "codex-protocol",
  "codex-shell-command",
@@ -2488,14 +2491,13 @@ dependencies = [
  "anyhow",
  "async-trait",
  "base64 0.22.1",
- "codex-app-server-protocol",
+ "codex-config-types",
  "codex-execpolicy",
  "codex-features",
  "codex-file-system",
- "codex-git-utils",
  "codex-model-provider-info",
  "codex-network-proxy-config",
- "codex-protocol",
+ "codex-permission-types",
  "codex-utils-absolute-path",
  "codex-utils-cargo-bin",
  "codex-utils-path",
@@ -2507,7 +2509,6 @@ dependencies = [
  "libc",
  "multimap",
  "pretty_assertions",
- "prost 0.14.3",
  "schemars 0.8.22",
  "serde",
  "serde_ignored",
@@ -2518,12 +2519,8 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
- "tokio-stream",
  "toml 1.1.2+spec-1.1.0",
  "toml_edit",
- "tonic",
- "tonic-prost",
- "tonic-prost-build",
  "tracing",
  "wildmatch",
  "winapi-util",
@@ -2534,10 +2531,16 @@ dependencies = [
 name = "codex-config-types"
 version = "0.0.0"
 dependencies = [
+ "codex-permission-types",
+ "codex-utils-absolute-path",
+ "pretty_assertions",
  "schemars 0.8.22",
  "serde",
  "serde_json",
+ "strum",
+ "strum_macros",
  "ts-rs",
+ "wildmatch",
 ]
 
 [[package]]
@@ -2992,8 +2995,6 @@ dependencies = [
 name = "codex-features"
 version = "0.0.0"
 dependencies = [
- "codex-otel",
- "codex-protocol",
  "pretty_assertions",
  "schemars 0.8.22",
  "serde",
@@ -3035,7 +3036,8 @@ name = "codex-file-system"
 version = "0.0.0"
 dependencies = [
  "async-trait",
- "codex-protocol",
+ "codex-config-types",
+ "codex-permission-types",
  "codex-utils-absolute-path",
  "serde",
 ]
@@ -3070,13 +3072,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-git-types"
+version = "0.0.0"
+dependencies = [
+ "schemars 0.8.22",
+ "serde",
+ "ts-rs",
+]
+
+[[package]]
 name = "codex-git-utils"
 version = "0.0.0"
 dependencies = [
  "anyhow",
  "chrono",
  "codex-file-system",
- "codex-protocol",
+ "codex-git-types",
  "codex-utils-absolute-path",
  "futures",
  "gix",
@@ -3428,6 +3439,7 @@ version = "0.0.0"
 dependencies = [
  "codex-api",
  "codex-app-server-protocol",
+ "codex-config-types",
  "codex-protocol",
  "codex-utils-absolute-path",
  "http 1.4.0",
@@ -3569,6 +3581,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-permission-types"
+version = "0.0.0"
+dependencies = [
+ "codex-utils-absolute-path",
+ "globset",
+ "pretty_assertions",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "strum_macros",
+ "tempfile",
+ "tracing",
+ "ts-rs",
+]
+
+[[package]]
 name = "codex-plugin"
 version = "0.0.0"
 dependencies = [
@@ -3596,7 +3624,9 @@ dependencies = [
  "codex-async-utils",
  "codex-config-types",
  "codex-execpolicy",
+ "codex-git-types",
  "codex-network-proxy-config",
+ "codex-permission-types",
  "codex-utils-absolute-path",
  "codex-utils-image",
  "codex-utils-string",
@@ -3941,6 +3971,24 @@ version = "0.0.0"
 dependencies = [
  "codex-arg0",
  "tempfile",
+]
+
+[[package]]
+name = "codex-thread-config-remote"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "codex-config",
+ "codex-config-types",
+ "codex-model-provider-info",
+ "codex-utils-absolute-path",
+ "pretty_assertions",
+ "prost 0.14.3",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
 ]
 
 [[package]]

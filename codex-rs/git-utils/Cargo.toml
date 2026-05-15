@@ -12,7 +12,7 @@ workspace = true
 anyhow = { workspace = true }
 chrono = { workspace = true }
 codex-file-system = { workspace = true }
-codex-protocol = { workspace = true }
+codex-git-types = { workspace = true }
 codex-utils-absolute-path = { workspace = true }
 futures = { workspace = true, features = ["alloc"] }
 gix = { workspace = true }

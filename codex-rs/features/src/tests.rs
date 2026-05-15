@@ -6,9 +6,7 @@ use crate::Features;
 use crate::FeaturesToml;
 use crate::Stage;
 use crate::feature_for_key;
-use crate::unstable_features_warning_event;
-use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::WarningEvent;
+use crate::unstable_features_warning_message;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 use toml::Table;
@@ -374,6 +372,16 @@ fn workspace_dependencies_is_stable_and_enabled_by_default() {
 }
 
 #[test]
+fn semantic_auto_compact_is_stable_and_enabled_by_default() {
+    assert_eq!(Feature::SemanticAutoCompact.stage(), Stage::Stable);
+    assert_eq!(Feature::SemanticAutoCompact.default_enabled(), true);
+    assert_eq!(
+        feature_for_key("semantic_auto_compact"),
+        Some(Feature::SemanticAutoCompact)
+    );
+}
+
+#[test]
 fn telepathy_is_legacy_alias_for_chronicle() {
     assert_eq!(Feature::Chronicle.stage(), Stage::UnderDevelopment);
     assert_eq!(Feature::Chronicle.default_enabled(), false);
@@ -681,7 +689,7 @@ fn materialize_resolved_enabled_writes_all_features_and_preserves_custom_config(
 }
 
 #[test]
-fn unstable_warning_event_only_mentions_enabled_under_development_features() {
+fn unstable_warning_message_only_mentions_enabled_under_development_features() {
     let mut configured_features = Table::new();
     configured_features.insert("child_agents_md".to_string(), TomlValue::Boolean(true));
     configured_features.insert("personality".to_string(), TomlValue::Boolean(true));
@@ -690,17 +698,14 @@ fn unstable_warning_event_only_mentions_enabled_under_development_features() {
     let mut features = Features::with_defaults();
     features.enable(Feature::ChildAgentsMd);
 
-    let warning = unstable_features_warning_event(
+    let message = unstable_features_warning_message(
         Some(&configured_features),
         /*suppress_unstable_features_warning*/ false,
         &features,
         "/tmp/config.toml",
     )
-    .expect("warning event");
+    .expect("warning message");
 
-    let EventMsg::Warning(WarningEvent { message }) = warning.msg else {
-        panic!("expected warning event");
-    };
     assert!(message.contains("child_agents_md"));
     assert!(!message.contains("personality"));
     assert!(message.contains("/tmp/config.toml"));
