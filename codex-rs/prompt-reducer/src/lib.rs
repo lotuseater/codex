@@ -63,6 +63,13 @@ pub struct PromptReductionStats {
 struct CandidateReduction {
     reason: &'static str,
     digest: String,
+    disposition: CandidateDisposition,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CandidateDisposition {
+    ArtifactReplacement,
+    OmitFromPrompt,
 }
 
 pub fn reduce_prompt_items(
@@ -212,6 +219,14 @@ fn reduce_text_slot(
         candidate.reason,
         &sha1,
     );
+    if candidate.disposition == CandidateDisposition::OmitFromPrompt {
+        write_artifact(&artifact_path, &original)?;
+        text.clear();
+        stats.artifacts += 1;
+        stats.reductions += 1;
+        return Ok(());
+    }
+
     let replacement = render_replacement(
         candidate.reason,
         &candidate.digest,
@@ -294,45 +309,136 @@ fn classify_candidate(
     exact_preserve_reason: Option<&'static str>,
     recent_prompt_item: bool,
 ) -> Option<CandidateReduction> {
-    if text.chars().count() < config.min_reduce_chars {
-        return None;
-    }
     let sha1 = sha1_hex(text);
     if let Some(first_item) = seen_hashes.get(&sha1) {
         return Some(CandidateReduction {
             reason: "duplicate_block",
             digest: format!("Exact duplicate of earlier prompt item `{first_item}`."),
+            disposition: CandidateDisposition::ArtifactReplacement,
         });
     }
+
+    let char_count = text.chars().count();
     if recent_prompt_item {
+        if exact_preserve_reason.is_none()
+            && let Some(candidate) = recent_tool_output_candidate(source, text, config)
+        {
+            return Some(candidate);
+        }
         return None;
     }
-    match exact_preserve_reason {
-        Some("source_read") => {
-            return Some(CandidateReduction {
-                reason: "source_read_digest",
-                digest: source_read_digest(source, text),
-            });
-        }
-        Some("diff_hunk") => {
-            return Some(CandidateReduction {
-                reason: "diff_hunk_digest",
-                digest: diff_hunk_digest(text),
-            });
-        }
-        Some("compiler_diagnostic") => {
-            return Some(CandidateReduction {
-                reason: "compiler_diagnostic_digest",
-                digest: compiler_diagnostic_digest(text),
-            });
-        }
-        Some(_) => return None,
-        None => {}
+
+    if exact_preserve_reason.is_none()
+        && let Some(candidate) = single_use_prompt_candidate(source, text)
+    {
+        return Some(candidate);
     }
+
+    if char_count < config.min_reduce_chars
+        && (char_count < config.min_reduce_chars / 2
+            || exact_preserve_reason.is_some()
+            || !(is_medium_sized_message_reduction_candidate(text)
+                || is_medium_sized_tool_output_reduction_candidate(source, text, config)))
+    {
+        return None;
+    }
+
+    if exact_preserve_reason == Some("source_read") {
+        return Some(CandidateReduction {
+            reason: "source_read_digest",
+            digest: source_read_digest(source, text),
+            disposition: CandidateDisposition::ArtifactReplacement,
+        });
+    }
+
+    if exact_preserve_reason == Some("diff_hunk") {
+        return Some(CandidateReduction {
+            reason: "diff_hunk_digest",
+            digest: diff_hunk_digest(text),
+            disposition: CandidateDisposition::ArtifactReplacement,
+        });
+    }
+
+    if exact_preserve_reason == Some("compiler_diagnostic") {
+        return Some(CandidateReduction {
+            reason: "compiler_diagnostic_digest",
+            digest: compiler_diagnostic_digest(text),
+            disposition: CandidateDisposition::ArtifactReplacement,
+        });
+    }
+
+    if exact_preserve_reason.is_some() {
+        return None;
+    }
+
     if is_self_review_anchor(text) {
         return Some(CandidateReduction {
             reason: "self_review_inventory",
             digest: self_review_digest(text),
+            disposition: CandidateDisposition::ArtifactReplacement,
+        });
+    }
+    if is_plan_review_prompt(text) {
+        return Some(CandidateReduction {
+            reason: "plan_review_prompt",
+            digest: plan_review_digest(text),
+            disposition: CandidateDisposition::ArtifactReplacement,
+        });
+    }
+    if is_completed_plan_checkpoint(text) {
+        return Some(CandidateReduction {
+            reason: "completed_plan_checkpoint",
+            digest: completed_plan_checkpoint_digest(text),
+            disposition: CandidateDisposition::ArtifactReplacement,
+        });
+    }
+    if is_proposed_plan_message(text) {
+        return Some(CandidateReduction {
+            reason: "proposed_plan_digest",
+            digest: proposed_plan_digest(text),
+            disposition: CandidateDisposition::ArtifactReplacement,
+        });
+    }
+    if is_review_result_message(text) {
+        return Some(CandidateReduction {
+            reason: "review_result_digest",
+            digest: review_result_digest(text),
+            disposition: CandidateDisposition::ArtifactReplacement,
+        });
+    }
+    if is_subagent_notification_message(text) {
+        return Some(CandidateReduction {
+            reason: "subagent_notification_digest",
+            digest: subagent_notification_digest(text),
+            disposition: CandidateDisposition::ArtifactReplacement,
+        });
+    }
+    if is_assistant_findings_message(text) {
+        return Some(CandidateReduction {
+            reason: "assistant_findings_digest",
+            digest: assistant_findings_digest(text),
+            disposition: CandidateDisposition::ArtifactReplacement,
+        });
+    }
+    if is_context_pack_message(text) {
+        return Some(CandidateReduction {
+            reason: "context_pack_digest",
+            digest: context_pack_digest(text),
+            disposition: CandidateDisposition::ArtifactReplacement,
+        });
+    }
+    if let Some(digest) = build_status_json_digest(text) {
+        return Some(CandidateReduction {
+            reason: "build_status_digest",
+            digest,
+            disposition: CandidateDisposition::ArtifactReplacement,
+        });
+    }
+    if let Some(digest) = search_result_digest(source, text, config.path_list_threshold) {
+        return Some(CandidateReduction {
+            reason: "search_result_digest",
+            digest,
+            disposition: CandidateDisposition::ArtifactReplacement,
         });
     }
     let path_set = inventory_paths(text);
@@ -340,20 +446,76 @@ fn classify_candidate(
         return Some(CandidateReduction {
             reason: "path_inventory",
             digest: render_compact_path_list("path_inventory_digest", &path_set, 24),
+            disposition: CandidateDisposition::ArtifactReplacement,
         });
     }
     if let Some(digest) = json_digest(text) {
         return Some(CandidateReduction {
             reason: "json_digest",
             digest,
+            disposition: CandidateDisposition::ArtifactReplacement,
         });
     }
     if looks_like_command_log(text) {
         return Some(CandidateReduction {
             reason: "command_log_digest",
             digest: command_log_digest(text),
+            disposition: CandidateDisposition::ArtifactReplacement,
         });
     }
+    None
+}
+
+fn recent_tool_output_candidate(
+    source: &str,
+    text: &str,
+    config: &PromptReductionConfig,
+) -> Option<CandidateReduction> {
+    let lower_source = source.to_ascii_lowercase();
+    if !(lower_source.starts_with("shell_output:")
+        || lower_source.starts_with("tool_output:")
+        || lower_source.contains("build_status"))
+    {
+        return None;
+    }
+
+    if let Some(digest) = build_status_json_digest(text) {
+        return Some(CandidateReduction {
+            reason: "recent_build_status_digest",
+            digest,
+            disposition: CandidateDisposition::ArtifactReplacement,
+        });
+    }
+    if let Some(digest) = search_result_digest(source, text, config.path_list_threshold) {
+        return Some(CandidateReduction {
+            reason: "recent_search_result_digest",
+            digest,
+            disposition: CandidateDisposition::ArtifactReplacement,
+        });
+    }
+    let path_set = inventory_paths(text);
+    if path_set.len() >= config.path_list_threshold {
+        return Some(CandidateReduction {
+            reason: "recent_path_inventory",
+            digest: render_compact_path_list("path_inventory_digest", &path_set, 24),
+            disposition: CandidateDisposition::ArtifactReplacement,
+        });
+    }
+    if let Some(digest) = json_digest(text) {
+        return Some(CandidateReduction {
+            reason: "recent_json_digest",
+            digest,
+            disposition: CandidateDisposition::ArtifactReplacement,
+        });
+    }
+    if looks_like_command_log(text) {
+        return Some(CandidateReduction {
+            reason: "recent_command_log_digest",
+            digest: command_log_digest(text),
+            disposition: CandidateDisposition::ArtifactReplacement,
+        });
+    }
+
     None
 }
 
@@ -479,7 +641,68 @@ fn is_self_review_anchor(text: &str) -> bool {
     lower.contains("automatic self-review")
         && (lower.contains("dirty tracked files")
             || lower.contains("dirty-at-anchor")
-            || lower.contains("exact diff commands"))
+            || lower.contains("exact diff commands")
+            || lower.contains("compact work notes")
+            || lower.contains("git status --short")
+            || lower.contains("just-completed work slice"))
+}
+
+fn single_use_prompt_candidate(source: &str, text: &str) -> Option<CandidateReduction> {
+    if is_self_review_anchor(text) {
+        return Some(CandidateReduction {
+            reason: "single_use_self_review_prompt",
+            digest: self_review_digest(text),
+            disposition: CandidateDisposition::OmitFromPrompt,
+        });
+    }
+    if is_plan_review_prompt(text) {
+        return Some(CandidateReduction {
+            reason: "single_use_plan_review_prompt",
+            digest: plan_review_digest(text),
+            disposition: CandidateDisposition::OmitFromPrompt,
+        });
+    }
+    if is_completed_plan_checkpoint(text) {
+        return Some(CandidateReduction {
+            reason: "single_use_completed_plan_checkpoint",
+            digest: completed_plan_checkpoint_digest(text),
+            disposition: CandidateDisposition::OmitFromPrompt,
+        });
+    }
+    if is_proposed_plan_message(text) {
+        return Some(CandidateReduction {
+            reason: "single_use_proposed_plan",
+            digest: proposed_plan_digest(text),
+            disposition: CandidateDisposition::OmitFromPrompt,
+        });
+    }
+    if is_prompt_reduction_status_notice(source, text) {
+        return Some(CandidateReduction {
+            reason: "single_use_prompt_reduction_notice",
+            digest: prompt_reduction_status_digest(text),
+            disposition: CandidateDisposition::OmitFromPrompt,
+        });
+    }
+    None
+}
+
+fn is_prompt_reduction_status_notice(source: &str, text: &str) -> bool {
+    let lower_source = source.to_ascii_lowercase();
+    let lower = text.trim_start().to_ascii_lowercase();
+    (lower_source.contains("message:assistant") || lower_source.contains("client_event"))
+        && (lower.starts_with("prompt reduction")
+            || lower.starts_with("prompt reduced")
+            || lower.starts_with("prompt reducer"))
+        && lower.contains('%')
+        && (lower.contains("saved") || lower.contains("reduced"))
+}
+
+fn prompt_reduction_status_digest(text: &str) -> String {
+    format!(
+        "prompt_reduction_status_digest\nlines_total: {}\nexcerpt:\n{}",
+        text.lines().count(),
+        excerpt(text)
+    )
 }
 
 fn self_review_digest(text: &str) -> String {
@@ -487,13 +710,287 @@ fn self_review_digest(text: &str) -> String {
     let inventory_paths = inventory_paths(text);
     let diff_commands = lower.matches("git diff").count();
     let no_index_commands = lower.matches("git diff --no-index").count();
+    let sections = [
+        "dirty tracked files",
+        "staged files",
+        "untracked files",
+        "changed files since anchor",
+        "exact diff commands",
+    ]
+    .iter()
+    .filter(|section| lower.contains(**section))
+    .copied()
+    .collect::<Vec<_>>();
     format!(
-        "self_review_inventory_digest\npaths_total: {}\ndiff_commands: {}\nno_index_diff_commands: {}\nexcerpt:\n{}",
+        "self_review_inventory_digest\nsections: {}\npaths_total: {}\ndiff_commands: {}\nno_index_diff_commands: {}\nexcerpt:\n{}",
+        if sections.is_empty() {
+            "(none)".to_string()
+        } else {
+            sections.join(", ")
+        },
         inventory_paths.len(),
         diff_commands,
         no_index_commands,
         excerpt(text)
     )
+}
+
+fn is_plan_review_prompt(text: &str) -> bool {
+    let lower = text.trim_start().to_ascii_lowercase();
+    lower.starts_with("self-review the plan below before implementation.")
+        && lower.contains("current plan:")
+}
+
+fn plan_review_digest(text: &str) -> String {
+    let title = first_heading_after_marker(text, "Current plan:").unwrap_or("(unknown)");
+    let sections = markdown_headings(text, 12);
+    format!(
+        "plan_review_prompt_digest\ncurrent_plan_title: {}\nsections: {}\nlines_total: {}\nexcerpt:\n{}",
+        title,
+        if sections.is_empty() {
+            "(none)".to_string()
+        } else {
+            sections.join(" | ")
+        },
+        text.lines().count(),
+        excerpt(text)
+    )
+}
+
+fn is_completed_plan_checkpoint(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    lower.contains("the current plan appears complete")
+        && lower.contains("completed plan:")
+        && lower.contains("review the completed work")
+}
+
+fn completed_plan_checkpoint_digest(text: &str) -> String {
+    let completed_items = text
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim_start();
+            trimmed.starts_with("- completed:") || trimmed.starts_with("completed:")
+        })
+        .take(16)
+        .map(|line| truncate(line.trim(), 180))
+        .collect::<Vec<_>>();
+    format!(
+        "completed_plan_checkpoint_digest\ncompleted_items: {}\nlines_total: {}\nexcerpt:\n{}",
+        if completed_items.is_empty() {
+            "(none)".to_string()
+        } else {
+            completed_items.join(" | ")
+        },
+        text.lines().count(),
+        excerpt(text)
+    )
+}
+
+fn is_proposed_plan_message(text: &str) -> bool {
+    text.contains("<proposed_plan>") && text.contains("</proposed_plan>")
+}
+
+fn proposed_plan_digest(text: &str) -> String {
+    let title = first_markdown_heading(text).unwrap_or("(unknown)");
+    let sections = markdown_headings(text, 14);
+    format!(
+        "proposed_plan_digest\ntitle: {}\nsections: {}\nlines_total: {}\nexcerpt:\n{}",
+        title,
+        if sections.is_empty() {
+            "(none)".to_string()
+        } else {
+            sections.join(" | ")
+        },
+        text.lines().count(),
+        excerpt(text)
+    )
+}
+
+fn is_medium_sized_message_reduction_candidate(text: &str) -> bool {
+    is_self_review_anchor(text)
+        || is_plan_review_prompt(text)
+        || is_completed_plan_checkpoint(text)
+        || is_proposed_plan_message(text)
+        || is_review_result_message(text)
+        || is_subagent_notification_message(text)
+        || is_assistant_findings_message(text)
+}
+
+fn is_medium_sized_tool_output_reduction_candidate(
+    source: &str,
+    text: &str,
+    config: &PromptReductionConfig,
+) -> bool {
+    let lower_source = source.to_ascii_lowercase();
+    if !(lower_source.starts_with("shell_output:") || lower_source.starts_with("tool_output:")) {
+        return false;
+    }
+
+    build_status_json_digest(text).is_some()
+        || search_result_digest(source, text, config.path_list_threshold).is_some()
+        || inventory_paths(text).len() >= config.path_list_threshold
+        || json_digest(text).is_some()
+        || looks_like_command_log(text)
+}
+
+fn is_review_result_message(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    lower.contains("<user_action>")
+        && lower.contains("<action>review</action>")
+        && lower.contains("<results>")
+}
+
+fn review_result_digest(text: &str) -> String {
+    let comments = text
+        .lines()
+        .filter(|line| line.trim_start().starts_with("- [P"))
+        .take(12)
+        .map(|line| truncate(line.trim(), 220))
+        .collect::<Vec<_>>();
+    format!(
+        "review_result_digest\ncomments_total: {}\ncomments: {}\nlines_total: {}\nexcerpt:\n{}",
+        text.lines()
+            .filter(|line| line.trim_start().starts_with("- [P"))
+            .count(),
+        if comments.is_empty() {
+            "(none)".to_string()
+        } else {
+            comments.join(" | ")
+        },
+        text.lines().count(),
+        excerpt(text)
+    )
+}
+
+fn is_subagent_notification_message(text: &str) -> bool {
+    text.contains("<subagent_notification>")
+        || (text.contains("\"agent_path\"") && text.contains("\"status\""))
+}
+
+fn subagent_notification_digest(text: &str) -> String {
+    let parsed = serde_json::from_str::<Value>(text).ok();
+    let agent_path = parsed
+        .as_ref()
+        .and_then(|value| {
+            value
+                .get("author")
+                .or_else(|| value.pointer("/content/agent_path"))
+        })
+        .and_then(Value::as_str)
+        .unwrap_or("(unknown)");
+    let content = parsed
+        .as_ref()
+        .and_then(|value| value.get("content"))
+        .and_then(Value::as_str)
+        .unwrap_or(text);
+    let status = if content.contains("\"completed\"") || content.contains("completed") {
+        "completed"
+    } else if content.contains("\"failed\"") || content.contains("failed") {
+        "failed"
+    } else {
+        "unknown"
+    };
+    format!(
+        "subagent_notification_digest\nagent: {}\nstatus: {}\nlines_total: {}\nexcerpt:\n{}",
+        truncate(agent_path, 220),
+        status,
+        text.lines().count(),
+        excerpt(content)
+    )
+}
+
+fn is_assistant_findings_message(text: &str) -> bool {
+    let trimmed = text.trim_start();
+    trimmed.starts_with("**Findings**")
+        || (trimmed.starts_with("Findings") && text.contains("**Source Handoff**"))
+        || (text.contains("**Findings**") && text.contains("**Source Handoff**"))
+}
+
+fn assistant_findings_digest(text: &str) -> String {
+    let findings = text
+        .lines()
+        .filter(|line| line.trim_start().starts_with("- "))
+        .take(12)
+        .map(|line| truncate(line.trim(), 220))
+        .collect::<Vec<_>>();
+    let headings = markdown_headings(text, 10);
+    format!(
+        "assistant_findings_digest\nheadings: {}\nbullets_sample: {}\nlines_total: {}\nexcerpt:\n{}",
+        if headings.is_empty() {
+            "(none)".to_string()
+        } else {
+            headings.join(" | ")
+        },
+        if findings.is_empty() {
+            "(none)".to_string()
+        } else {
+            findings.join(" | ")
+        },
+        text.lines().count(),
+        excerpt(text)
+    )
+}
+
+fn is_context_pack_message(text: &str) -> bool {
+    let trimmed = text.trim_start();
+    trimmed.starts_with("<context_pack") && trimmed.contains("</context_pack>")
+}
+
+fn context_pack_digest(text: &str) -> String {
+    let first_line = text.lines().next().unwrap_or("<context_pack>");
+    let path_set = inventory_paths(text);
+    let candidates = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with("- "))
+        .take(16)
+        .map(|line| truncate(line, 220))
+        .collect::<Vec<_>>();
+    format!(
+        "context_pack_digest\nheader: {}\npaths_total: {}\ncandidates_sample: {}\nlines_total: {}\nexcerpt:\n{}",
+        truncate(first_line.trim(), 220),
+        path_set.len(),
+        if candidates.is_empty() {
+            "(none)".to_string()
+        } else {
+            candidates.join(" | ")
+        },
+        text.lines().count(),
+        excerpt(text)
+    )
+}
+
+fn first_heading_after_marker<'a>(text: &'a str, marker: &str) -> Option<&'a str> {
+    let mut after_marker = false;
+    for line in text.lines() {
+        if after_marker {
+            let trimmed = line.trim();
+            if trimmed.starts_with('#') {
+                return Some(trimmed.trim_start_matches('#').trim());
+            }
+        } else if line.trim().eq_ignore_ascii_case(marker) {
+            after_marker = true;
+        }
+    }
+    None
+}
+
+fn first_markdown_heading(text: &str) -> Option<&str> {
+    text.lines()
+        .map(str::trim)
+        .find(|line| line.starts_with('#'))
+        .map(|line| line.trim_start_matches('#').trim())
+        .filter(|line| !line.is_empty())
+}
+
+fn markdown_headings(text: &str, limit: usize) -> Vec<String> {
+    text.lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with('#'))
+        .map(|line| line.trim_start_matches('#').trim().to_string())
+        .filter(|line| !line.is_empty())
+        .take(limit)
+        .collect()
 }
 
 fn inventory_paths(text: &str) -> BTreeSet<String> {
@@ -505,9 +1002,11 @@ fn inventory_paths(text: &str) -> BTreeSet<String> {
         }
         for token in line.split([',', ';']) {
             for part in token.split(" -> ") {
-                let cleaned = clean_path_candidate(part);
-                if looks_like_inventory_path(&cleaned) {
-                    paths.insert(normalize_slashes(cleaned));
+                for candidate in part.split(" | ") {
+                    let cleaned = clean_path_candidate(candidate);
+                    if looks_like_inventory_path(&cleaned) {
+                        paths.insert(normalize_slashes(cleaned));
+                    }
                 }
             }
         }
@@ -615,6 +1114,62 @@ fn json_digest(text: &str) -> Option<String> {
     Some(digest)
 }
 
+fn build_status_json_digest(text: &str) -> Option<String> {
+    let value = serde_json::from_str::<Value>(text.trim()).ok()?;
+    let map = value.as_object()?;
+    if !map.contains_key("active_build_processes")
+        || !map.contains_key("release_profile_state")
+        || map.get("mode").and_then(Value::as_str) != Some("Status")
+    {
+        return None;
+    }
+    let active = map
+        .get("active_build_processes")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let process_names = active
+        .iter()
+        .filter_map(|process| process.get("process_name").and_then(Value::as_str))
+        .take(12)
+        .collect::<Vec<_>>();
+    let release_binary_time = map
+        .get("release_binary")
+        .and_then(|value| value.get("last_write_time"))
+        .and_then(Value::as_str)
+        .unwrap_or("(unknown)");
+    let wrapper = map
+        .get("wrapper_real_exe")
+        .and_then(Value::as_str)
+        .unwrap_or("(unknown)");
+    let free_c_bytes = map
+        .get("free_c_drive_bytes")
+        .and_then(Value::as_u64)
+        .unwrap_or_default();
+    let profile_matches = map
+        .get("release_profile_state")
+        .and_then(|value| value.get("matches"))
+        .and_then(Value::as_bool)
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "(unknown)".to_string());
+    Some(format!(
+        "build_status_digest\nstatus: {}\nactive_processes: {} ({})\nrelease_binary_last_write: {}\nwrapper_real_exe: {}\nrelease_profile_matches: {}\nfree_c_drive_bytes: {}\ncommand_lines: omitted; read artifact for exact process commands",
+        map.get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("(unknown)"),
+        active.len(),
+        if process_names.is_empty() {
+            "none".to_string()
+        } else {
+            process_names.join(", ")
+        },
+        release_binary_time,
+        truncate(wrapper, 220),
+        profile_matches,
+        free_c_bytes
+    ))
+}
+
 fn json_sample(value: &Value) -> String {
     match value {
         Value::Object(map) => {
@@ -666,8 +1221,72 @@ fn command_log_digest(text: &str) -> String {
     )
 }
 
+fn search_result_digest(source: &str, text: &str, threshold: usize) -> Option<String> {
+    let source_lower = source.to_ascii_lowercase();
+    let source_suggests_search = source_lower.contains("rg ")
+        || source_lower.contains("select-string")
+        || source_lower.contains("grep ");
+    let mut paths = BTreeSet::new();
+    let mut samples = Vec::new();
+    let mut matches_total = 0usize;
+    for line in text.lines() {
+        let Some((path, line_number, body)) = parse_search_result_line(line) else {
+            continue;
+        };
+        paths.insert(path.clone());
+        matches_total += 1;
+        if samples.len() < 12 {
+            samples.push(format!("{path}:{line_number}:{}", truncate(&body, 120)));
+        }
+    }
+    if matches_total < threshold || (!source_suggests_search && paths.len() < threshold) {
+        return None;
+    }
+    let mut extension_counts = BTreeMap::<String, usize>::new();
+    for path in &paths {
+        let extension = Path::new(path)
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .filter(|extension| !extension.is_empty())
+            .unwrap_or("(none)")
+            .to_string();
+        *extension_counts.entry(extension).or_default() += 1;
+    }
+    Some(format!(
+        "search_result_digest\nmatches_total: {}\npaths_total: {}\nextensions: {}\nsamples: {}\nexcerpt:\n{}",
+        matches_total,
+        paths.len(),
+        render_counts(&extension_counts),
+        if samples.is_empty() {
+            "(none)".to_string()
+        } else {
+            samples.join(" | ")
+        },
+        excerpt(text)
+    ))
+}
+
+fn parse_search_result_line(line: &str) -> Option<(String, usize, String)> {
+    for (colon_index, _) in line.match_indices(':') {
+        let rest = &line[colon_index + 1..];
+        let Some(next_colon_offset) = rest.find(':') else {
+            continue;
+        };
+        let number_text = &rest[..next_colon_offset];
+        let Ok(line_number) = number_text.parse::<usize>() else {
+            continue;
+        };
+        let path = line[..colon_index].trim();
+        if !looks_like_inventory_path(path) {
+            continue;
+        }
+        let body = rest[next_colon_offset + 1..].trim().to_string();
+        return Some((normalize_slashes(path), line_number, body));
+    }
+    None
+}
+
 fn source_read_digest(source: &str, text: &str) -> String {
-    let lines = text.lines().collect::<Vec<_>>();
     let paths = inventory_paths(source);
     let path_summary = if paths.is_empty() {
         "(unknown)".to_string()
@@ -677,7 +1296,7 @@ fn source_read_digest(source: &str, text: &str) -> String {
     format!(
         "source_read_digest\nsource: {}\nlines_total: {}\nchars_total: {}\npaths: {}\nexcerpt:\n{}",
         truncate(source, 220),
-        lines.len(),
+        text.lines().count(),
         text.chars().count(),
         path_summary,
         excerpt(text)
@@ -865,6 +1484,173 @@ mod tests {
         assert_eq!(output.text_content().unwrap(), "src/lib.rs");
     }
 
+    #[test]
+    fn omits_stale_self_review_prompt_text() {
+        let text = [
+            "Automatic self-review of the just-completed work slice.",
+            "dirty tracked files at anchor: codex-rs/core/src/session/turn.rs, codex-rs/config/src/types.rs",
+            "exact diff commands:",
+            "`git diff -- codex-rs/core/src/session/turn.rs`",
+            "compact work notes:",
+        ]
+        .join("\n");
+        let mut items = vec![message("user", text, MessageTextKind::Input)];
+        let temp = TempDir::new().unwrap();
+        let config = test_config(temp.path(), 0);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 1);
+        assert_eq!(stats.artifacts, 1);
+        let ResponseItem::Message { content, .. } = &items[0] else {
+            panic!("expected message");
+        };
+        assert_eq!(
+            content,
+            &vec![ContentItem::InputText {
+                text: String::new()
+            }]
+        );
+    }
+
+    #[test]
+    fn preserves_recent_plan_review_prompt() {
+        let text = "Self-review the plan below before implementation.\n\nCurrent plan:\n# Deploy Prompt Reducer\n- run tests".to_string();
+        let mut items = vec![message("user", text.clone(), MessageTextKind::Input)];
+        let temp = TempDir::new().unwrap();
+        let config = test_config(temp.path(), 1);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 0);
+        let ResponseItem::Message { content, .. } = &items[0] else {
+            panic!("expected message");
+        };
+        assert_eq!(content, &vec![ContentItem::InputText { text }]);
+    }
+
+    #[test]
+    fn omits_stale_prompt_reduction_notice() {
+        let mut items = vec![message(
+            "assistant",
+            "Prompt reducer: sent prompt reduced by 76% (3 artifacts).".to_string(),
+            MessageTextKind::Output,
+        )];
+        let temp = TempDir::new().unwrap();
+        let config = test_config(temp.path(), 0);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 1);
+        let ResponseItem::Message { content, .. } = &items[0] else {
+            panic!("expected message");
+        };
+        assert_eq!(
+            content,
+            &vec![ContentItem::OutputText {
+                text: String::new()
+            }]
+        );
+    }
+
+    #[test]
+    fn reduces_recent_search_results() {
+        let output = (0..60)
+            .map(|index| {
+                format!(
+                    "codex-rs/core/src/session/file_{index}.rs:{}:fn prompt_reduction_{index}() {{}}",
+                    index + 1
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let mut items = vec![
+            shell_call("call", "rg -n prompt_reduction codex-rs"),
+            shell_output("call", output),
+        ];
+        let temp = TempDir::new().unwrap();
+        let config = test_config(temp.path(), 1);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 1);
+        let ResponseItem::FunctionCallOutput { output, .. } = &items[1] else {
+            panic!("expected output");
+        };
+        assert!(
+            output
+                .text_content()
+                .unwrap()
+                .contains("recent_search_result_digest")
+        );
+    }
+
+    #[test]
+    fn reduces_build_status_json_without_command_lines() {
+        let long_command = "cargo test -p codex-core --release ".repeat(80);
+        let output = serde_json::json!({
+            "status": "ok",
+            "mode": "Status",
+            "active_build_processes": [
+                {
+                    "process_name": "cargo.exe",
+                    "command_line": long_command,
+                }
+            ],
+            "release_binary": {
+                "last_write_time": "2026-05-16T03:00:00+03:00",
+            },
+            "wrapper_real_exe": "C:/Users/Oleh/.codex/local-builds/codex-custom/codex.exe",
+            "release_profile_state": {
+                "matches": true,
+            },
+            "free_c_drive_bytes": 123456789u64,
+        })
+        .to_string();
+        let mut items = vec![
+            shell_call("call", "scripts\\build-local-codex.ps1 -Mode Status"),
+            shell_output("call", output),
+        ];
+        let temp = TempDir::new().unwrap();
+        let config = test_config(temp.path(), 1);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 1);
+        let ResponseItem::FunctionCallOutput { output, .. } = &items[1] else {
+            panic!("expected output");
+        };
+        let text = output.text_content().unwrap();
+        assert!(text.contains("recent_build_status_digest"));
+        assert!(!text.contains(&long_command));
+    }
+
+    #[test]
+    fn reduces_stale_context_pack() {
+        let paths = (0..80)
+            .map(|index| format!("- codex-rs/core/src/file_{index}.rs | score=0.{index}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let mut items = vec![message(
+            "assistant",
+            format!("<context_pack variant=\"graphify_scout_pack\">\n{paths}\n</context_pack>"),
+            MessageTextKind::Output,
+        )];
+        let temp = TempDir::new().unwrap();
+        let config = test_config(temp.path(), 0);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 1);
+        let ResponseItem::Message { content, .. } = &items[0] else {
+            panic!("expected message");
+        };
+        let ContentItem::OutputText { text } = &content[0] else {
+            panic!("expected output text");
+        };
+        assert!(text.contains("context_pack_digest"));
+    }
+
     fn test_config(path: &Path, preserve_recent_items: usize) -> PromptReductionConfig {
         PromptReductionConfig {
             artifact_dir: path.to_path_buf(),
@@ -889,6 +1675,24 @@ mod tests {
         ResponseItem::FunctionCallOutput {
             call_id: call_id.to_string(),
             output: FunctionCallOutputPayload::from_text(text),
+        }
+    }
+
+    enum MessageTextKind {
+        Input,
+        Output,
+    }
+
+    fn message(role: &str, text: String, kind: MessageTextKind) -> ResponseItem {
+        let content = match kind {
+            MessageTextKind::Input => vec![ContentItem::InputText { text }],
+            MessageTextKind::Output => vec![ContentItem::OutputText { text }],
+        };
+        ResponseItem::Message {
+            id: None,
+            role: role.to_string(),
+            content,
+            phase: None,
         }
     }
 }
