@@ -47,6 +47,8 @@ use codex_protocol::protocol::SubAgentSource;
 use codex_tools::AdditionalProperties;
 use codex_tools::DiscoverablePluginInfo;
 use codex_tools::DiscoverableTool;
+use codex_tools::FIRST_MOVES_PREDICT_TOOL_NAME;
+use codex_tools::FIRST_MOVES_STATS_TOOL_NAME;
 use codex_tools::FreeformTool;
 use codex_tools::JsonSchema;
 use codex_tools::JsonSchemaPrimitiveType;
@@ -117,6 +119,74 @@ fn extension_tool_executor(name: &str, description: &str) -> Arc<dyn ExtensionTo
         name: name.to_string(),
         description: description.to_string(),
     })
+}
+
+#[test]
+fn first_moves_tools_follow_first_moves_config() {
+    let model_info = model_info();
+    let available_models = Vec::new();
+    let features = Features::with_defaults();
+    let config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        image_generation_tool_auth_allowed: false,
+        web_search_mode: None,
+        session_source: SessionSource::Cli,
+        permission_profile: &PermissionProfile::Disabled,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+
+    let (disabled_tools, disabled_registry) = build_specs(
+        &config,
+        /*mcp_tools*/ None,
+        /*deferred_mcp_tools*/ None,
+        &[],
+    );
+
+    assert_lacks_tool_name(&disabled_tools, FIRST_MOVES_PREDICT_TOOL_NAME);
+    assert_lacks_tool_name(&disabled_tools, FIRST_MOVES_STATS_TOOL_NAME);
+    assert!(!disabled_registry.has_handler(&ToolName::plain(FIRST_MOVES_PREDICT_TOOL_NAME)));
+    assert!(!disabled_registry.has_handler(&ToolName::plain(FIRST_MOVES_STATS_TOOL_NAME)));
+
+    let no_environment_config = config
+        .clone()
+        .with_first_moves_config(/*enabled*/ true)
+        .with_environment_mode(ToolEnvironmentMode::None);
+    let (no_environment_tools, no_environment_registry) = build_specs(
+        &no_environment_config,
+        /*mcp_tools*/ None,
+        /*deferred_mcp_tools*/ None,
+        &[],
+    );
+
+    assert_lacks_tool_name(&no_environment_tools, FIRST_MOVES_PREDICT_TOOL_NAME);
+    assert_lacks_tool_name(&no_environment_tools, FIRST_MOVES_STATS_TOOL_NAME);
+    assert!(!no_environment_registry.has_handler(&ToolName::plain(FIRST_MOVES_PREDICT_TOOL_NAME)));
+    assert!(!no_environment_registry.has_handler(&ToolName::plain(FIRST_MOVES_STATS_TOOL_NAME)));
+
+    let config = config.with_first_moves_config(/*enabled*/ true);
+    let (enabled_tools, enabled_registry) = build_specs(
+        &config,
+        /*mcp_tools*/ None,
+        /*deferred_mcp_tools*/ None,
+        &[],
+    );
+
+    assert_contains_tool_names(
+        &enabled_tools,
+        &[FIRST_MOVES_PREDICT_TOOL_NAME, FIRST_MOVES_STATS_TOOL_NAME],
+    );
+    assert_eq!(
+        Some(true),
+        enabled_registry
+            .supports_parallel_tool_calls(&ToolName::plain(FIRST_MOVES_PREDICT_TOOL_NAME))
+    );
+    assert_eq!(
+        Some(true),
+        enabled_registry
+            .supports_parallel_tool_calls(&ToolName::plain(FIRST_MOVES_STATS_TOOL_NAME))
+    );
 }
 
 #[test]

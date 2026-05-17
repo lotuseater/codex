@@ -6,6 +6,7 @@ use codex_first_moves::stats;
 use codex_tools::FIRST_MOVES_PREDICT_TOOL_NAME;
 use codex_tools::FIRST_MOVES_STATS_TOOL_NAME;
 use codex_tools::ToolName;
+use codex_tools::ToolSpec;
 use serde::Deserialize;
 use serde_json::Value;
 use std::path::PathBuf;
@@ -15,16 +16,20 @@ use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::handlers::parse_arguments;
+use crate::tools::registry::ToolExecutor;
 use crate::tools::registry::ToolHandler;
-use crate::tools::registry::ToolKind;
 
 pub struct FirstMovesHandler {
     tool_name: ToolName,
+    spec: ToolSpec,
 }
 
 impl FirstMovesHandler {
-    pub fn new(tool_name: ToolName) -> Self {
-        Self { tool_name }
+    pub fn new(spec: ToolSpec) -> Self {
+        Self {
+            tool_name: ToolName::plain(spec.name()),
+            spec,
+        }
     }
 }
 
@@ -42,15 +47,19 @@ struct FirstMovesStatsArgs {
     project_root: Option<String>,
 }
 
-impl ToolHandler for FirstMovesHandler {
+impl ToolExecutor<ToolInvocation> for FirstMovesHandler {
     type Output = FunctionToolOutput;
 
     fn tool_name(&self) -> ToolName {
         self.tool_name.clone()
     }
 
-    fn kind(&self) -> ToolKind {
-        ToolKind::Function
+    fn spec(&self) -> Option<ToolSpec> {
+        Some(self.spec.clone())
+    }
+
+    fn supports_parallel_tool_calls(&self) -> bool {
+        true
     }
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {
@@ -72,6 +81,8 @@ impl ToolHandler for FirstMovesHandler {
         }
     }
 }
+
+impl ToolHandler for FirstMovesHandler {}
 
 async fn handle_predict(
     invocation: ToolInvocation,

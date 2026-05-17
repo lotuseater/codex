@@ -7,6 +7,7 @@ use crate::tools::handlers::CreateGoalHandler;
 use crate::tools::handlers::DynamicToolHandler;
 use crate::tools::handlers::ExecCommandHandler;
 use crate::tools::handlers::ExecCommandHandlerOptions;
+use crate::tools::handlers::FirstMovesHandler;
 use crate::tools::handlers::GetGoalHandler;
 use crate::tools::handlers::ListMcpResourceTemplatesHandler;
 use crate::tools::handlers::ListMcpResourcesHandler;
@@ -60,6 +61,7 @@ use codex_tools::ToolName;
 use codex_tools::ToolSpec;
 use codex_tools::ToolsConfig;
 use codex_tools::collect_code_mode_exec_prompt_tool_definitions;
+use codex_tools::create_first_moves_tools;
 use codex_tools::default_namespace_description;
 use std::collections::BTreeMap;
 use std::collections::HashSet;
@@ -422,6 +424,12 @@ pub(crate) fn collect_tool_executors(
         executors.push(Arc::new(SpawnAgentsOnCsvHandler));
         if config.agent_jobs_worker_tools {
             executors.push(Arc::new(ReportAgentJobResultHandler));
+        }
+    }
+
+    if config.first_moves_enabled && config.environment_mode.has_environment() {
+        for tool in create_first_moves_tools() {
+            executors.push(Arc::new(FirstMovesHandler::new(tool)));
         }
     }
 
