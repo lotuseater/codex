@@ -100,27 +100,28 @@ pub fn create_context_ops_tools() -> Vec<ToolSpec> {
         ),
         create_tool(
             WORKFLOW_BATCH_TOOL_NAME,
-            "Run a read-only local workflow-batch spec against workspace files and return a compact execution summary.",
+            "Run a root-confined local workflow-batch spec for dependent deterministic file/JSON/edit/assert/control-flow work and return a compact execution summary. Use inline `spec` for one-shot dependent batches. Avoid this tool for simple read-only probes. Command execution is not exposed through this tool.",
             object_schema(
                 [
                     (
                         "spec_path",
                         JsonSchema::string(Some(
-                            "Path to the workflow-batch JSON spec file. Must stay inside workdir."
+                            "Path to the workflow-batch JSON spec file. Must stay inside workdir. Provide exactly one of spec_path or spec."
                                 .to_string(),
                         )),
                     ),
+                    ("spec", inline_spec_schema()),
                     (
                         "report_path",
                         JsonSchema::string(Some(
-                            "Path inside workdir where the workflow JSON report should be written."
+                            "Optional path inside workdir where the workflow JSON report should be written. Defaults under .codex/workflow-batch."
                                 .to_string(),
                         )),
                     ),
                     (
                         "log_path",
                         JsonSchema::string(Some(
-                            "Path inside workdir where the workflow JSONL event log should be written."
+                            "Optional path inside workdir where the workflow JSONL event log should be written. Defaults under .codex/workflow-batch."
                                 .to_string(),
                         )),
                     ),
@@ -132,11 +133,7 @@ pub fn create_context_ops_tools() -> Vec<ToolSpec> {
                         )),
                     ),
                 ],
-                Some(vec![
-                    "spec_path".to_string(),
-                    "report_path".to_string(),
-                    "log_path".to_string(),
-                ]),
+                /*required*/ None,
             ),
         ),
     ]
@@ -166,6 +163,18 @@ fn object_schema<const N: usize>(
         required,
         Some(AdditionalProperties::Boolean(false)),
     )
+}
+
+fn inline_spec_schema() -> JsonSchema {
+    let mut schema = JsonSchema::object(
+        BTreeMap::new(),
+        /*required*/ None,
+        Some(AdditionalProperties::Boolean(true)),
+    );
+    schema.description = Some(
+        "Inline workflow-batch JSON spec. Provide exactly one of spec_path or spec.".to_string(),
+    );
+    schema
 }
 
 #[cfg(test)]

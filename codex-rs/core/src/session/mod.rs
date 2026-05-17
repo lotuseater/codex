@@ -24,6 +24,7 @@ use crate::context::ApprovedCommandPrefixSaved;
 use crate::context::AppsInstructions;
 use crate::context::AvailablePluginsInstructions;
 use crate::context::AvailableSkillsInstructions;
+use crate::context::BatchMiniProgrammingInstructions;
 use crate::context::CollaborationModeInstructions;
 use crate::context::ContextualUserFragment;
 use crate::context::NetworkRuleSaved;
@@ -2858,6 +2859,11 @@ impl Session {
                 )
         {
             developer_sections.push(collab_instructions.render());
+        }
+        if turn_context.tools_config.context_ops_enabled
+            && turn_context.tools_config.environment_mode.has_environment()
+        {
+            developer_sections.push(BatchMiniProgrammingInstructions.render());
         }
         if let Some(realtime_update) = crate::context_manager::updates::build_initial_realtime_item(
             reference_context_item.as_ref(),

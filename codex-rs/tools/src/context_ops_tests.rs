@@ -19,14 +19,12 @@ fn context_ops_tool_specs_are_compact_and_named() {
     let ToolSpec::Function(tool) = &tools[2] else {
         panic!("workflow batch should be a function tool");
     };
-    assert_eq!(
-        tool.parameters.required.as_deref(),
-        Some(
-            &[
-                "spec_path".to_string(),
-                "report_path".to_string(),
-                "log_path".to_string(),
-            ][..]
-        )
+    assert_eq!(tool.parameters.required.as_deref(), None);
+    assert!(tool.description.contains("root-confined"));
+    assert!(tool.description.contains("inline `spec`"));
+    assert!(tool.description.contains("dependent deterministic"));
+    assert!(
+        tool.description
+            .contains("Avoid this tool for simple read-only probes")
     );
 }

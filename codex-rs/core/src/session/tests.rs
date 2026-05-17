@@ -129,6 +129,7 @@ use codex_protocol::request_user_input::RequestUserInputAnswer;
 use codex_protocol::request_user_input::RequestUserInputResponse;
 use codex_rmcp_client::ElicitationAction;
 use codex_tools::ShellCommandBackendConfig;
+use codex_tools::ToolEnvironmentMode;
 use core_test_support::PathBufExt;
 use core_test_support::PathExt;
 use core_test_support::context_snapshot;
@@ -4001,6 +4002,49 @@ async fn build_initial_context_uses_turn_collaboration_mode() {
 
     assert!(developer_text.contains("PLAN TURN INSTRUCTIONS"));
     assert!(!developer_text.contains("DEFAULT SESSION INSTRUCTIONS"));
+}
+
+#[tokio::test]
+async fn build_initial_context_includes_batch_mini_programming_when_workflow_batch_available() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    turn_context.tools_config.context_ops_enabled = true;
+    turn_context.tools_config.environment_mode = ToolEnvironmentMode::Single;
+
+    let context = session.build_initial_context(&turn_context).await;
+    let developer_text = developer_input_texts(&context).join("\n");
+
+    assert!(developer_text.contains("<batch_mini_programming_instructions>"));
+    assert!(developer_text.contains("workflow_batch"));
+    assert!(developer_text.contains("dependent deterministic local workflows"));
+    assert!(developer_text.contains("Do not use it for simple read-only probes"));
+    assert!(developer_text.contains("write_file"));
+    assert!(developer_text.contains("while"));
+    assert!(developer_text.contains("Do not use it for command execution"));
+    assert!(developer_text.contains("Keep batches compact"));
+}
+
+#[tokio::test]
+async fn build_initial_context_omits_batch_mini_programming_without_workflow_batch() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    turn_context.tools_config.context_ops_enabled = false;
+    turn_context.tools_config.environment_mode = ToolEnvironmentMode::Single;
+
+    let context = session.build_initial_context(&turn_context).await;
+    let developer_text = developer_input_texts(&context).join("\n");
+
+    assert!(!developer_text.contains("<batch_mini_programming_instructions>"));
+}
+
+#[tokio::test]
+async fn build_initial_context_omits_batch_mini_programming_without_environment() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    turn_context.tools_config.context_ops_enabled = true;
+    turn_context.tools_config.environment_mode = ToolEnvironmentMode::None;
+
+    let context = session.build_initial_context(&turn_context).await;
+    let developer_text = developer_input_texts(&context).join("\n");
+
+    assert!(!developer_text.contains("<batch_mini_programming_instructions>"));
 }
 
 async fn make_session_with_config(

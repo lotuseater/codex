@@ -77,6 +77,15 @@ impl WorkflowOptions {
         }
     }
 
+    pub fn root_confined(root: impl Into<PathBuf>) -> Self {
+        Self {
+            root: Some(root.into()),
+            allow_commands: false,
+            allow_file_mutation_steps: true,
+            allow_external_paths: false,
+        }
+    }
+
     pub fn context_tool(root: impl Into<PathBuf>) -> Self {
         Self {
             root: Some(root.into()),
@@ -135,7 +144,7 @@ impl Default for WorkflowOptions {
 }
 
 struct WorkflowContext {
-    spec_path: PathBuf,
+    spec: String,
     log_path: PathBuf,
     root: PathBuf,
     options: WorkflowOptions,
@@ -179,6 +188,43 @@ pub fn run_workflow_with_options(
     let spec: Value = serde_json::from_str(&spec_text)
         .with_context(|| format!("failed to parse {}", spec_path.display()))?;
 
+    run_workflow_value(
+        spec,
+        spec_path.to_string_lossy().to_string(),
+        report_path,
+        log_path,
+        root,
+        options,
+    )
+}
+
+pub fn run_workflow_value_with_options(
+    spec: Value,
+    report_path: &Path,
+    log_path: &Path,
+    options: WorkflowOptions,
+) -> anyhow::Result<WorkflowSummary> {
+    let root = options.resolved_root(Path::new(""))?;
+    options.ensure_path_allowed(&root, report_path, "report path")?;
+    options.ensure_path_allowed(&root, log_path, "log path")?;
+    run_workflow_value(
+        spec,
+        "<inline>".to_string(),
+        report_path,
+        log_path,
+        root,
+        options,
+    )
+}
+
+fn run_workflow_value(
+    spec: Value,
+    spec_label: String,
+    report_path: &Path,
+    log_path: &Path,
+    root: PathBuf,
+    options: WorkflowOptions,
+) -> anyhow::Result<WorkflowSummary> {
     ensure_parent(report_path)?;
     ensure_parent(log_path)?;
     if log_path.exists() {
@@ -187,7 +233,7 @@ pub fn run_workflow_with_options(
     }
 
     let mut ctx = WorkflowContext {
-        spec_path: spec_path.to_path_buf(),
+        spec: spec_label,
         log_path: log_path.to_path_buf(),
         root,
         options,
@@ -204,10 +250,7 @@ pub fn run_workflow_with_options(
     ctx.log(json_object([
         ("event", Value::String("workflow_start".to_string())),
         ("name", option_string_value(name.as_deref())),
-        (
-            "spec",
-            Value::String(ctx.spec_path.to_string_lossy().to_string()),
-        ),
+        ("spec", Value::String(ctx.spec.clone())),
     ]))?;
 
     let steps = spec
@@ -226,7 +269,7 @@ pub fn run_workflow_with_options(
     let summary = WorkflowSummary {
         name,
         status: if ctx.failed { "failed" } else { "ok" }.to_string(),
-        spec: spec_path.to_string_lossy().to_string(),
+        spec: ctx.spec,
         log: log_path.to_string_lossy().to_string(),
         vars: ctx.vars,
         steps_total: ctx.records.len(),
@@ -2532,6 +2575,7 @@ mod tests {
     use serde_json::json;
 
     use super::WorkflowOptions;
+    use super::run_workflow_value_with_options;
     use super::run_workflow_with_options;
 
     #[test]
@@ -2672,6 +2716,53 @@ mod tests {
             "alpha\nbeta-MID\nGAMMA\n",
             fs::read_to_string(root.join("reports/work.txt"))?
         );
+        assert!(report_path.exists());
+        assert!(log_path.exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn runs_inline_spec_without_spec_file() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        let report_path = root.join("reports").join("report.json");
+        let log_path = root.join("reports").join("report.jsonl");
+        fs::write(root.join("input.txt"), "alpha\nbeta\ngamma\n")?;
+
+        let summary = run_workflow_value_with_options(
+            json!({
+                "name": "inline-workflow-batch-test",
+                "steps": [
+                    {
+                        "id": "read_input",
+                        "read_file": {
+                            "path": "input.txt",
+                            "var": "body"
+                        }
+                    },
+                    {
+                        "id": "assert_body",
+                        "assert": {
+                            "contains": [
+                                {
+                                    "ref": "vars.body"
+                                },
+                                "beta"
+                            ]
+                        }
+                    }
+                ]
+            }),
+            &report_path,
+            &log_path,
+            WorkflowOptions::context_tool(root),
+        )?;
+
+        assert_eq!("ok", summary.status);
+        assert_eq!("<inline>", summary.spec);
+        assert_eq!(2, summary.steps_total);
+        assert_eq!(0, summary.steps_failed);
         assert!(report_path.exists());
         assert!(log_path.exists());
 
