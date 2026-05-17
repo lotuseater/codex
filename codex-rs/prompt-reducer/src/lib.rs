@@ -722,6 +722,15 @@ fn recent_tool_output_candidate(
     config: &PromptReductionConfig,
 ) -> Option<CandidateReduction> {
     let lower_source = source.to_ascii_lowercase();
+    if lower_source.starts_with("message:assistant")
+        && let Some(digest) = assistant_status_json_digest(text)
+    {
+        return Some(CandidateReduction {
+            reason: "recent_assistant_status_digest",
+            digest,
+            disposition: CandidateDisposition::ArtifactReplacement,
+        });
+    }
     if !(lower_source.starts_with("shell_output:")
         || lower_source.starts_with("tool_output:")
         || lower_source.contains("build_status"))
@@ -2659,7 +2668,7 @@ mod tests {
     fn reduces_recent_assistant_status_json_before_generic_json() {
         let content = format!(
             "Recent progress update with implementation state. {}",
-            "Keep this status readable in the reduced prompt. ".repeat(20)
+            "Keep this status readable in the reduced prompt. ".repeat(80)
         );
         let status = serde_json::json!({
             "author": "assistant",
