@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::path::Component;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
@@ -49,10 +50,95 @@ pub struct WorkflowSummary {
     pub steps: Vec<StepRecord>,
 }
 
+#[derive(Debug, Clone)]
+pub struct WorkflowOptions {
+    root: Option<PathBuf>,
+    allow_commands: bool,
+    allow_file_mutation_steps: bool,
+    allow_external_paths: bool,
+}
+
+impl WorkflowOptions {
+    pub fn unrestricted() -> Self {
+        Self {
+            root: None,
+            allow_commands: true,
+            allow_file_mutation_steps: true,
+            allow_external_paths: true,
+        }
+    }
+
+    pub fn unrestricted_with_root(root: impl Into<PathBuf>) -> Self {
+        Self {
+            root: Some(root.into()),
+            allow_commands: true,
+            allow_file_mutation_steps: true,
+            allow_external_paths: true,
+        }
+    }
+
+    pub fn context_tool(root: impl Into<PathBuf>) -> Self {
+        Self {
+            root: Some(root.into()),
+            allow_commands: false,
+            allow_file_mutation_steps: false,
+            allow_external_paths: false,
+        }
+    }
+
+    fn resolved_root(&self, _spec_path: &Path) -> anyhow::Result<PathBuf> {
+        if let Some(root) = self.root.as_deref() {
+            if root.is_absolute() {
+                Ok(root.to_path_buf())
+            } else {
+                root.canonicalize()
+                    .with_context(|| format!("failed to resolve root for {}", root.display()))
+            }
+        } else {
+            std::env::current_dir().context("failed to resolve current directory")
+        }
+    }
+
+    fn ensure_path_allowed(&self, root: &Path, path: &Path, label: &str) -> anyhow::Result<()> {
+        if self.allow_external_paths {
+            return Ok(());
+        }
+        if path
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+        {
+            bail!(
+                "{label} {} must not contain parent-directory components",
+                path.display()
+            );
+        }
+        let absolute = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            root.join(path)
+        };
+        if !absolute.starts_with(root) {
+            bail!(
+                "{label} {} is outside workflow root {}",
+                path.display(),
+                root.display()
+            );
+        }
+        Ok(())
+    }
+}
+
+impl Default for WorkflowOptions {
+    fn default() -> Self {
+        Self::unrestricted()
+    }
+}
+
 struct WorkflowContext {
     spec_path: PathBuf,
     log_path: PathBuf,
     root: PathBuf,
+    options: WorkflowOptions,
     vars: BTreeMap<String, Value>,
     steps: BTreeMap<String, Value>,
     records: Vec<StepRecord>,
@@ -68,6 +154,26 @@ pub fn run_workflow(
     report_path: &Path,
     log_path: &Path,
 ) -> anyhow::Result<WorkflowSummary> {
+    let root = std::env::current_dir().context("failed to resolve current directory")?;
+    run_workflow_with_options(
+        spec_path,
+        report_path,
+        log_path,
+        WorkflowOptions::unrestricted_with_root(root),
+    )
+}
+
+pub fn run_workflow_with_options(
+    spec_path: &Path,
+    report_path: &Path,
+    log_path: &Path,
+    options: WorkflowOptions,
+) -> anyhow::Result<WorkflowSummary> {
+    let root = options.resolved_root(spec_path)?;
+    options.ensure_path_allowed(&root, spec_path, "spec path")?;
+    options.ensure_path_allowed(&root, report_path, "report path")?;
+    options.ensure_path_allowed(&root, log_path, "log path")?;
+
     let spec_text = fs::read_to_string(spec_path)
         .with_context(|| format!("failed to read {}", spec_path.display()))?;
     let spec: Value = serde_json::from_str(&spec_text)
@@ -83,13 +189,8 @@ pub fn run_workflow(
     let mut ctx = WorkflowContext {
         spec_path: spec_path.to_path_buf(),
         log_path: log_path.to_path_buf(),
-        root: spec_path
-            .parent()
-            .and_then(Path::parent)
-            .filter(|path| !path.as_os_str().is_empty())
-            .unwrap_or_else(|| Path::new("."))
-            .canonicalize()
-            .with_context(|| format!("failed to resolve root for {}", spec_path.display()))?,
+        root,
+        options,
         vars: object_to_btree(spec.get("vars").and_then(Value::as_object)),
         steps: BTreeMap::new(),
         records: Vec::new(),
@@ -227,20 +328,38 @@ fn execute_steps(
         if let Some(values) = step.get("set").and_then(Value::as_object) {
             set_vars(ctx, &step_id, values, iteration)?;
         } else if step.contains_key("run") {
+            if !ctx.options.allow_commands {
+                reject_disallowed_step(ctx, &step_id, iteration, "run")?;
+            }
             run_command(ctx, &step_id, step, iteration)?;
         } else if step.contains_key("copy_file") {
+            if !ctx.options.allow_file_mutation_steps {
+                reject_disallowed_step(ctx, &step_id, iteration, "copy_file")?;
+            }
             copy_file(ctx, &step_id, step, iteration)?;
         } else if step.contains_key("write_file") {
+            if !ctx.options.allow_file_mutation_steps {
+                reject_disallowed_step(ctx, &step_id, iteration, "write_file")?;
+            }
             write_file(ctx, &step_id, step, iteration, WriteMode::Overwrite)?;
         } else if step.contains_key("append_file") {
+            if !ctx.options.allow_file_mutation_steps {
+                reject_disallowed_step(ctx, &step_id, iteration, "append_file")?;
+            }
             write_file(ctx, &step_id, step, iteration, WriteMode::Append)?;
         } else if step.contains_key("edit_file") {
+            if !ctx.options.allow_file_mutation_steps {
+                reject_disallowed_step(ctx, &step_id, iteration, "edit_file")?;
+            }
             edit_file(ctx, &step_id, step, iteration)?;
         } else if step.contains_key("read_file") {
             read_file(ctx, &step_id, step, iteration)?;
         } else if step.contains_key("read_json") {
             read_json(ctx, &step_id, step, iteration)?;
         } else if step.contains_key("write_json") {
+            if !ctx.options.allow_file_mutation_steps {
+                reject_disallowed_step(ctx, &step_id, iteration, "write_json")?;
+            }
             write_json(ctx, &step_id, step, iteration)?;
         } else if step.contains_key("assert") {
             assert_step(ctx, &step_id, step, iteration)?;
@@ -253,6 +372,42 @@ fn execute_steps(
         }
     }
     Ok(())
+}
+
+fn reject_disallowed_step(
+    ctx: &mut WorkflowContext,
+    step_id: &str,
+    iteration: Option<usize>,
+    action: &str,
+) -> anyhow::Result<()> {
+    let note = format!("{action} steps are disabled for this workflow execution mode");
+    ctx.failed = true;
+    ctx.steps.insert(
+        step_id.to_string(),
+        json_object([
+            ("status", Value::String("failed".to_string())),
+            ("error", Value::String(note.clone())),
+        ]),
+    );
+    ctx.records.push(StepRecord {
+        id: step_id.to_string(),
+        status: "failed".to_string(),
+        elapsed_ms: 0,
+        rc: None,
+        stdout_digest: None,
+        stdout_preview: None,
+        stderr_preview: None,
+        note: Some(note.clone()),
+        iteration,
+    });
+    ctx.log(json_object([
+        ("event", Value::String("failed".to_string())),
+        ("id", Value::String(step_id.to_string())),
+        ("action", Value::String(action.to_string())),
+        ("error", Value::String(note.clone())),
+        ("iteration", option_usize_value(iteration)),
+    ]))?;
+    bail!("{note}");
 }
 
 fn run_while(
@@ -463,12 +618,11 @@ fn run_command(
     if argv.is_empty() {
         bail!("`{step_id}` has empty argv");
     }
-    let cwd_text = step
+    let cwd = step
         .get("cwd")
-        .map(|value| render_value(ctx, value).map(|rendered| value_to_string(&rendered)))
+        .map(|value| resolve_input_path(ctx, value))
         .transpose()?
-        .unwrap_or_else(|| ctx.root.to_string_lossy().to_string());
-    let cwd = PathBuf::from(cwd_text);
+        .unwrap_or_else(|| ctx.root.clone());
     let timeout = Duration::from_secs(
         step.get("timeout_sec")
             .and_then(Value::as_u64)
@@ -1150,6 +1304,8 @@ fn assert_step(
 fn resolve_input_path(ctx: &WorkflowContext, value: &Value) -> anyhow::Result<PathBuf> {
     let rendered = value_to_string(&render_value(ctx, value)?);
     let path = PathBuf::from(rendered);
+    ctx.options
+        .ensure_path_allowed(&ctx.root, &path, "read source")?;
     Ok(if path.is_absolute() {
         path
     } else {
@@ -1160,11 +1316,22 @@ fn resolve_input_path(ctx: &WorkflowContext, value: &Value) -> anyhow::Result<Pa
 fn resolve_output_path(ctx: &WorkflowContext, value: &Value) -> anyhow::Result<PathBuf> {
     let rendered = value_to_string(&render_value(ctx, value)?);
     let path = PathBuf::from(rendered);
+    ctx.options
+        .ensure_path_allowed(&ctx.root, &path, "write destination")?;
     let path = if path.is_absolute() {
         path
     } else {
         ctx.root.join(path)
     };
+    if path
+        .components()
+        .any(|component| matches!(component, Component::ParentDir))
+    {
+        bail!(
+            "write destination {} must not contain parent-directory components",
+            path.display()
+        );
+    }
     if !path.starts_with(&ctx.root) {
         bail!(
             "write destination {} is outside workflow root {}",
@@ -2359,11 +2526,13 @@ fn timestamp_value() -> Value {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::path::PathBuf;
 
     use pretty_assertions::assert_eq;
     use serde_json::json;
 
-    use super::run_workflow;
+    use super::WorkflowOptions;
+    use super::run_workflow_with_options;
 
     #[test]
     fn runs_json_edit_and_assert_steps() -> anyhow::Result<()> {
@@ -2489,7 +2658,12 @@ mod tests {
             }))?,
         )?;
 
-        let summary = run_workflow(&spec_path, &report_path, &log_path)?;
+        let summary = run_workflow_with_options(
+            &spec_path,
+            &report_path,
+            &log_path,
+            WorkflowOptions::unrestricted_with_root(root),
+        )?;
 
         assert_eq!("ok", summary.status);
         assert_eq!(6, summary.steps_total);
@@ -2498,6 +2672,160 @@ mod tests {
             "alpha\nbeta-MID\nGAMMA\n",
             fs::read_to_string(root.join("reports/work.txt"))?
         );
+        assert!(report_path.exists());
+        assert!(log_path.exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn context_tool_options_reject_run_steps() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        fs::create_dir_all(root.join("plans"))?;
+        fs::create_dir_all(root.join("reports"))?;
+        let spec_path = root.join("plans").join("run.json");
+        let report_path = root.join("reports").join("report.json");
+        let log_path = root.join("reports").join("report.jsonl");
+
+        fs::write(
+            &spec_path,
+            serde_json::to_string_pretty(&json!({
+                "steps": [
+                    {
+                        "id": "attempt_command",
+                        "run": ["definitely-not-executed"]
+                    }
+                ]
+            }))?,
+        )?;
+
+        let summary = run_workflow_with_options(
+            &spec_path,
+            &report_path,
+            &log_path,
+            WorkflowOptions::context_tool(root),
+        )?;
+
+        assert_eq!("failed", summary.status);
+        assert_eq!(1, summary.steps_total);
+        assert_eq!(1, summary.steps_failed);
+        assert_eq!("attempt_command", summary.steps[0].id);
+        assert_eq!("failed", summary.steps[0].status);
+        assert!(
+            summary.steps[0]
+                .note
+                .as_deref()
+                .is_some_and(|note| note.contains("disabled"))
+        );
+        assert!(report_path.exists());
+        assert!(log_path.exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn run_step_cwd_is_resolved_against_workflow_root() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        fs::create_dir_all(root.join("plans"))?;
+        fs::create_dir_all(root.join("reports"))?;
+        fs::create_dir_all(root.join("work"))?;
+        let spec_path = root.join("plans").join("cwd.json");
+        let report_path = root.join("reports").join("report.json");
+        let log_path = root.join("reports").join("report.jsonl");
+        let script_path = if cfg!(windows) {
+            let path = root.join("write-cwd.cmd");
+            fs::write(&path, "@echo %CD%>cwd.txt\r\n")?;
+            path
+        } else {
+            let path = root.join("write-cwd.sh");
+            fs::write(&path, "pwd > cwd.txt\n")?;
+            path
+        };
+        let run = if cfg!(windows) {
+            json!(["cmd", "/C", script_path.to_string_lossy()])
+        } else {
+            json!(["sh", script_path.to_string_lossy()])
+        };
+
+        fs::write(
+            &spec_path,
+            serde_json::to_string_pretty(&json!({
+                "steps": [
+                    {
+                        "id": "write_cwd",
+                        "cwd": "work",
+                        "run": run
+                    }
+                ]
+            }))?,
+        )?;
+
+        let summary = run_workflow_with_options(
+            &spec_path,
+            &report_path,
+            &log_path,
+            WorkflowOptions::unrestricted_with_root(root),
+        )?;
+        let observed_cwd = fs::read_to_string(root.join("work").join("cwd.txt"))?;
+
+        assert_eq!("ok", summary.status);
+        assert_eq!(
+            root.join("work").canonicalize()?,
+            PathBuf::from(observed_cwd.trim()).canonicalize()?
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn output_paths_reject_parent_dir_escape() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        fs::create_dir_all(root.join("plans"))?;
+        fs::create_dir_all(root.join("reports"))?;
+        let spec_path = root.join("plans").join("escape.json");
+        let report_path = root.join("reports").join("report.json");
+        let log_path = root.join("reports").join("report.jsonl");
+        let escaped_name = format!(
+            "{}-escape.txt",
+            root.file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("workflow-batch")
+        );
+        let escaped_path = root
+            .parent()
+            .expect("tempdir should have parent")
+            .join(&escaped_name);
+        if escaped_path.exists() {
+            fs::remove_file(&escaped_path)?;
+        }
+
+        fs::write(
+            &spec_path,
+            serde_json::to_string_pretty(&json!({
+                "steps": [
+                    {
+                        "id": "escape",
+                        "write_file": {
+                            "path": format!("../{escaped_name}"),
+                            "content": "escaped"
+                        }
+                    }
+                ]
+            }))?,
+        )?;
+
+        let summary = run_workflow_with_options(
+            &spec_path,
+            &report_path,
+            &log_path,
+            WorkflowOptions::unrestricted_with_root(root),
+        )?;
+
+        assert_eq!("failed", summary.status);
+        assert!(!escaped_path.exists());
         assert!(report_path.exists());
         assert!(log_path.exists());
 

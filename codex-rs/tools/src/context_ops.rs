@@ -100,26 +100,27 @@ pub fn create_context_ops_tools() -> Vec<ToolSpec> {
         ),
         create_tool(
             WORKFLOW_BATCH_TOOL_NAME,
-            "Run a checked local workflow-batch spec against workspace files and return a compact execution summary.",
+            "Run a read-only local workflow-batch spec against workspace files and return a compact execution summary.",
             object_schema(
                 [
                     (
                         "spec_path",
                         JsonSchema::string(Some(
-                            "Path to the workflow-batch JSON spec file.".to_string(),
+                            "Path to the workflow-batch JSON spec file. Must stay inside workdir."
+                                .to_string(),
                         )),
                     ),
                     (
                         "report_path",
                         JsonSchema::string(Some(
-                            "Path where the workflow JSON report should be written."
+                            "Path inside workdir where the workflow JSON report should be written."
                                 .to_string(),
                         )),
                     ),
                     (
                         "log_path",
                         JsonSchema::string(Some(
-                            "Path where the workflow JSONL event log should be written."
+                            "Path inside workdir where the workflow JSONL event log should be written."
                                 .to_string(),
                         )),
                     ),

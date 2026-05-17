@@ -34,10 +34,11 @@ pub(super) async fn handle(
     let report_path = base_path.join(args.report_path);
     let log_path = base_path.join(args.log_path);
 
-    let summary = codex_workflow_batch::run_workflow(
+    let summary = codex_workflow_batch::run_workflow_with_options(
         spec_path.as_path(),
         report_path.as_path(),
         log_path.as_path(),
+        codex_workflow_batch::WorkflowOptions::context_tool(base_path.to_path_buf()),
     )
     .map_err(|err| FunctionCallError::RespondToModel(err.to_string()))?;
     let success = summary.status == "ok";
@@ -87,6 +88,15 @@ mod tests {
         text
     }
 
+    fn workflow_batch_handler() -> ContextOpsHandler {
+        ContextOpsHandler::new(
+            codex_tools::create_context_ops_tools()
+                .into_iter()
+                .find(|tool| tool.name() == codex_tools::WORKFLOW_BATCH_TOOL_NAME)
+                .expect("workflow_batch tool spec"),
+        )
+    }
+
     #[tokio::test]
     async fn workflow_batch_reports_failed_summary_as_unsuccessful_tool_output()
     -> anyhow::Result<()> {
@@ -116,12 +126,7 @@ mod tests {
             "workdir": root.to_string_lossy(),
         })
         .to_string();
-        let handler = ContextOpsHandler::new(
-            codex_tools::create_context_ops_tools()
-                .into_iter()
-                .find(|tool| tool.name() == codex_tools::WORKFLOW_BATCH_TOOL_NAME)
-                .expect("workflow_batch tool spec"),
-        );
+        let handler = workflow_batch_handler();
         let output = handler
             .handle(invocation_for_arguments(arguments).await)
             .await?;
@@ -129,6 +134,53 @@ mod tests {
         assert_eq!(output.success, Some(false));
         let summary: serde_json::Value = serde_json::from_str(text_output(&output))?;
         assert_eq!(summary["status"], "failed");
+        assert!(root.join("reports/summary.json").exists());
+        assert!(root.join("reports/events.jsonl").exists());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn workflow_batch_context_op_rejects_command_steps() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        let cases = root.join("cases");
+        fs::create_dir_all(&cases)?;
+        fs::write(
+            cases.join("workflow.json"),
+            serde_json::to_string_pretty(&json!({
+                "name": "handler-command-test",
+                "steps": [
+                    {
+                        "id": "attempt_command",
+                        "run": ["definitely-not-executed"]
+                    }
+                ]
+            }))?,
+        )?;
+
+        let arguments = json!({
+            "spec_path": "cases/workflow.json",
+            "report_path": "reports/summary.json",
+            "log_path": "reports/events.jsonl",
+            "workdir": root.to_string_lossy(),
+        })
+        .to_string();
+        let handler = workflow_batch_handler();
+        let output = handler
+            .handle(invocation_for_arguments(arguments).await)
+            .await?;
+
+        assert_eq!(output.success, Some(false));
+        let summary: serde_json::Value = serde_json::from_str(text_output(&output))?;
+        assert_eq!(summary["status"], "failed");
+        assert_eq!(summary["steps"][0]["id"], "attempt_command");
+        assert_eq!(summary["steps"][0]["status"], "failed");
+        assert!(
+            summary["steps"][0]["note"]
+                .as_str()
+                .is_some_and(|note| note.contains("disabled"))
+        );
         assert!(root.join("reports/summary.json").exists());
         assert!(root.join("reports/events.jsonl").exists());
 
