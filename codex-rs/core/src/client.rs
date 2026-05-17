@@ -101,6 +101,7 @@ use tokio_tungstenite::tungstenite::Error;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
+use tracing::info;
 use tracing::instrument;
 use tracing::trace;
 use tracing::warn;
@@ -484,6 +485,14 @@ impl ModelClient {
             prompt_cache_key: prompt_cache_key.as_deref(),
             text,
         };
+        let compact_request_payload_bytes = serde_json::to_vec(&payload)
+            .map(|payload| payload.len())
+            .ok();
+        info!(
+            compact_request_payload_bytes,
+            compact_request_input_items = payload.input.len(),
+            "sending remote compaction request"
+        );
 
         let mut extra_headers = ApiHeaderMap::new();
         if let Ok(header_value) = HeaderValue::from_str(&self.state.installation_id) {

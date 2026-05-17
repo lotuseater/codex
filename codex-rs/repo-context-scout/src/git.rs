@@ -67,11 +67,11 @@ fn parse_porcelain_z(bytes: &[u8], paths: &mut BTreeMap<String, String>) {
         }
         let status = part.chars().take(2).collect::<String>();
         let path = part[3..].replace('\\', "/");
-        if status.contains('R') || status.contains('C') {
-            if let Some(new_path) = parts.next() {
-                paths.insert(new_path.replace('\\', "/"), status);
-                continue;
-            }
+        if (status.contains('R') || status.contains('C'))
+            && let Some(new_path) = parts.next()
+        {
+            paths.insert(new_path.replace('\\', "/"), status);
+            continue;
         }
         paths.insert(path, status);
     }

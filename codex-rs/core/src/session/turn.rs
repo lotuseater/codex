@@ -130,6 +130,8 @@ use tracing::trace;
 use tracing::trace_span;
 use tracing::warn;
 
+const RESTORED_SESSION_AUTO_COMPACT_TOKEN_LIMIT: i64 = 80_000;
+
 /// Takes a user message as input and runs a loop where, at each sampling request, the model
 /// replies with either:
 ///
@@ -767,6 +769,21 @@ async fn run_pre_sampling_compact(
     let mut reset_client_session = pre_sampling_compacted;
     let mut total_usage_tokens = sess.get_total_token_usage().await;
     let auto_compact_limit = auto_compact_token_limit(turn_context);
+    if !pre_sampling_compacted
+        && should_auto_compact_restored_session(sess, turn_context, auto_compact_limit).await
+    {
+        reset_client_session |= run_auto_compact(
+            sess,
+            turn_context,
+            client_session,
+            InitialContextInjection::DoNotInject,
+            CompactionReason::RestoredSession,
+            CompactionPhase::PreTurn,
+        )
+        .await?;
+        pre_sampling_compacted = true;
+        total_usage_tokens = sess.get_total_token_usage().await;
+    }
     if !pre_sampling_compacted {
         match sess
             .semantic_compact_decision(SemanticCompactInput {
@@ -825,6 +842,26 @@ async fn run_pre_sampling_compact(
     Ok(PreSamplingCompactResult {
         reset_client_session: pre_sampling_compacted && reset_client_session,
     })
+}
+
+async fn should_auto_compact_restored_session(
+    sess: &Session,
+    turn_context: &TurnContext,
+    auto_compact_limit: i64,
+) -> bool {
+    if !sess.take_restored_session_auto_compact_pending().await {
+        return false;
+    }
+
+    sess.get_estimated_token_count(turn_context)
+        .await
+        .is_some_and(|estimated_tokens| {
+            estimated_tokens >= restored_session_auto_compact_token_limit(auto_compact_limit)
+        })
+}
+
+fn restored_session_auto_compact_token_limit(auto_compact_limit: i64) -> i64 {
+    auto_compact_limit.clamp(1, RESTORED_SESSION_AUTO_COMPACT_TOKEN_LIMIT)
 }
 
 /// Runs pre-sampling compaction against the previous model when switching to a smaller
@@ -945,6 +982,7 @@ fn format_compaction_reason(reason: CompactionReason) -> &'static str {
         CompactionReason::ContextLimit => "context limit reached",
         CompactionReason::ModelDownshift => "model context window is smaller",
         CompactionReason::SemanticCheckpoint => "semantic checkpoint threshold reached",
+        CompactionReason::RestoredSession => "restored session history is large",
     }
 }
 
@@ -1024,6 +1062,41 @@ mod tests {
             auto_compact_token_limit_for_mode(&model_info, Some(80_000), ContextBudgetMode::Slow,),
             50_000
         );
+    }
+
+    #[test]
+    fn restored_session_auto_compact_caps_slow_budget_limit() {
+        assert_eq!(restored_session_auto_compact_token_limit(750_000), 80_000);
+    }
+
+    #[test]
+    fn restored_session_auto_compact_preserves_lower_model_limit() {
+        assert_eq!(restored_session_auto_compact_token_limit(32_000), 32_000);
+    }
+
+    #[test]
+    fn prompt_input_token_estimate_omits_input_image_data_urls() {
+        let base64 = "A".repeat(800_000);
+        let input = vec![ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![
+                ContentItem::InputText {
+                    text: "describe this image".to_string(),
+                },
+                ContentItem::InputImage {
+                    image_url: format!("data:image/png;base64,{base64}"),
+                    detail: None,
+                },
+            ],
+            phase: None,
+        }];
+
+        let raw_tokens = estimate_serialized_tokens(&input);
+        let text_tokens = estimate_prompt_input_tokens(&input);
+
+        assert!(raw_tokens > 190_000);
+        assert!(text_tokens < 200);
     }
 }
 
@@ -1188,10 +1261,10 @@ fn reduce_prompt_input_for_model(
         PromptReductionModeToml::Off => (input, None),
         PromptReductionModeToml::Conservative => {
             let reduction_config = PromptReductionConfig::for_turn(&turn_context.sub_id);
-            let original_input_tokens = estimate_serialized_tokens(&input);
+            let original_input_tokens = estimate_prompt_input_tokens(&input);
             match codex_prompt_reducer::reduce_prompt_items(&mut input, &reduction_config) {
                 Ok(stats) => {
-                    let reduced_input_tokens = estimate_serialized_tokens(&input);
+                    let reduced_input_tokens = estimate_prompt_input_tokens(&input);
                     if stats.reductions > 0 {
                         trace!(
                             turn_id = %turn_context.sub_id,
@@ -1222,6 +1295,43 @@ fn reduce_prompt_input_for_model(
             }
         }
     }
+}
+
+fn estimate_prompt_input_tokens(input: &[ResponseItem]) -> usize {
+    let mut value = serde_json::to_value(input).unwrap_or(serde_json::Value::Null);
+    redact_input_image_urls_for_text_estimate(&mut value);
+    estimate_serialized_tokens(&value)
+}
+
+fn redact_input_image_urls_for_text_estimate(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Array(items) => {
+            for item in items {
+                redact_input_image_urls_for_text_estimate(item);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            if map.get("type").and_then(serde_json::Value::as_str) == Some("input_image")
+                && let Some(serde_json::Value::String(image_url)) = map.get_mut("image_url")
+            {
+                *image_url = image_text_estimate_placeholder(image_url);
+            }
+            for value in map.values_mut() {
+                redact_input_image_urls_for_text_estimate(value);
+            }
+        }
+        serde_json::Value::Null
+        | serde_json::Value::Bool(_)
+        | serde_json::Value::Number(_)
+        | serde_json::Value::String(_) => {}
+    }
+}
+
+fn image_text_estimate_placeholder(image_url: &str) -> String {
+    format!(
+        "[image omitted from text-token estimate: {} chars]",
+        image_url.chars().count()
+    )
 }
 
 fn estimate_serialized_tokens<T: serde::Serialize>(value: &T) -> usize {
@@ -1282,10 +1392,10 @@ fn prompt_reduction_notice_message(notice: &PromptReductionNotice) -> String {
     let original = format_compact_tokens(notice.original_prompt_tokens);
     let reduced = format_compact_tokens(notice.reduced_prompt_tokens);
     if notice.stats.reductions == 0 {
-        format!("Prompt reducer: sent prompt unchanged (0.0%; {original} estimated tokens).")
+        format!("Prompt reduction: prompt unchanged (0.0%; {original} estimated tokens).")
     } else {
         format!(
-            "Prompt reducer: sent prompt reduced by {saved_percent:.1}% ({original} -> {reduced} estimated tokens; {} artifacts).",
+            "Prompt reduction: optimized prompt by {saved_percent:.1}% ({original} -> {reduced} estimated tokens; {} artifacts).",
             notice.stats.artifacts
         )
     }

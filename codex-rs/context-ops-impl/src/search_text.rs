@@ -478,8 +478,7 @@ fn should_render_entrypoint_hint(
     paths: &[String],
     result: &SearchTextResult,
 ) -> bool {
-    let unscoped =
-        globs.iter().all(|glob| glob.is_empty()) && paths.iter().all(|path| path.is_empty());
+    let unscoped = globs.iter().all(String::is_empty) && paths.iter().all(String::is_empty);
     unscoped && result.files_omitted_lower_bound > 0
 }
 

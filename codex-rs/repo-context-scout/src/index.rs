@@ -266,7 +266,7 @@ fn is_skipped_entry(root: &Path, path: &Path) -> bool {
         return false;
     };
     path.components().any(|component| match component {
-        Component::Normal(name) => name.to_str().is_some_and(|part| is_skipped_path(part)),
+        Component::Normal(name) => name.to_str().is_some_and(is_skipped_path),
         _ => false,
     }) || is_skipped_path(&relative)
 }

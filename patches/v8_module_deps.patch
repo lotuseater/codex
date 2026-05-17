@@ -268,3 +268,21 @@ new file mode 100644
 + 
 + # Unused on Bazel builds, where this is not defined/known; Copybara replaces
 + # usages with an empty list.
+diff --git a/orig/v8-14.6.202.11/MODULE.bazel b/mod/v8-14.6.202.11/MODULE.bazel
+--- a/orig/v8-14.6.202.11/MODULE.bazel
++++ b/mod/v8-14.6.202.11/MODULE.bazel
+@@ -61,14 +61,3 @@ git_repository(
+     remote = "https://chromium.googlesource.com/external/github.com/Maratyszcza/FP16.git",
+ )
+
+-pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+-pip.parse(
+-    hub_name = "v8_python_deps",
+-    python_version = "3.11",
+-    requirements_lock = "//:bazel/requirements.txt",
+-    extra_pip_args = [
+-        "--require-hashes",
+-        "--index-url=https://pypi.org/simple",
+-    ],
+-)
+-use_repo(pip, "v8_python_deps")

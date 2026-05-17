@@ -73,6 +73,7 @@ pub use cognos_ops::PROBLEM_MEMORY_LOOKUP_TOOL_NAME;
 pub use cognos_ops::create_cognos_ops_tools;
 pub use context_ops::FILE_OUTLINE_TOOL_NAME;
 pub use context_ops::SEARCH_TEXT_TOOL_NAME;
+pub use context_ops::WORKFLOW_BATCH_TOOL_NAME;
 pub use context_ops::create_context_ops_tools;
 pub use desktop_automation::create_desktop_automation_tools;
 pub use dynamic_tool::parse_dynamic_tool;

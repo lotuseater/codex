@@ -653,7 +653,11 @@ impl ChatWidget {
         if !self.warning_display_state.should_display(&message) {
             return;
         }
-        self.add_to_history(history_cell::new_warning_event(message));
+        if is_prompt_reduction_notice_message(&message) {
+            self.add_to_history(history_cell::new_prompt_reduction_event(message));
+        } else {
+            self.add_to_history(history_cell::new_warning_event(message));
+        }
         self.request_redraw();
     }
 
@@ -716,4 +720,14 @@ impl ChatWidget {
 
         "Conversation interrupted - tell the model what to do differently. Something went wrong? Hit `/feedback` to report the issue.".to_string()
     }
+}
+
+fn is_prompt_reduction_notice_message(message: &str) -> bool {
+    let message = message
+        .trim_start()
+        .trim_start_matches(|ch: char| !ch.is_ascii_alphanumeric())
+        .trim_start();
+    message
+        .to_ascii_lowercase()
+        .starts_with("prompt reduction:")
 }

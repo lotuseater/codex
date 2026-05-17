@@ -152,6 +152,64 @@ async fn child_uses_parent_exec_policy_when_layer_stack_matches() {
     assert!(child_uses_parent_exec_policy(&parent_config, &child_config));
 }
 
+#[test]
+fn debug_profile_cargo_detector_matches_default_build_test_check_only() {
+    assert!(is_debug_profile_cargo_build_test_check(&[
+        "cargo".to_string(),
+        "test".to_string(),
+        "-p".to_string(),
+        "codex-core".to_string(),
+    ]));
+    assert!(is_debug_profile_cargo_build_test_check(&[
+        "C:\\Users\\Oleh\\.cargo\\bin\\cargo.exe".to_string(),
+        "check".to_string(),
+    ]));
+    assert!(!is_debug_profile_cargo_build_test_check(&[
+        "cargo".to_string(),
+        "test".to_string(),
+        "--release".to_string(),
+    ]));
+    assert!(!is_debug_profile_cargo_build_test_check(&[
+        "cargo".to_string(),
+        "build".to_string(),
+        "--profile".to_string(),
+        "fast-release".to_string(),
+    ]));
+    assert!(!is_debug_profile_cargo_build_test_check(&[
+        "cargo".to_string(),
+        "fmt".to_string(),
+    ]));
+}
+
+#[cfg(windows)]
+#[test]
+fn codex_debug_cargo_guard_uses_codex_agents_rule() -> anyhow::Result<()> {
+    let temp = tempdir()?;
+    let repo = temp.path();
+    std::fs::create_dir_all(repo.join("codex-rs"))?;
+    std::fs::write(repo.join("codex-rs").join("Cargo.toml"), "[workspace]\n")?;
+    std::fs::write(
+        repo.join("AGENTS.md"),
+        "On this Windows checkout, do not use debug-profile Cargo builds/tests.",
+    )?;
+
+    let commands = vec![vec![
+        "powershell".to_string(),
+        "-Command".to_string(),
+        "cargo".to_string(),
+        "test".to_string(),
+        "-p".to_string(),
+        "codex-core".to_string(),
+    ]];
+
+    let reason = codex_debug_cargo_guard_reason(&repo.join("codex-rs"), &commands);
+    assert!(reason.is_some_and(|reason| {
+        reason.contains("debug-profile Cargo build/test/check commands are disabled")
+    }));
+
+    Ok(())
+}
+
 #[tokio::test]
 async fn child_uses_parent_exec_policy_when_non_exec_policy_layers_differ() {
     let (_home, parent_config) = test_config().await;

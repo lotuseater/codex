@@ -2,6 +2,7 @@ use crate::tools::code_mode::execute_spec::create_code_mode_tool;
 use crate::tools::handlers::ApplyPatchHandler;
 use crate::tools::handlers::CodeModeExecuteHandler;
 use crate::tools::handlers::CodeModeWaitHandler;
+use crate::tools::handlers::ContextOpsHandler;
 use crate::tools::handlers::CreateGoalHandler;
 use crate::tools::handlers::DynamicToolHandler;
 use crate::tools::handlers::ExecCommandHandler;
@@ -351,6 +352,12 @@ pub(crate) fn collect_tool_executors(
         .any(|tool| tool == "test_sync_tool")
     {
         executors.push(Arc::new(TestSyncHandler));
+    }
+
+    if config.context_ops_enabled {
+        for tool in codex_tools::create_context_ops_tools() {
+            executors.push(Arc::new(ContextOpsHandler::new(tool)));
+        }
     }
 
     if config.environment_mode.has_environment() {

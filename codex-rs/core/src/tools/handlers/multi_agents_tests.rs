@@ -2243,13 +2243,7 @@ async fn spawn_agent_allows_depth_up_to_configured_max_depth() {
 }
 
 #[tokio::test]
-async fn multi_agent_v2_spawn_agent_ignores_configured_max_depth() {
-    #[derive(Debug, Deserialize)]
-    struct SpawnAgentResult {
-        task_name: String,
-        nickname: Option<String>,
-    }
-
+async fn multi_agent_v2_spawn_agent_rejects_nested_spawning() {
     let (mut session, mut turn) = make_session_and_context().await;
     let manager = thread_manager();
     let mut config = (*turn.config).clone();
@@ -2284,16 +2278,41 @@ async fn multi_agent_v2_spawn_agent_ignores_configured_max_depth() {
             "fork_turns": "none"
         })),
     );
-    let output = SpawnAgentHandlerV2::default()
-        .handle(invocation)
-        .await
-        .expect("multi-agent v2 spawn should ignore max depth");
-    let (content, success) = expect_text_output(output);
-    let result: SpawnAgentResult =
-        serde_json::from_str(&content).expect("spawn_agent result should be json");
-    assert_eq!(result.task_name, "/root/parent/child");
-    assert!(result.nickname.is_some());
-    assert_eq!(success, Some(true));
+    let Err(err) = SpawnAgentHandlerV2::default().handle(invocation).await else {
+        panic!("multi-agent v2 subagent spawn should fail");
+    };
+    assert_eq!(
+        err,
+        FunctionCallError::RespondToModel(
+            codex_agent_policy::MULTI_AGENT_V2_NESTED_SPAWN_REJECTION.to_string()
+        )
+    );
+}
+
+#[tokio::test]
+async fn multi_agent_v2_spawn_agent_rejects_non_thread_subagent_spawning() {
+    let (session, mut turn) = make_session_and_context().await;
+    turn.session_source = SessionSource::SubAgent(SubAgentSource::Review);
+
+    let invocation = invocation(
+        Arc::new(session),
+        Arc::new(turn),
+        "spawn_agent",
+        function_payload(json!({
+            "message": "hello",
+            "task_name": "child",
+            "fork_turns": "none"
+        })),
+    );
+    let Err(err) = SpawnAgentHandlerV2::default().handle(invocation).await else {
+        panic!("multi-agent v2 non-thread subagent spawn should fail");
+    };
+    assert_eq!(
+        err,
+        FunctionCallError::RespondToModel(
+            codex_agent_policy::MULTI_AGENT_V2_NESTED_SPAWN_REJECTION.to_string()
+        )
+    );
 }
 
 #[tokio::test]
@@ -3935,6 +3954,8 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
     };
     turn.developer_instructions = Some("dev".to_string());
     turn.compact_prompt = Some("compact".to_string());
+    std::sync::Arc::make_mut(&mut turn.config).prompt_reduction_mode =
+        codex_config::types::PromptReductionModeToml::Conservative;
     turn.shell_environment_policy = ShellEnvironmentPolicy {
         use_profile: true,
         ..ShellEnvironmentPolicy::default()
@@ -3989,6 +4010,10 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
         .permissions
         .set_permission_profile(permission_profile)
         .expect("permission profile set");
+    assert_eq!(
+        config.prompt_reduction_mode,
+        codex_config::types::PromptReductionModeToml::Conservative
+    );
     assert_eq!(config, expected);
 }
 

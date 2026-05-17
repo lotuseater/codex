@@ -17,6 +17,7 @@ use crate::ToolSearchSourceInfo;
 use crate::ToolSpec;
 use crate::ToolsConfig;
 use crate::ViewImageToolOptions;
+use crate::WORKFLOW_BATCH_TOOL_NAME;
 use crate::WebSearchToolOptions;
 use crate::coalesce_loadable_tool_specs;
 use crate::collect_code_mode_exec_prompt_tool_definitions;
@@ -434,11 +435,8 @@ pub fn build_tool_registry_plan(
 
             for tool in create_context_ops_tools() {
                 let name = tool.name().to_string();
-                plan.push_spec(
-                    tool,
-                    /*supports_parallel_tool_calls*/ true,
-                    config.code_mode_enabled,
-                );
+                let supports_parallel_tool_calls = name != WORKFLOW_BATCH_TOOL_NAME;
+                plan.push_spec(tool, supports_parallel_tool_calls, config.code_mode_enabled);
                 plan.register_handler(name, ToolHandlerKind::ContextOps);
             }
         }

@@ -251,6 +251,7 @@ async fn collaboration_instructions_omitted_when_disabled() -> Result<()> {
             service_tier: None,
             collaboration_mode: Some(collaboration_mode),
             final_output_json_schema: None,
+            context_budget_mode: None,
             personality: None,
         })
         .await?;

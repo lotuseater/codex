@@ -95,6 +95,7 @@ pub fn create_conpty(cols: i16, rows: i16) -> Result<ConptyInstance> {
 ///
 /// This is the main shared ConPTY entry point and is used by both the legacy/direct path
 /// and the elevated runner path whenever a PTY-backed sandboxed process is needed.
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub fn spawn_conpty_process_as_user(
     h_token: HANDLE,
     argv: &[String],

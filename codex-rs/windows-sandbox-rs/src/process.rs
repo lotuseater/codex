@@ -224,6 +224,7 @@ pub struct PipeSpawnHandles {
 
 /// Spawns a process with anonymous pipes and returns the relevant handles.
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub fn spawn_process_with_pipes(
     h_token: HANDLE,
     argv: &[String],

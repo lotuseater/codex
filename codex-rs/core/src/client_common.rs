@@ -65,6 +65,7 @@ impl Default for Prompt {
 impl Prompt {
     pub(crate) fn get_formatted_input(&self) -> Vec<ResponseItem> {
         let mut input = self.input.clone();
+        sanitize_tool_search_outputs(&mut input);
 
         // when using the *Freeform* apply_patch tool specifically, tool outputs
         // should be structured text, not json. Do NOT reserialize when using
@@ -80,6 +81,37 @@ impl Prompt {
 
         input
     }
+}
+
+fn sanitize_tool_search_outputs(items: &mut Vec<ResponseItem>) {
+    items.iter_mut().for_each(|item| {
+        if let ResponseItem::ToolSearchOutput { tools, .. } = item {
+            tools.retain(is_valid_tool_search_output_tool);
+        }
+    });
+}
+
+fn is_valid_tool_search_output_tool(tool: &Value) -> bool {
+    let Some(tool_type) = tool.get("type").and_then(Value::as_str) else {
+        return false;
+    };
+    matches!(
+        tool_type,
+        "code_interpreter"
+            | "function"
+            | "namespace"
+            | "tool_search"
+            | "file_search"
+            | "web_search_preview"
+            | "web_search_preview_2025_03_11"
+            | "image_generation"
+            | "mcp"
+            | "custom"
+            | "computer"
+            | "computer_use_preview"
+            | "shell"
+            | "apply_patch"
+    )
 }
 
 fn reserialize_shell_outputs(items: &mut [ResponseItem]) {

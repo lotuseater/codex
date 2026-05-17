@@ -70,9 +70,9 @@ use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::handlers::CreateGoalHandler;
 use crate::tools::handlers::ExecCommandHandler;
-use crate::tools::handlers::ShellHandler;
+use crate::tools::handlers::ShellCommandHandler;
 use crate::tools::handlers::UpdateGoalHandler;
-use crate::tools::registry::ToolHandler;
+use crate::tools::registry::ToolExecutor;
 use crate::tools::router::ToolCallSource;
 use crate::turn_diff_tracker::TurnDiffTracker;
 use codex_app_server_protocol::AppInfo;
@@ -128,6 +128,7 @@ use codex_protocol::protocol::W3cTraceContext;
 use codex_protocol::request_user_input::RequestUserInputAnswer;
 use codex_protocol::request_user_input::RequestUserInputResponse;
 use codex_rmcp_client::ElicitationAction;
+use codex_tools::ShellCommandBackendConfig;
 use core_test_support::PathBufExt;
 use core_test_support::PathExt;
 use core_test_support::context_snapshot;
@@ -543,10 +544,9 @@ fn test_tool_runtime(session: Arc<Session>, turn_context: Arc<TurnContext>) -> T
         crate::tools::router::ToolRouterParams {
             mcp_tools: None,
             deferred_mcp_tools: None,
-            unavailable_called_tools: Vec::new(),
-            parallel_mcp_server_names: HashSet::new(),
             discoverable_tools: None,
             dynamic_tools: turn_context.dynamic_tools.as_slice(),
+            extension_tool_executors: Vec::new(),
         },
     ));
     let tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new()));
@@ -1313,6 +1313,7 @@ async fn refresh_runtime_config_refreshes_hooks() -> anyhow::Result<()> {
                 matcher: None,
                 hooks: vec![codex_config::HookHandlerConfig::Command {
                     command: "python3 /tmp/user.py".to_string(),
+                    command_windows: None,
                     timeout_sec: Some(600),
                     r#async: false,
                     status_message: None,
@@ -2840,10 +2841,6 @@ async fn turn_context_with_model_updates_model_fields() {
         updated.truncation_policy,
         expected_model_info.truncation_policy.into()
     );
-    assert!(!Arc::ptr_eq(
-        &updated.tool_call_gate,
-        &turn_context.tool_call_gate
-    ));
 }
 
 #[test]
@@ -3880,8 +3877,8 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         plugins_manager,
         mcp_manager,
         extensions: Arc::new(codex_extension_api::ExtensionRegistryBuilder::new().build()),
-        session_extension_data: codex_extension_api::ExtensionData::new(),
-        thread_extension_data: codex_extension_api::ExtensionData::new(),
+        session_extension_data: codex_extension_api::ExtensionData::new("session"),
+        thread_extension_data: codex_extension_api::ExtensionData::new("thread"),
         agent_control,
         network_proxy: None,
         network_approval: Arc::clone(&network_approval),
@@ -3974,6 +3971,36 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
     };
 
     (session, turn_context)
+}
+
+#[tokio::test]
+async fn build_initial_context_uses_turn_collaboration_mode() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    {
+        let mut state = session.state.lock().await;
+        state.session_configuration.collaboration_mode = CollaborationMode {
+            mode: ModeKind::Default,
+            settings: Settings {
+                model: turn_context.model_info.slug.clone(),
+                reasoning_effort: None,
+                developer_instructions: Some("DEFAULT SESSION INSTRUCTIONS".to_string()),
+            },
+        };
+    }
+    turn_context.collaboration_mode = CollaborationMode {
+        mode: ModeKind::Plan,
+        settings: Settings {
+            model: turn_context.model_info.slug.clone(),
+            reasoning_effort: None,
+            developer_instructions: Some("PLAN TURN INSTRUCTIONS".to_string()),
+        },
+    };
+
+    let context = session.build_initial_context(&turn_context).await;
+    let developer_text = developer_input_texts(&context).join("\n");
+
+    assert!(developer_text.contains("PLAN TURN INSTRUCTIONS"));
+    assert!(!developer_text.contains("DEFAULT SESSION INSTRUCTIONS"));
 }
 
 async fn make_session_with_config(
@@ -5661,8 +5688,8 @@ where
         plugins_manager,
         mcp_manager,
         extensions: Arc::new(codex_extension_api::ExtensionRegistryBuilder::new().build()),
-        session_extension_data: codex_extension_api::ExtensionData::new(),
-        thread_extension_data: codex_extension_api::ExtensionData::new(),
+        session_extension_data: codex_extension_api::ExtensionData::new("session"),
+        thread_extension_data: codex_extension_api::ExtensionData::new("thread"),
         agent_control,
         network_proxy: None,
         network_approval: Arc::clone(&network_approval),
@@ -5868,34 +5895,6 @@ async fn refresh_mcp_servers_is_deferred_until_next_turn() {
     );
     let new_token = session.mcp_startup_cancellation_token().await;
     assert!(!new_token.is_cancelled());
-}
-
-#[tokio::test]
-async fn record_model_warning_appends_user_message() {
-    let (mut session, turn_context) = make_session_and_context().await;
-    let features = Features::with_defaults().into();
-    session.features = features;
-
-    session
-        .record_model_warning("too many unified exec processes", &turn_context)
-        .await;
-
-    let history = session.clone_history().await;
-    let history_items = history.raw_items();
-    let last = history_items.last().expect("warning recorded");
-
-    match last {
-        ResponseItem::Message { role, content, .. } => {
-            assert_eq!(role, "user");
-            assert_eq!(
-                content,
-                &vec![ContentItem::InputText {
-                    text: "Warning: too many unified exec processes".to_string(),
-                }]
-            );
-        }
-        other => panic!("expected user message, got {other:?}"),
-    }
 }
 
 #[tokio::test]
@@ -6258,21 +6257,24 @@ struct GitAttributionTestContributor;
 struct GitAttributionTestState;
 
 impl codex_extension_api::ContextContributor for GitAttributionTestContributor {
-    fn contribute(
-        &self,
-        _session_store: &codex_extension_api::ExtensionData,
-        thread_store: &codex_extension_api::ExtensionData,
-    ) -> Vec<codex_extension_api::PromptFragment> {
-        thread_store
-            .get::<GitAttributionTestState>()
-            .is_some()
-            .then(|| {
-                codex_extension_api::PromptFragment::developer_policy(
-                    "git attribution extension enabled",
-                )
-            })
-            .into_iter()
-            .collect()
+    fn contribute<'a>(
+        &'a self,
+        _session_store: &'a codex_extension_api::ExtensionData,
+        thread_store: &'a codex_extension_api::ExtensionData,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Vec<codex_extension_api::PromptFragment>> + Send + 'a>,
+    > {
+        let enabled = thread_store.get::<GitAttributionTestState>().is_some();
+        Box::pin(async move {
+            enabled
+                .then(|| {
+                    codex_extension_api::PromptFragment::developer_policy(
+                        "git attribution extension enabled",
+                    )
+                })
+                .into_iter()
+                .collect()
+        })
     }
 }
 
@@ -8213,12 +8215,13 @@ async fn external_goal_mutation_accounts_active_turn_before_status_change() -> a
         .expect("goal should remain persisted");
     assert_eq!(70, goal.tokens_used);
 
-    let previous_status = goal.status;
+    let previous_status = ExternalGoalPreviousStatus::from(&goal);
     let goal_id = goal.goal_id.clone();
     let updated_goal = state_db
         .update_thread_goal(
             sess.conversation_id,
             codex_state::ThreadGoalUpdate {
+                objective: None,
                 status: Some(codex_state::ThreadGoalStatus::Complete),
                 token_budget: None,
                 expected_goal_id: Some(goal_id),
@@ -8229,7 +8232,7 @@ async fn external_goal_mutation_accounts_active_turn_before_status_change() -> a
     sess.goal_runtime_apply(GoalRuntimeEvent::ExternalSet {
         external_set: ExternalGoalSet {
             goal: updated_goal,
-            previous_status: ExternalGoalPreviousStatus::Existing(previous_status),
+            previous_status,
         },
     })
     .await?;
@@ -8713,10 +8716,9 @@ async fn fatal_tool_error_stops_turn_and_reports_error() {
         crate::tools::router::ToolRouterParams {
             deferred_mcp_tools,
             mcp_tools: Some(tools),
-            unavailable_called_tools: Vec::new(),
-            parallel_mcp_server_names: HashSet::new(),
             discoverable_tools: None,
             dynamic_tools: turn_context.dynamic_tools.as_slice(),
+            extension_tool_executors: Vec::new(),
         },
     );
     let item = ResponseItem::CustomToolCall {
@@ -8727,8 +8729,7 @@ async fn fatal_tool_error_stops_turn_and_reports_error() {
         input: "{}".to_string(),
     };
 
-    let call = ToolRouter::build_tool_call(session.as_ref(), item.clone())
-        .await
+    let call = ToolRouter::build_tool_call(item.clone())
         .expect("build tool call")
         .expect("tool call present");
     let tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new()));
@@ -9146,7 +9147,7 @@ async fn rejects_escalated_permissions_when_policy_not_on_request() {
     let tool_name = "shell";
     let call_id = "test-call".to_string();
 
-    let handler = ShellHandler;
+    let handler = ShellCommandHandler::from(ShellCommandBackendConfig::Classic);
     let resp = handler
         .handle(ToolInvocation {
             session: Arc::clone(&session),
@@ -9221,7 +9222,7 @@ async fn unified_exec_rejects_escalated_permissions_when_policy_not_on_request()
     let turn_context = Arc::new(turn_context_raw);
     let tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new()));
 
-    let handler = ExecCommandHandler;
+    let handler = ExecCommandHandler::default();
     let resp = handler
         .handle(ToolInvocation {
             session: Arc::clone(&session),

@@ -7434,6 +7434,7 @@ async fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             include_skill_instructions: true,
             include_environment_context: true,
             compact_prompt: None,
+            prompt_reduction_mode: Default::default(),
             forced_chatgpt_workspace_id: None,
             forced_login_method: None,
             include_apply_patch_tool: true,
@@ -7935,6 +7936,7 @@ async fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         include_skill_instructions: true,
         include_environment_context: true,
         compact_prompt: None,
+        prompt_reduction_mode: Default::default(),
         forced_chatgpt_workspace_id: None,
         forced_login_method: None,
         include_apply_patch_tool: true,
@@ -8101,6 +8103,7 @@ async fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         include_skill_instructions: true,
         include_environment_context: true,
         compact_prompt: None,
+        prompt_reduction_mode: Default::default(),
         forced_chatgpt_workspace_id: None,
         forced_login_method: None,
         include_apply_patch_tool: true,
@@ -8252,6 +8255,7 @@ async fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         include_skill_instructions: true,
         include_environment_context: true,
         compact_prompt: None,
+        prompt_reduction_mode: Default::default(),
         forced_chatgpt_workspace_id: None,
         forced_login_method: None,
         include_apply_patch_tool: true,
@@ -9749,6 +9753,11 @@ fn multi_agent_v2_default_hints_gate_exploration_with_first_moves() {
 
     assert!(root_hint.contains("first_moves_predict"));
     assert!(root_hint.contains("Agent ROI Estimate"));
+    assert!(root_hint.contains("what to delegate to subagents"));
+    assert!(root_hint.contains("up to three persistent high-capability helpers"));
+    assert!(root_hint.contains("Only the main/root agent spawns helpers"));
+    assert!(root_hint.contains("Compact helpers after bulky reads"));
+    assert!(root_hint.contains("short summary or short result only when the main agent needs"));
     assert!(root_hint.contains("net >= 2"));
     assert!(root_hint.contains("reuse_cost=1"));
     assert!(root_hint.contains("loop_followup_gain=0-3"));
@@ -9772,6 +9781,8 @@ fn multi_agent_v2_default_hints_gate_exploration_with_first_moves() {
     assert!(subagent_hint.contains("If you are a `helper` agent"));
     assert!(subagent_hint.contains("repo_context_scout"));
     assert!(subagent_hint.contains("Root owns finalization"));
+    assert!(subagent_hint.contains("Do not spawn more agents"));
+    assert!(subagent_hint.contains("A short summary or short result is optional"));
     assert!(subagent_hint.contains("configured tools, skills, MCP/app surfaces"));
 }
 

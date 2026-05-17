@@ -24,6 +24,7 @@ use codex_shell_command::is_safe_command::is_known_safe_command;
 use codex_shell_command::powershell::try_find_powershell_executable_blocking;
 use codex_shell_command::powershell::try_find_pwsh_executable_blocking;
 use serde_json::json;
+use tempfile::TempDir;
 use tokio::sync::Mutex;
 use tokio::sync::watch;
 
@@ -201,6 +202,29 @@ fn shell_command_handler_rejects_login_when_disallowed() {
             .contains("login shell is disabled by config"),
         "unexpected error: {err}"
     );
+}
+
+#[test]
+fn detects_codex_checkout_workdir_for_debug_build_guard() {
+    let temp = TempDir::new().expect("temp dir");
+    let repo = temp.path();
+    std::fs::create_dir_all(repo.join("codex-rs")).expect("create codex-rs");
+    std::fs::create_dir_all(repo.join("scripts")).expect("create scripts");
+    std::fs::write(repo.join("codex-rs").join("Cargo.toml"), "[workspace]\n")
+        .expect("write cargo toml");
+    std::fs::write(
+        repo.join("scripts").join("build-local-codex.ps1"),
+        "# build helper\n",
+    )
+    .expect("write build helper");
+
+    assert!(super::shell_command::is_codex_checkout_workdir(repo));
+    assert!(super::shell_command::is_codex_checkout_workdir(
+        &repo.join("codex-rs")
+    ));
+    assert!(!super::shell_command::is_codex_checkout_workdir(
+        temp.path().join("other").as_path()
+    ));
 }
 
 #[tokio::test]

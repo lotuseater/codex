@@ -1,55 +1,74 @@
 mod execution;
 pub(crate) mod file_outline;
 pub(crate) mod search_text;
+pub(crate) mod workflow_batch;
 
 use codex_tools::FILE_OUTLINE_TOOL_NAME;
 use codex_tools::SEARCH_TEXT_TOOL_NAME;
 use codex_tools::ToolName;
+use codex_tools::ToolSpec;
+use codex_tools::WORKFLOW_BATCH_TOOL_NAME;
 
 use crate::function_tool::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
+use crate::tools::registry::ToolExecutor;
 use crate::tools::registry::ToolHandler;
-use crate::tools::registry::ToolKind;
 
 pub struct ContextOpsHandler {
-    tool_name: ToolName,
+    spec: ToolSpec,
 }
 
 impl ContextOpsHandler {
-    pub fn new(tool_name: ToolName) -> Self {
-        Self { tool_name }
+    pub fn new(spec: ToolSpec) -> Self {
+        Self { spec }
+    }
+
+    fn arguments_from_payload<'a>(&self, payload: &'a ToolPayload) -> Option<&'a str> {
+        let ToolPayload::Function { arguments } = payload else {
+            return None;
+        };
+        Some(arguments)
     }
 }
 
-impl ToolHandler for ContextOpsHandler {
+impl ToolExecutor<ToolInvocation> for ContextOpsHandler {
     type Output = FunctionToolOutput;
 
     fn tool_name(&self) -> ToolName {
-        self.tool_name.clone()
+        ToolName::plain(self.spec.name())
     }
 
-    fn kind(&self) -> ToolKind {
-        ToolKind::Function
+    fn spec(&self) -> Option<ToolSpec> {
+        Some(self.spec.clone())
     }
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {
-        let arguments = match &invocation.payload {
-            ToolPayload::Function { arguments } => arguments.clone(),
-            _ => {
-                return Err(FunctionCallError::RespondToModel(
+        let arguments = self
+            .arguments_from_payload(&invocation.payload)
+            .map(str::to_string)
+            .ok_or_else(|| {
+                FunctionCallError::RespondToModel(
                     "context ops handler received unsupported payload".to_string(),
-                ));
-            }
-        };
+                )
+            })?;
 
         match invocation.tool_name.name.as_str() {
             FILE_OUTLINE_TOOL_NAME => file_outline::handle(invocation, arguments.as_str()).await,
             SEARCH_TEXT_TOOL_NAME => search_text::handle(invocation, arguments.as_str()).await,
+            WORKFLOW_BATCH_TOOL_NAME => {
+                workflow_batch::handle(invocation, arguments.as_str()).await
+            }
             other => Err(FunctionCallError::RespondToModel(format!(
                 "unknown context ops tool: {other}"
             ))),
         }
+    }
+}
+
+impl ToolHandler for ContextOpsHandler {
+    fn matches_kind(&self, payload: &ToolPayload) -> bool {
+        self.arguments_from_payload(payload).is_some()
     }
 }

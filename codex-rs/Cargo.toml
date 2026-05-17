@@ -7,6 +7,7 @@ members = [
     "agent-policy",
     "backend-client",
     "blackboard",
+    "build-policy",
     "bwrap",
     "ansi-escape",
     "async-utils",
@@ -97,6 +98,7 @@ members = [
     "otel",
     "tui",
     "tools",
+    "workflow-batch",
     "v8-poc",
     "utils/absolute-path",
     "utils/cargo-bin",
@@ -171,6 +173,7 @@ codex-arg0 = { path = "arg0" }
 codex-async-utils = { path = "async-utils" }
 codex-backend-client = { path = "backend-client" }
 codex-blackboard = { path = "blackboard" }
+codex-build-policy = { path = "build-policy" }
 codex-chatgpt = { path = "chatgpt" }
 codex-cli = { path = "cli" }
 codex-client = { path = "codex-client" }
@@ -260,6 +263,7 @@ codex-thread-config-remote = { path = "thread-config-remote" }
 codex-thread-store = { path = "thread-store" }
 codex-tool-schema = { path = "tool-schema" }
 codex-tools = { path = "tools" }
+codex-workflow-batch = { path = "workflow-batch" }
 codex-turn-diff = { path = "turn-diff" }
 codex-tui-render = { path = "tui-render" }
 codex-tui = { path = "tui" }

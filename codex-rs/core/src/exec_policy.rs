@@ -1,3 +1,4 @@
+use std::fs as std_fs;
 use std::io::ErrorKind;
 use std::path::Path;
 use std::path::PathBuf;
@@ -46,6 +47,7 @@ const REJECT_SANDBOX_APPROVAL_REASON: &str =
     "approval required by policy, but AskForApproval::Granular.sandbox_approval is false";
 const REJECT_RULES_APPROVAL_REASON: &str =
     "approval required by policy rule, but AskForApproval::Granular.rules is false";
+const CODEX_DEBUG_CARGO_GUARD_REASON: &str = "debug-profile Cargo build/test/check commands are disabled in this Codex checkout; use scripts\\build-local-codex.ps1 -Mode FastRelease or pass --release/--profile";
 const RULES_DIR_NAME: &str = "rules";
 const RULE_EXTENSION: &str = "rules";
 const DEFAULT_POLICY_FILE: &str = "default.rules";
@@ -133,6 +135,63 @@ struct ExecPolicyCommands {
     commands: Vec<Vec<String>>,
     used_complex_parsing: bool,
     command_origin: ExecPolicyCommandOrigin,
+}
+
+fn codex_debug_cargo_guard_reason(sandbox_cwd: &Path, commands: &[Vec<String>]) -> Option<String> {
+    if !cfg!(windows) || !is_codex_checkout_with_debug_cargo_guard(sandbox_cwd) {
+        return None;
+    }
+
+    commands
+        .iter()
+        .any(|command| is_debug_profile_cargo_build_test_check(command))
+        .then(|| CODEX_DEBUG_CARGO_GUARD_REASON.to_string())
+}
+
+fn is_codex_checkout_with_debug_cargo_guard(cwd: &Path) -> bool {
+    cwd.ancestors().any(|ancestor| {
+        if !ancestor.join("codex-rs").join("Cargo.toml").is_file() {
+            return false;
+        }
+
+        let agents_path = ancestor.join("AGENTS.md");
+        std_fs::read_to_string(agents_path)
+            .map(|contents| {
+                contents.contains("do not use debug-profile Cargo")
+                    || contents.contains("Codex Repo Build Default")
+            })
+            .unwrap_or(false)
+    })
+}
+
+fn is_debug_profile_cargo_build_test_check(command: &[String]) -> bool {
+    let Some(cargo_index) = command.iter().position(|arg| is_cargo_executable(arg)) else {
+        return false;
+    };
+
+    let cargo_args = &command[cargo_index + 1..];
+    let Some(subcommand_index) = cargo_args.iter().position(|arg| is_cargo_subcommand(arg)) else {
+        return false;
+    };
+    let subcommand_args = &cargo_args[subcommand_index + 1..];
+
+    !subcommand_args
+        .iter()
+        .any(|arg| arg == "--release" || arg == "--profile" || arg.starts_with("--profile="))
+}
+
+fn is_cargo_executable(arg: &str) -> bool {
+    let trimmed = arg.trim_matches('"').trim_matches('\'');
+    Path::new(trimmed)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            name.eq_ignore_ascii_case("cargo") || name.eq_ignore_ascii_case("cargo.exe")
+        })
+}
+
+fn is_cargo_subcommand(arg: &str) -> bool {
+    matches!(arg, "build" | "test" | "check")
 }
 
 pub(crate) fn child_uses_parent_exec_policy(parent_config: &Config, child_config: &Config) -> bool {
@@ -288,6 +347,9 @@ impl ExecPolicyManager {
             used_complex_parsing,
             command_origin,
         } = commands_for_exec_policy(command);
+        if let Some(reason) = codex_debug_cargo_guard_reason(sandbox_cwd, &commands) {
+            return ExecApprovalRequirement::Forbidden { reason };
+        }
         // Keep heredoc prefix parsing for rule evaluation so existing
         // allow/prompt/forbidden rules still apply, but avoid auto-derived
         // amendments when only the heredoc fallback parser matched.

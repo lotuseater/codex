@@ -1,4 +1,5 @@
 use super::AuthRequestTelemetryContext;
+use super::CompactConversationRequestSettings;
 use super::ModelClient;
 use super::PendingUnauthorizedRetry;
 use super::UnauthorizedRecoveryExecution;
@@ -10,6 +11,7 @@ use super::X_OPENAI_SUBAGENT_HEADER;
 use crate::AttestationContext;
 use crate::AttestationProvider;
 use crate::GenerateAttestationFuture;
+use crate::client_common::Prompt;
 use codex_api::ApiError;
 use codex_api::ResponseEvent;
 use codex_app_server_protocol::AuthMode;
@@ -23,12 +25,15 @@ use codex_model_provider_info::create_oss_provider_with_base_url;
 use codex_otel::SessionTelemetry;
 use codex_protocol::SessionId;
 use codex_protocol::ThreadId;
+use codex_protocol::config_types::ReasoningSummary;
+use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::protocol::InternalSessionSource;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
+use codex_rollout_trace::CompactionTraceContext;
 use codex_rollout_trace::ExecutionStatus;
 use codex_rollout_trace::InferenceTraceAttempt;
 use codex_rollout_trace::InferenceTraceContext;
@@ -50,6 +55,7 @@ use std::task::Context;
 use std::task::Poll;
 use std::time::Duration;
 use tempfile::TempDir;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::Notify;
 use tracing::Event;
 use tracing::Subscriber;
@@ -159,6 +165,22 @@ where
     }
 }
 
+#[derive(Clone)]
+struct EventCollectorLayer {
+    events: Arc<Mutex<Vec<BTreeMap<String, String>>>>,
+}
+
+impl<S> Layer<S> for EventCollectorLayer
+where
+    S: Subscriber + for<'a> LookupSpan<'a>,
+{
+    fn on_event(&self, event: &Event<'_>, _ctx: LayerContext<'_, S>) {
+        let mut visitor = TagCollectorVisitor::default();
+        event.record(&mut visitor);
+        self.events.lock().unwrap().push(visitor.tags);
+    }
+}
+
 fn started_inference_attempt(temp: &TempDir) -> anyhow::Result<InferenceTraceAttempt> {
     let writer = Arc::new(TraceWriter::create(
         temp.path(),
@@ -206,6 +228,17 @@ fn output_message(id: &str, text: &str) -> ResponseItem {
     }
 }
 
+fn input_message(text: &str) -> ResponseItem {
+    ResponseItem::Message {
+        id: None,
+        role: "user".to_string(),
+        content: vec![ContentItem::InputText {
+            text: text.to_string(),
+        }],
+        phase: None,
+    }
+}
+
 async fn replay_until_cancelled(temp: &TempDir) -> anyhow::Result<RolloutTrace> {
     let mut rollout = replay_bundle(temp.path())?;
     for _ in 0..50 {
@@ -221,6 +254,99 @@ async fn replay_until_cancelled(temp: &TempDir) -> anyhow::Result<RolloutTrace> 
         rollout = replay_bundle(temp.path())?;
     }
     Ok(rollout)
+}
+
+#[tokio::test]
+async fn compact_conversation_history_logs_serialized_payload_byte_count() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let _guard = tracing_subscriber::registry()
+        .with(EventCollectorLayer {
+            events: events.clone(),
+        })
+        .set_default();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind one-shot compact endpoint");
+    let base_url = format!("http://{}/v1", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener
+            .accept()
+            .await
+            .expect("accept compact endpoint request");
+        socket
+            .write_all(
+                b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            )
+            .await
+            .expect("write compact endpoint response");
+    });
+
+    let provider = create_oss_provider_with_base_url(&base_url, WireApi::Responses);
+    let thread_id = ThreadId::new();
+    let model_client = ModelClient::new(
+        /*auth_manager*/ None,
+        thread_id.into(),
+        thread_id,
+        /*installation_id*/ "11111111-1111-4111-8111-111111111111".to_string(),
+        provider,
+        SessionSource::Exec,
+        /*model_verbosity*/ None,
+        /*enable_request_compression*/ false,
+        /*include_timing_metrics*/ false,
+        /*beta_features_header*/ None,
+        /*attestation_provider*/ None,
+    );
+    let prompt = Prompt {
+        input: vec![input_message("compact this conversation")],
+        base_instructions: BaseInstructions {
+            text: "compact instructions".to_string(),
+        },
+        ..Prompt::default()
+    };
+    let settings = CompactConversationRequestSettings {
+        effort: None,
+        summary: ReasoningSummary::Auto,
+        service_tier: None,
+    };
+
+    let _ = model_client
+        .compact_conversation_history(
+            &prompt,
+            &test_model_info(),
+            settings,
+            &test_session_telemetry(),
+            &CompactionTraceContext::disabled(),
+        )
+        .await;
+    server.await.expect("compact endpoint server task finished");
+
+    let events = events.lock().unwrap();
+    let compact_request_event = events
+        .iter()
+        .find(|event| {
+            event
+                .get("message")
+                .is_some_and(|message| message.contains("sending remote compaction request"))
+        })
+        .expect("compaction request log event was emitted");
+    let payload_bytes = compact_request_event
+        .get("compact_request_payload_bytes")
+        .expect("compaction request log includes serialized payload bytes");
+    assert!(
+        payload_bytes.starts_with("Some(") && payload_bytes.ends_with(')'),
+        "expected serialized payload byte count, got {payload_bytes:?}"
+    );
+    assert_ne!(
+        payload_bytes, "Some(0)",
+        "serialized payload byte count should be non-zero"
+    );
+    assert_eq!(
+        compact_request_event
+            .get("compact_request_input_items")
+            .map(String::as_str),
+        Some("1")
+    );
 }
 
 struct NotifyAfterEventStream {

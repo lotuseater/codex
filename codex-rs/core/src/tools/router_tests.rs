@@ -413,6 +413,7 @@ fn namespace_function_names(specs: &[ToolSpec], namespace_name: &str) -> Vec<Str
             | ToolSpec::Freeform(_)
             | ToolSpec::ToolSearch { .. }
             | ToolSpec::ImageGeneration { .. }
+            | ToolSpec::LocalShell {}
             | ToolSpec::WebSearch { .. }
             | ToolSpec::Namespace(_) => None,
         })

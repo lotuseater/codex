@@ -2,6 +2,7 @@ use codex_protocol::ThreadId;
 use codex_protocol::models::ShellCommandToolCallParams;
 use codex_tools::ShellCommandBackendConfig;
 use codex_tools::ToolName;
+use std::path::Path;
 
 use crate::exec::ExecCapturePolicy;
 use crate::exec::ExecParams;
@@ -169,6 +170,16 @@ impl ToolExecutor<ToolInvocation> for ShellCommandHandler {
         let params: ShellCommandToolCallParams = parse_arguments_with_base_path(&arguments, &cwd)?;
         #[allow(deprecated)]
         let workdir = turn.resolve_path(params.workdir.clone());
+        if cfg!(windows)
+            && is_codex_checkout_workdir(&workdir)
+            && let Some(invocation) = codex_build_policy::debug_cargo_invocation(&params.command)
+        {
+            return Err(FunctionCallError::RespondToModel(format!(
+                "{} Blocked subcommand: cargo {}.",
+                codex_build_policy::CODEX_REPO_DEBUG_CARGO_REJECTION,
+                invocation.subcommand
+            )));
+        }
         maybe_emit_implicit_skill_invocation(
             session.as_ref(),
             turn.as_ref(),
@@ -201,6 +212,24 @@ impl ToolExecutor<ToolInvocation> for ShellCommandHandler {
         })
         .await
     }
+}
+
+pub(super) fn is_codex_checkout_workdir(workdir: &Path) -> bool {
+    workdir.ancestors().any(|path| {
+        (path.join("codex-rs").join("Cargo.toml").is_file()
+            && path.join("scripts").join("build-local-codex.ps1").is_file())
+            || (path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name == "codex-rs")
+                && path.join("Cargo.toml").is_file()
+                && path.parent().is_some_and(|parent| {
+                    parent
+                        .join("scripts")
+                        .join("build-local-codex.ps1")
+                        .is_file()
+                }))
+    })
 }
 
 impl ToolHandler for ShellCommandHandler {

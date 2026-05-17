@@ -9,6 +9,7 @@ workspace = true
 
 [dependencies]
 codex-app-server-protocol = { workspace = true }
+codex-agent-policy = { workspace = true }
 codex-code-mode-spec = { workspace = true }
 codex-features = { workspace = true }
 codex-protocol = { workspace = true }

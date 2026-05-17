@@ -52,7 +52,7 @@ pub fn render_graphify_scout_pack(request: &ContextPackRequest<'_>) -> Option<St
         let explicit_paths = resolve_explicit_paths(
             &files,
             request.prompt,
-            request.path_budget.max(1).min(EXACT_MATCH_LIMIT),
+            request.path_budget.clamp(1, EXACT_MATCH_LIMIT),
         );
         if !explicit_paths.is_empty() {
             return Some(render_exact_pack(&explicit_paths));
@@ -117,7 +117,7 @@ pub fn prepend_context_pack_to_message(
 }
 
 pub fn render_entrypoint_hint(project_root: &Path, path_budget: usize) -> Option<String> {
-    let paths = entry_point_paths(project_root, path_budget.max(1).min(DEFAULT_PATH_BUDGET));
+    let paths = entry_point_paths(project_root, path_budget.clamp(1, DEFAULT_PATH_BUDGET));
     if paths.is_empty() {
         return None;
     }
@@ -716,7 +716,7 @@ fn build_path_idf(files: &[FileCandidate]) -> BTreeMap<String, f64> {
 
 fn path_components(path: &str) -> BTreeSet<String> {
     path.to_ascii_lowercase()
-        .split(|ch: char| matches!(ch, '/' | '\\' | '.' | '_' | '-'))
+        .split(['/', '\\', '.', '_', '-'])
         .filter(|part| part.len() >= 3)
         .map(str::to_string)
         .collect()
@@ -807,20 +807,20 @@ fn operational_path_boost(prompt: &str, path: &str) -> i64 {
     let prompt = prompt.to_ascii_lowercase();
     let path = path.to_ascii_lowercase();
     let mut boost = 0;
-    if prompt.contains("context pack") || prompt.contains("context-pack") {
-        if path.contains("context_pack") || path.contains("context-pack") {
-            boost += 400;
-        }
+    if (prompt.contains("context pack") || prompt.contains("context-pack"))
+        && (path.contains("context_pack") || path.contains("context-pack"))
+    {
+        boost += 400;
     }
-    if prompt.contains("first moves") || prompt.contains("first_moves") {
-        if path.contains("first_moves") {
-            boost += 250;
-        }
+    if (prompt.contains("first moves") || prompt.contains("first_moves"))
+        && path.contains("first_moves")
+    {
+        boost += 250;
     }
-    if prompt.contains("hook") {
-        if path.contains("/hooks/") || path.contains("_hook.py") || path.contains("_hook.ps1") {
-            boost += 350;
-        }
+    if prompt.contains("hook")
+        && (path.contains("/hooks/") || path.contains("_hook.py") || path.contains("_hook.ps1"))
+    {
+        boost += 350;
     }
     if prompt.contains("fresh root")
         || prompt.contains("fresh turn")
@@ -841,16 +841,15 @@ fn operational_path_boost(prompt: &str, path: &str) -> i64 {
             boost += 350;
         }
     }
-    if prompt.contains("bootstrap") || prompt.contains("installer") || prompt.contains("install") {
-        if path.contains("install")
+    if (prompt.contains("bootstrap") || prompt.contains("installer") || prompt.contains("install"))
+        && (path.contains("install")
             || path.contains("bootstrap")
             || path.contains("setup")
             || path.contains("requirements")
             || path.ends_with(".bat")
-            || path.ends_with(".cmd")
-        {
-            boost += 450;
-        }
+            || path.ends_with(".cmd"))
+    {
+        boost += 450;
     }
     boost
 }

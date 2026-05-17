@@ -2248,6 +2248,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-build-policy"
+version = "0.0.0"
+
+[[package]]
 name = "codex-bwrap"
 version = "0.0.0"
 dependencies = [
@@ -2614,6 +2618,7 @@ dependencies = [
  "codex-apply-patch",
  "codex-async-utils",
  "codex-blackboard",
+ "codex-build-policy",
  "codex-code-mode",
  "codex-cognos-ops",
  "codex-config",
@@ -2675,6 +2680,7 @@ dependencies = [
  "codex-utils-string",
  "codex-utils-template",
  "codex-windows-sandbox",
+ "codex-workflow-batch",
  "core_test_support",
  "csv",
  "ctor",
@@ -4077,6 +4083,7 @@ dependencies = [
 name = "codex-tools"
 version = "0.0.0"
 dependencies = [
+ "codex-agent-policy",
  "codex-app-server-protocol",
  "codex-code-mode-spec",
  "codex-features",
@@ -4521,6 +4528,20 @@ dependencies = [
  "windows",
  "windows-sys 0.61.2",
  "winres",
+]
+
+[[package]]
+name = "codex-workflow-batch"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "pretty_assertions",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha1 0.11.0",
+ "tempfile",
 ]
 
 [[package]]

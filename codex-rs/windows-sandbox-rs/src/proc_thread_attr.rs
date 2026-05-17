@@ -1,4 +1,3 @@
-use std::ffi::c_void;
 use std::io;
 use windows_sys::Win32::Foundation::GetLastError;
 use windows_sys::Win32::Foundation::HANDLE;
@@ -51,7 +50,7 @@ impl ProcThreadAttributeList {
                 list,
                 0,
                 PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
-                hpc as *mut c_void,
+                hpc,
                 std::mem::size_of::<HANDLE>(),
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),

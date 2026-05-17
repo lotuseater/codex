@@ -793,17 +793,17 @@ fn select_diverse_path_sample(paths: &[String], limit: usize) -> Vec<String> {
     let mut offsets = BTreeMap::<String, usize>::new();
     while selected.len() < limit {
         let mut advanced = false;
-        for group in grouped.keys().cloned().collect::<Vec<_>>() {
+        for group in grouped.keys() {
             if selected.len() >= limit {
                 break;
             }
-            let offset = offsets.get(&group).copied().unwrap_or_default();
-            let Some(path) = grouped.get(&group).and_then(|paths| paths.get(offset)) else {
+            let offset = offsets.get(group).copied().unwrap_or_default();
+            let Some(path) = grouped.get(group).and_then(|paths| paths.get(offset)) else {
                 continue;
             };
             selected.push(path.clone());
             selected_set.insert(path.clone());
-            offsets.insert(group, offset + 1);
+            offsets.insert(group.clone(), offset + 1);
             advanced = true;
         }
         if !advanced {

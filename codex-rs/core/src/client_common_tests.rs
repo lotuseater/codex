@@ -3,6 +3,7 @@ use codex_api::ResponsesApiRequest;
 use codex_api::TextControls;
 use codex_api::create_text_param_for_request;
 use codex_protocol::config_types::ServiceTier;
+use codex_protocol::models::ContentItem;
 use codex_protocol::models::FunctionCallOutputPayload;
 use pretty_assertions::assert_eq;
 
@@ -227,4 +228,139 @@ fn reserializes_shell_outputs_for_function_and_custom_tool_calls() {
             },
         ]
     );
+}
+
+#[test]
+fn sanitizes_invalid_tool_search_output_tool_types() {
+    let prompt = Prompt {
+        input: vec![ResponseItem::ToolSearchOutput {
+            call_id: Some("call-1".to_string()),
+            status: "completed".to_string(),
+            execution: "client".to_string(),
+            tools: vec![
+                serde_json::json!({
+                    "type": "prompt_reduction",
+                    "name": "bad_history_tool",
+                }),
+                serde_json::json!({
+                    "type": "function",
+                    "name": "valid_tool",
+                    "description": "valid",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                    },
+                }),
+            ],
+        }],
+        ..Default::default()
+    };
+
+    let formatted = prompt.get_formatted_input();
+
+    let [ResponseItem::ToolSearchOutput { tools, .. }] = formatted.as_slice() else {
+        panic!("expected tool search output");
+    };
+    assert_eq!(
+        tools,
+        &vec![serde_json::json!({
+            "type": "function",
+            "name": "valid_tool",
+            "description": "valid",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        })]
+    );
+}
+
+#[test]
+fn preserves_tool_search_outputs_with_no_valid_tool_types() {
+    let prompt = Prompt {
+        input: vec![
+            ResponseItem::Message {
+                id: None,
+                role: "user".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: "keep me".to_string(),
+                }],
+                phase: None,
+            },
+            ResponseItem::ToolSearchOutput {
+                call_id: Some("call-1".to_string()),
+                status: "completed".to_string(),
+                execution: "client".to_string(),
+                tools: vec![serde_json::json!({
+                    "type": "prompt_reduction",
+                    "name": "bad_history_tool",
+                })],
+            },
+        ],
+        ..Default::default()
+    };
+
+    let formatted = prompt.get_formatted_input();
+
+    assert_eq!(
+        formatted,
+        vec![
+            ResponseItem::Message {
+                id: None,
+                role: "user".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: "keep me".to_string(),
+                }],
+                phase: None,
+            },
+            ResponseItem::ToolSearchOutput {
+                call_id: Some("call-1".to_string()),
+                status: "completed".to_string(),
+                execution: "client".to_string(),
+                tools: Vec::new(),
+            },
+        ]
+    );
+}
+
+#[test]
+fn preserves_tool_search_call_output_pair_after_sanitizing_reduced_output() {
+    let prompt = Prompt {
+        input: vec![
+            ResponseItem::ToolSearchCall {
+                id: None,
+                call_id: Some("call-1".to_string()),
+                status: None,
+                execution: "client".to_string(),
+                arguments: serde_json::json!({"query": "tool"}),
+            },
+            ResponseItem::ToolSearchOutput {
+                call_id: Some("call-1".to_string()),
+                status: "completed".to_string(),
+                execution: "client".to_string(),
+                tools: vec![serde_json::json!({
+                    "type": "prompt_reduction",
+                    "name": "reduced_tool_search_output",
+                })],
+            },
+        ],
+        ..Default::default()
+    };
+
+    let formatted = prompt.get_formatted_input();
+
+    let [
+        ResponseItem::ToolSearchCall { call_id, .. },
+        ResponseItem::ToolSearchOutput {
+            call_id: output_call_id,
+            tools,
+            ..
+        },
+    ] = formatted.as_slice()
+    else {
+        panic!("expected tool search call/output pair");
+    };
+    assert_eq!(call_id.as_deref(), Some("call-1"));
+    assert_eq!(output_call_id.as_deref(), Some("call-1"));
+    assert!(tools.is_empty());
 }

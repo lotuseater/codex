@@ -93,7 +93,7 @@ pub fn run_scout(request: ScoutRequest<'_>) -> Result<ScoutBundle> {
         generated_at_unix: overlay_index.generated_at_unix,
         index_state,
         indexed_files: overlay_index.files.len(),
-        git_head: overlay_index.git_head.clone(),
+        git_head: overlay_index.git_head,
         changed_paths: changed.paths.clone(),
     };
 

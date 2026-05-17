@@ -68,7 +68,7 @@ pub(super) async fn read_file(
 ) -> Result<Vec<u8>, FunctionCallError> {
     let mut sandbox = invocation
         .turn
-        .file_system_sandbox_context(/*additional_permissions*/ None);
+        .file_system_sandbox_context(/*additional_permissions*/ None, &turn_environment.cwd);
     sandbox.cwd = Some(turn_environment.cwd.clone());
     turn_environment
         .environment

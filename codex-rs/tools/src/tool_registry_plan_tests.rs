@@ -1470,9 +1470,12 @@ fn context_ops_feature_includes_compact_context_tools() {
             "operation_cache_stats",
             "problem_memory_lookup",
             "search_text",
+            "workflow_batch",
         ],
     );
     assert!(find_tool(&tools, "file_outline").supports_parallel_tool_calls);
+    assert!(find_tool(&tools, "search_text").supports_parallel_tool_calls);
+    assert!(!find_tool(&tools, "workflow_batch").supports_parallel_tool_calls);
     for tool_name in [
         "agent_graph_scout",
         "code_relation_scout",
@@ -1487,7 +1490,7 @@ fn context_ops_feature_includes_compact_context_tools() {
             "missing cognos ops handler for {tool_name}"
         );
     }
-    for tool_name in ["file_outline", "search_text"] {
+    for tool_name in ["file_outline", "search_text", "workflow_batch"] {
         assert!(
             handlers.iter().any(|handler| handler.name.name == tool_name
                 && handler.kind == ToolHandlerKind::ContextOps),

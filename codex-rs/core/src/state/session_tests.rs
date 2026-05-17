@@ -34,6 +34,16 @@ async fn clear_connector_selection_removes_entries() {
 }
 
 #[tokio::test]
+async fn restored_session_auto_compact_pending_is_one_shot() {
+    let session_configuration = make_session_configuration_for_tests().await;
+    let mut state = SessionState::new(session_configuration);
+    state.set_restored_session_auto_compact_pending(true);
+
+    assert!(state.take_restored_session_auto_compact_pending());
+    assert!(!state.take_restored_session_auto_compact_pending());
+}
+
+#[tokio::test]
 async fn set_rate_limits_defaults_limit_id_to_codex_when_missing() {
     let session_configuration = make_session_configuration_for_tests().await;
     let mut state = SessionState::new(session_configuration);

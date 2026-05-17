@@ -23,6 +23,9 @@ use codex_analytics::CompactionPhase;
 use codex_analytics::CompactionReason;
 use codex_analytics::CompactionTrigger;
 use codex_app_server_protocol::AuthMode;
+use codex_config::types::PromptReductionModeToml;
+use codex_prompt_reducer::PromptReductionConfig;
+use codex_prompt_reducer::PromptReductionStats;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CodexResult;
 use codex_protocol::items::ContextCompactionItem;
@@ -33,10 +36,11 @@ use codex_protocol::protocol::CompactedItem;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::TurnStartedEvent;
 use codex_rollout_trace::CompactionCheckpointTracePayload;
-use futures::TryFutureExt;
+use codex_utils_output_truncation::approx_token_count;
 use tokio_util::sync::CancellationToken;
 use tracing::error;
 use tracing::info;
+use tracing::warn;
 
 pub(crate) async fn run_inline_remote_auto_compact_task(
     sess: Arc<Session>,
@@ -152,111 +156,132 @@ async fn run_remote_compact_task_inner_impl(
     let compaction_item = TurnItem::ContextCompaction(context_compaction_item);
     sess.emit_turn_item_started(turn_context, &compaction_item)
         .await;
-    let mut history = sess.clone_history().await;
+    let history = sess.clone_history().await;
     let base_instructions = sess.get_base_instructions().await;
-    let deleted_items = trim_function_call_history_to_fit_context_window(
-        &mut history,
-        turn_context.as_ref(),
-        &base_instructions,
-    );
-    if deleted_items > 0 {
-        info!(
-            turn_id = %turn_context.sub_id,
-            deleted_items,
-            "trimmed history items before remote compaction"
+    let budgets = remote_compaction_token_budgets(turn_context.model_context_window());
+    for (attempt_index, token_budget) in budgets.iter().copied().enumerate() {
+        let prepared = prepare_remote_compaction_prompt(
+            history.clone(),
+            turn_context.as_ref(),
+            &base_instructions,
+            false,
+            token_budget,
         );
-    }
-    // This is the history selected for remote compaction, after any trimming required to fit the
-    // compact endpoint. The checkpoint below records it separately from the next sampling request,
-    // whose prompt will repeat current developer/context prefix items.
-    let trace_input_history = history.raw_items().to_vec();
-    let task_memory_item = crate::task_memory::build_task_memory_item(&trace_input_history);
-    let task_memory_digest = task_memory_item
-        .as_ref()
-        .and_then(crate::task_memory::task_memory_item_digest);
-    let prompt_input = history.for_prompt(&turn_context.model_info.input_modalities);
-    let tool_router = built_tools(
-        sess.as_ref(),
-        turn_context.as_ref(),
-        &prompt_input,
-        &HashSet::new(),
-        /*skills_outcome*/ None,
-        &CancellationToken::new(),
-    )
-    .await?;
-    let prompt = Prompt {
-        input: prompt_input,
-        tools: tool_router.model_visible_specs(),
-        parallel_tool_calls: turn_context.model_info.supports_parallel_tool_calls,
-        base_instructions,
-        personality: turn_context.personality,
-        output_schema: None,
-        output_schema_strict: true,
-    };
-    let mut new_history = sess
-        .services
-        .model_client
-        .compact_conversation_history(
-            &prompt,
-            &turn_context.model_info,
-            CompactConversationRequestSettings {
-                effort: turn_context.reasoning_effort,
-                summary: turn_context.reasoning_summary,
-                service_tier: if sess.services.auth_manager.auth_mode() == Some(AuthMode::ApiKey) {
-                    None
-                } else {
-                    turn_context.config.service_tier.clone()
-                },
-            },
-            &turn_context.session_telemetry,
-            &compaction_trace,
+        log_remote_compaction_prompt_fit(
+            turn_context.as_ref(),
+            "remote",
+            attempt_index,
+            token_budget,
+            &prepared,
+        );
+
+        // This is the history selected for remote compaction, after any trimming required to fit the
+        // compact endpoint. The checkpoint below records it separately from the next sampling request,
+        // whose prompt will repeat current developer/context prefix items.
+        let trace_input_history = prepared.history.raw_items().to_vec();
+        let task_memory_item = crate::task_memory::build_task_memory_item(&trace_input_history);
+        let task_memory_digest = task_memory_item
+            .as_ref()
+            .and_then(crate::task_memory::task_memory_item_digest);
+        let tool_router = built_tools(
+            sess.as_ref(),
+            turn_context.as_ref(),
+            &prepared.input,
+            &HashSet::new(),
+            /*skills_outcome*/ None,
+            &CancellationToken::new(),
         )
-        .or_else(|err| async {
-            let total_usage_breakdown = sess.get_total_token_usage_breakdown().await;
-            let compact_request_log_data =
-                build_compact_request_log_data(&prompt.input, &prompt.base_instructions.text);
-            log_remote_compact_failure(
-                turn_context,
-                &compact_request_log_data,
-                total_usage_breakdown,
-                &err,
-            );
-            Err(err)
-        })
         .await?;
-    new_history = process_compacted_history(
-        sess.as_ref(),
-        turn_context.as_ref(),
-        new_history,
-        initial_context_injection,
-        task_memory_item,
-    )
-    .await;
+        let prompt = Prompt {
+            input: prepared.input,
+            tools: tool_router.model_visible_specs(),
+            parallel_tool_calls: turn_context.model_info.supports_parallel_tool_calls,
+            base_instructions: base_instructions.clone(),
+            personality: turn_context.personality,
+            output_schema: None,
+            output_schema_strict: true,
+        };
+        let result = sess
+            .services
+            .model_client
+            .compact_conversation_history(
+                &prompt,
+                &turn_context.model_info,
+                CompactConversationRequestSettings {
+                    effort: turn_context.reasoning_effort,
+                    summary: turn_context.reasoning_summary,
+                    service_tier: if sess.services.auth_manager.auth_mode()
+                        == Some(AuthMode::ApiKey)
+                    {
+                        None
+                    } else {
+                        turn_context.config.service_tier.clone()
+                    },
+                },
+                &turn_context.session_telemetry,
+                &compaction_trace,
+            )
+            .await;
 
-    let reference_context_item = match initial_context_injection {
-        InitialContextInjection::DoNotInject => None,
-        InitialContextInjection::BeforeLastUserMessage => Some(turn_context.to_turn_context_item()),
-    };
-    let compacted_item = CompactedItem {
-        message: String::new(),
-        replacement_history: Some(new_history.clone()),
-    };
-    // Install is the semantic boundary where the compact endpoint's output becomes live
-    // thread history. Keep it distinct from the later inference request so the reducer can
-    // still represent repeated developer/context prefix items exactly as the model saw them.
-    compaction_trace.record_installed(&CompactionCheckpointTracePayload {
-        input_history: &trace_input_history,
-        replacement_history: &new_history,
-    });
-    sess.replace_compacted_history(new_history, reference_context_item, compacted_item)
-        .await;
-    sess.reset_task_memory_throttle_after_compaction(task_memory_digest.as_deref())
-        .await;
-    sess.recompute_token_usage(turn_context).await;
+        let mut new_history = match result {
+            Ok(new_history) => new_history,
+            Err(err) => {
+                let total_usage_breakdown = sess.get_total_token_usage_breakdown().await;
+                let compact_request_log_data =
+                    build_compact_request_log_data(&prompt.input, &prompt.base_instructions.text);
+                log_remote_compact_failure(
+                    turn_context,
+                    &compact_request_log_data,
+                    total_usage_breakdown,
+                    &err,
+                );
+                if matches!(err, CodexErr::ContextWindowExceeded)
+                    && attempt_index + 1 < budgets.len()
+                {
+                    continue;
+                }
+                return Err(err);
+            }
+        };
 
-    sess.emit_turn_item_completed(turn_context, compaction_item)
+        new_history = process_compacted_history(
+            sess.as_ref(),
+            turn_context.as_ref(),
+            new_history,
+            initial_context_injection,
+            task_memory_item,
+        )
         .await;
-    Ok(())
+
+        let reference_context_item = match initial_context_injection {
+            InitialContextInjection::DoNotInject => None,
+            InitialContextInjection::BeforeLastUserMessage => {
+                Some(turn_context.to_turn_context_item())
+            }
+        };
+        let compacted_item = CompactedItem {
+            message: String::new(),
+            replacement_history: Some(new_history.clone()),
+        };
+        // Install is the semantic boundary where the compact endpoint's output becomes live
+        // thread history. Keep it distinct from the later inference request so the reducer can
+        // still represent repeated developer/context prefix items exactly as the model saw them.
+        compaction_trace.record_installed(&CompactionCheckpointTracePayload {
+            input_history: &trace_input_history,
+            replacement_history: &new_history,
+        });
+        sess.replace_compacted_history(new_history, reference_context_item, compacted_item)
+            .await;
+        sess.reset_task_memory_throttle_after_compaction(task_memory_digest.as_deref())
+            .await;
+        sess.recompute_token_usage(turn_context).await;
+
+        sess.emit_turn_item_completed(turn_context, compaction_item)
+            .await;
+        return Ok(());
+    }
+
+    Err(CodexErr::ContextWindowExceeded)
 }
 
 pub(crate) async fn process_compacted_history(
@@ -374,14 +399,106 @@ pub(crate) fn trim_function_call_history_to_fit_context_window(
     turn_context: &TurnContext,
     base_instructions: &BaseInstructions,
 ) -> usize {
-    let mut deleted_items = 0usize;
     let Some(context_window) = turn_context.model_context_window() else {
-        return deleted_items;
+        return 0;
+    };
+    let token_budget = remote_compaction_input_token_budget(context_window);
+    trim_remote_compaction_history_to_token_budget(history, base_instructions, token_budget)
+}
+
+pub(crate) struct PreparedRemoteCompactionPrompt {
+    pub(crate) history: ContextManager,
+    pub(crate) input: Vec<ResponseItem>,
+    pub(crate) deleted_items: usize,
+    pub(crate) reduction_stats: Option<PromptReductionStats>,
+    pub(crate) estimated_tokens: i64,
+}
+
+pub(crate) fn remote_compaction_token_budgets(context_window: Option<i64>) -> Vec<i64> {
+    let Some(context_window) = context_window else {
+        return vec![i64::MAX];
     };
 
+    [95, 80, 65, 50]
+        .into_iter()
+        .map(|percent| context_window.saturating_mul(percent) / 100)
+        .map(|budget| budget.max(context_window / 2))
+        .fold(Vec::new(), |mut budgets, budget| {
+            if budgets.last().copied() != Some(budget) {
+                budgets.push(budget);
+            }
+            budgets
+        })
+}
+
+pub(crate) fn prepare_remote_compaction_prompt(
+    mut history: ContextManager,
+    turn_context: &TurnContext,
+    base_instructions: &BaseInstructions,
+    include_context_compaction_item: bool,
+    token_budget: i64,
+) -> PreparedRemoteCompactionPrompt {
+    let mut deleted_items = trim_remote_compaction_history_to_token_budget(
+        &mut history,
+        base_instructions,
+        token_budget,
+    );
+
+    loop {
+        let mut input = history
+            .clone()
+            .for_prompt(&turn_context.model_info.input_modalities);
+        if include_context_compaction_item {
+            input.push(ResponseItem::ContextCompaction {
+                encrypted_content: None,
+            });
+        }
+        let reduction_stats = reduce_remote_compaction_prompt_input(&mut input, turn_context);
+        let estimated_tokens = estimate_remote_compaction_prompt_tokens(&input, base_instructions);
+        if estimated_tokens <= token_budget {
+            return PreparedRemoteCompactionPrompt {
+                history,
+                input,
+                deleted_items,
+                reduction_stats,
+                estimated_tokens,
+            };
+        }
+
+        let before = history.raw_items().len();
+        if before == 0 {
+            return PreparedRemoteCompactionPrompt {
+                history,
+                input,
+                deleted_items,
+                reduction_stats,
+                estimated_tokens,
+            };
+        }
+        history.remove_first_item();
+        let removed = before.saturating_sub(history.raw_items().len());
+        if removed == 0 {
+            return PreparedRemoteCompactionPrompt {
+                history,
+                input,
+                deleted_items,
+                reduction_stats,
+                estimated_tokens,
+            };
+        }
+        deleted_items += removed;
+    }
+}
+
+fn trim_remote_compaction_history_to_token_budget(
+    history: &mut ContextManager,
+    base_instructions: &BaseInstructions,
+    token_budget: i64,
+) -> usize {
+    let mut deleted_items = 0usize;
     while history
         .estimate_token_count_with_base_instructions(base_instructions)
-        .is_some_and(|estimated_tokens| estimated_tokens > context_window)
+        .is_some_and(|estimated_tokens| estimated_tokens > token_budget)
     {
         let Some(last_item) = history.raw_items().last() else {
             break;
@@ -395,5 +512,139 @@ pub(crate) fn trim_function_call_history_to_fit_context_window(
         deleted_items += 1;
     }
 
+    while history
+        .estimate_token_count_with_base_instructions(base_instructions)
+        .is_some_and(|estimated_tokens| estimated_tokens > token_budget)
+    {
+        let before = history.raw_items().len();
+        if before == 0 {
+            break;
+        }
+        history.remove_first_item();
+        let removed = before.saturating_sub(history.raw_items().len());
+        if removed == 0 {
+            break;
+        }
+        deleted_items += removed;
+    }
+
     deleted_items
+}
+
+fn remote_compaction_input_token_budget(context_window: i64) -> i64 {
+    let reserve = (context_window / 20).clamp(512, 8_000);
+    context_window
+        .saturating_sub(reserve)
+        .max(context_window / 2)
+}
+
+fn reduce_remote_compaction_prompt_input(
+    input: &mut Vec<ResponseItem>,
+    turn_context: &TurnContext,
+) -> Option<PromptReductionStats> {
+    match turn_context.config.prompt_reduction_mode {
+        PromptReductionModeToml::Off => None,
+        PromptReductionModeToml::Conservative => {
+            let config = PromptReductionConfig::for_turn(&turn_context.sub_id);
+            match codex_prompt_reducer::reduce_prompt_items(input, &config) {
+                Ok(stats) if stats.reductions > 0 => Some(stats),
+                Ok(_) => None,
+                Err(error) => {
+                    warn!(
+                        turn_id = %turn_context.sub_id,
+                        %error,
+                        "failed to reduce remote compaction prompt input"
+                    );
+                    None
+                }
+            }
+        }
+    }
+}
+
+fn estimate_remote_compaction_prompt_tokens(
+    input: &[ResponseItem],
+    base_instructions: &BaseInstructions,
+) -> i64 {
+    let base_tokens =
+        i64::try_from(approx_token_count(&base_instructions.text)).unwrap_or(i64::MAX);
+    input
+        .iter()
+        .map(estimate_response_item_model_visible_bytes)
+        .map(|bytes| bytes.saturating_add(3) / 4)
+        .fold(base_tokens, i64::saturating_add)
+}
+
+pub(crate) fn log_remote_compaction_prompt_fit(
+    turn_context: &TurnContext,
+    implementation: &'static str,
+    attempt_index: usize,
+    token_budget: i64,
+    prepared: &PreparedRemoteCompactionPrompt,
+) {
+    let Some(stats) = prepared.reduction_stats.as_ref() else {
+        if prepared.deleted_items > 0 || attempt_index > 0 {
+            info!(
+                turn_id = %turn_context.sub_id,
+                implementation,
+                attempt = attempt_index + 1,
+                token_budget,
+                estimated_tokens = prepared.estimated_tokens,
+                deleted_items = prepared.deleted_items,
+                "fit remote compaction prompt input"
+            );
+        }
+        return;
+    };
+
+    info!(
+        turn_id = %turn_context.sub_id,
+        implementation,
+        attempt = attempt_index + 1,
+        token_budget,
+        estimated_tokens = prepared.estimated_tokens,
+        deleted_items = prepared.deleted_items,
+        reductions = stats.reductions,
+        saved_tokens = stats.saved_tokens,
+        artifacts = stats.artifacts,
+        "reduced and fit remote compaction prompt input"
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use codex_protocol::models::ContentItem;
+    use codex_utils_output_truncation::TruncationPolicy;
+
+    fn message(role: &str, text: impl Into<String>) -> ResponseItem {
+        ResponseItem::Message {
+            id: None,
+            role: role.to_string(),
+            content: vec![ContentItem::InputText { text: text.into() }],
+            phase: None,
+        }
+    }
+
+    #[test]
+    fn remote_compaction_trim_drops_oldest_items_when_generated_tail_is_not_enough() {
+        let old_large = message("user", "old context ".repeat(400));
+        let latest_user = message("user", "latest request");
+        let mut history = ContextManager::default();
+        history.record_items(
+            [&old_large, &latest_user],
+            TruncationPolicy::Bytes(usize::MAX),
+        );
+
+        let deleted_items = trim_remote_compaction_history_to_token_budget(
+            &mut history,
+            &BaseInstructions {
+                text: String::new(),
+            },
+            100,
+        );
+
+        assert_eq!(deleted_items, 1);
+        assert_eq!(history.raw_items(), &[latest_user]);
+    }
 }

@@ -74,6 +74,7 @@ async fn submit_turn_with_approval_and_environments(
                 text_elements: Vec::new(),
             }],
             final_output_json_schema: None,
+            context_budget_mode: None,
             cwd: test.cwd.path().to_path_buf(),
             approval_policy: AskForApproval::OnRequest,
             approvals_reviewer: Some(ApprovalsReviewer::User),

@@ -42,6 +42,7 @@ pub(crate) struct SessionState {
     git_checkpoint_baseline_dirty_paths_by_worktree: HashMap<String, HashSet<String>>,
     granted_permissions: Option<AdditionalPermissionProfile>,
     next_turn_is_first: bool,
+    restored_session_auto_compact_pending: bool,
 }
 
 impl SessionState {
@@ -64,6 +65,7 @@ impl SessionState {
             git_checkpoint_baseline_dirty_paths_by_worktree: HashMap::new(),
             granted_permissions: None,
             next_turn_is_first: true,
+            restored_session_auto_compact_pending: false,
         }
     }
 
@@ -94,6 +96,16 @@ impl SessionState {
         let is_first_turn = self.next_turn_is_first;
         self.next_turn_is_first = false;
         is_first_turn
+    }
+
+    pub(crate) fn set_restored_session_auto_compact_pending(&mut self, value: bool) {
+        self.restored_session_auto_compact_pending = value;
+    }
+
+    pub(crate) fn take_restored_session_auto_compact_pending(&mut self) -> bool {
+        let pending = self.restored_session_auto_compact_pending;
+        self.restored_session_auto_compact_pending = false;
+        pending
     }
 
     pub(crate) fn clone_history(&self) -> ContextManager {

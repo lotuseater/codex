@@ -9,6 +9,9 @@ use crate::sandboxing::SandboxPermissions;
 use crate::test_support::models_manager_with_provider;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolCallSource;
+use crate::tools::handlers::ExecCommandHandler;
+use crate::tools::handlers::ShellCommandHandler;
+use crate::tools::registry::ToolExecutor;
 use crate::turn_diff_tracker::TurnDiffTracker;
 use codex_app_server_protocol::ConfigLayerSource;
 use codex_config::ConfigLayerEntry;
@@ -31,6 +34,7 @@ use codex_protocol::request_permissions::PermissionGrantScope;
 use codex_protocol::request_permissions::RequestPermissionProfile;
 use codex_protocol::request_permissions::RequestPermissionsArgs;
 use codex_protocol::request_permissions::RequestPermissionsResponse;
+use codex_tools::ShellCommandBackendConfig;
 use core_test_support::PathExt;
 use core_test_support::TempDirExt;
 use core_test_support::codex_linux_sandbox_exe_or_skip;
@@ -323,7 +327,7 @@ async fn guardian_allows_shell_additional_permissions_requests_past_policy_valid
         arg0: None,
     };
 
-    let handler = ShellHandler;
+    let handler = ShellCommandHandler::from(ShellCommandBackendConfig::Classic);
     let resp = handler
         .handle(ToolInvocation {
             session: Arc::clone(&session),
@@ -437,7 +441,7 @@ async fn strict_auto_review_turn_grant_forces_guardian_for_shell_policy_skip() {
     let session = Arc::new(session);
     let turn_context = Arc::new(turn_context_raw);
 
-    let handler = ShellHandler;
+    let handler = ShellCommandHandler::from(ShellCommandBackendConfig::Classic);
     let command = if cfg!(windows) {
         vec![
             "cmd.exe".to_string(),
@@ -498,7 +502,7 @@ async fn guardian_allows_unified_exec_additional_permissions_requests_past_polic
     let turn_context = Arc::new(turn_context_raw);
     let tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new()));
 
-    let handler = ExecCommandHandler;
+    let handler = ExecCommandHandler::default();
     let resp = handler
         .handle(ToolInvocation {
             session: Arc::clone(&session),

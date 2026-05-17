@@ -1,7 +1,19 @@
+mod plan_prompt;
+
+pub use plan_prompt::DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT;
+pub use plan_prompt::DEFAULT_MULTI_AGENT_V2_SUBAGENT_USAGE_HINT_TEXT;
+pub use plan_prompt::MAIN_AGENT_PLAN_DELEGATION_PROMPT;
+
 pub const AUTO_LOOP_MULTI_OPTION_NOTE: &str =
     "Think on your own and choose what is best in long-term perspective";
 
 pub const AGENT_ROI_RUBRIC: &str = "new_agent_cost=3, reuse_cost=1, parallel_gain=0-3, context_gain=0-3, repeat_gain=0-4, loop_followup_gain=0-3, risk_penalty=0-3, net = parallel_gain + context_gain + repeat_gain + loop_followup_gain - cost - risk_penalty";
+
+pub const MULTI_AGENT_V2_NESTED_SPAWN_REJECTION: &str = "Only the root agent can spawn MultiAgentV2 helpers; send a concise handoff to the root instead.";
+
+pub fn multi_agent_v2_root_can_spawn_child(parent_is_root: bool, child_depth: i32) -> bool {
+    parent_is_root && child_depth == 1
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AutoLoopSubmissionContext {
@@ -52,7 +64,7 @@ pub fn auto_loop_plan_first_message(original: &str, context: AutoLoopSubmissionC
     };
     let original = original.trim();
     format!(
-        "Automatic {trigger}: {original}\n\nLoop mode is on, so follow-ups are likely. Enter Plan mode before acting. In the plan include an Agent ROI Estimate with loop_followup_gain, call list_agents before spawning related follow-up work, prefer followup_task/send_message/resume_agent over a replacement agent, compact useful token-heavy agents before reuse, and decide what work to give any idle relevant agent. Keep useful agents for the active loop task family unless they are stale, wrong, or slots are needed. After plan self-review produces the revised or final plan, allow auto-loop to accept the implementation prompt automatically unless a blocker or user-choice prompt remains."
+        "Automatic {trigger}: {original}\n\nLoop mode is on, so follow-ups are likely. Enter Plan mode before acting. {MAIN_AGENT_PLAN_DELEGATION_PROMPT} Include an Agent ROI Estimate with loop_followup_gain, call list_agents before spawning related follow-up work, prefer followup_task/send_message/resume_agent over a replacement agent, compact useful token-heavy agents before reuse, and decide what work to give any idle relevant agent. Keep useful agents for the active loop task family unless they are stale, wrong, or slots are needed. After plan self-review produces the revised or final plan, allow auto-loop to accept the implementation prompt automatically unless a blocker or user-choice prompt remains."
     )
 }
 
@@ -637,8 +649,54 @@ mod tests {
 
         assert!(prompt.contains("loop_followup_gain"));
         assert!(prompt.contains("list_agents"));
+        assert!(prompt.contains("what to delegate to subagents"));
+        assert!(prompt.contains("up to three persistent high-capability helper agents"));
+        assert!(prompt.contains("short summary or short result only when the main agent needs"));
         assert!(prompt.contains("plan self-review produces the revised or final plan"));
         assert!(prompt.contains("accept the implementation prompt automatically"));
+    }
+
+    #[test]
+    fn default_multi_agent_v2_hints_include_delegation_policy() {
+        assert!(
+            DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT.contains(MAIN_AGENT_PLAN_DELEGATION_PROMPT)
+        );
+        assert!(
+            DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT
+                .contains("Only the main/root agent spawns helpers")
+        );
+        assert!(
+            DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT
+                .contains("Compact helpers after bulky reads")
+        );
+        assert!(
+            DEFAULT_MULTI_AGENT_V2_SUBAGENT_USAGE_HINT_TEXT
+                .contains("A short summary or short result is optional")
+        );
+        assert!(
+            DEFAULT_MULTI_AGENT_V2_SUBAGENT_USAGE_HINT_TEXT.contains("Do not spawn more agents")
+        );
+    }
+
+    #[test]
+    fn multi_agent_v2_root_only_spawn_policy_allows_only_root_children() {
+        assert!(!multi_agent_v2_root_can_spawn_child(
+            /*parent_is_root*/ true, 0
+        ));
+        assert!(multi_agent_v2_root_can_spawn_child(
+            /*parent_is_root*/ true, 1
+        ));
+        assert!(!multi_agent_v2_root_can_spawn_child(
+            /*parent_is_root*/ true, 2
+        ));
+        assert!(!multi_agent_v2_root_can_spawn_child(
+            /*parent_is_root*/ false, 1
+        ));
+        assert!(!multi_agent_v2_root_can_spawn_child(
+            /*parent_is_root*/ false,
+            i32::MAX
+        ));
+        assert!(MULTI_AGENT_V2_NESTED_SPAWN_REJECTION.contains("Only the root agent"));
     }
 
     #[test]

@@ -290,6 +290,7 @@ async fn request_user_input_interrupt_emits_deferred_token_count() -> anyhow::Re
                 text_elements: Vec::new(),
             }],
             final_output_json_schema: None,
+            context_budget_mode: None,
             cwd: cwd.path().to_path_buf(),
             approval_policy: AskForApproval::Never,
             approvals_reviewer: None,

@@ -27,6 +27,7 @@ codex-app-server-protocol = { workspace = true }
 codex-apply-patch = { workspace = true }
 codex-async-utils = { workspace = true }
 codex-blackboard = { workspace = true }
+codex-build-policy = { workspace = true }
 codex-cognos-ops = { workspace = true }
 codex-code-mode = { workspace = true }
 codex-connectors = { workspace = true }
@@ -72,6 +73,7 @@ codex-terminal-detection = { workspace = true }
 codex-thread-store = { workspace = true }
 codex-tool-schema = { workspace = true }
 codex-tools = { workspace = true }
+codex-workflow-batch = { workspace = true }
 codex-turn-diff = { workspace = true }
 codex-utils-absolute-path = { workspace = true }
 codex-utils-cache = { workspace = true }

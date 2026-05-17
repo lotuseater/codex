@@ -3,7 +3,11 @@ use crate::shell::Shell;
 use crate::shell::ShellType;
 use crate::test_support::construct_model_info_offline;
 use crate::tools::ToolRouter;
+use crate::tools::handlers::DynamicToolHandler;
+use crate::tools::handlers::McpHandler;
+use crate::tools::registry::ToolRegistryBuilder;
 use crate::tools::router::ToolRouterParams;
+use crate::tools::spec_plan::build_tool_registry_builder_from_executors;
 use codex_app_server_protocol::AppInfo;
 use codex_features::Feature;
 use codex_features::Features;
@@ -41,7 +45,24 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use super::*;
-use crate::tools::tool_search_entry::build_tool_search_entries_for_config;
+
+struct TestToolRegistryBuilder(ToolRegistryBuilder);
+
+impl TestToolRegistryBuilder {
+    fn build(
+        self,
+    ) -> (
+        Vec<ConfiguredToolSpec>,
+        crate::tools::registry::ToolRegistry,
+    ) {
+        let (specs, registry) = self.0.build();
+        let tools = specs
+            .into_iter()
+            .map(|spec| ConfiguredToolSpec::new(spec, false))
+            .collect();
+        (tools, registry)
+    }
+}
 
 fn mcp_tool(name: &str, description: &str, input_schema: serde_json::Value) -> rmcp::model::Tool {
     rmcp::model::Tool {
@@ -67,6 +88,8 @@ fn mcp_tool_info(tool: rmcp::model::Tool) -> ToolInfo {
         connector_id: None,
         connector_name: None,
         plugin_display_names: Vec::new(),
+        supports_parallel_tool_calls: false,
+        server_origin: None,
     }
 }
 
@@ -85,6 +108,8 @@ fn mcp_tool_info_with_display_name(display_name: &str, tool: rmcp::model::Tool) 
         connector_id: None,
         connector_name: None,
         plugin_display_names: Vec::new(),
+        supports_parallel_tool_calls: false,
+        server_origin: None,
     }
 }
 
@@ -269,7 +294,7 @@ fn build_specs(
     mcp_tools: Option<Vec<ToolInfo>>,
     deferred_mcp_tools: Option<Vec<ToolInfo>>,
     dynamic_tools: &[DynamicToolSpec],
-) -> ToolRegistryBuilder {
+) -> TestToolRegistryBuilder {
     build_specs_with_unavailable_tools(
         config,
         mcp_tools,
@@ -283,17 +308,43 @@ fn build_specs_with_unavailable_tools(
     config: &ToolsConfig,
     mcp_tools: Option<Vec<ToolInfo>>,
     deferred_mcp_tools: Option<Vec<ToolInfo>>,
-    unavailable_called_tools: Vec<ToolName>,
+    _unavailable_called_tools: Vec<ToolName>,
     dynamic_tools: &[DynamicToolSpec],
-) -> ToolRegistryBuilder {
+) -> TestToolRegistryBuilder {
     build_specs_with_discoverable_tools(
         config,
         mcp_tools,
         deferred_mcp_tools,
-        unavailable_called_tools,
+        Vec::new(),
         /*discoverable_tools*/ None,
         dynamic_tools,
     )
+}
+
+fn build_specs_with_discoverable_tools(
+    config: &ToolsConfig,
+    mcp_tools: Option<Vec<ToolInfo>>,
+    deferred_mcp_tools: Option<Vec<ToolInfo>>,
+    _unavailable_called_tools: Vec<ToolName>,
+    discoverable_tools: Option<Vec<DiscoverableTool>>,
+    dynamic_tools: &[DynamicToolSpec],
+) -> TestToolRegistryBuilder {
+    let ToolRouterParts {
+        executors,
+        hosted_specs,
+    } = collect_tool_router_parts(
+        config,
+        mcp_tools,
+        deferred_mcp_tools,
+        discoverable_tools,
+        &[],
+        dynamic_tools,
+    );
+    TestToolRegistryBuilder(build_tool_registry_builder_from_executors(
+        config,
+        executors,
+        hosted_specs,
+    ))
 }
 
 #[tokio::test]
@@ -350,9 +401,8 @@ async fn assert_model_tools(
         ToolRouterParams {
             mcp_tools: None,
             deferred_mcp_tools: None,
-            unavailable_called_tools: Vec::new(),
-            parallel_mcp_server_names: std::collections::HashSet::new(),
             discoverable_tools: None,
+            extension_tool_executors: Vec::new(),
             dynamic_tools: &[],
         },
     );
@@ -923,6 +973,8 @@ async fn search_tool_description_falls_back_to_connector_name_without_descriptio
             connector_id: Some("calendar".to_string()),
             connector_name: Some("Calendar".to_string()),
             plugin_display_names: Vec::new(),
+            supports_parallel_tool_calls: false,
+            server_origin: None,
         }]),
         &[],
     )
@@ -971,6 +1023,8 @@ async fn search_tool_registers_namespaced_mcp_tool_aliases() {
                 connector_id: Some("calendar".to_string()),
                 connector_name: Some("Calendar".to_string()),
                 plugin_display_names: Vec::new(),
+                supports_parallel_tool_calls: false,
+                server_origin: None,
             },
             ToolInfo {
                 server_name: CODEX_APPS_MCP_SERVER_NAME.to_string(),
@@ -985,6 +1039,8 @@ async fn search_tool_registers_namespaced_mcp_tool_aliases() {
                 connector_id: Some("calendar".to_string()),
                 connector_name: Some("Calendar".to_string()),
                 plugin_display_names: Vec::new(),
+                supports_parallel_tool_calls: false,
+                server_origin: None,
             },
             ToolInfo {
                 server_name: "rmcp".to_string(),
@@ -995,6 +1051,8 @@ async fn search_tool_registers_namespaced_mcp_tool_aliases() {
                 connector_id: None,
                 connector_name: None,
                 plugin_display_names: Vec::new(),
+                supports_parallel_tool_calls: false,
+                server_origin: None,
             },
         ]),
         &[],
@@ -1026,12 +1084,12 @@ async fn tool_search_entries_skip_namespace_outputs_when_namespace_tools_are_dis
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     tools_config.namespace_tools = false;
-    let mcp_tools = vec![mcp_tool_info(mcp_tool(
+    let mcp_tools = [mcp_tool_info(mcp_tool(
         "echo",
         "Echo",
         serde_json::json!({"type": "object"}),
     ))];
-    let dynamic_tools = vec![
+    let dynamic_tools = [
         DynamicToolSpec {
             namespace: Some("codex_app".to_string()),
             name: "automation_update".to_string(),
@@ -1048,10 +1106,21 @@ async fn tool_search_entries_skip_namespace_outputs_when_namespace_tools_are_dis
         },
     ];
 
-    let entries =
-        build_tool_search_entries_for_config(&tools_config, Some(&mcp_tools), &dynamic_tools);
+    let mut entries = mcp_tools
+        .iter()
+        .filter_map(|tool| McpHandler::new(tool.clone()).search_info())
+        .map(|info| info.entry)
+        .collect::<Vec<_>>();
+    entries.extend(
+        dynamic_tools
+            .iter()
+            .filter_map(DynamicToolHandler::new)
+            .filter_map(|handler| handler.search_info())
+            .map(|info| info.entry),
+    );
     let outputs = entries
         .into_iter()
+        .filter(|entry| !matches!(entry.output, LoadableToolSpec::Namespace(_)))
         .map(|entry| entry.output)
         .collect::<Vec<_>>();
 

@@ -149,7 +149,11 @@ pub fn reduce_prompt_items(
                 }
             }
             ResponseItem::ToolSearchOutput { tools, .. } => {
-                reduce_tool_search_output(tools, text_slot_index, config, &mut stats)?;
+                if !tools.is_empty() {
+                    let slot_index = text_slot_index;
+                    text_slot_index += 1;
+                    reduce_tool_search_output(tools, slot_index, config, &mut stats)?;
+                }
             }
             _ => {}
         }
@@ -319,6 +323,8 @@ fn classify_candidate(
     }
 
     let char_count = text.chars().count();
+    let old_source_read_candidate =
+        exact_preserve_reason == Some("source_read") && char_count >= config.min_reduce_chars / 2;
     if recent_prompt_item {
         if exact_preserve_reason.is_none()
             && let Some(candidate) = recent_tool_output_candidate(source, text, config)
@@ -336,14 +342,29 @@ fn classify_candidate(
 
     if char_count < config.min_reduce_chars
         && (char_count < config.min_reduce_chars / 2
-            || exact_preserve_reason.is_some()
+            || (exact_preserve_reason.is_some() && !old_source_read_candidate)
             || !(is_medium_sized_message_reduction_candidate(text)
-                || is_medium_sized_tool_output_reduction_candidate(source, text, config)))
+                || is_medium_sized_tool_output_reduction_candidate(source, text, config)
+                || old_source_read_candidate))
     {
         return None;
     }
 
     if exact_preserve_reason == Some("source_read") {
+        if let Some(digest) = build_status_digest(text) {
+            return Some(CandidateReduction {
+                reason: "build_status_digest",
+                digest,
+                disposition: CandidateDisposition::ArtifactReplacement,
+            });
+        }
+        if let Some(digest) = search_result_digest(source, text, config.path_list_threshold) {
+            return Some(CandidateReduction {
+                reason: "search_result_digest",
+                digest,
+                disposition: CandidateDisposition::ArtifactReplacement,
+            });
+        }
         return Some(CandidateReduction {
             reason: "source_read_digest",
             digest: source_read_digest(source, text),
@@ -406,12 +427,8 @@ fn classify_candidate(
             disposition: CandidateDisposition::ArtifactReplacement,
         });
     }
-    if is_subagent_notification_message(text) {
-        return Some(CandidateReduction {
-            reason: "subagent_notification_digest",
-            digest: subagent_notification_digest(text),
-            disposition: CandidateDisposition::ArtifactReplacement,
-        });
+    if let Some(reduction) = subagent_notification_candidate(text) {
+        return Some(reduction);
     }
     if is_assistant_findings_message(text) {
         return Some(CandidateReduction {
@@ -427,7 +444,7 @@ fn classify_candidate(
             disposition: CandidateDisposition::ArtifactReplacement,
         });
     }
-    if let Some(digest) = build_status_json_digest(text) {
+    if let Some(digest) = build_status_digest(text) {
         return Some(CandidateReduction {
             reason: "build_status_digest",
             digest,
@@ -456,7 +473,7 @@ fn classify_candidate(
             disposition: CandidateDisposition::ArtifactReplacement,
         });
     }
-    if looks_like_command_log(text) {
+    if command_log_candidate(source, text) {
         return Some(CandidateReduction {
             reason: "command_log_digest",
             digest: command_log_digest(text),
@@ -479,7 +496,7 @@ fn recent_tool_output_candidate(
         return None;
     }
 
-    if let Some(digest) = build_status_json_digest(text) {
+    if let Some(digest) = build_status_digest(text) {
         return Some(CandidateReduction {
             reason: "recent_build_status_digest",
             digest,
@@ -508,7 +525,7 @@ fn recent_tool_output_candidate(
             disposition: CandidateDisposition::ArtifactReplacement,
         });
     }
-    if looks_like_command_log(text) {
+    if command_log_candidate(source, text) {
         return Some(CandidateReduction {
             reason: "recent_command_log_digest",
             digest: command_log_digest(text),
@@ -604,9 +621,14 @@ fn truncate(text: &str, max_chars: usize) -> String {
 fn exact_preserve_reason(source: &str, text: &str) -> Option<&'static str> {
     let lower_source = source.to_ascii_lowercase();
     let lower = text.to_ascii_lowercase();
+    if is_durable_instruction_message(source, text) {
+        return Some("durable_instruction");
+    }
     if lower_source.contains("apply_patch")
-        || lower.contains("*** begin patch")
-        || lower.contains("*** end patch")
+        || ((lower.contains("*** begin patch") || lower.contains("*** end patch"))
+            && !lower_source.starts_with("shell_output:")
+            && !lower_source.contains("get-content")
+            && !lower_source.contains("select-object -skip"))
     {
         return Some("patch_output");
     }
@@ -634,6 +656,29 @@ fn exact_preserve_reason(source: &str, text: &str) -> Option<&'static str> {
         return Some("source_read");
     }
     None
+}
+
+fn is_durable_instruction_message(source: &str, text: &str) -> bool {
+    let lower_source = source.to_ascii_lowercase();
+    if !(lower_source.starts_with("message:developer")
+        || lower_source.starts_with("message:system"))
+    {
+        return false;
+    }
+    looks_like_durable_instruction_block(text)
+}
+
+fn looks_like_durable_instruction_block(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    lower.contains("<skills_instructions>")
+        || lower.contains("# agents.md instructions")
+        || lower.contains("<collaboration_mode>")
+        || lower.contains("</collaboration_mode>")
+        || lower.contains("<instructions>")
+        || lower.contains("</instructions>")
+        || (lower.contains("## skills") && lower.contains("skill"))
+        || (lower.contains("continuation rule") && lower.contains("working with the user"))
+        || (lower.contains("you are codex") && lower.contains("editing constraints"))
 }
 
 fn is_self_review_anchor(text: &str) -> bool {
@@ -676,6 +721,9 @@ fn single_use_prompt_candidate(source: &str, text: &str) -> Option<CandidateRedu
             disposition: CandidateDisposition::OmitFromPrompt,
         });
     }
+    if let Some(candidate) = subagent_notification_candidate(text) {
+        return Some(candidate);
+    }
     if is_prompt_reduction_status_notice(source, text) {
         return Some(CandidateReduction {
             reason: "single_use_prompt_reduction_notice",
@@ -688,13 +736,20 @@ fn single_use_prompt_candidate(source: &str, text: &str) -> Option<CandidateRedu
 
 fn is_prompt_reduction_status_notice(source: &str, text: &str) -> bool {
     let lower_source = source.to_ascii_lowercase();
-    let lower = text.trim_start().to_ascii_lowercase();
+    let lower = text
+        .trim_start()
+        .trim_start_matches(|ch: char| !ch.is_ascii_alphanumeric())
+        .trim_start()
+        .to_ascii_lowercase();
     (lower_source.contains("message:assistant") || lower_source.contains("client_event"))
         && (lower.starts_with("prompt reduction")
             || lower.starts_with("prompt reduced")
             || lower.starts_with("prompt reducer"))
         && lower.contains('%')
-        && (lower.contains("saved") || lower.contains("reduced"))
+        && (lower.contains("saved")
+            || lower.contains("reduced")
+            || lower.contains("optimized")
+            || lower.contains("unchanged"))
 }
 
 fn prompt_reduction_status_digest(text: &str) -> String {
@@ -826,11 +881,11 @@ fn is_medium_sized_tool_output_reduction_candidate(
         return false;
     }
 
-    build_status_json_digest(text).is_some()
+    build_status_digest(text).is_some()
         || search_result_digest(source, text, config.path_list_threshold).is_some()
         || inventory_paths(text).len() >= config.path_list_threshold
         || json_digest(text).is_some()
-        || looks_like_command_log(text)
+        || command_log_candidate(source, text)
 }
 
 fn is_review_result_message(text: &str) -> bool {
@@ -867,36 +922,136 @@ fn is_subagent_notification_message(text: &str) -> bool {
         || (text.contains("\"agent_path\"") && text.contains("\"status\""))
 }
 
+#[derive(Debug, Clone)]
+struct SubagentNotificationDigestParts {
+    agent: String,
+    status: String,
+    detail: Option<String>,
+}
+
+fn subagent_notification_candidate(text: &str) -> Option<CandidateReduction> {
+    if !is_subagent_notification_message(text) {
+        return None;
+    }
+
+    let parsed = parse_subagent_notification(text)?;
+    let has_handoff_detail = parsed
+        .detail
+        .as_deref()
+        .is_some_and(|detail| !detail.trim().is_empty());
+    if !has_handoff_detail && !text.contains("<subagent_notification>") {
+        return None;
+    }
+    Some(CandidateReduction {
+        reason: if has_handoff_detail {
+            "subagent_notification_digest"
+        } else {
+            "single_use_subagent_status_notice"
+        },
+        digest: subagent_notification_digest(text),
+        disposition: if has_handoff_detail {
+            CandidateDisposition::ArtifactReplacement
+        } else {
+            CandidateDisposition::OmitFromPrompt
+        },
+    })
+}
+
 fn subagent_notification_digest(text: &str) -> String {
-    let parsed = serde_json::from_str::<Value>(text).ok();
-    let agent_path = parsed
-        .as_ref()
-        .and_then(|value| {
-            value
-                .get("author")
-                .or_else(|| value.pointer("/content/agent_path"))
-        })
-        .and_then(Value::as_str)
-        .unwrap_or("(unknown)");
-    let content = parsed
-        .as_ref()
-        .and_then(|value| value.get("content"))
-        .and_then(Value::as_str)
-        .unwrap_or(text);
-    let status = if content.contains("\"completed\"") || content.contains("completed") {
-        "completed"
-    } else if content.contains("\"failed\"") || content.contains("failed") {
-        "failed"
-    } else {
-        "unknown"
-    };
+    let parts = parse_subagent_notification(text).unwrap_or_else(|| {
+        let lower = text.to_ascii_lowercase();
+        let status = if lower.contains("completed") {
+            "completed".to_string()
+        } else if lower.contains("errored") || lower.contains("failed") {
+            "errored".to_string()
+        } else {
+            "(unknown)".to_string()
+        };
+        SubagentNotificationDigestParts {
+            agent: "(unknown)".to_string(),
+            status,
+            detail: None,
+        }
+    });
+    let detail_excerpt = parts
+        .detail
+        .as_deref()
+        .filter(|detail| !detail.trim().is_empty())
+        .map(excerpt)
+        .unwrap_or_else(|| "(none)".to_string());
     format!(
-        "subagent_notification_digest\nagent: {}\nstatus: {}\nlines_total: {}\nexcerpt:\n{}",
-        truncate(agent_path, 220),
-        status,
+        "subagent_notification_digest\nagent: {}\nstatus: {}\ndetail_excerpt:\n{}\nlines_total: {}\nexcerpt:\n{}",
+        truncate(&parts.agent, 220),
+        parts.status,
+        detail_excerpt,
         text.lines().count(),
-        excerpt(content)
+        excerpt(text)
     )
+}
+
+fn parse_subagent_notification(text: &str) -> Option<SubagentNotificationDigestParts> {
+    let body = subagent_notification_json_body(text).unwrap_or(text.trim());
+    let value = serde_json::from_str::<Value>(body).ok()?;
+    let outer_agent = value
+        .get("agent_path")
+        .or_else(|| value.get("author"))
+        .or_else(|| value.pointer("/content/agent_path"))
+        .and_then(Value::as_str)
+        .unwrap_or("(unknown)")
+        .to_string();
+    if let Some(content) = value.get("content").and_then(Value::as_str)
+        && is_subagent_notification_message(content)
+        && let Some(mut parts) = parse_subagent_notification(content)
+    {
+        if parts.agent == "(unknown)" {
+            parts.agent = outer_agent;
+        }
+        return Some(parts);
+    }
+
+    let status_value = value
+        .get("status")
+        .or_else(|| value.pointer("/content/status"));
+    let (status, detail) = parse_subagent_status(status_value);
+    Some(SubagentNotificationDigestParts {
+        agent: outer_agent,
+        status,
+        detail,
+    })
+}
+
+fn subagent_notification_json_body(text: &str) -> Option<&str> {
+    let start_marker = "<subagent_notification>";
+    let end_marker = "</subagent_notification>";
+    let start = text.find(start_marker)? + start_marker.len();
+    let rest = &text[start..];
+    let end = rest.find(end_marker)?;
+    Some(rest[..end].trim())
+}
+
+fn parse_subagent_status(status: Option<&Value>) -> (String, Option<String>) {
+    match status {
+        Some(Value::String(status)) => (status.clone(), None),
+        Some(Value::Object(map)) => {
+            if let Some(value) = map.get("completed") {
+                return ("completed".to_string(), value.as_str().map(str::to_string));
+            }
+            if let Some(value) = map.get("errored").or_else(|| map.get("failed")) {
+                return ("errored".to_string(), value.as_str().map(str::to_string));
+            }
+            let label = map
+                .keys()
+                .next()
+                .cloned()
+                .unwrap_or_else(|| "(unknown)".to_string());
+            (label, None)
+        }
+        Some(value) => (
+            serde_json::to_string(value).unwrap_or_else(|_| "(unknown)".to_string()),
+            None,
+        ),
+        None => ("(unknown)".to_string(), None),
+    }
 }
 
 fn is_assistant_findings_message(text: &str) -> bool {
@@ -1114,6 +1269,10 @@ fn json_digest(text: &str) -> Option<String> {
     Some(digest)
 }
 
+fn build_status_digest(text: &str) -> Option<String> {
+    build_status_json_digest(text)
+}
+
 fn build_status_json_digest(text: &str) -> Option<String> {
     let value = serde_json::from_str::<Value>(text.trim()).ok()?;
     let map = value.as_object()?;
@@ -1191,6 +1350,16 @@ fn looks_like_command_log(text: &str) -> bool {
         || lower.contains("wall time:")
         || lower.contains("stdout")
         || lower.contains("stderr")
+}
+
+fn command_log_candidate(source: &str, text: &str) -> bool {
+    let lower_source = source.to_ascii_lowercase();
+    (lower_source.starts_with("shell_output:")
+        || lower_source.starts_with("tool_output:")
+        || lower_source.starts_with("message:tool")
+        || lower_source.contains("command"))
+        && looks_like_command_log(text)
+        && !looks_like_durable_instruction_block(text)
 }
 
 fn command_log_digest(text: &str) -> String {
@@ -1531,9 +1700,18 @@ mod tests {
 
     #[test]
     fn omits_stale_prompt_reduction_notice() {
+        assert!(is_prompt_reduction_status_notice(
+            "message:assistant",
+            "Prompt reducer: sent prompt reduced by 76% (3 artifacts)."
+        ));
+        assert!(is_prompt_reduction_status_notice(
+            "client_event",
+            "🌈 Prompt reduction: prompt unchanged (0.0%; 8.5k estimated tokens)."
+        ));
         let mut items = vec![message(
             "assistant",
-            "Prompt reducer: sent prompt reduced by 76% (3 artifacts).".to_string(),
+            "🌈 Prompt reduction: optimized prompt by 76% (55.5k -> 13.3k estimated tokens; 3 artifacts)."
+                .to_string(),
             MessageTextKind::Output,
         )];
         let temp = TempDir::new().unwrap();
@@ -1586,6 +1764,32 @@ mod tests {
     }
 
     #[test]
+    fn tool_search_output_counts_as_slot_for_recent_preservation() {
+        let old_source = "let stale = 1;\n".repeat(100);
+        let recent_source = "let recent = 2;\n".repeat(100);
+        let mut items = vec![
+            shell_call("old", "Get-Content -LiteralPath src/old.rs"),
+            shell_output("old", old_source),
+            tool_search_output(vec![serde_json::json!({
+                "name": "expensive_tool",
+                "description": "x".repeat(500),
+            })]),
+            shell_call("recent", "Get-Content -LiteralPath src/recent.rs"),
+            shell_output("recent", recent_source.clone()),
+        ];
+        let temp = TempDir::new().unwrap();
+        let config = test_config(temp.path(), 1);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 2);
+        let ResponseItem::FunctionCallOutput { output, .. } = &items[4] else {
+            panic!("expected recent source output");
+        };
+        assert_eq!(output.text_content().unwrap(), recent_source);
+    }
+
+    #[test]
     fn reduces_build_status_json_without_command_lines() {
         let long_command = "cargo test -p codex-core --release ".repeat(80);
         let output = serde_json::json!({
@@ -1626,6 +1830,104 @@ mod tests {
     }
 
     #[test]
+    fn preserves_durable_developer_instruction_blocks() {
+        let instructions = format!(
+            "<skills_instructions>\n## Skills\n{}\n</skills_instructions>",
+            "- Use the local build and deployment rules exactly.\n".repeat(120)
+        );
+        let mut items = vec![message(
+            "developer",
+            instructions.clone(),
+            MessageTextKind::Input,
+        )];
+        let temp = TempDir::new().unwrap();
+        let config = test_config(temp.path(), 0);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 0);
+        let ResponseItem::Message { content, .. } = &items[0] else {
+            panic!("expected message");
+        };
+        assert_eq!(
+            content,
+            &vec![ContentItem::InputText { text: instructions }]
+        );
+    }
+
+    #[test]
+    fn preserves_collaboration_mode_developer_blocks() {
+        let instructions = format!(
+            "<collaboration_mode>\n# Plan Mode (Conversational)\n{}\n</collaboration_mode>",
+            "Do not mutate files in Plan mode.\n".repeat(120)
+        );
+        let mut items = vec![message(
+            "developer",
+            instructions.clone(),
+            MessageTextKind::Input,
+        )];
+        let temp = TempDir::new().unwrap();
+        let config = test_config(temp.path(), 0);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 0);
+        let ResponseItem::Message { content, .. } = &items[0] else {
+            panic!("expected message");
+        };
+        assert_eq!(
+            content,
+            &vec![ContentItem::InputText { text: instructions }]
+        );
+    }
+
+    #[test]
+    fn patch_markers_inside_source_reads_reduce_as_source_read() {
+        let source = format!(
+            "fn before() {{}}\n*** Begin Patch\n{}\n*** End Patch\nfn after() {{}}",
+            "let x = 1;\n".repeat(250)
+        );
+        let mut items = vec![
+            shell_call("call", "Get-Content -LiteralPath docs/patch-notes.md"),
+            shell_output("call", source),
+        ];
+        let temp = TempDir::new().unwrap();
+        let config = test_config(temp.path(), 0);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 1);
+        let ResponseItem::FunctionCallOutput { output, .. } = &items[1] else {
+            panic!("expected output");
+        };
+        let text = output.text_content().unwrap();
+        assert!(text.contains("source_read_digest"));
+        assert!(!text.contains("patch_output"));
+    }
+
+    #[test]
+    fn long_instruction_like_tool_outputs_are_not_command_logs() {
+        let original = format!(
+            "<skills_instructions>\n## Skills\n{}\n</skills_instructions>",
+            "- Follow this durable instruction line.\n".repeat(120)
+        );
+        let mut items = vec![
+            shell_call("call", "custom instruction loader"),
+            shell_output("call", original.clone()),
+        ];
+        let temp = TempDir::new().unwrap();
+        let config = test_config(temp.path(), 0);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 0);
+        let ResponseItem::FunctionCallOutput { output, .. } = &items[1] else {
+            panic!("expected output");
+        };
+        assert_eq!(output.text_content().unwrap(), original);
+    }
+
+    #[test]
     fn reduces_stale_context_pack() {
         let paths = (0..80)
             .map(|index| format!("- codex-rs/core/src/file_{index}.rs | score=0.{index}"))
@@ -1649,6 +1951,155 @@ mod tests {
             panic!("expected output text");
         };
         assert!(text.contains("context_pack_digest"));
+    }
+
+    #[test]
+    fn omits_old_subagent_status_notification_without_handoff_detail() {
+        let text = r#"<subagent_notification>
+{"agent_path":"/root/helper","status":"running"}
+</subagent_notification>"#
+            .to_string();
+        let mut items = vec![message("user", text, MessageTextKind::Input)];
+        let temp = TempDir::new().unwrap();
+        let config = test_config(temp.path(), 0);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 1);
+        assert_eq!(stats.artifacts, 0);
+        let ResponseItem::Message { content, .. } = &items[0] else {
+            panic!("expected message");
+        };
+        let ContentItem::InputText { text } = &content[0] else {
+            panic!("expected input text");
+        };
+        assert!(text.is_empty());
+    }
+
+    #[test]
+    fn reduces_completed_subagent_notification_to_digest() {
+        let handoff = "helper found prompt reducer insertion points\n".repeat(80);
+        let text = format!(
+            "<subagent_notification>\n{}\n</subagent_notification>",
+            serde_json::json!({
+                "agent_path": "/root/helper",
+                "status": { "completed": handoff },
+            })
+        );
+        let mut items = vec![message("user", text, MessageTextKind::Input)];
+        let temp = TempDir::new().unwrap();
+        let config = test_config(temp.path(), 0);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 1);
+        assert_eq!(stats.artifacts, 1);
+        let ResponseItem::Message { content, .. } = &items[0] else {
+            panic!("expected message");
+        };
+        let ContentItem::InputText { text } = &content[0] else {
+            panic!("expected input text");
+        };
+        assert!(text.contains("subagent_notification_digest"));
+        assert!(text.contains("agent: /root/helper"));
+        assert!(text.contains("status: completed"));
+        assert!(text.contains("detail_excerpt:"));
+        assert!(!text.contains(&handoff));
+    }
+
+    #[test]
+    fn reduces_wrapped_subagent_notification_content_to_digest() {
+        let handoff = "wrapped helper handoff\n".repeat(80);
+        let notification = format!(
+            "<subagent_notification>\n{}\n</subagent_notification>",
+            serde_json::json!({
+                "agent_path": "/root/helper",
+                "status": { "completed": handoff },
+            })
+        );
+        let text = serde_json::json!({
+            "author": "/root/helper",
+            "content": notification,
+        })
+        .to_string();
+        let mut items = vec![message("user", text, MessageTextKind::Input)];
+        let temp = TempDir::new().unwrap();
+        let config = test_config(temp.path(), 0);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 1);
+        assert_eq!(stats.artifacts, 1);
+        let ResponseItem::Message { content, .. } = &items[0] else {
+            panic!("expected message");
+        };
+        let ContentItem::InputText { text } = &content[0] else {
+            panic!("expected input text");
+        };
+        assert!(text.contains("subagent_notification_digest"));
+        assert!(text.contains("agent: /root/helper"));
+        assert!(text.contains("status: completed"));
+    }
+
+    #[test]
+    fn preserves_recent_subagent_notification() {
+        let text = r#"<subagent_notification>
+{"agent_path":"/root/helper","status":"running"}
+</subagent_notification>"#
+            .to_string();
+        let mut items = vec![message("user", text.clone(), MessageTextKind::Input)];
+        let temp = TempDir::new().unwrap();
+        let config = test_config(temp.path(), 1);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 0);
+        let ResponseItem::Message { content, .. } = &items[0] else {
+            panic!("expected message");
+        };
+        let ContentItem::InputText { text: actual } = &content[0] else {
+            panic!("expected input text");
+        };
+        assert_eq!(actual, &text);
+    }
+
+    #[test]
+    fn does_not_reduce_search_result_that_mentions_subagent_fields() {
+        let text = "search hit: code mentions \"agent_path\" and \"status\", but this is not a notification\n"
+            .repeat(20);
+        let mut items = vec![message("user", text.clone(), MessageTextKind::Input)];
+        let temp = TempDir::new().unwrap();
+        let config = test_config(temp.path(), 0);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 0);
+        let ResponseItem::Message { content, .. } = &items[0] else {
+            panic!("expected message");
+        };
+        let ContentItem::InputText { text: actual } = &content[0] else {
+            panic!("expected input text");
+        };
+        assert_eq!(actual, &text);
+    }
+
+    #[test]
+    fn does_not_reduce_malformed_subagent_notification_marker() {
+        let text = "<subagent_notification>\nnot json\n</subagent_notification>\n".repeat(20);
+        let mut items = vec![message("user", text.clone(), MessageTextKind::Input)];
+        let temp = TempDir::new().unwrap();
+        let config = test_config(temp.path(), 0);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 0);
+        let ResponseItem::Message { content, .. } = &items[0] else {
+            panic!("expected message");
+        };
+        let ContentItem::InputText { text: actual } = &content[0] else {
+            panic!("expected input text");
+        };
+        assert_eq!(actual, &text);
     }
 
     fn test_config(path: &Path, preserve_recent_items: usize) -> PromptReductionConfig {
@@ -1675,6 +2126,15 @@ mod tests {
         ResponseItem::FunctionCallOutput {
             call_id: call_id.to_string(),
             output: FunctionCallOutputPayload::from_text(text),
+        }
+    }
+
+    fn tool_search_output(tools: Vec<Value>) -> ResponseItem {
+        ResponseItem::ToolSearchOutput {
+            call_id: Some("tool-search".to_string()),
+            status: "completed".to_string(),
+            execution: "test".to_string(),
+            tools,
         }
     }
 

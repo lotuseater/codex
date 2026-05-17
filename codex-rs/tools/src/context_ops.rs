@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 
 pub const FILE_OUTLINE_TOOL_NAME: &str = "file_outline";
 pub const SEARCH_TEXT_TOOL_NAME: &str = "search_text";
+pub const WORKFLOW_BATCH_TOOL_NAME: &str = "workflow_batch";
 
 pub fn create_context_ops_tools() -> Vec<ToolSpec> {
     vec![
@@ -95,6 +96,46 @@ pub fn create_context_ops_tools() -> Vec<ToolSpec> {
                     ),
                 ],
                 Some(vec!["pattern".to_string()]),
+            ),
+        ),
+        create_tool(
+            WORKFLOW_BATCH_TOOL_NAME,
+            "Run a checked local workflow-batch spec against workspace files and return a compact execution summary.",
+            object_schema(
+                [
+                    (
+                        "spec_path",
+                        JsonSchema::string(Some(
+                            "Path to the workflow-batch JSON spec file.".to_string(),
+                        )),
+                    ),
+                    (
+                        "report_path",
+                        JsonSchema::string(Some(
+                            "Path where the workflow JSON report should be written."
+                                .to_string(),
+                        )),
+                    ),
+                    (
+                        "log_path",
+                        JsonSchema::string(Some(
+                            "Path where the workflow JSONL event log should be written."
+                                .to_string(),
+                        )),
+                    ),
+                    (
+                        "workdir",
+                        JsonSchema::string(Some(
+                            "Base directory for relative paths. Defaults to the current working directory."
+                                .to_string(),
+                        )),
+                    ),
+                ],
+                Some(vec![
+                    "spec_path".to_string(),
+                    "report_path".to_string(),
+                    "log_path".to_string(),
+                ]),
             ),
         ),
     ]

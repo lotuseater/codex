@@ -1299,6 +1299,11 @@ impl Session {
         state.history.estimate_token_count(turn_context)
     }
 
+    pub(crate) async fn take_restored_session_auto_compact_pending(&self) -> bool {
+        let mut state = self.state.lock().await;
+        state.take_restored_session_auto_compact_pending()
+    }
+
     pub(crate) async fn get_base_instructions(&self) -> BaseInstructions {
         let state = self.state.lock().await;
         BaseInstructions {
@@ -1379,6 +1384,10 @@ impl Session {
                 if let Some(info) = Self::last_token_info_from_rollout(&rollout_items) {
                     let mut state = self.state.lock().await;
                     state.set_token_info(Some(info));
+                }
+                {
+                    let mut state = self.state.lock().await;
+                    state.set_restored_session_auto_compact_pending(true);
                 }
 
                 // Defer seeding the session's initial context until the first turn starts so
@@ -2787,18 +2796,11 @@ impl Session {
         let mut developer_sections = Vec::<String>::with_capacity(8);
         let mut contextual_user_sections = Vec::<String>::with_capacity(2);
         let mut separate_developer_sections = Vec::<String>::new();
-        let (
-            reference_context_item,
-            previous_turn_settings,
-            collaboration_mode,
-            base_instructions,
-            session_source,
-        ) = {
+        let (reference_context_item, previous_turn_settings, base_instructions, session_source) = {
             let state = self.state.lock().await;
             (
                 state.reference_context_item(),
                 state.previous_turn_settings(),
-                state.session_configuration.collaboration_mode.clone(),
                 state.session_configuration.base_instructions.clone(),
                 state.session_configuration.session_source.clone(),
             )
@@ -2851,7 +2853,9 @@ impl Session {
         // Add developer instructions from collaboration_mode if they exist and are non-empty
         if turn_context.config.include_collaboration_mode_instructions
             && let Some(collab_instructions) =
-                CollaborationModeInstructions::from_collaboration_mode(&collaboration_mode)
+                CollaborationModeInstructions::from_collaboration_mode(
+                    &turn_context.collaboration_mode,
+                )
         {
             developer_sections.push(collab_instructions.render());
         }

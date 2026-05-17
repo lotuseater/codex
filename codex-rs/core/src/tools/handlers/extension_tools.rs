@@ -144,11 +144,12 @@ mod tests {
             ))
         }
 
-        async fn handle(
+        fn handle(
             &self,
             _call: codex_tools::ToolCall,
-        ) -> Result<Self::Output, codex_tools::FunctionCallError> {
-            Ok(codex_tools::JsonToolOutput::new(json!({ "ok": true })))
+        ) -> impl std::future::Future<Output = Result<Self::Output, codex_tools::FunctionCallError>> + Send
+        {
+            async { Ok(codex_tools::JsonToolOutput::new(json!({ "ok": true }))) }
         }
     }
 

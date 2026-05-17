@@ -95,6 +95,22 @@ async fn record_initial_history_resumed_bare_turn_context_does_not_hydrate_previ
 }
 
 #[tokio::test]
+async fn record_initial_history_resumed_marks_restored_auto_compact_pending() {
+    let (session, _) = make_session_and_context().await;
+
+    session
+        .record_initial_history(InitialHistory::Resumed(ResumedHistory {
+            conversation_id: ThreadId::default(),
+            history: Vec::new(),
+            rollout_path: Some(PathBuf::from("/tmp/resume.jsonl")),
+        }))
+        .await;
+
+    assert!(session.take_restored_session_auto_compact_pending().await);
+    assert!(!session.take_restored_session_auto_compact_pending().await);
+}
+
+#[tokio::test]
 async fn record_initial_history_resumed_hydrates_previous_turn_settings_from_lifecycle_turn_with_missing_turn_context_id()
  {
     let (session, turn_context) = make_session_and_context().await;

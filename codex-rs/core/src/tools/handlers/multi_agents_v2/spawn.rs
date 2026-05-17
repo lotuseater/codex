@@ -11,6 +11,7 @@ use crate::turn_timing::now_unix_timestamp_ms;
 use codex_protocol::AgentPath;
 use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::Op;
+use codex_protocol::protocol::SessionSource;
 use codex_tools::ToolSpec;
 
 #[derive(Default)]
@@ -64,6 +65,15 @@ async fn handle_spawn_agent(
 
     let session_source = turn.session_source.clone();
     let child_depth = next_thread_spawn_depth(&session_source);
+    let parent_is_root = !matches!(
+        session_source,
+        SessionSource::SubAgent(_) | SessionSource::Internal(_)
+    );
+    if !codex_agent_policy::multi_agent_v2_root_can_spawn_child(parent_is_root, child_depth) {
+        return Err(FunctionCallError::RespondToModel(
+            codex_agent_policy::MULTI_AGENT_V2_NESTED_SPAWN_REJECTION.to_string(),
+        ));
+    }
     session
         .send_event(
             &turn,

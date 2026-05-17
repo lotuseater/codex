@@ -224,6 +224,7 @@ pub enum CompactionReason {
     ContextLimit,
     ModelDownshift,
     SemanticCheckpoint,
+    RestoredSession,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
