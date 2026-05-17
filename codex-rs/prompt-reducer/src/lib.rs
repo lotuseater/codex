@@ -16,6 +16,10 @@ const DEFAULT_PATH_LIST_THRESHOLD: usize = 12;
 const DEFAULT_MIN_SAVED_TOKENS: usize = 128;
 const DEFAULT_PRESERVE_RECENT_ITEMS: usize = 4;
 const EXCERPT_CHARS: usize = 220;
+const SHORT_TOOL_BUNDLE_MIN_ITEMS: usize = 4;
+const SHORT_TOOL_BUNDLE_MIN_TOKENS: usize = 384;
+const SHORT_TOOL_ITEM_MIN_TOKENS: usize = 12;
+const SHORT_TOOL_ITEM_MAX_TOKENS: usize = 160;
 
 /// Configuration for prompt-only reduction.
 ///
@@ -66,10 +70,24 @@ struct CandidateReduction {
     disposition: CandidateDisposition,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct CandidateThreshold {
+    min_chars: usize,
+    min_saved_tokens: usize,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CandidateDisposition {
     ArtifactReplacement,
     OmitFromPrompt,
+}
+
+#[derive(Debug)]
+struct ShortToolOutputBundle {
+    indices: BTreeSet<usize>,
+    first_index: usize,
+    artifact_path: PathBuf,
+    replacement: String,
 }
 
 pub fn reduce_prompt_items(
@@ -81,8 +99,20 @@ pub fn reduce_prompt_items(
     let recent_text_start = total_text_slots.saturating_sub(config.preserve_recent_items);
     let mut text_slot_index = 0usize;
     let mut seen_hashes = HashMap::<String, String>::new();
-    let mut call_sources = HashMap::<String, String>::new();
+    let mut call_sources = collect_call_sources(items);
     let mut stats = PromptReductionStats::default();
+    let short_tool_bundle =
+        short_tool_output_bundle(items, config, recent_text_start, &call_sources)?;
+    if let Some(bundle) = &short_tool_bundle {
+        let artifact_text =
+            short_tool_output_bundle_artifact(items, &bundle.indices, &call_sources);
+        write_artifact(&bundle.artifact_path, &artifact_text)?;
+        seen_hashes.insert(
+            sha1_hex(&artifact_text),
+            "short_tool_output_bundle".to_string(),
+        );
+        stats.artifacts += 1;
+    }
 
     for item in items {
         match item {
@@ -137,6 +167,14 @@ pub fn reduce_prompt_items(
                 if let Some(text) = output.text_content_mut() {
                     let recent_prompt_item = text_slot_index >= recent_text_start;
                     text_slot_index += 1;
+                    if reduce_short_tool_output_bundle_slot(
+                        text,
+                        text_slot_index,
+                        short_tool_bundle.as_ref(),
+                        &mut stats,
+                    ) {
+                        continue;
+                    }
                     reduce_text_slot(
                         text,
                         &source,
@@ -186,6 +224,138 @@ fn count_text_slots(items: &[ResponseItem]) -> usize {
         .sum()
 }
 
+fn collect_call_sources(items: &[ResponseItem]) -> HashMap<String, String> {
+    let mut call_sources = HashMap::new();
+    for item in items {
+        match item {
+            ResponseItem::FunctionCall {
+                name,
+                arguments,
+                call_id,
+                ..
+            } => {
+                call_sources.insert(call_id.clone(), call_source(name, arguments));
+            }
+            ResponseItem::CustomToolCall {
+                name,
+                input,
+                call_id,
+                ..
+            } => {
+                call_sources.insert(
+                    call_id.clone(),
+                    format!("custom_tool_output:{name}:{input}"),
+                );
+            }
+            _ => {}
+        }
+    }
+    call_sources
+}
+
+fn short_tool_output_bundle(
+    items: &[ResponseItem],
+    config: &PromptReductionConfig,
+    recent_text_start: usize,
+    call_sources: &HashMap<String, String>,
+) -> std::io::Result<Option<ShortToolOutputBundle>> {
+    let mut indices = BTreeSet::new();
+    let mut total_tokens = 0usize;
+    let mut text_slot_index = 0usize;
+    for item in items {
+        match item {
+            ResponseItem::Message { content, .. } => {
+                text_slot_index += content
+                    .iter()
+                    .filter(|content_item| {
+                        matches!(
+                            content_item,
+                            ContentItem::InputText { .. } | ContentItem::OutputText { .. }
+                        )
+                    })
+                    .count();
+            }
+            ResponseItem::FunctionCallOutput { call_id, output }
+            | ResponseItem::CustomToolCallOutput {
+                call_id, output, ..
+            } => {
+                let Some(text) = output.text_content() else {
+                    continue;
+                };
+                let slot_zero = text_slot_index;
+                text_slot_index += 1;
+                if slot_zero >= recent_text_start {
+                    continue;
+                }
+                let source = call_sources
+                    .get(call_id)
+                    .map(String::as_str)
+                    .unwrap_or("tool_output");
+                if is_subagent_notification_message(text)
+                    || !is_short_recoverable_tool_output(source, text)
+                {
+                    continue;
+                }
+                let tokens = approx_tokens(text);
+                if !(SHORT_TOOL_ITEM_MIN_TOKENS..=SHORT_TOOL_ITEM_MAX_TOKENS).contains(&tokens) {
+                    continue;
+                }
+                indices.insert(slot_zero + 1);
+                total_tokens += tokens;
+            }
+            ResponseItem::ToolSearchOutput { tools, .. } => {
+                text_slot_index += usize::from(!tools.is_empty());
+            }
+            _ => {}
+        }
+    }
+
+    if indices.len() < SHORT_TOOL_BUNDLE_MIN_ITEMS || total_tokens < SHORT_TOOL_BUNDLE_MIN_TOKENS {
+        return Ok(None);
+    }
+    let artifact_text = short_tool_output_bundle_artifact(items, &indices, call_sources);
+    let sha1 = sha1_hex(&artifact_text);
+    let artifact_path = artifact_path_for(
+        &config.artifact_dir,
+        *indices.first().unwrap_or(&0),
+        "short_tool_output_bundle",
+        &sha1,
+    );
+    let replacement =
+        render_short_tool_output_bundle_replacement(items, &indices, &artifact_path, total_tokens);
+    Ok(Some(ShortToolOutputBundle {
+        first_index: *indices.first().unwrap_or(&0),
+        indices,
+        artifact_path,
+        replacement,
+    }))
+}
+
+fn reduce_short_tool_output_bundle_slot(
+    text: &mut String,
+    text_slot_index: usize,
+    bundle: Option<&ShortToolOutputBundle>,
+    stats: &mut PromptReductionStats,
+) -> bool {
+    let Some(bundle) = bundle else {
+        return false;
+    };
+    if !bundle.indices.contains(&text_slot_index) {
+        return false;
+    }
+
+    let original_tokens = approx_tokens(text);
+    stats.original_tokens = stats.original_tokens.saturating_add(original_tokens);
+    if text_slot_index == bundle.first_index {
+        *text = bundle.replacement.clone();
+        stats.reduced_tokens = stats.reduced_tokens.saturating_add(approx_tokens(text));
+    } else {
+        text.clear();
+    }
+    stats.reductions += 1;
+    true
+}
+
 #[allow(clippy::too_many_arguments)]
 fn reduce_text_slot(
     text: &mut String,
@@ -224,10 +394,18 @@ fn reduce_text_slot(
         &sha1,
     );
     if candidate.disposition == CandidateDisposition::OmitFromPrompt {
-        write_artifact(&artifact_path, &original)?;
+        if candidate.reason != "single_use_subagent_status_notice" {
+            write_artifact(&artifact_path, &original)?;
+            stats.artifacts += 1;
+        }
         text.clear();
-        stats.artifacts += 1;
         stats.reductions += 1;
+        return Ok(());
+    }
+
+    let threshold = candidate_threshold(candidate.reason, config);
+    if original.chars().count() < threshold.min_chars {
+        stats.reduced_tokens = stats.reduced_tokens.saturating_add(original_tokens);
         return Ok(());
     }
 
@@ -240,7 +418,7 @@ fn reduce_text_slot(
         &sha1,
     );
     let reduced_tokens = approx_tokens(&replacement);
-    if original_tokens.saturating_sub(reduced_tokens) < config.min_saved_tokens {
+    if original_tokens.saturating_sub(reduced_tokens) < threshold.min_saved_tokens {
         stats.reduced_tokens = stats.reduced_tokens.saturating_add(original_tokens);
         return Ok(());
     }
@@ -322,9 +500,6 @@ fn classify_candidate(
         });
     }
 
-    let char_count = text.chars().count();
-    let old_source_read_candidate =
-        exact_preserve_reason == Some("source_read") && char_count >= config.min_reduce_chars / 2;
     if recent_prompt_item {
         if exact_preserve_reason.is_none()
             && let Some(candidate) = recent_tool_output_candidate(source, text, config)
@@ -338,16 +513,6 @@ fn classify_candidate(
         && let Some(candidate) = single_use_prompt_candidate(source, text)
     {
         return Some(candidate);
-    }
-
-    if char_count < config.min_reduce_chars
-        && (char_count < config.min_reduce_chars / 2
-            || (exact_preserve_reason.is_some() && !old_source_read_candidate)
-            || !(is_medium_sized_message_reduction_candidate(text)
-                || is_medium_sized_tool_output_reduction_candidate(source, text, config)
-                || old_source_read_candidate))
-    {
-        return None;
     }
 
     if exact_preserve_reason == Some("source_read") {
@@ -466,6 +631,13 @@ fn classify_candidate(
             disposition: CandidateDisposition::ArtifactReplacement,
         });
     }
+    if let Some(digest) = assistant_status_json_digest(text) {
+        return Some(CandidateReduction {
+            reason: "assistant_status_digest",
+            digest,
+            disposition: CandidateDisposition::ArtifactReplacement,
+        });
+    }
     if let Some(digest) = json_digest(text) {
         return Some(CandidateReduction {
             reason: "json_digest",
@@ -480,7 +652,68 @@ fn classify_candidate(
             disposition: CandidateDisposition::ArtifactReplacement,
         });
     }
+    if !recent_prompt_item
+        && exact_preserve_reason.is_none()
+        && let Some(digest) = recoverable_prior_context_digest(source, text)
+    {
+        return Some(CandidateReduction {
+            reason: "recoverable_prior_context",
+            digest,
+            disposition: CandidateDisposition::ArtifactReplacement,
+        });
+    }
     None
+}
+
+fn candidate_threshold(reason: &str, config: &PromptReductionConfig) -> CandidateThreshold {
+    match reason {
+        "duplicate_block" => CandidateThreshold {
+            min_chars: 256,
+            min_saved_tokens: 24,
+        },
+        "source_read_digest"
+        | "diff_hunk_digest"
+        | "compiler_diagnostic_digest"
+        | "build_status_digest"
+        | "search_result_digest"
+        | "path_inventory"
+        | "assistant_status_digest"
+        | "json_digest"
+        | "command_log_digest"
+        | "recent_build_status_digest"
+        | "recent_search_result_digest"
+        | "recent_path_inventory"
+        | "recent_assistant_status_digest"
+        | "recent_json_digest"
+        | "recent_command_log_digest" => CandidateThreshold {
+            min_chars: 600,
+            min_saved_tokens: 32,
+        },
+        "self_review_inventory"
+        | "plan_review_prompt"
+        | "completed_plan_checkpoint"
+        | "proposed_plan_digest"
+        | "review_result_digest"
+        | "subagent_notification_digest"
+        | "assistant_findings_digest"
+        | "context_pack_digest"
+        | "single_use_self_review_prompt"
+        | "single_use_plan_review_prompt"
+        | "single_use_completed_plan_checkpoint"
+        | "single_use_proposed_plan"
+        | "single_use_prompt_reduction_notice" => CandidateThreshold {
+            min_chars: 900,
+            min_saved_tokens: 48,
+        },
+        "recoverable_prior_context" => CandidateThreshold {
+            min_chars: 1_200,
+            min_saved_tokens: 64,
+        },
+        _ => CandidateThreshold {
+            min_chars: config.min_reduce_chars,
+            min_saved_tokens: config.min_saved_tokens,
+        },
+    }
 }
 
 fn recent_tool_output_candidate(
@@ -518,6 +751,13 @@ fn recent_tool_output_candidate(
             disposition: CandidateDisposition::ArtifactReplacement,
         });
     }
+    if let Some(digest) = assistant_status_json_digest(text) {
+        return Some(CandidateReduction {
+            reason: "recent_assistant_status_digest",
+            digest,
+            disposition: CandidateDisposition::ArtifactReplacement,
+        });
+    }
     if let Some(digest) = json_digest(text) {
         return Some(CandidateReduction {
             reason: "recent_json_digest",
@@ -534,6 +774,125 @@ fn recent_tool_output_candidate(
     }
 
     None
+}
+
+fn is_short_recoverable_tool_output(source: &str, text: &str) -> bool {
+    let lower_source = source.to_ascii_lowercase();
+    if !(lower_source.starts_with("shell_output:")
+        || lower_source.starts_with("tool_output:")
+        || lower_source.starts_with("custom_tool_output:"))
+    {
+        return false;
+    }
+    if exact_preserve_reason(source, text).is_some() || high_next_turn_utility_tool_output(text) {
+        return false;
+    }
+    true
+}
+
+fn high_next_turn_utility_tool_output(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    lower.contains("exit code: 1")
+        || lower.contains("exit code: 101")
+        || lower.contains("error:")
+        || lower.contains("panicked at")
+        || lower.contains("failed")
+        || lower.contains("test result: failed")
+        || lower.contains("git status")
+        || lower.contains("changes not staged")
+        || lower.contains("untracked files")
+        || lower.contains("conflict")
+        || lower.contains("merge ")
+}
+
+fn short_tool_output_bundle_artifact(
+    items: &[ResponseItem],
+    indices: &BTreeSet<usize>,
+    call_sources: &HashMap<String, String>,
+) -> String {
+    let mut lines = vec![
+        "short_tool_output_bundle_artifact".to_string(),
+        format!("items: {}", indices.len()),
+        "utility_estimate: low next-turn utility; older successful short tool outputs are recoverable if a later prompt needs exact evidence".to_string(),
+        String::new(),
+    ];
+    for (slot_index, call_id, text) in text_function_outputs(items) {
+        if !indices.contains(&slot_index) {
+            continue;
+        }
+        let source = call_sources
+            .get(call_id)
+            .map(String::as_str)
+            .unwrap_or("tool_output");
+        lines.extend([
+            format!("## text slot {slot_index}"),
+            format!("source: {source}"),
+            format!("tokens_estimate: {}", approx_tokens(text)),
+            format!("sha1: {}", sha1_hex(text)),
+            "content:".to_string(),
+            text.to_string(),
+            String::new(),
+        ]);
+    }
+    lines.join("\n")
+}
+
+fn render_short_tool_output_bundle_replacement(
+    items: &[ResponseItem],
+    indices: &BTreeSet<usize>,
+    artifact_path: &Path,
+    original_tokens: usize,
+) -> String {
+    let sources = text_function_outputs(items)
+        .into_iter()
+        .filter(|(slot_index, _, _)| indices.contains(slot_index))
+        .map(|(_, call_id, _)| truncate(call_id, 80))
+        .take(8)
+        .collect::<Vec<_>>();
+    format!(
+        "[prompt reduction: short_tool_output_bundle]\noriginal_items: {}\noriginal_tokens_estimate: {original_tokens}\nartifact: `{}`\nrecovery: read artifact before using exact short tool outputs.\n\nshort_tool_output_bundle\nutility_estimate: low next-turn utility\nselection: older successful short tool/command outputs; recent, failing, exact-evidence, and user/developer/system items preserved\ncall_ids: {}",
+        indices.len(),
+        artifact_path.display(),
+        if sources.is_empty() {
+            "(unknown)".to_string()
+        } else {
+            sources.join(" | ")
+        }
+    )
+}
+
+fn text_function_outputs(items: &[ResponseItem]) -> Vec<(usize, &str, &str)> {
+    let mut outputs = Vec::new();
+    let mut text_slot_index = 0usize;
+    for item in items {
+        match item {
+            ResponseItem::Message { content, .. } => {
+                text_slot_index += content
+                    .iter()
+                    .filter(|content_item| {
+                        matches!(
+                            content_item,
+                            ContentItem::InputText { .. } | ContentItem::OutputText { .. }
+                        )
+                    })
+                    .count();
+            }
+            ResponseItem::FunctionCallOutput { call_id, output }
+            | ResponseItem::CustomToolCallOutput {
+                call_id, output, ..
+            } => {
+                text_slot_index += 1;
+                if let Some(text) = output.text_content() {
+                    outputs.push((text_slot_index, call_id.as_str(), text));
+                }
+            }
+            ResponseItem::ToolSearchOutput { tools, .. } => {
+                text_slot_index += usize::from(!tools.is_empty());
+            }
+            _ => {}
+        }
+    }
+    outputs
 }
 
 fn call_source(name: &str, arguments: &str) -> String {
@@ -861,33 +1220,6 @@ fn proposed_plan_digest(text: &str) -> String {
     )
 }
 
-fn is_medium_sized_message_reduction_candidate(text: &str) -> bool {
-    is_self_review_anchor(text)
-        || is_plan_review_prompt(text)
-        || is_completed_plan_checkpoint(text)
-        || is_proposed_plan_message(text)
-        || is_review_result_message(text)
-        || is_subagent_notification_message(text)
-        || is_assistant_findings_message(text)
-}
-
-fn is_medium_sized_tool_output_reduction_candidate(
-    source: &str,
-    text: &str,
-    config: &PromptReductionConfig,
-) -> bool {
-    let lower_source = source.to_ascii_lowercase();
-    if !(lower_source.starts_with("shell_output:") || lower_source.starts_with("tool_output:")) {
-        return false;
-    }
-
-    build_status_digest(text).is_some()
-        || search_result_digest(source, text, config.path_list_threshold).is_some()
-        || inventory_paths(text).len() >= config.path_list_threshold
-        || json_digest(text).is_some()
-        || command_log_candidate(source, text)
-}
-
 fn is_review_result_message(text: &str) -> bool {
     let lower = text.to_ascii_lowercase();
     lower.contains("<user_action>")
@@ -990,8 +1322,17 @@ fn subagent_notification_digest(text: &str) -> String {
 }
 
 fn parse_subagent_notification(text: &str) -> Option<SubagentNotificationDigestParts> {
-    let body = subagent_notification_json_body(text).unwrap_or(text.trim());
+    if let Ok(value) = serde_json::from_str::<Value>(text.trim())
+        && let Some(parts) = parse_subagent_notification_value(&value)
+    {
+        return Some(parts);
+    }
+    let body = subagent_notification_json_body(text)?;
     let value = serde_json::from_str::<Value>(body).ok()?;
+    parse_subagent_notification_value(&value)
+}
+
+fn parse_subagent_notification_value(value: &Value) -> Option<SubagentNotificationDigestParts> {
     let outer_agent = value
         .get("agent_path")
         .or_else(|| value.get("author"))
@@ -1237,6 +1578,64 @@ fn render_counts(counts: &BTreeMap<String, usize>) -> String {
         .join(", ")
 }
 
+fn assistant_status_json_digest(text: &str) -> Option<String> {
+    let trimmed = text.trim();
+    if !trimmed.starts_with('{') {
+        return None;
+    }
+
+    let Value::Object(map) = serde_json::from_str::<Value>(trimmed).ok()? else {
+        return None;
+    };
+    if map.get("author").and_then(Value::as_str) != Some("assistant")
+        || !map.contains_key("recipient")
+        || !map.contains_key("content")
+    {
+        return None;
+    }
+
+    let recipient = map
+        .get("recipient")
+        .and_then(Value::as_str)
+        .unwrap_or("(none)");
+    let other_recipients = map
+        .get("other_recipients")
+        .map(json_sample)
+        .unwrap_or_else(|| "(none)".to_string());
+    let trigger_turn = map
+        .get("trigger_turn")
+        .map(json_sample)
+        .unwrap_or_else(|| "(unknown)".to_string());
+    let content = status_content_excerpt(map.get("content")?);
+
+    Some(format!(
+        "assistant_status_digest\nrecipient: {}\nother_recipients: {}\ntrigger_turn: {}\ncontent:\n{}",
+        truncate(recipient, 160),
+        truncate(&other_recipients, 160),
+        truncate(&trigger_turn, 160),
+        content
+    ))
+}
+
+fn status_content_excerpt(value: &Value) -> String {
+    match value {
+        Value::String(text) => excerpt(text),
+        Value::Array(items) => items
+            .iter()
+            .filter_map(|item| {
+                item.as_object()
+                    .and_then(|map| map.get("text").or_else(|| map.get("content")))
+                    .and_then(Value::as_str)
+                    .map(excerpt)
+                    .or_else(|| Some(json_sample(item)))
+            })
+            .take(4)
+            .collect::<Vec<_>>()
+            .join("\n---\n"),
+        other => json_sample(other),
+    }
+}
+
 fn json_digest(text: &str) -> Option<String> {
     let trimmed = text.trim();
     if !(trimmed.starts_with('{') || trimmed.starts_with('[')) {
@@ -1388,6 +1787,30 @@ fn command_log_digest(text: &str) -> String {
         },
         excerpt(text)
     )
+}
+
+fn recoverable_prior_context_digest(source: &str, text: &str) -> Option<String> {
+    let lower_source = source.to_ascii_lowercase();
+    let recoverable_source = lower_source.starts_with("message:assistant")
+        || lower_source.starts_with("shell_output:")
+        || lower_source.starts_with("tool_output:")
+        || lower_source.starts_with("message:tool");
+    if !recoverable_source
+        || lower_source.starts_with("message:user")
+        || lower_source.starts_with("message:developer")
+        || lower_source.starts_with("message:system")
+        || looks_like_durable_instruction_block(text)
+    {
+        return None;
+    }
+
+    Some(format!(
+        "recoverable_prior_context_digest\nsource: {}\nlines_total: {}\nchars_total: {}\nsafety: recoverable artifact for prior non-user context unlikely to be needed next\nexcerpt:\n{}",
+        truncate(source, 160),
+        text.lines().count(),
+        text.chars().count(),
+        excerpt(text)
+    ))
 }
 
 fn search_result_digest(source: &str, text: &str, threshold: usize) -> Option<String> {
@@ -2102,12 +2525,208 @@ mod tests {
         assert_eq!(actual, &text);
     }
 
+    #[test]
+    fn reduces_small_structured_command_logs_below_global_threshold() {
+        let output = format!(
+            "Exit code: 0\nWall time: 0.4 seconds\nOutput:\n{}",
+            (0..36)
+                .map(|index| format!("line {index}: prompt reduction audit output"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        let mut items = vec![
+            shell_call("call", "rg prompt reduction"),
+            shell_output("call", output),
+        ];
+        let temp = TempDir::new().unwrap();
+        let config = default_threshold_config(temp.path(), 0);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 1);
+        assert!(stats.saved_tokens > 32);
+        let ResponseItem::FunctionCallOutput { output, .. } = &items[1] else {
+            panic!("expected output");
+        };
+        assert!(
+            output
+                .text_content()
+                .unwrap()
+                .contains("command_log_digest")
+        );
+    }
+
+    #[test]
+    fn bundles_many_short_low_utility_tool_outputs() {
+        let mut items = Vec::new();
+        for index in 0..12 {
+            let call_id = format!("call-{index}");
+            items.push(shell_call(&call_id, &format!("echo short-{index}")));
+            items.push(shell_output(
+                &call_id,
+                format!(
+                    "Exit code: 0\nWall time: 0.{index} seconds\nOutput:\n{}",
+                    "successful short command output with no next-step signal\n".repeat(4)
+                ),
+            ));
+        }
+        let temp = TempDir::new().unwrap();
+        let config = default_threshold_config(temp.path(), 0);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 12);
+        assert_eq!(stats.artifacts, 1);
+        assert!(stats.saved_tokens > 300);
+        let ResponseItem::FunctionCallOutput { output, .. } = &items[1] else {
+            panic!("expected first output");
+        };
+        assert!(
+            output
+                .text_content()
+                .unwrap()
+                .contains("short_tool_output_bundle")
+        );
+        for item in items.iter().skip(3).step_by(2) {
+            let ResponseItem::FunctionCallOutput { output, .. } = item else {
+                panic!("expected output");
+            };
+            assert_eq!(output.text_content().unwrap(), "");
+        }
+    }
+
+    #[test]
+    fn does_not_bundle_short_failed_tool_outputs() {
+        let mut items = Vec::new();
+        let mut originals = Vec::new();
+        for index in 0..12 {
+            let call_id = format!("call-{index}");
+            let text = format!(
+                "Exit code: 1\nWall time: 0.{index} seconds\nOutput:\nerror: important failure {index}"
+            );
+            items.push(shell_call(&call_id, &format!("test-command-{index}")));
+            items.push(shell_output(&call_id, text.clone()));
+            originals.push(text);
+        }
+        let temp = TempDir::new().unwrap();
+        let config = default_threshold_config(temp.path(), 0);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 0);
+        for (original, item) in originals.iter().zip(items.iter().skip(1).step_by(2)) {
+            let ResponseItem::FunctionCallOutput { output, .. } = item else {
+                panic!("expected output");
+            };
+            assert_eq!(output.text_content().unwrap(), original);
+        }
+    }
+
+    #[test]
+    fn reduces_assistant_status_json_with_content_excerpt() {
+        let content = format!(
+            "I am checking the reducer and found the assistant status payload path. {}",
+            "This progress detail should remain visible after compaction. ".repeat(20)
+        );
+        let status = serde_json::json!({
+            "author": "assistant",
+            "recipient": "functions.update_plan",
+            "other_recipients": [],
+            "content": content,
+            "trigger_turn": 42,
+        })
+        .to_string();
+        let mut items = vec![message("assistant", status, MessageTextKind::Output)];
+        let temp = TempDir::new().unwrap();
+        let config = default_threshold_config(temp.path(), 0);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 1);
+        let ResponseItem::Message { content, .. } = &items[0] else {
+            panic!("expected message");
+        };
+        let ContentItem::OutputText { text } = &content[0] else {
+            panic!("expected output text");
+        };
+        assert!(text.contains("assistant_status_digest"));
+        assert!(text.contains("recipient: functions.update_plan"));
+        assert!(text.contains("This progress detail should remain visible"));
+        assert!(!text.contains("object_keys_total"));
+    }
+
+    #[test]
+    fn reduces_recent_assistant_status_json_before_generic_json() {
+        let content = format!(
+            "Recent progress update with implementation state. {}",
+            "Keep this status readable in the reduced prompt. ".repeat(20)
+        );
+        let status = serde_json::json!({
+            "author": "assistant",
+            "recipient": "functions.shell_command",
+            "other_recipients": null,
+            "content": content,
+            "trigger_turn": 99,
+        })
+        .to_string();
+        let mut items = vec![message("assistant", status, MessageTextKind::Output)];
+        let temp = TempDir::new().unwrap();
+        let config = default_threshold_config(temp.path(), 1);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 1);
+        let ResponseItem::Message { content, .. } = &items[0] else {
+            panic!("expected message");
+        };
+        let ContentItem::OutputText { text } = &content[0] else {
+            panic!("expected output text");
+        };
+        assert!(text.contains("recent_assistant_status_digest"));
+        assert!(text.contains("assistant_status_digest"));
+        assert!(text.contains("recipient: functions.shell_command"));
+        assert!(!text.contains("object_keys_total"));
+    }
+
+    #[test]
+    fn reduces_recoverable_prior_assistant_context() {
+        let text = "Earlier assistant progress update with local observations. ".repeat(40);
+        let mut items = vec![message("assistant", text, MessageTextKind::Output)];
+        let temp = TempDir::new().unwrap();
+        let config = default_threshold_config(temp.path(), 0);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 1);
+        assert!(stats.saved_tokens > 64);
+        let ResponseItem::Message { content, .. } = &items[0] else {
+            panic!("expected message");
+        };
+        let ContentItem::OutputText { text } = &content[0] else {
+            panic!("expected output text");
+        };
+        assert!(text.contains("recoverable_prior_context_digest"));
+    }
+
     fn test_config(path: &Path, preserve_recent_items: usize) -> PromptReductionConfig {
         PromptReductionConfig {
             artifact_dir: path.to_path_buf(),
             min_reduce_chars: 100,
             path_list_threshold: 8,
             min_saved_tokens: 1,
+            preserve_recent_items,
+        }
+    }
+
+    fn default_threshold_config(
+        path: &Path,
+        preserve_recent_items: usize,
+    ) -> PromptReductionConfig {
+        PromptReductionConfig {
+            artifact_dir: path.to_path_buf(),
+            min_reduce_chars: 2_000,
+            path_list_threshold: 12,
+            min_saved_tokens: 128,
             preserve_recent_items,
         }
     }
