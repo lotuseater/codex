@@ -18,6 +18,7 @@ Docs:
 - [Operation Replacement Study](operation-replacement-study.md)
 - [Codex Fork Plan](codex-fork-token-saving-plan.md)
 - [Context Reducer Lab Results - 2026-05-08](context-reducer-lab-results-2026-05-08.md)
+- [Context Helper Reduction Benchmark - 2026-05-19](context-helper-reduction-benchmark-2026-05-19.md)
 
 The main design conclusion is that prompt-cache hits and single-action caches
 are not enough. Token usage falls only when Codex sends less repeated text to
