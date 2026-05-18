@@ -1280,8 +1280,8 @@ fn text_function_outputs(items: &[ResponseItem]) -> Vec<(usize, &str, &str)> {
             | ResponseItem::CustomToolCallOutput {
                 call_id, output, ..
             } => {
-                text_slot_index += 1;
                 if let Some(text) = output.text_content() {
+                    text_slot_index += 1;
                     outputs.push((text_slot_index, call_id.as_str(), text));
                 }
             }
@@ -2448,12 +2448,13 @@ mod batch_reduction_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use codex_protocol::models::FunctionCallOutputContentItem;
     use codex_protocol::models::FunctionCallOutputPayload;
     use pretty_assertions::assert_eq;
     use tempfile::TempDir;
 
     #[test]
-    fn reduces_old_source_reads_but_preserves_recent_ones() {
+    fn reduces_source_reads_even_when_recent_with_artifact_recovery() {
         let old_source = (0..180)
             .map(|index| format!("pub fn function_{index}() -> usize {{ {index} }}"))
             .collect::<Vec<_>>()
@@ -2466,14 +2467,14 @@ mod tests {
             shell_call("call-old", "Get-Content -LiteralPath src/lib.rs"),
             shell_output("call-old", old_source),
             shell_call("call-recent", "Get-Content -LiteralPath src/main.rs"),
-            shell_output("call-recent", recent_source.clone()),
+            shell_output("call-recent", recent_source),
         ];
         let temp = TempDir::new().unwrap();
         let config = test_config(temp.path(), 1);
 
         let stats = reduce_prompt_items(&mut items, &config).unwrap();
 
-        assert_eq!(stats.reductions, 1);
+        assert_eq!(stats.reductions, 2);
         let ResponseItem::FunctionCallOutput { output, .. } = &items[1] else {
             panic!("expected output");
         };
@@ -2486,7 +2487,12 @@ mod tests {
         let ResponseItem::FunctionCallOutput { output, .. } = &items[3] else {
             panic!("expected output");
         };
-        assert_eq!(output.text_content().unwrap(), recent_source);
+        assert!(
+            output
+                .text_content()
+                .unwrap()
+                .contains("source_read_digest")
+        );
     }
 
     #[test]
@@ -2646,7 +2652,7 @@ mod tests {
     }
 
     #[test]
-    fn tool_search_output_counts_as_slot_for_recent_preservation() {
+    fn reduces_tool_search_output_and_recent_source_read() {
         let old_source = "let stale = 1;\n".repeat(100);
         let recent_source = "let recent = 2;\n".repeat(100);
         let mut items = vec![
@@ -2657,18 +2663,23 @@ mod tests {
                 "description": "x".repeat(500),
             })]),
             shell_call("recent", "Get-Content -LiteralPath src/recent.rs"),
-            shell_output("recent", recent_source.clone()),
+            shell_output("recent", recent_source),
         ];
         let temp = TempDir::new().unwrap();
         let config = test_config(temp.path(), 1);
 
         let stats = reduce_prompt_items(&mut items, &config).unwrap();
 
-        assert_eq!(stats.reductions, 2);
+        assert_eq!(stats.reductions, 3);
         let ResponseItem::FunctionCallOutput { output, .. } = &items[4] else {
             panic!("expected recent source output");
         };
-        assert_eq!(output.text_content().unwrap(), recent_source);
+        assert!(
+            output
+                .text_content()
+                .unwrap()
+                .contains("source_read_digest")
+        );
     }
 
     #[test]
@@ -3055,6 +3066,46 @@ mod tests {
     }
 
     #[test]
+    fn short_tool_bundle_artifact_ignores_non_text_outputs_without_slot_shift() {
+        let mut items = vec![
+            shell_call("image", "capture screenshot"),
+            image_output("image"),
+        ];
+        for index in 0..12 {
+            let call_id = format!("call-{index}");
+            items.push(shell_call(&call_id, &format!("echo short-{index}")));
+            items.push(shell_output(
+                &call_id,
+                format!(
+                    "Exit code: 0\nWall time: 0.{index} seconds\nOutput:\n{}",
+                    "successful short command output with no next-step signal\n".repeat(4)
+                ),
+            ));
+        }
+        let temp = TempDir::new().unwrap();
+        let config = default_threshold_config(temp.path(), 0);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 12);
+        assert_eq!(stats.artifacts, 1);
+        let ResponseItem::FunctionCallOutput { output, .. } = &items[3] else {
+            panic!("expected first text output");
+        };
+        let replacement = output.text_content().unwrap();
+        assert!(replacement.contains("call-0"));
+        let artifact_path = fs::read_dir(temp.path())
+            .unwrap()
+            .next()
+            .expect("expected bundle artifact")
+            .unwrap()
+            .path();
+        let artifact = fs::read_to_string(artifact_path).unwrap();
+        assert!(artifact.contains("echo short-0"));
+        assert!(artifact.contains("echo short-11"));
+    }
+
+    #[test]
     fn does_not_bundle_short_failed_tool_outputs() {
         let mut items = Vec::new();
         let mut originals = Vec::new();
@@ -3204,6 +3255,18 @@ mod tests {
         ResponseItem::FunctionCallOutput {
             call_id: call_id.to_string(),
             output: FunctionCallOutputPayload::from_text(text),
+        }
+    }
+
+    fn image_output(call_id: &str) -> ResponseItem {
+        ResponseItem::FunctionCallOutput {
+            call_id: call_id.to_string(),
+            output: FunctionCallOutputPayload::from_content_items(vec![
+                FunctionCallOutputContentItem::InputImage {
+                    image_url: "data:image/png;base64,AA==".to_string(),
+                    detail: None,
+                },
+            ]),
         }
     }
 

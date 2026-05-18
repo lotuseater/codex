@@ -119,12 +119,17 @@ fn reduces_stale_workflow_batch_success_summary() {
 #[test]
 fn reduces_recent_source_read_with_artifact_recovery() {
     let source_text = (0..80)
-        .map(|index| format!("{index}: pub fn generated_case_{index}() {{ println!(\"case {index}\"); }}"))
+        .map(|index| {
+            format!("{index}: pub fn generated_case_{index}() {{ println!(\"case {index}\"); }}")
+        })
         .collect::<Vec<_>>()
         .join("\n");
     let output = format!("Exit code: 0\nOutput:\n{source_text}");
     let mut items = vec![
-        shell_call("source-1", "Get-Content -Raw codex-rs/prompt-reducer/src/lib.rs"),
+        shell_call(
+            "source-1",
+            "Get-Content -Raw codex-rs/prompt-reducer/src/lib.rs",
+        ),
         shell_output("source-1", output),
     ];
     let temp = TempDir::new().unwrap();
@@ -207,9 +212,9 @@ fn workflow_call(call_id: &str) -> ResponseItem {
 fn shell_call(call_id: &str, command: &str) -> ResponseItem {
     ResponseItem::FunctionCall {
         id: None,
-        name: "shell".to_string(),
+        name: "shell_command".to_string(),
         namespace: None,
-        arguments: command.to_string(),
+        arguments: serde_json::json!({ "command": command }).to_string(),
         call_id: call_id.to_string(),
     }
 }

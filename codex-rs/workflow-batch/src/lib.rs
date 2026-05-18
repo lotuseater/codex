@@ -1416,13 +1416,14 @@ fn list_files(
         ("path", Value::String(path.to_string_lossy().to_string())),
         ("iteration", option_usize_value(iteration)),
     ]))?;
+    let (stdout_digest, stdout_preview) = compact_value(&value);
     ctx.records.push(StepRecord {
         id: step_id.to_string(),
         status: "ok".to_string(),
         elapsed_ms: 0,
         rc: None,
-        stdout_digest: None,
-        stdout_preview: Some(value_to_string(&value)),
+        stdout_digest,
+        stdout_preview,
         stderr_preview: None,
         note: Some(format!("entries={}", value.as_array().map_or(0, Vec::len))),
         iteration,
@@ -1518,13 +1519,14 @@ fn assert_step(
         ("id", Value::String(step_id.to_string())),
         ("iteration", option_usize_value(iteration)),
     ]))?;
+    let (stdout_digest, stdout_preview) = compact_value(&value);
     ctx.records.push(StepRecord {
         id: step_id.to_string(),
         status: "ok".to_string(),
         elapsed_ms: 0,
         rc: None,
-        stdout_digest: None,
-        stdout_preview: Some(value_to_string(&value)),
+        stdout_digest,
+        stdout_preview,
         stderr_preview: None,
         note: None,
         iteration,
@@ -1602,8 +1604,8 @@ fn eval_assert_string_condition(
 fn split_assert_infix<'a>(condition: &'a str, op: &str) -> Option<(&'a str, &'a str)> {
     let mut quote = None;
     let mut escaped = false;
-    let mut indices = condition.char_indices().peekable();
-    while let Some((index, ch)) = indices.next() {
+    let indices = condition.char_indices().peekable();
+    for (index, ch) in indices {
         if escaped {
             escaped = false;
             continue;
@@ -1717,7 +1719,7 @@ fn collect_list_entries(
         .with_context(|| format!("failed to list {}", path.display()))?
         .collect::<Result<Vec<_>, _>>()
         .with_context(|| format!("failed to list {}", path.display()))?;
-    children.sort_by_key(|entry| entry.path());
+    children.sort_by_key(std::fs::DirEntry::path);
     for entry in children {
         if entries.len() >= max_entries {
             break;
@@ -2929,6 +2931,10 @@ fn restore_temp_vars(ctx: &mut WorkflowContext, snapshot: TempVars) {
     }
 }
 
+fn compact_value(value: &Value) -> (Option<String>, Option<String>) {
+    compact_text(&value_to_string(value))
+}
+
 fn compact_text(text: &str) -> (Option<String>, Option<String>) {
     let normalized = text
         .lines()
@@ -2941,10 +2947,13 @@ fn compact_text(text: &str) -> (Option<String>, Option<String>) {
         return (Some(String::new()), None);
     }
     let digest = hex_sha1(&normalized);
-    let preview = if normalized.len() <= 180 {
+    let preview = if normalized.chars().count() <= 180 {
         normalized
     } else {
-        format!("{}...[truncated]", &normalized[..180])
+        format!(
+            "{}...[truncated]",
+            normalized.chars().take(180).collect::<String>()
+        )
     };
     (Some(digest), Some(preview))
 }
@@ -3096,6 +3105,27 @@ mod tests {
     use super::WorkflowOptions;
     use super::run_workflow_value_with_options;
     use super::run_workflow_with_options;
+
+    #[test]
+    fn compact_text_truncates_on_char_boundary() {
+        let text = format!("a{}", "\u{00e9}".repeat(180));
+        let expected_head = format!("a{}", "\u{00e9}".repeat(179));
+
+        let (_, preview) = super::compact_text(&text);
+
+        assert_eq!(Some(format!("{expected_head}...[truncated]")), preview);
+    }
+
+    #[test]
+    fn compact_value_bounds_large_json_preview() {
+        let value = json!({ "entries": ["x".repeat(512)] });
+
+        let (_, preview) = super::compact_value(&value);
+        let preview = preview.expect("large preview should be present");
+
+        assert!(preview.ends_with("...[truncated]"));
+        assert!(preview.chars().count() <= 194);
+    }
 
     #[test]
     fn runs_json_edit_and_assert_steps() -> anyhow::Result<()> {
