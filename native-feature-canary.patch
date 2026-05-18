@@ -1,0 +1,266 @@
+diff --git a/codex-rs/Cargo.lock b/codex-rs/Cargo.lock
+index c384c0a0d1..153bfa385c 100644
+--- a/codex-rs/Cargo.lock
++++ b/codex-rs/Cargo.lock
+@@ -3503,6 +3503,14 @@ dependencies = [
+  "tracing",
+ ]
+ 
++[[package]]
++name = "codex-native-feature-canary"
++version = "0.0.0"
++dependencies = [
++ "cc",
++ "pretty_assertions",
++]
++
+ [[package]]
+ name = "codex-network-proxy"
+ version = "0.0.0"
+diff --git a/codex-rs/Cargo.toml b/codex-rs/Cargo.toml
+index 9a6317dabb..57c74a2dec 100644
+--- a/codex-rs/Cargo.toml
++++ b/codex-rs/Cargo.toml
+@@ -22,6 +22,7 @@ members = [
+     "arg0",
+     "feedback",
+     "features",
++    "native-feature-canary",
+     "first-moves",
+     "repo-context-scout",
+     "install-context",
+diff --git a/codex-rs/native-feature-canary/BUILD.bazel b/codex-rs/native-feature-canary/BUILD.bazel
+new file mode 100644
+index 0000000000..ba361b4386
+--- /dev/null
++++ b/codex-rs/native-feature-canary/BUILD.bazel
+@@ -0,0 +1,17 @@
++load("@rules_cc//cc:defs.bzl", "cc_library")
++load("//:defs.bzl", "codex_rust_crate")
++
++codex_rust_crate(
++    name = "native-feature-canary",
++    crate_name = "codex_native_feature_canary",
++    build_script_enabled = False,
++    deps_extra = [":native-feature-canary-ffi"],
++)
++
++cc_library(
++    name = "native-feature-canary-ffi",
++    srcs = ["src/native/canary.cpp"],
++    hdrs = ["src/native/canary.h"],
++    includes = ["src/native"],
++    visibility = ["//visibility:private"],
++)
+diff --git a/codex-rs/native-feature-canary/Cargo.toml b/codex-rs/native-feature-canary/Cargo.toml
+new file mode 100644
+index 0000000000..6f825d7913
+--- /dev/null
++++ b/codex-rs/native-feature-canary/Cargo.toml
+@@ -0,0 +1,19 @@
++[package]
++edition.workspace = true
++license.workspace = true
++name = "codex-native-feature-canary"
++version.workspace = true
++
++[lib]
++doctest = false
++name = "codex_native_feature_canary"
++path = "src/lib.rs"
++
++[lints]
++workspace = true
++
++[build-dependencies]
++cc = "1"
++
++[dev-dependencies]
++pretty_assertions = { workspace = true }
+diff --git a/codex-rs/native-feature-canary/build.rs b/codex-rs/native-feature-canary/build.rs
+new file mode 100644
+index 0000000000..64809ec4cf
+--- /dev/null
++++ b/codex-rs/native-feature-canary/build.rs
+@@ -0,0 +1,12 @@
++fn main() {
++    for path in ["build.rs", "src/native/canary.cpp", "src/native/canary.h"] {
++        println!("cargo:rerun-if-changed={path}");
++    }
++
++    cc::Build::new()
++        .cpp(true)
++        .file("src/native/canary.cpp")
++        .include("src/native")
++        .warnings(true)
++        .compile("codex_native_feature_canary");
++}
+diff --git a/codex-rs/native-feature-canary/src/lib.rs b/codex-rs/native-feature-canary/src/lib.rs
+new file mode 100644
+index 0000000000..e7c360be53
+--- /dev/null
++++ b/codex-rs/native-feature-canary/src/lib.rs
+@@ -0,0 +1,71 @@
++//! Tiny native feature canary used to measure C++ edit/rebuild behavior.
++
++/// Deterministic native decision returned by the canary implementation.
++#[derive(Clone, Copy, Debug, Eq, PartialEq)]
++pub enum FeatureDecision {
++    Disabled,
++    Enabled,
++}
++
++impl FeatureDecision {
++    /// Returns whether this decision enables the canary feature.
++    pub fn is_enabled(self) -> bool {
++        matches!(self, Self::Enabled)
++    }
++}
++
++/// Returns the native canary decision for a feature key.
++///
++/// This is intentionally small and deterministic so it can be used to verify
++/// whether edits to C++ feature code rebuild only the native object and final
++/// dependent link steps.
++pub fn decision_for_key(key: &str) -> FeatureDecision {
++    let raw = unsafe { codex_native_feature_canary_decision(key.as_ptr(), key.len()) };
++    match raw {
++        0 => FeatureDecision::Disabled,
++        1 => FeatureDecision::Enabled,
++        unexpected => panic!("native feature canary returned unexpected decision {unexpected}"),
++    }
++}
++
++/// Returns the stable native hash for a feature key.
++pub fn stable_hash_for_key(key: &str) -> u32 {
++    unsafe { codex_native_feature_canary_hash(key.as_ptr(), key.len()) }
++}
++
++unsafe extern "C" {
++    fn codex_native_feature_canary_decision(key: *const u8, len: usize) -> u32;
++    fn codex_native_feature_canary_hash(key: *const u8, len: usize) -> u32;
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use pretty_assertions::assert_eq;
++
++    #[test]
++    fn explicit_prefixes_override_hash_gate() {
++        assert_eq!(
++            decision_for_key("force-on:feature:x"),
++            FeatureDecision::Enabled
++        );
++        assert_eq!(
++            decision_for_key("force-off:feature:small"),
++            FeatureDecision::Disabled
++        );
++    }
++
++    #[test]
++    fn hash_gate_uses_native_implementation() {
++        assert_eq!(
++            stable_hash_for_key("feature:context-reduction"),
++            0xfb18_345c
++        );
++        assert_eq!(
++            decision_for_key("feature:context-reduction"),
++            FeatureDecision::Disabled
++        );
++        assert_eq!(stable_hash_for_key("feature:small"), 0x4fc3_e5cc);
++        assert_eq!(decision_for_key("feature:small"), FeatureDecision::Enabled);
++    }
++}
+diff --git a/codex-rs/native-feature-canary/src/native/canary.cpp b/codex-rs/native-feature-canary/src/native/canary.cpp
+new file mode 100644
+index 0000000000..ccd64e5ce9
+--- /dev/null
++++ b/codex-rs/native-feature-canary/src/native/canary.cpp
+@@ -0,0 +1,62 @@
++#include "canary.h"
++
++namespace {
++
++constexpr uint32_t kFnvOffset = 2166136261u;
++constexpr uint32_t kFnvPrime = 16777619u;
++constexpr uint32_t kBucketCount = 100u;
++
++template <size_t N>
++bool has_prefix(const uint8_t *data, size_t len, const char (&prefix)[N]) noexcept {
++    constexpr size_t prefix_len = N - 1;
++    if (len < prefix_len) {
++        return false;
++    }
++
++    for (size_t i = 0; i < prefix_len; ++i) {
++        if (data[i] != static_cast<uint8_t>(prefix[i])) {
++            return false;
++        }
++    }
++
++    return true;
++}
++
++uint32_t fnv1a(const uint8_t *data, size_t len) noexcept {
++    uint32_t hash = kFnvOffset;
++    for (size_t i = 0; i < len; ++i) {
++        hash ^= data[i];
++        hash *= kFnvPrime;
++    }
++    return hash;
++}
++
++}  // namespace
++
++extern "C" uint32_t codex_native_feature_canary_hash(
++    const uint8_t *key,
++    size_t len) {
++    if (key == nullptr && len != 0) {
++        return 0;
++    }
++
++    return fnv1a(key, len);
++}
++
++extern "C" uint32_t codex_native_feature_canary_decision(
++    const uint8_t *key,
++    size_t len) {
++    if (key == nullptr && len != 0) {
++        return 0;
++    }
++
++    if (has_prefix(key, len, "force-on:")) {
++        return 1;
++    }
++
++    if (has_prefix(key, len, "force-off:")) {
++        return 0;
++    }
++
++    return fnv1a(key, len) % kBucketCount < 50 ? 1 : 0;
++}
+diff --git a/codex-rs/native-feature-canary/src/native/canary.h b/codex-rs/native-feature-canary/src/native/canary.h
+new file mode 100644
+index 0000000000..1b7b971b77
+--- /dev/null
++++ b/codex-rs/native-feature-canary/src/native/canary.h
+@@ -0,0 +1,18 @@
++#ifndef CODEX_NATIVE_FEATURE_CANARY_H_
++#define CODEX_NATIVE_FEATURE_CANARY_H_
++
++#include <stddef.h>
++#include <stdint.h>
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++uint32_t codex_native_feature_canary_decision(const uint8_t *key, size_t len);
++uint32_t codex_native_feature_canary_hash(const uint8_t *key, size_t len);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif
