@@ -98,45 +98,48 @@ pub fn create_context_ops_tools() -> Vec<ToolSpec> {
                 Some(vec!["pattern".to_string()]),
             ),
         ),
-        create_tool(
-            WORKFLOW_BATCH_TOOL_NAME,
-            "Run a root-confined local workflow-batch spec for dependent deterministic file/JSON/edit/assert/control-flow work and return a compact execution summary. Use inline `spec` for one-shot dependent batches. Avoid this tool for simple read-only probes. Command execution is not exposed through this tool.",
-            object_schema(
-                [
-                    (
-                        "spec_path",
-                        JsonSchema::string(Some(
-                            "Path to the workflow-batch JSON spec file. Must stay inside workdir. Provide exactly one of spec_path or spec."
-                                .to_string(),
-                        )),
-                    ),
-                    ("spec", inline_spec_schema()),
-                    (
-                        "report_path",
-                        JsonSchema::string(Some(
-                            "Optional path inside workdir where the workflow JSON report should be written. Defaults under .codex/workflow-batch."
-                                .to_string(),
-                        )),
-                    ),
-                    (
-                        "log_path",
-                        JsonSchema::string(Some(
-                            "Optional path inside workdir where the workflow JSONL event log should be written. Defaults under .codex/workflow-batch."
-                                .to_string(),
-                        )),
-                    ),
-                    (
-                        "workdir",
-                        JsonSchema::string(Some(
-                            "Base directory for relative paths. Defaults to the current working directory."
-                                .to_string(),
-                        )),
-                    ),
-                ],
-                /*required*/ None,
-            ),
-        ),
     ]
+}
+
+pub fn create_workflow_batch_tool() -> ToolSpec {
+    create_tool(
+        WORKFLOW_BATCH_TOOL_NAME,
+        "Run a root-confined local workflow-batch spec for dependent deterministic file/JSON/edit/assert/control-flow work and return a compact execution summary. Use inline `spec` for one-shot dependent batches. Prefer this over shell commands for repeated file IO, JSON transforms, map/filter/reduce/scan operations, assertions, bounded recursive conditional scans, stat_path/list_files/ensure_dir checks, and safe PowerShell-like substitutions. Use shell/rg for single read-only probes, one-off searches, and unbounded repo-wide scans. Command execution is not exposed through this tool.",
+        object_schema(
+            [
+                (
+                    "spec_path",
+                    JsonSchema::string(Some(
+                        "Path to the workflow-batch JSON spec file. Must stay inside workdir. Provide exactly one of spec_path or spec."
+                            .to_string(),
+                    )),
+                ),
+                ("spec", inline_spec_schema()),
+                (
+                    "report_path",
+                    JsonSchema::string(Some(
+                        "Optional path inside workdir where the workflow JSON report should be written. Defaults under .codex/workflow-batch."
+                            .to_string(),
+                    )),
+                ),
+                (
+                    "log_path",
+                    JsonSchema::string(Some(
+                        "Optional path inside workdir where the workflow JSONL event log should be written. Defaults under .codex/workflow-batch."
+                            .to_string(),
+                    )),
+                ),
+                (
+                    "workdir",
+                    JsonSchema::string(Some(
+                        "Base directory for relative paths. Defaults to the current working directory."
+                            .to_string(),
+                    )),
+                ),
+            ],
+            /*required*/ None,
+        ),
+    )
 }
 
 fn create_tool(name: &str, description: &str, parameters: JsonSchema) -> ToolSpec {
@@ -172,7 +175,7 @@ fn inline_spec_schema() -> JsonSchema {
         Some(AdditionalProperties::Boolean(true)),
     );
     schema.description = Some(
-        "Inline workflow-batch JSON spec. Provide exactly one of spec_path or spec.".to_string(),
+        "Inline workflow-batch JSON spec. Provide exactly one of spec_path or spec. Shape: {\"steps\":[...]}. Step keywords include set/set_vars, ensure_dir, stat_path, list_files, read_file, read_json, write_file, append_file, write_json, copy_file, edit_file, assert, for_each, while, and branch steps with if/then/else. Expressions are JSON values and support scalars, arrays, object records via literal, refs, functional operators such as map/filter/reduce/scan, object operators such as keys/values/entries/from_entries/merge/pick/omit, comparisons eq/ne/lt/lte/gt/gte, and string/set helpers.".to_string(),
     );
     schema
 }

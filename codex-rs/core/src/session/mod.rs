@@ -2860,7 +2860,7 @@ impl Session {
         {
             developer_sections.push(collab_instructions.render());
         }
-        if turn_context.tools_config.context_ops_enabled
+        if turn_context.tools_config.workflow_batch_enabled
             && turn_context.tools_config.environment_mode.has_environment()
         {
             developer_sections.push(BatchMiniProgrammingInstructions.render());

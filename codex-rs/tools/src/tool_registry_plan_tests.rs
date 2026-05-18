@@ -14,6 +14,7 @@ use crate::ToolNamespace;
 use crate::ToolRegistryPlanDeferredTool;
 use crate::ToolRegistryPlanMcpTool;
 use crate::ToolsConfigParams;
+use crate::WORKFLOW_BATCH_TOOL_NAME;
 use crate::WaitAgentTimeoutOptions;
 use crate::create_exec_command_tool;
 use crate::mcp_call_tool_result_output_schema;
@@ -106,6 +107,10 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
             can_request_original_image_detail: config.can_request_original_image_detail,
         }),
     ] {
+        expected.insert(spec.name().to_string(), spec);
+    }
+    if config.workflow_batch_enabled && config.environment_mode.has_environment() {
+        let spec = create_workflow_batch_tool();
         expected.insert(spec.name().to_string(), spec);
     }
     if config.goal_tools {
@@ -900,6 +905,7 @@ fn disabled_environment_omits_environment_backed_tools() {
     assert_lacks_tool_name(&tools, "exec_command");
     assert_lacks_tool_name(&tools, "write_stdin");
     assert_lacks_tool_name(&tools, "apply_patch");
+    assert_lacks_tool_name(&tools, WORKFLOW_BATCH_TOOL_NAME);
     assert_lacks_tool_name(&tools, VIEW_IMAGE_TOOL_NAME);
 }
 
@@ -1434,6 +1440,87 @@ fn test_test_model_info_includes_sync_tool() {
     );
 
     assert!(tools.iter().any(|tool| tool.name() == "test_sync_tool"));
+}
+
+#[test]
+fn workflow_batch_is_available_without_context_ops_feature() {
+    let model_info = model_info();
+    let features = Features::with_defaults();
+    assert!(!features.enabled(Feature::ContextOps));
+
+    let available_models = Vec::new();
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        image_generation_tool_auth_allowed: true,
+        web_search_mode: Some(WebSearchMode::Live),
+        session_source: SessionSource::Cli,
+        permission_profile: &PermissionProfile::Disabled,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+    assert!(tools_config.workflow_batch_enabled);
+
+    let (tools, handlers) = build_specs(
+        &tools_config,
+        /*mcp_tools*/ None,
+        /*deferred_mcp_tools*/ None,
+        &[],
+    );
+    let names: Vec<&str> = tools
+        .iter()
+        .map(super::super::tool_spec::ConfiguredToolSpec::name)
+        .collect();
+
+    assert!(names.contains(&"workflow_batch"));
+    assert!(!names.contains(&"file_outline"));
+    assert!(!names.contains(&"search_text"));
+    assert!(
+        handlers
+            .iter()
+            .any(|handler| handler.name.name == "workflow_batch"
+                && handler.kind == ToolHandlerKind::ContextOps)
+    );
+}
+
+#[test]
+fn workflow_batch_config_can_disable_tool_even_when_context_ops_enabled() {
+    let model_info = model_info();
+    let mut features = Features::with_defaults();
+    features.enable(Feature::ContextOps);
+
+    let available_models = Vec::new();
+    let mut tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        image_generation_tool_auth_allowed: true,
+        web_search_mode: Some(WebSearchMode::Live),
+        session_source: SessionSource::Cli,
+        permission_profile: &PermissionProfile::Disabled,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+    tools_config.workflow_batch_enabled = false;
+
+    let (tools, handlers) = build_specs(
+        &tools_config,
+        /*mcp_tools*/ None,
+        /*deferred_mcp_tools*/ None,
+        &[],
+    );
+    let names: Vec<&str> = tools
+        .iter()
+        .map(super::super::tool_spec::ConfiguredToolSpec::name)
+        .collect();
+
+    assert!(!names.contains(&"workflow_batch"));
+    assert!(names.contains(&"file_outline"));
+    assert!(names.contains(&"search_text"));
+    assert!(
+        !handlers
+            .iter()
+            .any(|handler| handler.name.name == "workflow_batch")
+    );
 }
 
 #[test]

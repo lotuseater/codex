@@ -100,7 +100,9 @@ fn context_ops_requires_feature_flag() {
     });
 
     assert_eq!(default_tools_config.context_ops_enabled, false);
+    assert_eq!(default_tools_config.workflow_batch_enabled, true);
     assert_eq!(enabled_tools_config.context_ops_enabled, true);
+    assert_eq!(enabled_tools_config.workflow_batch_enabled, true);
 }
 
 #[test]

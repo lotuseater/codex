@@ -4007,26 +4007,38 @@ async fn build_initial_context_uses_turn_collaboration_mode() {
 #[tokio::test]
 async fn build_initial_context_includes_batch_mini_programming_when_workflow_batch_available() {
     let (session, mut turn_context) = make_session_and_context().await;
-    turn_context.tools_config.context_ops_enabled = true;
+    turn_context.tools_config.workflow_batch_enabled = true;
     turn_context.tools_config.environment_mode = ToolEnvironmentMode::Single;
 
     let context = session.build_initial_context(&turn_context).await;
     let developer_text = developer_input_texts(&context).join("\n");
 
     assert!(developer_text.contains("<batch_mini_programming_instructions>"));
-    assert!(developer_text.contains("workflow_batch"));
+    assert!(developer_text.contains("`workflow_batch` tool is available"));
+    assert!(!developer_text.contains("When the `workflow_batch` tool is available"));
     assert!(developer_text.contains("dependent deterministic local workflows"));
-    assert!(developer_text.contains("Do not use it for simple read-only probes"));
+    assert!(developer_text.contains("Use it proactively"));
+    assert!(developer_text.contains("choose `workflow_batch` before shell commands"));
+    assert!(developer_text.contains("single read-only probes"));
+    assert!(developer_text.contains("bounded recursive conditional scans"));
+    assert!(
+        developer_text
+            .contains("Step keywords: `set`, `set_vars`, `ensure_dir`, `stat_path`, `list_files`")
+    );
+    assert!(developer_text.contains("PowerShell substitutions"));
+    assert!(developer_text.contains("Expression/composite types"));
+    assert!(developer_text.contains("Functional collection usage"));
+    assert!(developer_text.contains("Assertion usage"));
     assert!(developer_text.contains("write_file"));
     assert!(developer_text.contains("while"));
-    assert!(developer_text.contains("Do not use it for command execution"));
+    assert!(developer_text.contains("Command execution remains on the normal approval path"));
     assert!(developer_text.contains("Keep batches compact"));
 }
 
 #[tokio::test]
 async fn build_initial_context_omits_batch_mini_programming_without_workflow_batch() {
     let (session, mut turn_context) = make_session_and_context().await;
-    turn_context.tools_config.context_ops_enabled = false;
+    turn_context.tools_config.workflow_batch_enabled = false;
     turn_context.tools_config.environment_mode = ToolEnvironmentMode::Single;
 
     let context = session.build_initial_context(&turn_context).await;
@@ -4038,7 +4050,7 @@ async fn build_initial_context_omits_batch_mini_programming_without_workflow_bat
 #[tokio::test]
 async fn build_initial_context_omits_batch_mini_programming_without_environment() {
     let (session, mut turn_context) = make_session_and_context().await;
-    turn_context.tools_config.context_ops_enabled = true;
+    turn_context.tools_config.workflow_batch_enabled = true;
     turn_context.tools_config.environment_mode = ToolEnvironmentMode::None;
 
     let context = session.build_initial_context(&turn_context).await;

@@ -75,6 +75,7 @@ pub use context_ops::FILE_OUTLINE_TOOL_NAME;
 pub use context_ops::SEARCH_TEXT_TOOL_NAME;
 pub use context_ops::WORKFLOW_BATCH_TOOL_NAME;
 pub use context_ops::create_context_ops_tools;
+pub use context_ops::create_workflow_batch_tool;
 pub use desktop_automation::create_desktop_automation_tools;
 pub use dynamic_tool::parse_dynamic_tool;
 pub use first_moves::FIRST_MOVES_PREDICT_TOOL_NAME;

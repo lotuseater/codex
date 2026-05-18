@@ -196,6 +196,11 @@ impl TurnContext {
         );
         let features = self.features.clone();
         let provider_capabilities = self.provider.capabilities();
+        let workflow_batch_enabled = self.tools_config.workflow_batch_enabled
+            && !self
+                .environments
+                .primary()
+                .is_some_and(|environment| environment.environment.is_remote());
         let tools_config = ToolsConfig::new(&ToolsConfigParams {
             model_info: &model_info,
             available_models: &models_manager
@@ -217,6 +222,7 @@ impl TurnContext {
         .with_web_search_config(self.tools_config.web_search_config.clone())
         .with_allow_login_shell(self.tools_config.allow_login_shell)
         .with_environment_mode(self.tools_config.environment_mode)
+        .with_workflow_batch_enabled(workflow_batch_enabled)
         .with_spawn_agent_usage_hint(config.multi_agent_v2.usage_hint_enabled)
         .with_spawn_agent_usage_hint_text(config.multi_agent_v2.usage_hint_text.clone())
         .with_hide_spawn_agent_metadata(config.multi_agent_v2.hide_spawn_agent_metadata)
@@ -514,6 +520,9 @@ impl Session {
         let provider_for_context = create_model_provider(provider, auth_manager);
         let provider_capabilities = provider_for_context.capabilities();
         let session_telemetry_for_context = session_telemetry;
+        let workflow_batch_enabled = !environments
+            .primary()
+            .is_some_and(|environment| environment.environment.is_remote());
         let tools_config = ToolsConfig::new(&ToolsConfigParams {
             model_info: &model_info,
             available_models: &models_manager.try_list_models().unwrap_or_default(),
@@ -537,6 +546,7 @@ impl Session {
         .with_environment_mode(ToolEnvironmentMode::from_count(
             environments.turn_environments.len(),
         ))
+        .with_workflow_batch_enabled(workflow_batch_enabled)
         .with_spawn_agent_usage_hint(per_turn_config.multi_agent_v2.usage_hint_enabled)
         .with_spawn_agent_usage_hint_text(per_turn_config.multi_agent_v2.usage_hint_text.clone())
         .with_hide_spawn_agent_metadata(per_turn_config.multi_agent_v2.hide_spawn_agent_metadata)

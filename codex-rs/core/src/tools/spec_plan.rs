@@ -62,6 +62,7 @@ use codex_tools::ToolSpec;
 use codex_tools::ToolsConfig;
 use codex_tools::collect_code_mode_exec_prompt_tool_definitions;
 use codex_tools::create_first_moves_tools;
+use codex_tools::create_workflow_batch_tool;
 use codex_tools::default_namespace_description;
 use std::collections::BTreeMap;
 use std::collections::HashSet;
@@ -360,6 +361,11 @@ pub(crate) fn collect_tool_executors(
         for tool in codex_tools::create_context_ops_tools() {
             executors.push(Arc::new(ContextOpsHandler::new(tool)));
         }
+    }
+    if config.workflow_batch_enabled && config.environment_mode.has_environment() {
+        executors.push(Arc::new(ContextOpsHandler::new(
+            create_workflow_batch_tool(),
+        )));
     }
 
     if config.environment_mode.has_environment() {

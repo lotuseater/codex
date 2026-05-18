@@ -169,12 +169,7 @@ mod tests {
     }
 
     fn workflow_batch_handler() -> ContextOpsHandler {
-        ContextOpsHandler::new(
-            codex_tools::create_context_ops_tools()
-                .into_iter()
-                .find(|tool| tool.name() == codex_tools::WORKFLOW_BATCH_TOOL_NAME)
-                .expect("workflow_batch tool spec"),
-        )
+        ContextOpsHandler::new(codex_tools::create_workflow_batch_tool())
     }
 
     #[tokio::test]

@@ -17,7 +17,6 @@ use crate::ToolSearchSourceInfo;
 use crate::ToolSpec;
 use crate::ToolsConfig;
 use crate::ViewImageToolOptions;
-use crate::WORKFLOW_BATCH_TOOL_NAME;
 use crate::WebSearchToolOptions;
 use crate::coalesce_loadable_tool_specs;
 use crate::collect_code_mode_exec_prompt_tool_definitions;
@@ -66,6 +65,7 @@ use crate::create_wait_agent_tool_v1;
 use crate::create_wait_agent_tool_v2;
 use crate::create_wait_tool;
 use crate::create_web_search_tool;
+use crate::create_workflow_batch_tool;
 use crate::create_write_stdin_tool;
 use crate::default_namespace_description;
 use crate::dynamic_tool_to_loadable_tool_spec;
@@ -435,10 +435,23 @@ pub fn build_tool_registry_plan(
 
             for tool in create_context_ops_tools() {
                 let name = tool.name().to_string();
-                let supports_parallel_tool_calls = name != WORKFLOW_BATCH_TOOL_NAME;
-                plan.push_spec(tool, supports_parallel_tool_calls, config.code_mode_enabled);
+                plan.push_spec(
+                    tool,
+                    /*supports_parallel_tool_calls*/ true,
+                    config.code_mode_enabled,
+                );
                 plan.register_handler(name, ToolHandlerKind::ContextOps);
             }
+        }
+        if config.workflow_batch_enabled && config.environment_mode.has_environment() {
+            let tool = create_workflow_batch_tool();
+            let name = tool.name().to_string();
+            plan.push_spec(
+                tool,
+                /*supports_parallel_tool_calls*/ false,
+                config.code_mode_enabled,
+            );
+            plan.register_handler(name, ToolHandlerKind::ContextOps);
         }
 
         if config.desktop_automation_enabled {

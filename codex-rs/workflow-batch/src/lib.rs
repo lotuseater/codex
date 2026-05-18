@@ -368,7 +368,11 @@ fn execute_steps(
             continue;
         }
 
-        if let Some(values) = step.get("set").and_then(Value::as_object) {
+        if let Some(values) = step
+            .get("set")
+            .or_else(|| step.get("set_vars"))
+            .and_then(Value::as_object)
+        {
             set_vars(ctx, &step_id, values, iteration)?;
         } else if step.contains_key("run") {
             if !ctx.options.allow_commands {
@@ -390,6 +394,11 @@ fn execute_steps(
                 reject_disallowed_step(ctx, &step_id, iteration, "append_file")?;
             }
             write_file(ctx, &step_id, step, iteration, WriteMode::Append)?;
+        } else if step.contains_key("ensure_dir") {
+            if !ctx.options.allow_file_mutation_steps {
+                reject_disallowed_step(ctx, &step_id, iteration, "ensure_dir")?;
+            }
+            ensure_dir(ctx, &step_id, step, iteration)?;
         } else if step.contains_key("edit_file") {
             if !ctx.options.allow_file_mutation_steps {
                 reject_disallowed_step(ctx, &step_id, iteration, "edit_file")?;
@@ -399,6 +408,10 @@ fn execute_steps(
             read_file(ctx, &step_id, step, iteration)?;
         } else if step.contains_key("read_json") {
             read_json(ctx, &step_id, step, iteration)?;
+        } else if step.contains_key("stat_path") {
+            stat_path(ctx, &step_id, step, iteration)?;
+        } else if step.contains_key("list_files") {
+            list_files(ctx, &step_id, step, iteration)?;
         } else if step.contains_key("write_json") {
             if !ctx.options.allow_file_mutation_steps {
                 reject_disallowed_step(ctx, &step_id, iteration, "write_json")?;
@@ -1143,6 +1156,50 @@ fn match_ranges(text: &str, pattern: &str, regex: bool) -> anyhow::Result<Vec<(u
         .collect())
 }
 
+fn ensure_dir(
+    ctx: &mut WorkflowContext,
+    step_id: &str,
+    step: &Map<String, Value>,
+    iteration: Option<usize>,
+) -> anyhow::Result<()> {
+    let spec = step
+        .get("ensure_dir")
+        .and_then(Value::as_object)
+        .with_context(|| format!("`{step_id}` ensure_dir must be an object"))?;
+    let path = resolve_output_path(
+        ctx,
+        spec.get("path")
+            .with_context(|| format!("`{step_id}` ensure_dir missing path"))?,
+    )?;
+    fs::create_dir_all(&path)
+        .with_context(|| format!("failed to create directory {}", path.display()))?;
+    ctx.steps.insert(
+        step_id.to_string(),
+        json_object([
+            ("status", Value::String("ok".to_string())),
+            ("path", Value::String(path.to_string_lossy().to_string())),
+        ]),
+    );
+    ctx.log(json_object([
+        ("event", Value::String("ensure_dir".to_string())),
+        ("id", Value::String(step_id.to_string())),
+        ("path", Value::String(path.to_string_lossy().to_string())),
+        ("iteration", option_usize_value(iteration)),
+    ]))?;
+    ctx.records.push(StepRecord {
+        id: step_id.to_string(),
+        status: "ok".to_string(),
+        elapsed_ms: 0,
+        rc: None,
+        stdout_digest: None,
+        stdout_preview: None,
+        stderr_preview: None,
+        note: Some("created directory".to_string()),
+        iteration,
+    });
+    Ok(())
+}
+
 fn read_file(
     ctx: &mut WorkflowContext,
     step_id: &str,
@@ -1243,6 +1300,136 @@ fn read_json(
     Ok(())
 }
 
+fn stat_path(
+    ctx: &mut WorkflowContext,
+    step_id: &str,
+    step: &Map<String, Value>,
+    iteration: Option<usize>,
+) -> anyhow::Result<()> {
+    let spec = step
+        .get("stat_path")
+        .and_then(Value::as_object)
+        .with_context(|| format!("`{step_id}` stat_path must be an object"))?;
+    let path = resolve_input_path(
+        ctx,
+        spec.get("path")
+            .with_context(|| format!("`{step_id}` stat_path missing path"))?,
+    )?;
+    let include_sha1 = spec.get("sha1").and_then(Value::as_bool).unwrap_or(false);
+    let value = path_status_value(ctx, &path, include_sha1)?;
+    if let Some(var) = spec.get("var").and_then(Value::as_str) {
+        ctx.vars.insert(var.to_string(), value.clone());
+    }
+    ctx.steps.insert(
+        step_id.to_string(),
+        json_object([
+            ("status", Value::String("ok".to_string())),
+            ("path", Value::String(path.to_string_lossy().to_string())),
+            ("value", value.clone()),
+        ]),
+    );
+    ctx.log(json_object([
+        ("event", Value::String("stat_path".to_string())),
+        ("id", Value::String(step_id.to_string())),
+        ("path", Value::String(path.to_string_lossy().to_string())),
+        ("iteration", option_usize_value(iteration)),
+    ]))?;
+    ctx.records.push(StepRecord {
+        id: step_id.to_string(),
+        status: "ok".to_string(),
+        elapsed_ms: 0,
+        rc: None,
+        stdout_digest: None,
+        stdout_preview: Some(value_to_string(&value)),
+        stderr_preview: None,
+        note: None,
+        iteration,
+    });
+    Ok(())
+}
+
+fn list_files(
+    ctx: &mut WorkflowContext,
+    step_id: &str,
+    step: &Map<String, Value>,
+    iteration: Option<usize>,
+) -> anyhow::Result<()> {
+    let spec = step
+        .get("list_files")
+        .and_then(Value::as_object)
+        .with_context(|| format!("`{step_id}` list_files must be an object"))?;
+    let path = if let Some(path) = spec.get("path") {
+        resolve_input_path(ctx, path)?
+    } else {
+        ctx.root.clone()
+    };
+    let recursive = spec
+        .get("recursive")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let include_dirs = spec
+        .get("include_dirs")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let details = spec
+        .get("details")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let pattern = spec
+        .get("pattern")
+        .and_then(Value::as_str)
+        .map(Regex::new)
+        .transpose()?;
+    let max_entries = spec
+        .get("max_entries")
+        .and_then(Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
+        .unwrap_or(1000)
+        .min(10_000);
+
+    let mut entries = Vec::new();
+    collect_list_entries(
+        ctx,
+        &path,
+        recursive,
+        include_dirs,
+        details,
+        pattern.as_ref(),
+        max_entries,
+        &mut entries,
+    )?;
+    let value = Value::Array(entries);
+    if let Some(var) = spec.get("var").and_then(Value::as_str) {
+        ctx.vars.insert(var.to_string(), value.clone());
+    }
+    ctx.steps.insert(
+        step_id.to_string(),
+        json_object([
+            ("status", Value::String("ok".to_string())),
+            ("path", Value::String(path.to_string_lossy().to_string())),
+            ("value", value.clone()),
+        ]),
+    );
+    ctx.log(json_object([
+        ("event", Value::String("list_files".to_string())),
+        ("id", Value::String(step_id.to_string())),
+        ("path", Value::String(path.to_string_lossy().to_string())),
+        ("iteration", option_usize_value(iteration)),
+    ]))?;
+    ctx.records.push(StepRecord {
+        id: step_id.to_string(),
+        status: "ok".to_string(),
+        elapsed_ms: 0,
+        rc: None,
+        stdout_digest: None,
+        stdout_preview: Some(value_to_string(&value)),
+        stderr_preview: None,
+        note: Some(format!("entries={}", value.as_array().map_or(0, Vec::len))),
+        iteration,
+    });
+    Ok(())
+}
+
 fn write_json(
     ctx: &mut WorkflowContext,
     step_id: &str,
@@ -1309,10 +1496,11 @@ fn assert_step(
     let condition = step
         .get("assert")
         .with_context(|| format!("`{step_id}` assert missing expression"))?;
-    let value = eval_expr(ctx, condition)?;
+    let assert_spec = assert_spec(ctx, step_id, step, condition)?;
+    let value = eval_assert_condition(ctx, assert_spec.condition)?;
     if !truthy(&value) {
-        let message = if let Some(message) = step.get("message") {
-            value_to_string(&render_value(ctx, message)?)
+        let message = if let Some(message) = assert_spec.message {
+            message
         } else {
             format!("assertion `{step_id}` failed")
         };
@@ -1342,6 +1530,323 @@ fn assert_step(
         iteration,
     });
     Ok(())
+}
+
+struct AssertSpec<'a> {
+    condition: &'a Value,
+    message: Option<String>,
+}
+
+fn assert_spec<'a>(
+    ctx: &WorkflowContext,
+    step_id: &str,
+    step: &'a Map<String, Value>,
+    condition: &'a Value,
+) -> anyhow::Result<AssertSpec<'a>> {
+    let step_message = step
+        .get("message")
+        .map(|message| render_value(ctx, message).map(|value| value_to_string(&value)))
+        .transpose()?;
+
+    if let Some(spec) = condition.as_object()
+        && let Some(condition) = spec.get("expr").or_else(|| spec.get("condition"))
+    {
+        let message = spec
+            .get("message")
+            .map(|message| render_value(ctx, message).map(|value| value_to_string(&value)))
+            .transpose()?
+            .or(step_message);
+        return Ok(AssertSpec { condition, message });
+    }
+
+    if condition.as_object().is_some_and(|spec| {
+        spec.contains_key("expr") || spec.contains_key("condition") || spec.contains_key("message")
+    }) {
+        bail!("`{step_id}` assert object must include `expr` or `condition`");
+    }
+
+    Ok(AssertSpec {
+        condition,
+        message: step_message,
+    })
+}
+
+fn eval_assert_condition(ctx: &mut WorkflowContext, condition: &Value) -> anyhow::Result<Value> {
+    if let Some(condition) = condition.as_str()
+        && let Some(value) = eval_assert_string_condition(ctx, condition)?
+    {
+        return Ok(value);
+    }
+    eval_expr(ctx, condition)
+}
+
+fn eval_assert_string_condition(
+    ctx: &WorkflowContext,
+    condition: &str,
+) -> anyhow::Result<Option<Value>> {
+    for op in ["==", "!="] {
+        if let Some((left, right)) = split_assert_infix(condition, op) {
+            let left = eval_assert_term(ctx, left)?;
+            let right = eval_assert_term(ctx, right)?;
+            let result = match op {
+                "==" => left == right,
+                "!=" => left != right,
+                _ => unreachable!("operator list is fixed"),
+            };
+            return Ok(Some(Value::Bool(result)));
+        }
+    }
+    Ok(None)
+}
+
+fn split_assert_infix<'a>(condition: &'a str, op: &str) -> Option<(&'a str, &'a str)> {
+    let mut quote = None;
+    let mut escaped = false;
+    let mut indices = condition.char_indices().peekable();
+    while let Some((index, ch)) = indices.next() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if let Some(active_quote) = quote {
+            if ch == active_quote {
+                quote = None;
+            }
+            continue;
+        }
+        if ch == '\'' || ch == '"' {
+            quote = Some(ch);
+            continue;
+        }
+        if condition[index..].starts_with(op) {
+            return Some((
+                condition[..index].trim(),
+                condition[index + op.len()..].trim(),
+            ));
+        }
+    }
+    None
+}
+
+fn eval_assert_term(ctx: &WorkflowContext, term: &str) -> anyhow::Result<Value> {
+    if let Some(value) = quoted_assert_string(term) {
+        return Ok(Value::String(value));
+    }
+    if let Ok(value) = serde_json::from_str::<Value>(term) {
+        return Ok(value);
+    }
+    if let Some(value) = ctx.vars.get(term) {
+        return Ok(value.clone());
+    }
+    resolve_ref(ctx, term).or_else(|_| render_template(ctx, term).map(Value::String))
+}
+
+fn quoted_assert_string(term: &str) -> Option<String> {
+    let mut chars = term.chars();
+    let quote = chars.next()?;
+    if quote != '\'' && quote != '"' {
+        return None;
+    }
+    if !term.ends_with(quote) || term.len() < 2 {
+        return None;
+    }
+    let inner = &term[quote.len_utf8()..term.len() - quote.len_utf8()];
+    let mut out = String::with_capacity(inner.len());
+    let mut escaped = false;
+    for ch in inner.chars() {
+        if escaped {
+            let resolved = match ch {
+                'n' => '\n',
+                'r' => '\r',
+                't' => '\t',
+                '\\' => '\\',
+                '\'' => '\'',
+                '"' => '"',
+                other => other,
+            };
+            out.push(resolved);
+            escaped = false;
+        } else if ch == '\\' {
+            escaped = true;
+        } else {
+            out.push(ch);
+        }
+    }
+    if escaped {
+        out.push('\\');
+    }
+    Some(out)
+}
+
+fn collect_list_entries(
+    ctx: &WorkflowContext,
+    path: &Path,
+    recursive: bool,
+    include_dirs: bool,
+    details: bool,
+    pattern: Option<&Regex>,
+    max_entries: usize,
+    entries: &mut Vec<Value>,
+) -> anyhow::Result<()> {
+    if entries.len() >= max_entries {
+        return Ok(());
+    }
+
+    let metadata =
+        fs::metadata(path).with_context(|| format!("failed to stat {}", path.display()))?;
+    if metadata.is_file() {
+        push_list_entry(ctx, path, &metadata, details, pattern, max_entries, entries)?;
+        return Ok(());
+    }
+    if !metadata.is_dir() {
+        if include_dirs {
+            push_list_entry(ctx, path, &metadata, details, pattern, max_entries, entries)?;
+        }
+        return Ok(());
+    }
+
+    if include_dirs {
+        push_list_entry(ctx, path, &metadata, details, pattern, max_entries, entries)?;
+    }
+
+    let mut children = fs::read_dir(path)
+        .with_context(|| format!("failed to list {}", path.display()))?
+        .collect::<Result<Vec<_>, _>>()
+        .with_context(|| format!("failed to list {}", path.display()))?;
+    children.sort_by_key(|entry| entry.path());
+    for entry in children {
+        if entries.len() >= max_entries {
+            break;
+        }
+        let child_path = entry.path();
+        let child_metadata = entry
+            .metadata()
+            .with_context(|| format!("failed to stat {}", child_path.display()))?;
+        if child_metadata.is_file() || include_dirs && child_metadata.is_dir() {
+            push_list_entry(
+                ctx,
+                &child_path,
+                &child_metadata,
+                details,
+                pattern,
+                max_entries,
+                entries,
+            )?;
+        }
+        if recursive && child_metadata.is_dir() {
+            collect_list_entries(
+                ctx,
+                &child_path,
+                recursive,
+                include_dirs,
+                details,
+                pattern,
+                max_entries,
+                entries,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn push_list_entry(
+    ctx: &WorkflowContext,
+    path: &Path,
+    metadata: &fs::Metadata,
+    details: bool,
+    pattern: Option<&Regex>,
+    max_entries: usize,
+    entries: &mut Vec<Value>,
+) -> anyhow::Result<()> {
+    if entries.len() >= max_entries {
+        return Ok(());
+    }
+    let relative = relative_path_string(ctx, path);
+    if pattern.is_some_and(|pattern| !pattern.is_match(&relative)) {
+        return Ok(());
+    }
+    if details {
+        entries.push(path_metadata_value(ctx, path, metadata, false)?);
+    } else {
+        entries.push(Value::String(relative));
+    }
+    Ok(())
+}
+
+fn path_status_value(
+    ctx: &WorkflowContext,
+    path: &Path,
+    include_sha1: bool,
+) -> anyhow::Result<Value> {
+    match fs::metadata(path) {
+        Ok(metadata) => path_metadata_value(ctx, path, &metadata, include_sha1),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(json_object([
+            ("exists", Value::Bool(false)),
+            ("path", Value::String(relative_path_string(ctx, path))),
+            ("kind", Value::String("missing".to_string())),
+            ("is_file", Value::Bool(false)),
+            ("is_dir", Value::Bool(false)),
+            ("len", Value::Null),
+            ("modified_unix", Value::Null),
+        ])),
+        Err(error) => Err(error).with_context(|| format!("failed to stat {}", path.display())),
+    }
+}
+
+fn path_metadata_value(
+    ctx: &WorkflowContext,
+    path: &Path,
+    metadata: &fs::Metadata,
+    include_sha1: bool,
+) -> anyhow::Result<Value> {
+    let kind = if metadata.is_file() {
+        "file"
+    } else if metadata.is_dir() {
+        "dir"
+    } else {
+        "other"
+    };
+    let mut object = Map::from_iter([
+        ("exists".to_string(), Value::Bool(true)),
+        (
+            "path".to_string(),
+            Value::String(relative_path_string(ctx, path)),
+        ),
+        ("kind".to_string(), Value::String(kind.to_string())),
+        ("is_file".to_string(), Value::Bool(metadata.is_file())),
+        ("is_dir".to_string(), Value::Bool(metadata.is_dir())),
+        (
+            "len".to_string(),
+            Value::Number(Number::from(metadata.len())),
+        ),
+        (
+            "modified_unix".to_string(),
+            metadata
+                .modified()
+                .ok()
+                .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+                .map(|duration| Value::Number(Number::from(duration.as_secs())))
+                .unwrap_or(Value::Null),
+        ),
+    ]);
+    if include_sha1 && metadata.is_file() {
+        let bytes = fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
+        object.insert("sha1".to_string(), Value::String(hex_sha1_bytes(&bytes)));
+    }
+    Ok(Value::Object(object))
+}
+
+fn relative_path_string(ctx: &WorkflowContext, path: &Path) -> String {
+    let relative = path.strip_prefix(&ctx.root).unwrap_or(path);
+    if relative.as_os_str().is_empty() {
+        ".".to_string()
+    } else {
+        relative.to_string_lossy().replace('\\', "/")
+    }
 }
 
 fn resolve_input_path(ctx: &WorkflowContext, value: &Value) -> anyhow::Result<PathBuf> {
@@ -2386,7 +2891,11 @@ fn resolve_ref(ctx: &WorkflowContext, reference: &str) -> anyhow::Result<Value> 
     let mut current = match root {
         "vars" => Value::Object(ctx.vars.clone().into_iter().collect()),
         "steps" => Value::Object(ctx.steps.clone().into_iter().collect()),
-        _ => bail!("unknown ref root `{root}`"),
+        _ => ctx
+            .vars
+            .get(root)
+            .cloned()
+            .with_context(|| format!("unknown ref root `{root}`"))?,
     };
     for part in parts {
         current = current
@@ -2443,6 +2952,16 @@ fn compact_text(text: &str) -> (Option<String>, Option<String>) {
 fn hex_sha1(text: &str) -> String {
     let mut hasher = Sha1::new();
     hasher.update(text.as_bytes());
+    hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn hex_sha1_bytes(bytes: &[u8]) -> String {
+    let mut hasher = Sha1::new();
+    hasher.update(bytes);
     hasher
         .finalize()
         .iter()
@@ -2709,7 +3228,7 @@ mod tests {
             WorkflowOptions::unrestricted_with_root(root),
         )?;
 
-        assert_eq!("ok", summary.status);
+        assert_eq!("ok", summary.status, "{summary:#?}");
         assert_eq!(6, summary.steps_total);
         assert_eq!(0, summary.steps_failed);
         assert_eq!(
@@ -2756,15 +3275,197 @@ mod tests {
             }),
             &report_path,
             &log_path,
-            WorkflowOptions::context_tool(root),
+            WorkflowOptions::root_confined(root),
         )?;
 
-        assert_eq!("ok", summary.status);
+        assert_eq!("ok", summary.status, "{summary:#?}");
         assert_eq!("<inline>", summary.spec);
         assert_eq!(2, summary.steps_total);
         assert_eq!(0, summary.steps_failed);
         assert!(report_path.exists());
         assert!(log_path.exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn accepts_assert_object_expr_and_set_vars_alias() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        let report_path = root.join("reports").join("report.json");
+        let log_path = root.join("reports").join("report.jsonl");
+
+        let summary = run_workflow_value_with_options(
+            json!({
+                "steps": [
+                    {
+                        "id": "write_readme",
+                        "write_file": {
+                            "path": "output/readme.txt",
+                            "content": "sum=10\nproduct=30"
+                        }
+                    },
+                    {
+                        "id": "read_readme",
+                        "read_file": {
+                            "path": "output/readme.txt",
+                            "var": "readme"
+                        }
+                    },
+                    {
+                        "id": "set_summary",
+                        "set_vars": {
+                            "summary": {
+                                "literal": {
+                                    "sum": 10,
+                                    "product": 30
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "id": "assert_readme",
+                        "assert": {
+                            "expr": "readme == 'sum=10\\nproduct=30'",
+                            "message": "readme mismatch"
+                        }
+                    },
+                    {
+                        "id": "assert_summary",
+                        "assert": {
+                            "expr": {
+                                "eq": [
+                                    {
+                                        "ref": "summary"
+                                    },
+                                    {
+                                        "literal": {
+                                            "sum": 10,
+                                            "product": 30
+                                        }
+                                    }
+                                ]
+                            },
+                            "message": "summary mismatch"
+                        }
+                    }
+                ]
+            }),
+            &report_path,
+            &log_path,
+            WorkflowOptions::root_confined(root),
+        )?;
+
+        assert_eq!("ok", summary.status, "{summary:#?}");
+        assert_eq!(5, summary.steps_total);
+        assert_eq!(0, summary.steps_failed);
+
+        Ok(())
+    }
+
+    #[test]
+    fn supports_powershell_like_file_substitutions() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        let report_path = root.join("reports").join("report.json");
+        let log_path = root.join("reports").join("report.jsonl");
+
+        let summary = run_workflow_value_with_options(
+            json!({
+                "steps": [
+                    {
+                        "id": "mkdir",
+                        "ensure_dir": {
+                            "path": "data/nested"
+                        }
+                    },
+                    {
+                        "id": "write_a",
+                        "write_file": {
+                            "path": "data/a.txt",
+                            "content": "alpha\n"
+                        }
+                    },
+                    {
+                        "id": "write_b",
+                        "write_file": {
+                            "path": "data/nested/b.txt",
+                            "content": "beta\n"
+                        }
+                    },
+                    {
+                        "id": "stat_a",
+                        "stat_path": {
+                            "path": "data/a.txt",
+                            "var": "a_stat",
+                            "sha1": true
+                        }
+                    },
+                    {
+                        "id": "list_data",
+                        "list_files": {
+                            "path": "data",
+                            "recursive": true,
+                            "var": "paths"
+                        }
+                    },
+                    {
+                        "id": "assert_kind",
+                        "assert": {
+                            "expr": {
+                                "eq": [
+                                    {
+                                        "get": {
+                                            "from": {
+                                                "ref": "a_stat"
+                                            },
+                                            "key": "kind"
+                                        }
+                                    },
+                                    "file"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "id": "assert_listing",
+                        "assert": {
+                            "expr": {
+                                "and": [
+                                    {
+                                        "set_includes": [
+                                            {
+                                                "ref": "paths"
+                                            },
+                                            [
+                                                "data/a.txt"
+                                            ]
+                                        ]
+                                    },
+                                    {
+                                        "set_includes": [
+                                            {
+                                                "ref": "paths"
+                                            },
+                                            [
+                                                "data/nested/b.txt"
+                                            ]
+                                        ]
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                ]
+            }),
+            &report_path,
+            &log_path,
+            WorkflowOptions::root_confined(root),
+        )?;
+
+        assert_eq!("ok", summary.status, "{summary:#?}");
+        assert_eq!(7, summary.steps_total);
+        assert_eq!(0, summary.steps_failed);
 
         Ok(())
     }

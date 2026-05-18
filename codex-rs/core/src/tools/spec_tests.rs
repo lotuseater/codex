@@ -377,6 +377,40 @@ async fn get_memory_requires_feature_flag() {
     );
 }
 
+#[tokio::test]
+async fn workflow_batch_default_exposure_has_registered_handler() {
+    let config = test_config().await;
+    let model_info = construct_model_info_offline("gpt-5.4", &config);
+    let features = Features::with_defaults();
+    let available_models = Vec::new();
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        image_generation_tool_auth_allowed: true,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        permission_profile: &PermissionProfile::Disabled,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+    assert!(tools_config.workflow_batch_enabled);
+
+    let (tools, registry) = build_specs(
+        &tools_config,
+        /*mcp_tools*/ None,
+        /*deferred_mcp_tools*/ None,
+        &[],
+    )
+    .build();
+
+    assert!(
+        tools
+            .iter()
+            .any(|tool| tool.spec.name() == codex_tools::WORKFLOW_BATCH_TOOL_NAME)
+    );
+    assert!(registry.has_handler(&ToolName::plain(codex_tools::WORKFLOW_BATCH_TOOL_NAME)));
+}
+
 async fn assert_model_tools(
     model_slug: &str,
     features: &Features,
