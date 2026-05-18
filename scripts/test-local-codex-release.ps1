@@ -179,9 +179,11 @@ $keepCoreLibTestArtifactsOnSuccess = $Package -eq "codex-core" -and
     -not $CleanCoreLibTestArtifactsOnSuccess
 
 if ($Package -eq "codex-tui" -and -not [string]::IsNullOrWhiteSpace($Filter) -and -not $AllowBroadTuiUnitTests) {
-    $hasExplicitCargoTarget = $ExtraCargoArgs -contains "--test" -or
-        $ExtraCargoArgs -contains "--bin" -or
-        $ExtraCargoArgs -contains "--example"
+    $hasExplicitCargoTarget = @($ExtraCargoArgs | Where-Object {
+            $_ -eq "--test" -or $_ -like "--test=*" -or
+            $_ -eq "--bin" -or $_ -like "--bin=*" -or
+            $_ -eq "--example" -or $_ -like "--example=*"
+        }).Count -gt 0
     if (-not $hasExplicitCargoTarget) {
         throw "Refusing filtered codex-tui package/unit test without -AllowBroadTuiUnitTests. Cargo compiles the full codex-tui test harness and heavy dependency graph before applying the filter. Prefer the smaller owning crate test, an explicit --test target via -ExtraCargoArgs, or pass -AllowBroadTuiUnitTests when this expensive canary is intentional."
     }
