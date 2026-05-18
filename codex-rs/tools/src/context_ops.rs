@@ -104,7 +104,7 @@ pub fn create_context_ops_tools() -> Vec<ToolSpec> {
 pub fn create_workflow_batch_tool() -> ToolSpec {
     create_tool(
         WORKFLOW_BATCH_TOOL_NAME,
-        "Run a root-confined local workflow-batch spec for dependent deterministic file/JSON/edit/assert/control-flow work and return a compact execution summary. Use inline `spec` for one-shot dependent batches. Prefer this over shell commands for repeated file IO, JSON transforms, map/filter/reduce/scan operations, assertions, bounded recursive conditional scans, stat_path/list_files/ensure_dir checks, and safe PowerShell-like substitutions. Use shell/rg for single read-only probes, one-off searches, and unbounded repo-wide scans. Command execution is not exposed through this tool.",
+        "Run a root-confined local workflow-batch spec for dependent deterministic file/JSON/edit/assert/control-flow work and return a compact execution summary. Use inline `spec` for one-shot dependent batches. Prefer this over shell commands for repeated file IO, JSON transforms, map/filter/reduce/scan operations, assertions, bounded recursive conditional scans, stat_path/list_files/ensure_dir checks, and safe PowerShell-like substitutions. Use Python for richer algorithms/data structures/libraries, cmd only for cmd/batch-specific Windows behavior, and shell/rg for single read-only probes, one-off searches, and unbounded repo-wide scans. Command execution is not exposed through this tool.",
         object_schema(
             [
                 (

@@ -41,7 +41,11 @@ fn workflow_batch_tool_spec_is_compact_and_named() {
     );
     assert!(
         tool.description
-            .contains("Use shell/rg for single read-only probes")
+            .contains("Use Python for richer algorithms/data structures/libraries")
+    );
+    assert!(
+        tool.description
+            .contains("shell/rg for single read-only probes")
     );
     let Some(properties) = tool.parameters.properties.as_ref() else {
         panic!("workflow batch parameters should have properties");

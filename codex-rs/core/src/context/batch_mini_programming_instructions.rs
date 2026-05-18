@@ -12,9 +12,12 @@ impl ContextualUserFragment for BatchMiniProgrammingInstructions {
         r#"`workflow_batch` tool is available, and it is Codex's default command-free batch mini-programming surface for dependent deterministic local workflows.
 Use it proactively; do not wait for the user to mention batching or name the tool. For deterministic create/edit/verify file tasks that fit root-confined file/JSON IO, edits, assertions, conditions, loops, reductions, file metadata/listing, or other collection transformations, choose `workflow_batch` before shell commands, patch tools, or separate file-edit tool calls.
 Use it aggressively for multi-step local workflows with dependent steps or repeated file/JSON operations that would otherwise require several separate tool calls without user input. Use normal focused tools such as shell/rg for single read-only probes, one-off searches, and unbounded repo-wide scans where streaming output is shorter and easier to inspect. Use `workflow_batch` for bounded recursive conditional scans when the workflow chains file listing, filtering, metadata, reads, assertions, transforms, or generated outputs.
+Command execution remains on the normal approval path outside this batch surface.
+This does not replace scripting. Prefer Python when a task needs arbitrary algorithms, standard-library parsing, richer data structures such as dict/set/Counter/dataclasses, complex text or binary processing, generated fixtures, or reusable prototypes. Prefer cmd only for cmd/batch-specific Windows behavior; otherwise use PowerShell/rg for shell work.
 
 Top-level tool arguments: provide exactly one of inline `spec` JSON or `spec_path`; optional `workdir`, `report_path`, and `log_path` keep execution root-confined and produce compact artifacts.
 Spec shape: `{"steps":[...]}`. Each step is an object with optional `id` and optional `if`; branch steps may use `then` and `else`.
+Step keywords: `set`, `set_vars`, `ensure_dir`, `stat_path`, `list_files`, `read_file`, `read_json`, `write_file`, `append_file`, `write_json`, `copy_file`, `edit_file`, `assert`, `for_each`, and `while`.
 
 Step syntax reference:
 - `set` or `set_vars`: variable map, e.g. `{"set":{"nums":[2,3,5],"summary":{"literal":{"sum":10,"product":30}}}}`.

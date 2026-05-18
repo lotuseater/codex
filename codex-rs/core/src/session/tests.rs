@@ -4028,6 +4028,8 @@ async fn build_initial_context_includes_batch_mini_programming_when_workflow_bat
     assert!(developer_text.contains("PowerShell substitutions"));
     assert!(developer_text.contains("Expression/composite types"));
     assert!(developer_text.contains("Functional collection usage"));
+    assert!(developer_text.contains("Prefer Python when a task needs arbitrary algorithms"));
+    assert!(developer_text.contains("Prefer cmd only for cmd/batch-specific Windows behavior"));
     assert!(developer_text.contains("Assertion usage"));
     assert!(developer_text.contains("write_file"));
     assert!(developer_text.contains("while"));
