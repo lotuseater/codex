@@ -546,6 +546,10 @@ fn reduce_text_slot(
     let original = text.clone();
     let original_tokens = approx_tokens(&original);
     stats.original_tokens = stats.original_tokens.saturating_add(original_tokens);
+    if is_auto_loop_continuation_prompt(&original) || is_prompt_reduction_replacement(&original) {
+        stats.reduced_tokens = stats.reduced_tokens.saturating_add(original_tokens);
+        return Ok(());
+    }
 
     let sha1 = sha1_hex(&original);
     let exact_preserve_reason = exact_preserve_reason(source, &original);
@@ -606,6 +610,21 @@ fn reduce_text_slot(
     stats.artifacts += 1;
     stats.reductions += 1;
     Ok(())
+}
+
+fn is_auto_loop_continuation_prompt(text: &str) -> bool {
+    let trimmed = text.trim_start();
+    (trimmed.starts_with("Automatic periodic loop continuation:")
+        || trimmed.starts_with("Automatic post-self-review loop continuation:"))
+        && trimmed.contains("Loop mode is on")
+        && trimmed.contains("Enter Plan mode before acting")
+}
+
+fn is_prompt_reduction_replacement(text: &str) -> bool {
+    let trimmed = text.trim_start();
+    trimmed.starts_with("[prompt reduction:")
+        && trimmed.contains("artifact:")
+        && trimmed.contains("recovery:")
 }
 
 fn reduce_tool_search_output(
@@ -2544,6 +2563,7 @@ mod batch_reduction_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use codex_protocol::models::FunctionCallOutputBody;
     use pretty_assertions::assert_eq;
     use tempfile::TempDir;
 
@@ -2678,6 +2698,76 @@ mod tests {
             panic!("expected message");
         };
         assert_eq!(content, &vec![ContentItem::InputText { text }]);
+    }
+
+    #[test]
+    fn preserves_repeated_auto_loop_continuations() {
+        let text = [
+            "Automatic periodic loop continuation: go on",
+            "",
+            "Loop mode is on, so follow-ups are likely. Enter Plan mode before acting. Every main-agent task plan prompt must inject a delegation decision: state what to delegate to subagents when delegation is useful, or state that the work stays local and why.",
+            "Include an Agent ROI Estimate with loop_followup_gain, call list_agents before spawning related follow-up work, prefer followup_task/send_message/resume_agent over a replacement agent, compact useful token-heavy agents before reuse, and decide what work to give any idle relevant agent.",
+        ]
+        .join("\n");
+        let mut items = vec![
+            message("user", text.clone(), MessageTextKind::Input),
+            message("user", text.clone(), MessageTextKind::Input),
+        ];
+        let temp = TempDir::new().unwrap();
+        let config = test_config(temp.path(), 0);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 0);
+        for item in items {
+            let ResponseItem::Message { content, .. } = item else {
+                panic!("expected message");
+            };
+            assert_eq!(content, vec![ContentItem::InputText { text: text.clone() }]);
+        }
+    }
+
+    #[test]
+    fn preserves_existing_prompt_reduction_replacement_blocks() {
+        let text = [
+            "[prompt reduction: duplicate_block]",
+            "original_chars: 1267",
+            "original_tokens_estimate: 317",
+            "sha1: 096392ae6bed98a68e774c836500913cb3099de7",
+            "artifact: `C:\\Users\\Oleh\\AppData\\Local\\Temp\\codex-prompt-reducer\\019e3a14-4ce9-7253-8eb9-c8c7858e7526\\prompt-item-0101-duplicate_block-096392ae6bed.txt`",
+            "recovery: read artifact before using exact lines.",
+            "",
+            "Exact duplicate of earlier prompt item `text-slot-98`.",
+        ]
+        .join("\n");
+        let mut items = vec![
+            structured_text_output("call-a", text.clone()),
+            structured_text_output("call-b", text.clone()),
+        ];
+        let temp = TempDir::new().unwrap();
+        let config = test_config(temp.path(), 0);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 0);
+        for item in items {
+            let ResponseItem::FunctionCallOutput { output, .. } = item else {
+                panic!("expected function output");
+            };
+            let FunctionCallOutputBody::ContentItems(content) = output.body else {
+                panic!("expected structured function output");
+            };
+            assert_eq!(
+                content,
+                vec![
+                    FunctionCallOutputContentItem::InputText { text: text.clone() },
+                    FunctionCallOutputContentItem::InputImage {
+                        image_url: "data:image/png;base64,AA==".to_string(),
+                        detail: None,
+                    },
+                ]
+            );
+        }
     }
 
     #[test]
