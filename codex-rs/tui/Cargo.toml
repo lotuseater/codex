@@ -156,6 +156,7 @@ arboard = { workspace = true }
 [dev-dependencies]
 codex-cli = { workspace = true }
 codex-mcp = { workspace = true }
+codex-tui-render = { workspace = true, features = ["test-support"] }
 core_test_support = { workspace = true }
 codex-utils-cargo-bin = { workspace = true }
 assert_matches = { workspace = true }

@@ -2249,7 +2249,7 @@ async fn inactive_thread_approval_bubbles_into_active_view() -> Result<()> {
         ThreadEventChannel::new_with_session(
             /*capacity*/ 1,
             ThreadSessionState {
-                approval_policy: AskForApproval::OnRequest,
+                approval_policy: AskForApproval::OnRequest.to_core(),
                 permission_profile: PermissionProfile::workspace_write(),
                 rollout_path: Some(test_path_buf("/tmp/agent-rollout.jsonl")),
                 ..test_thread_session(agent_thread_id, test_path_buf("/tmp/agent"))
@@ -2408,7 +2408,7 @@ async fn side_defers_subagent_approval_overlay_until_side_exits() -> Result<()> 
         ThreadEventChannel::new_with_session(
             /*capacity*/ 4,
             ThreadSessionState {
-                approval_policy: AskForApproval::OnRequest,
+                approval_policy: AskForApproval::OnRequest.to_core(),
                 permission_profile: PermissionProfile::workspace_write(),
                 rollout_path: Some(test_path_buf("/tmp/agent-rollout.jsonl")),
                 ..test_thread_session(agent_thread_id, test_path_buf("/tmp/agent"))
@@ -2782,7 +2782,7 @@ async fn inactive_thread_approval_badge_clears_after_turn_completion_notificatio
         ThreadEventChannel::new_with_session(
             /*capacity*/ 4,
             ThreadSessionState {
-                approval_policy: AskForApproval::OnRequest,
+                approval_policy: AskForApproval::OnRequest.to_core(),
                 permission_profile: PermissionProfile::workspace_write(),
                 rollout_path: Some(test_path_buf("/tmp/agent-rollout.jsonl")),
                 ..test_thread_session(agent_thread_id, test_path_buf("/tmp/agent"))
@@ -2835,7 +2835,7 @@ async fn inactive_thread_started_notification_initializes_replay_session() -> Re
     let agent_thread_id =
         ThreadId::from_string("00000000-0000-0000-0000-000000000202").expect("valid thread");
     let primary_session = ThreadSessionState {
-        approval_policy: AskForApproval::OnRequest,
+        approval_policy: AskForApproval::OnRequest.to_core(),
         permission_profile: PermissionProfile::workspace_write(),
         ..test_thread_session(main_thread_id, test_path_buf("/tmp/main"))
     };
@@ -2934,7 +2934,7 @@ async fn inactive_thread_started_notification_preserves_primary_model_when_path_
     let agent_thread_id =
         ThreadId::from_string("00000000-0000-0000-0000-000000000302").expect("valid thread");
     let primary_session = ThreadSessionState {
-        approval_policy: AskForApproval::OnRequest,
+        approval_policy: AskForApproval::OnRequest.to_core(),
         permission_profile: PermissionProfile::workspace_write(),
         ..test_thread_session(main_thread_id, test_path_buf("/tmp/main"))
     };
@@ -3004,7 +3004,7 @@ async fn thread_read_session_state_does_not_reuse_primary_permission_profile() {
     let read_thread_id =
         ThreadId::from_string("00000000-0000-0000-0000-000000000402").expect("valid thread");
     let primary_session = ThreadSessionState {
-        approval_policy: AskForApproval::OnRequest,
+        approval_policy: AskForApproval::OnRequest.to_core(),
         permission_profile: PermissionProfile::workspace_write(),
         ..test_thread_session(main_thread_id, test_path_buf("/tmp/main"))
     };
@@ -3718,7 +3718,7 @@ async fn render_clear_ui_header_after_long_transcript_for_snapshot() -> String {
             model: "gpt-test".to_string(),
             model_provider_id: "test-provider".to_string(),
             service_tier: None,
-            approval_policy: AskForApproval::Never,
+            approval_policy: AskForApproval::Never.to_core(),
             approvals_reviewer: ApprovalsReviewer::User,
             permission_profile: PermissionProfile::read_only(),
             active_permission_profile: None,
@@ -3974,7 +3974,7 @@ fn test_thread_session(thread_id: ThreadId, cwd: PathBuf) -> ThreadSessionState 
         model: "gpt-test".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
+        approval_policy: AskForApproval::Never.to_core(),
         approvals_reviewer: ApprovalsReviewer::User,
         permission_profile: PermissionProfile::read_only(),
         active_permission_profile: None,
@@ -4597,7 +4597,7 @@ async fn backtrack_selection_with_duplicate_history_targets_unique_turn() {
             model: "gpt-test".to_string(),
             model_provider_id: "test-provider".to_string(),
             service_tier: None,
-            approval_policy: AskForApproval::Never,
+            approval_policy: AskForApproval::Never.to_core(),
             approvals_reviewer: ApprovalsReviewer::User,
             permission_profile: PermissionProfile::read_only(),
             active_permission_profile: None,
@@ -4660,7 +4660,7 @@ async fn backtrack_selection_with_duplicate_history_targets_unique_turn() {
             model: "gpt-test".to_string(),
             model_provider_id: "test-provider".to_string(),
             service_tier: None,
-            approval_policy: AskForApproval::Never,
+            approval_policy: AskForApproval::Never.to_core(),
             approvals_reviewer: ApprovalsReviewer::User,
             permission_profile: PermissionProfile::read_only(),
             active_permission_profile: None,
@@ -4752,7 +4752,7 @@ async fn backtrack_resubmit_preserves_data_image_urls_in_user_turn() {
             model: "gpt-test".to_string(),
             model_provider_id: "test-provider".to_string(),
             service_tier: None,
-            approval_policy: AskForApproval::Never,
+            approval_policy: AskForApproval::Never.to_core(),
             approvals_reviewer: ApprovalsReviewer::User,
             permission_profile: PermissionProfile::read_only(),
             active_permission_profile: None,
@@ -5151,7 +5151,7 @@ async fn new_session_requests_shutdown_for_previous_conversation() {
             model: "gpt-test".to_string(),
             model_provider_id: "test-provider".to_string(),
             service_tier: None,
-            approval_policy: AskForApproval::Never,
+            approval_policy: AskForApproval::Never.to_core(),
             approvals_reviewer: ApprovalsReviewer::User,
             permission_profile: PermissionProfile::read_only(),
             active_permission_profile: None,
@@ -5272,7 +5272,7 @@ async fn clear_only_ui_reset_preserves_chat_session_state() {
             model: "gpt-test".to_string(),
             model_provider_id: "test-provider".to_string(),
             service_tier: None,
-            approval_policy: AskForApproval::Never,
+            approval_policy: AskForApproval::Never.to_core(),
             approvals_reviewer: ApprovalsReviewer::User,
             permission_profile: PermissionProfile::read_only(),
             active_permission_profile: None,

@@ -224,6 +224,12 @@ impl Renderable for ColumnRenderable<'_> {
     }
 }
 
+impl<'a> Default for ColumnRenderable<'a> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'a> ColumnRenderable<'a> {
     pub fn new() -> Self {
         Self { children: vec![] }
@@ -257,6 +263,12 @@ pub struct FlexRenderable<'a> {
 ///
 /// Children with flex factor > 0 will be allocated the remaining space after the non-flex children,
 /// proportional to the flex factor.
+impl<'a> Default for FlexRenderable<'a> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'a> FlexRenderable<'a> {
     pub fn new() -> Self {
         Self { children: vec![] }
@@ -421,6 +433,12 @@ impl Renderable for RowRenderable<'_> {
             x = x.saturating_add(*width);
         }
         SetCursorStyle::DefaultUserShape
+    }
+}
+
+impl<'a> Default for RowRenderable<'a> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

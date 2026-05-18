@@ -761,7 +761,7 @@ mod tests {
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
-                approval_policy: AskForApproval::Never,
+                approval_policy: AskForApproval::Never.to_core(),
                 approvals_reviewer: ApprovalsReviewer::User,
                 permission_profile: PermissionProfile::read_only(),
                 active_permission_profile: None,

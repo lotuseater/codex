@@ -5,7 +5,6 @@ use codex_app_server_protocol::Thread;
 use codex_protocol::ThreadId;
 use codex_protocol::models::ActivePermissionProfile;
 use codex_protocol::models::PermissionProfile;
-use codex_protocol::protocol::AskForApproval;
 
 impl App {
     pub(super) async fn sync_active_thread_permission_settings_to_cached_session(&mut self) {
@@ -13,7 +12,7 @@ impl App {
             return;
         };
 
-        let approval_policy = AskForApproval::from(self.config.permissions.approval_policy.value());
+        let approval_policy = self.config.permissions.approval_policy.value();
         let approvals_reviewer = self.config.approvals_reviewer;
         let permission_profile = self
             .chat_widget
@@ -64,9 +63,7 @@ impl App {
                 model: self.chat_widget.current_model().to_string(),
                 model_provider_id: self.config.model_provider_id.clone(),
                 service_tier: self.chat_widget.current_service_tier().map(str::to_string),
-                approval_policy: AskForApproval::from(
-                    self.config.permissions.approval_policy.value(),
-                ),
+                approval_policy: self.config.permissions.approval_policy.value(),
                 approvals_reviewer: self.config.approvals_reviewer,
                 permission_profile: permission_profile.clone(),
                 active_permission_profile: active_permission_profile.clone(),
@@ -141,7 +138,7 @@ mod tests {
             model: "gpt-test".to_string(),
             model_provider_id: "test-provider".to_string(),
             service_tier: None,
-            approval_policy: AskForApproval::Never,
+            approval_policy: AskForApproval::Never.to_core(),
             approvals_reviewer: ApprovalsReviewer::User,
             permission_profile: PermissionProfile::read_only(),
             active_permission_profile: None,
@@ -163,7 +160,7 @@ mod tests {
             ThreadId::from_string("00000000-0000-0000-0000-000000000402").expect("valid thread");
         let main_session = test_thread_session(main_thread_id, test_path_buf("/tmp/main"));
         let side_session = ThreadSessionState {
-            approval_policy: AskForApproval::OnRequest,
+            approval_policy: AskForApproval::OnRequest.to_core(),
             permission_profile: PermissionProfile::workspace_write(),
             ..test_thread_session(side_thread_id, test_path_buf("/tmp/side"))
         };
@@ -190,7 +187,7 @@ mod tests {
         app.side_threads
             .insert(side_thread_id, SideThreadState::new(main_thread_id));
         app.config.permissions.approval_policy =
-            codex_config::Constrained::allow_any(AskForApproval::OnRequest);
+            codex_config::Constrained::allow_any(AskForApproval::OnRequest.to_core());
         app.config.approvals_reviewer = ApprovalsReviewer::AutoReview;
         let expected_permission_profile = PermissionProfile::workspace_write();
         app.chat_widget.handle_thread_session(main_session.clone());
@@ -206,7 +203,7 @@ mod tests {
             .await;
 
         let expected_main_session = ThreadSessionState {
-            approval_policy: AskForApproval::OnRequest,
+            approval_policy: AskForApproval::OnRequest.to_core(),
             approvals_reviewer: ApprovalsReviewer::AutoReview,
             permission_profile: expected_permission_profile,
             ..main_session
@@ -279,13 +276,13 @@ mod tests {
         );
         app.chat_widget.handle_thread_session(session.clone());
         app.config.permissions.approval_policy =
-            codex_config::Constrained::allow_any(AskForApproval::OnRequest);
+            codex_config::Constrained::allow_any(AskForApproval::OnRequest.to_core());
 
         app.sync_active_thread_permission_settings_to_cached_session()
             .await;
 
         let expected_session = ThreadSessionState {
-            approval_policy: AskForApproval::OnRequest,
+            approval_policy: AskForApproval::OnRequest.to_core(),
             permission_profile: profile,
             ..session
         };

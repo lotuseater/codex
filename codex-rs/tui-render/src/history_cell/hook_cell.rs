@@ -279,14 +279,14 @@ impl HookCell {
             .min()
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn expire_quiet_runs_now_for_test(&mut self) {
         for run in &mut self.runs {
             run.expire_quiet_linger_now_for_test();
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn reveal_running_runs_now_for_test(&mut self) {
         let now = Instant::now();
         for run in &mut self.runs {
@@ -294,7 +294,7 @@ impl HookCell {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn reveal_running_runs_after_delayed_redraw_for_test(&mut self) {
         let now = Instant::now();
         for run in &mut self.runs {
@@ -383,7 +383,7 @@ impl Renderable for HookCell {
 }
 
 impl HookRunCell {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fn expire_quiet_linger_now_for_test(&mut self) {
         if let HookRunState::QuietLinger {
             removal_deadline, ..
@@ -393,7 +393,7 @@ impl HookRunCell {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fn reveal_running_now_for_test(&mut self, now: Instant) {
         if let HookRunState::PendingReveal {
             reveal_deadline, ..
@@ -403,7 +403,7 @@ impl HookRunCell {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fn reveal_running_after_delayed_redraw_for_test(&mut self, now: Instant) {
         if let HookRunState::PendingReveal {
             reveal_deadline, ..
