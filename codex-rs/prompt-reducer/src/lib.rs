@@ -1,4 +1,6 @@
 use codex_protocol::models::ContentItem;
+use codex_protocol::models::FunctionCallOutputContentItem;
+use codex_protocol::models::FunctionCallOutputPayload;
 use codex_protocol::models::ResponseItem;
 use serde_json::Value;
 use sha1::Digest;
@@ -196,27 +198,16 @@ pub fn reduce_prompt_items(
                     .get(call_id)
                     .cloned()
                     .unwrap_or_else(|| "tool_output".to_string());
-                if let Some(text) = output.text_content_mut() {
-                    let recent_prompt_item = text_slot_index >= recent_text_start;
-                    text_slot_index += 1;
-                    if reduce_short_tool_output_bundle_slot(
-                        text,
-                        text_slot_index,
-                        short_tool_bundle.as_ref(),
-                        &mut stats,
-                    ) {
-                        continue;
-                    }
-                    reduce_text_slot(
-                        text,
-                        &source,
-                        text_slot_index,
-                        recent_prompt_item,
-                        config,
-                        &mut seen_hashes,
-                        &mut stats,
-                    )?;
-                }
+                reduce_function_output_text_slots(
+                    output,
+                    &source,
+                    &mut text_slot_index,
+                    recent_text_start,
+                    short_tool_bundle.as_ref(),
+                    config,
+                    &mut seen_hashes,
+                    &mut stats,
+                )?;
             }
             ResponseItem::ToolSearchOutput { tools, .. } => {
                 if !tools.is_empty() {
@@ -248,12 +239,85 @@ fn count_text_slots(items: &[ResponseItem]) -> usize {
                 .count(),
             ResponseItem::FunctionCallOutput { output, .. }
             | ResponseItem::CustomToolCallOutput { output, .. } => {
-                usize::from(output.text_content().is_some())
+                function_output_text_slot_count(output)
             }
             ResponseItem::ToolSearchOutput { tools, .. } => usize::from(!tools.is_empty()),
             _ => 0,
         })
         .sum()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn reduce_function_output_text_slots(
+    output: &mut FunctionCallOutputPayload,
+    source: &str,
+    text_slot_index: &mut usize,
+    recent_text_start: usize,
+    short_tool_bundle: Option<&ShortToolOutputBundle>,
+    config: &PromptReductionConfig,
+    seen_hashes: &mut HashMap<String, String>,
+    stats: &mut PromptReductionStats,
+) -> std::io::Result<()> {
+    if let Some(text) = output.text_content_mut() {
+        reduce_function_output_text_slot(
+            text,
+            source,
+            text_slot_index,
+            recent_text_start,
+            short_tool_bundle,
+            config,
+            seen_hashes,
+            stats,
+        )?;
+        return Ok(());
+    }
+
+    let Some(content_items) = output.content_items_mut() else {
+        return Ok(());
+    };
+    for content_item in content_items {
+        let FunctionCallOutputContentItem::InputText { text } = content_item else {
+            continue;
+        };
+        reduce_function_output_text_slot(
+            text,
+            source,
+            text_slot_index,
+            recent_text_start,
+            short_tool_bundle,
+            config,
+            seen_hashes,
+            stats,
+        )?;
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn reduce_function_output_text_slot(
+    text: &mut String,
+    source: &str,
+    text_slot_index: &mut usize,
+    recent_text_start: usize,
+    short_tool_bundle: Option<&ShortToolOutputBundle>,
+    config: &PromptReductionConfig,
+    seen_hashes: &mut HashMap<String, String>,
+    stats: &mut PromptReductionStats,
+) -> std::io::Result<()> {
+    let recent_prompt_item = *text_slot_index >= recent_text_start;
+    *text_slot_index += 1;
+    if reduce_short_tool_output_bundle_slot(text, *text_slot_index, short_tool_bundle, stats) {
+        return Ok(());
+    }
+    reduce_text_slot(
+        text,
+        source,
+        *text_slot_index,
+        recent_prompt_item,
+        config,
+        seen_hashes,
+        stats,
+    )
 }
 
 fn collect_call_sources(items: &[ResponseItem]) -> HashMap<String, String> {
@@ -311,29 +375,29 @@ fn short_tool_output_bundle(
             | ResponseItem::CustomToolCallOutput {
                 call_id, output, ..
             } => {
-                let Some(text) = output.text_content() else {
-                    continue;
-                };
-                let slot_zero = text_slot_index;
-                text_slot_index += 1;
-                if slot_zero >= recent_text_start {
-                    continue;
-                }
-                let source = call_sources
-                    .get(call_id)
-                    .map(String::as_str)
-                    .unwrap_or("tool_output");
-                if is_subagent_notification_message(text)
-                    || !is_short_recoverable_tool_output(source, text)
-                {
-                    continue;
-                }
-                let tokens = approx_tokens(text);
-                if !(SHORT_TOOL_ITEM_MIN_TOKENS..=SHORT_TOOL_ITEM_MAX_TOKENS).contains(&tokens) {
-                    continue;
-                }
-                indices.insert(slot_zero + 1);
-                total_tokens += tokens;
+                visit_function_output_texts(output, |text| {
+                    let slot_zero = text_slot_index;
+                    text_slot_index += 1;
+                    if slot_zero >= recent_text_start {
+                        return;
+                    }
+                    let source = call_sources
+                        .get(call_id)
+                        .map(String::as_str)
+                        .unwrap_or("tool_output");
+                    if is_subagent_notification_message(text)
+                        || !is_short_recoverable_tool_output(source, text)
+                    {
+                        return;
+                    }
+                    let tokens = approx_tokens(text);
+                    if !(SHORT_TOOL_ITEM_MIN_TOKENS..=SHORT_TOOL_ITEM_MAX_TOKENS).contains(&tokens)
+                    {
+                        return;
+                    }
+                    indices.insert(slot_zero + 1);
+                    total_tokens += tokens;
+                });
             }
             ResponseItem::ToolSearchOutput { tools, .. } => {
                 text_slot_index += usize::from(!tools.is_empty());
@@ -1249,7 +1313,7 @@ fn assistant_message_text_slots(items: &[ResponseItem]) -> Vec<(usize, String, &
             }
             ResponseItem::FunctionCallOutput { output, .. }
             | ResponseItem::CustomToolCallOutput { output, .. } => {
-                text_slot_index += usize::from(output.text_content().is_some());
+                text_slot_index += function_output_text_slot_count(output);
             }
             ResponseItem::ToolSearchOutput { tools, .. } => {
                 text_slot_index += usize::from(!tools.is_empty());
@@ -1280,10 +1344,10 @@ fn text_function_outputs(items: &[ResponseItem]) -> Vec<(usize, &str, &str)> {
             | ResponseItem::CustomToolCallOutput {
                 call_id, output, ..
             } => {
-                if let Some(text) = output.text_content() {
+                visit_function_output_texts(output, |text| {
                     text_slot_index += 1;
                     outputs.push((text_slot_index, call_id.as_str(), text));
-                }
+                });
             }
             ResponseItem::ToolSearchOutput { tools, .. } => {
                 text_slot_index += usize::from(!tools.is_empty());
@@ -1292,6 +1356,38 @@ fn text_function_outputs(items: &[ResponseItem]) -> Vec<(usize, &str, &str)> {
         }
     }
     outputs
+}
+
+fn function_output_text_slot_count(output: &FunctionCallOutputPayload) -> usize {
+    if output.text_content().is_some() {
+        return 1;
+    }
+    output
+        .content_items()
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| matches!(item, FunctionCallOutputContentItem::InputText { .. }))
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+fn visit_function_output_texts<'a>(
+    output: &'a FunctionCallOutputPayload,
+    mut visit: impl FnMut(&'a str),
+) {
+    if let Some(text) = output.text_content() {
+        visit(text);
+        return;
+    }
+    if let Some(content_items) = output.content_items() {
+        for content_item in content_items {
+            if let FunctionCallOutputContentItem::InputText { text } = content_item {
+                visit(text);
+            }
+        }
+    }
 }
 
 fn call_source(name: &str, arguments: &str) -> String {
@@ -2448,8 +2544,6 @@ mod batch_reduction_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use codex_protocol::models::FunctionCallOutputContentItem;
-    use codex_protocol::models::FunctionCallOutputPayload;
     use pretty_assertions::assert_eq;
     use tempfile::TempDir;
 
@@ -2680,6 +2774,36 @@ mod tests {
                 .unwrap()
                 .contains("source_read_digest")
         );
+    }
+
+    #[test]
+    fn reduces_structured_function_output_text_with_artifact_recovery() {
+        let source = (0..180)
+            .map(|index| format!("pub fn structured_function_{index}() -> usize {{ {index} }}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let mut items = vec![
+            shell_call("structured", "Get-Content -LiteralPath src/structured.rs"),
+            structured_text_output("structured", source),
+        ];
+        let temp = TempDir::new().unwrap();
+        let config = test_config(temp.path(), 1);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 1);
+        let ResponseItem::FunctionCallOutput { output, .. } = &items[1] else {
+            panic!("expected structured output");
+        };
+        let content_items = output.content_items().unwrap();
+        let FunctionCallOutputContentItem::InputText { text } = &content_items[0] else {
+            panic!("expected structured text output");
+        };
+        assert!(text.contains("source_read_digest"));
+        assert!(matches!(
+            &content_items[1],
+            FunctionCallOutputContentItem::InputImage { .. }
+        ));
     }
 
     #[test]
@@ -3106,6 +3230,48 @@ mod tests {
     }
 
     #[test]
+    fn short_tool_bundle_artifact_tracks_mixed_text_slots() {
+        let mut items = vec![
+            message("user", "keep this slot".to_string(), MessageTextKind::Input),
+            tool_search_output(vec![serde_json::json!({ "name": "tiny_tool" })]),
+            shell_call("image", "capture screenshot"),
+            image_output("image"),
+        ];
+        for index in 0..12 {
+            let call_id = format!("call-{index}");
+            items.push(shell_call(&call_id, &format!("echo mixed-{index}")));
+            items.push(shell_output(
+                &call_id,
+                format!(
+                    "Exit code: 0\nWall time: 0.{index} seconds\nOutput:\n{}",
+                    "successful mixed short command output with no next-step signal\n".repeat(4)
+                ),
+            ));
+        }
+        let temp = TempDir::new().unwrap();
+        let config = default_threshold_config(temp.path(), 0);
+
+        let stats = reduce_prompt_items(&mut items, &config).unwrap();
+
+        assert_eq!(stats.reductions, 12);
+        let ResponseItem::FunctionCallOutput { output, .. } = &items[5] else {
+            panic!("expected first text output");
+        };
+        let replacement = output.text_content().unwrap();
+        assert!(replacement.contains("call-0"));
+        assert!(!replacement.contains("image"));
+        let artifact = fs::read_dir(temp.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|entry| fs::read_to_string(entry.path()).unwrap())
+            .find(|text| text.contains("short_tool_output_bundle_artifact"))
+            .expect("expected bundle artifact");
+        assert!(artifact.contains("echo mixed-0"));
+        assert!(artifact.contains("echo mixed-11"));
+        assert!(!artifact.contains("capture screenshot"));
+    }
+
+    #[test]
     fn does_not_bundle_short_failed_tool_outputs() {
         let mut items = Vec::new();
         let mut originals = Vec::new();
@@ -3262,6 +3428,19 @@ mod tests {
         ResponseItem::FunctionCallOutput {
             call_id: call_id.to_string(),
             output: FunctionCallOutputPayload::from_content_items(vec![
+                FunctionCallOutputContentItem::InputImage {
+                    image_url: "data:image/png;base64,AA==".to_string(),
+                    detail: None,
+                },
+            ]),
+        }
+    }
+
+    fn structured_text_output(call_id: &str, text: String) -> ResponseItem {
+        ResponseItem::FunctionCallOutput {
+            call_id: call_id.to_string(),
+            output: FunctionCallOutputPayload::from_content_items(vec![
+                FunctionCallOutputContentItem::InputText { text },
                 FunctionCallOutputContentItem::InputImage {
                     image_url: "data:image/png;base64,AA==".to_string(),
                     detail: None,
