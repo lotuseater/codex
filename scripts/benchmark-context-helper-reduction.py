@@ -299,7 +299,7 @@ def calculate_helper_cost(trigger_count: int, model: HelperCostModel) -> tuple[i
         return 0, 0, 0
 
     if model.compact_every is None and model.name == "one_shot":
-        per_trigger = model.bundle_tokens + model.parent_overhead_tokens
+        per_trigger = model.bundle_tokens + model.summary_tokens + model.parent_overhead_tokens
         return per_trigger * trigger_count, 0, 0
 
     helper_state = 0
@@ -309,7 +309,12 @@ def calculate_helper_cost(trigger_count: int, model: HelperCostModel) -> tuple[i
     total_cost = 0
 
     for trigger_number in range(trigger_count):
-        total_cost += model.parent_overhead_tokens + model.bundle_tokens + helper_state
+        total_cost += (
+            model.parent_overhead_tokens
+            + model.bundle_tokens
+            + helper_state
+            + model.summary_tokens
+        )
         helper_state += model.state_growth_tokens
         max_helper_state = max(max_helper_state, helper_state)
         turns_since_compact += 1
@@ -649,7 +654,7 @@ Session sample: {session_count} newest JSONL files by mtime, capped by `--limit 
 - Context windows observed: {window_text}.
 - Sessions crossing thresholds: 80k tokens = {summary["sessions_over_80k"]}; 55% = {summary["sessions_over_55pct"]}; 60% = {summary["sessions_over_60pct"]}; 65% = {summary["sessions_over_65pct"]}; 70% = {summary["sessions_over_70pct"]}; 75% = {summary["sessions_over_75pct"]}.
 - Sessions with multi-agent tool calls: {summary["agent_call_sessions"]}; calls: {agent_call_text}.
-- Baseline helper model: {format_tokens(baseline_helper_cost)} helper bundle, {format_tokens(baseline_parent_overhead)} parent retained overhead, {format_tokens(baseline_summary_tokens)} retained root summary.
+- Baseline helper model: {format_tokens(baseline_helper_cost)} helper input bundle, {format_tokens(baseline_parent_overhead)} parent retained overhead, {format_tokens(baseline_summary_tokens)} helper response/root summary.
 
 ## Recommendation
 
@@ -665,7 +670,9 @@ For each session, a policy triggers when `last_token_usage.input_tokens >= model
 
 `gross_saved += max(0, future_input_tokens - summary_tokens)`
 
-`net_saved = gross_saved - helper_agent_tokens - parent_coordination_tokens`
+`helper_cost = helper_input_bundle + prior_helper_state + helper_summary_output + parent_coordination_tokens`
+
+`net_saved = gross_saved - helper_cost`
 
 Cooldown is a hard turn count in the default model. The separate bypass stress table shows why accumulated root input tokens are the wrong bypass signal: repeated high-context prompts quickly satisfy a small token threshold even when no genuinely new context has appeared.
 
@@ -683,7 +690,7 @@ The benchmark therefore treats 60%-65% as the practical early-reduction band and
 
 ## Threshold And Cooldown Sweep
 
-Baseline cost model: one-shot helper, {format_tokens(baseline_helper_cost)} helper bundle, {format_tokens(baseline_parent_overhead)} parent overhead, {format_tokens(baseline_summary_tokens)} retained summary.
+Baseline cost model: one-shot helper, {format_tokens(baseline_helper_cost)} helper input bundle, {format_tokens(baseline_parent_overhead)} parent overhead, {format_tokens(baseline_summary_tokens)} helper response/root summary.
 
 {markdown_table(["threshold", "cooldown", "strategy", "triggers", "sessions", "triggers/1k samples", "gross saved", "helper cost", "net saved", "net/trigger"], core_rows)}
 
@@ -701,7 +708,7 @@ This keeps the recommended 65% / 24-turn policy and varies only the accumulated-
 
 ## Helper State And Compaction
 
-This table keeps the recommended 65% / 24-turn policy, {format_tokens(baseline_helper_cost)} helper bundle, and {format_tokens(baseline_summary_tokens)} retained root summary. Persistent helper state grows by `summary_tokens + parent_overhead_tokens` after each reduction. A helper compaction costs the current helper state plus the compact output, then resets helper state to the compact output.
+This table keeps the recommended 65% / 24-turn policy, {format_tokens(baseline_helper_cost)} helper input bundle, and {format_tokens(baseline_summary_tokens)} helper response/root summary. Persistent helper state grows by `summary_tokens + parent_overhead_tokens` after each reduction. A helper compaction costs the current helper state plus the compact output, then resets helper state to the compact output.
 
 {markdown_table(["helper strategy", "triggers", "helper compactions", "max helper state", "helper cost", "net saved"], helper_rows)}
 
