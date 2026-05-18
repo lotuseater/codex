@@ -20,6 +20,10 @@ const SHORT_TOOL_BUNDLE_MIN_ITEMS: usize = 4;
 const SHORT_TOOL_BUNDLE_MIN_TOKENS: usize = 384;
 const SHORT_TOOL_ITEM_MIN_TOKENS: usize = 12;
 const SHORT_TOOL_ITEM_MAX_TOKENS: usize = 160;
+const SHORT_ASSISTANT_STATUS_BUNDLE_MIN_ITEMS: usize = 4;
+const SHORT_ASSISTANT_STATUS_BUNDLE_MIN_TOKENS: usize = 160;
+const SHORT_ASSISTANT_STATUS_ITEM_MIN_TOKENS: usize = 8;
+const SHORT_ASSISTANT_STATUS_ITEM_MAX_TOKENS: usize = 110;
 
 /// Configuration for prompt-only reduction.
 ///
@@ -90,6 +94,14 @@ struct ShortToolOutputBundle {
     replacement: String,
 }
 
+#[derive(Debug)]
+struct ShortAssistantStatusBundle {
+    indices: BTreeSet<usize>,
+    first_index: usize,
+    artifact_path: PathBuf,
+    replacement: String,
+}
+
 pub fn reduce_prompt_items(
     items: &mut [ResponseItem],
     config: &PromptReductionConfig,
@@ -103,6 +115,8 @@ pub fn reduce_prompt_items(
     let mut stats = PromptReductionStats::default();
     let short_tool_bundle =
         short_tool_output_bundle(items, config, recent_text_start, &call_sources)?;
+    let short_assistant_status_bundle =
+        short_assistant_status_bundle(items, config, recent_text_start)?;
     if let Some(bundle) = &short_tool_bundle {
         let artifact_text =
             short_tool_output_bundle_artifact(items, &bundle.indices, &call_sources);
@@ -110,6 +124,15 @@ pub fn reduce_prompt_items(
         seen_hashes.insert(
             sha1_hex(&artifact_text),
             "short_tool_output_bundle".to_string(),
+        );
+        stats.artifacts += 1;
+    }
+    if let Some(bundle) = &short_assistant_status_bundle {
+        let artifact_text = short_assistant_status_bundle_artifact(items, &bundle.indices);
+        write_artifact(&bundle.artifact_path, &artifact_text)?;
+        seen_hashes.insert(
+            sha1_hex(&artifact_text),
+            "short_assistant_status_bundle".to_string(),
         );
         stats.artifacts += 1;
     }
@@ -142,6 +165,15 @@ pub fn reduce_prompt_items(
                         ContentItem::InputImage { .. } => continue,
                     };
                     let recent_prompt_item = text_slot_index >= recent_text_start;
+                    if reduce_short_assistant_status_bundle_slot(
+                        text,
+                        text_slot_index,
+                        short_assistant_status_bundle.as_ref(),
+                        &mut stats,
+                    ) {
+                        text_slot_index += 1;
+                        continue;
+                    }
                     text_slot_index += 1;
                     reduce_text_slot(
                         text,
@@ -331,10 +363,91 @@ fn short_tool_output_bundle(
     }))
 }
 
+fn short_assistant_status_bundle(
+    items: &[ResponseItem],
+    config: &PromptReductionConfig,
+    recent_text_start: usize,
+) -> std::io::Result<Option<ShortAssistantStatusBundle>> {
+    let mut indices = BTreeSet::new();
+    let mut total_tokens = 0usize;
+    for (slot_index, source, text) in assistant_message_text_slots(items) {
+        if slot_index >= recent_text_start {
+            continue;
+        }
+        if !is_short_assistant_status_update(&source, text) {
+            continue;
+        }
+        let tokens = approx_tokens(text);
+        if !(SHORT_ASSISTANT_STATUS_ITEM_MIN_TOKENS..=SHORT_ASSISTANT_STATUS_ITEM_MAX_TOKENS)
+            .contains(&tokens)
+        {
+            continue;
+        }
+        indices.insert(slot_index);
+        total_tokens += tokens;
+    }
+    if indices.len() < SHORT_ASSISTANT_STATUS_BUNDLE_MIN_ITEMS
+        || total_tokens < SHORT_ASSISTANT_STATUS_BUNDLE_MIN_TOKENS
+    {
+        return Ok(None);
+    }
+    let bundle_text = assistant_message_text_slots(items)
+        .into_iter()
+        .filter(|(slot_index, _, _)| indices.contains(slot_index))
+        .map(|(_, _, text)| text.to_string())
+        .collect::<Vec<_>>()
+        .join("\n\n---\n\n");
+    let sha1 = sha1_hex(&bundle_text);
+    let artifact_path = artifact_path_for(
+        &config.artifact_dir,
+        *indices.first().unwrap_or(&0),
+        "short_assistant_status_bundle",
+        &sha1,
+    );
+    let replacement = render_short_assistant_status_bundle_replacement(
+        items,
+        &indices,
+        &artifact_path,
+        total_tokens,
+    );
+
+    Ok(Some(ShortAssistantStatusBundle {
+        first_index: *indices.first().unwrap_or(&0),
+        indices,
+        artifact_path,
+        replacement,
+    }))
+}
+
 fn reduce_short_tool_output_bundle_slot(
     text: &mut String,
     text_slot_index: usize,
     bundle: Option<&ShortToolOutputBundle>,
+    stats: &mut PromptReductionStats,
+) -> bool {
+    let Some(bundle) = bundle else {
+        return false;
+    };
+    if !bundle.indices.contains(&text_slot_index) {
+        return false;
+    }
+
+    let original_tokens = approx_tokens(text);
+    stats.original_tokens = stats.original_tokens.saturating_add(original_tokens);
+    if text_slot_index == bundle.first_index {
+        *text = bundle.replacement.clone();
+        stats.reduced_tokens = stats.reduced_tokens.saturating_add(approx_tokens(text));
+    } else {
+        text.clear();
+    }
+    stats.reductions += 1;
+    true
+}
+
+fn reduce_short_assistant_status_bundle_slot(
+    text: &mut String,
+    text_slot_index: usize,
+    bundle: Option<&ShortAssistantStatusBundle>,
     stats: &mut PromptReductionStats,
 ) -> bool {
     let Some(bundle) = bundle else {
@@ -500,19 +613,15 @@ fn classify_candidate(
         });
     }
 
-    if recent_prompt_item {
-        if exact_preserve_reason.is_none()
-            && let Some(candidate) = recent_tool_output_candidate(source, text, config)
-        {
-            return Some(candidate);
-        }
-        return None;
-    }
-
-    if exact_preserve_reason.is_none()
-        && let Some(candidate) = single_use_prompt_candidate(source, text)
+    if !recent_prompt_item
+        && exact_preserve_reason.is_none()
+        && let Some(digest) = workflow_batch_success_digest(source, text)
     {
-        return Some(candidate);
+        return Some(CandidateReduction {
+            reason: "workflow_batch_success_digest",
+            digest,
+            disposition: CandidateDisposition::ArtifactReplacement,
+        });
     }
 
     if exact_preserve_reason == Some("source_read") {
@@ -535,6 +644,21 @@ fn classify_candidate(
             digest: source_read_digest(source, text),
             disposition: CandidateDisposition::ArtifactReplacement,
         });
+    }
+
+    if recent_prompt_item {
+        if exact_preserve_reason.is_none()
+            && let Some(candidate) = recent_tool_output_candidate(source, text, config)
+        {
+            return Some(candidate);
+        }
+        return None;
+    }
+
+    if exact_preserve_reason.is_none()
+        && let Some(candidate) = single_use_prompt_candidate(source, text)
+    {
+        return Some(candidate);
     }
 
     if exact_preserve_reason == Some("diff_hunk") {
@@ -575,6 +699,13 @@ fn classify_candidate(
         return Some(CandidateReduction {
             reason: "completed_plan_checkpoint",
             digest: completed_plan_checkpoint_digest(text),
+            disposition: CandidateDisposition::ArtifactReplacement,
+        });
+    }
+    if is_single_use_helper_prompt(text) {
+        return Some(CandidateReduction {
+            reason: "single_use_helper_prompt",
+            digest: helper_prompt_digest(text),
             disposition: CandidateDisposition::ArtifactReplacement,
         });
     }
@@ -709,11 +840,186 @@ fn candidate_threshold(reason: &str, config: &PromptReductionConfig) -> Candidat
             min_chars: 1_200,
             min_saved_tokens: 64,
         },
+        "workflow_batch_success_digest" => CandidateThreshold {
+            min_chars: 320,
+            min_saved_tokens: 8,
+        },
         _ => CandidateThreshold {
             min_chars: config.min_reduce_chars,
             min_saved_tokens: config.min_saved_tokens,
         },
     }
+}
+
+fn is_short_assistant_status_update(source: &str, text: &str) -> bool {
+    let lower_source = source.to_ascii_lowercase();
+    if !lower_source.starts_with("message:assistant") {
+        return false;
+    }
+    if exact_preserve_reason(source, text).is_some() {
+        return false;
+    }
+    let trimmed = text.trim();
+    if trimmed.chars().count() > 520 || trimmed.lines().count() > 4 {
+        return false;
+    }
+    let lower = trimmed
+        .to_ascii_lowercase()
+        .replace(['\u{2019}', '\u{2018}'], "'");
+    if has_durable_status_marker(&lower) {
+        return false;
+    }
+    let first_person_progress = [
+        "i'm ",
+        "i am ",
+        "i'll ",
+        "i will ",
+        "i've ",
+        "i have ",
+        "i started ",
+    ]
+    .iter()
+    .any(|prefix| lower.starts_with(prefix))
+        && [
+            "checking",
+            "reading",
+            "inspecting",
+            "looking",
+            "running",
+            "rerunning",
+            "watching",
+            "waiting",
+            "continuing",
+            "updating",
+            "testing",
+            "verifying",
+            "measuring",
+            "simulating",
+            "porting",
+            "working",
+            "gathering",
+            "building",
+            "starting",
+            "keeping",
+            "using",
+            "folding",
+        ]
+        .iter()
+        .any(|word| lower.contains(word));
+    let process_progress = lower.starts_with("the ")
+        && (lower.contains(" is still running")
+            || lower.contains(" is running")
+            || lower.contains(" is still working"));
+    first_person_progress || process_progress
+}
+
+fn has_durable_status_marker(lower: &str) -> bool {
+    [
+        "<proposed_plan",
+        "finding",
+        "blocker",
+        "failed",
+        "failure",
+        "error",
+        "panic",
+        "passed",
+        "verified",
+        "verification",
+        "handoff",
+        "final answer",
+        "artifact:",
+        "report:",
+        "committed",
+        "commit ",
+        "diff --git",
+        "*** begin patch",
+        "assert_eq!",
+    ]
+    .iter()
+    .any(|marker| lower.contains(marker))
+}
+
+fn workflow_batch_success_digest(source: &str, text: &str) -> Option<String> {
+    if !is_successful_workflow_batch_output(source, text) {
+        return None;
+    }
+    let summary = workflow_batch_summary_lines(text);
+    Some(format!(
+        "workflow_batch_success_digest\n{}\nlines_total: {}\nexcerpt:\n{}",
+        if summary.is_empty() {
+            "summary: successful workflow_batch output; exact step details are recoverable from the artifact"
+                .to_string()
+        } else {
+            summary.join("\n")
+        },
+        text.lines().count(),
+        excerpt(text)
+    ))
+}
+
+fn is_successful_workflow_batch_output(source: &str, text: &str) -> bool {
+    let lower_source = source.to_ascii_lowercase();
+    if !lower_source.contains("workflow_batch") {
+        return false;
+    }
+    if let Ok(Value::Object(map)) = serde_json::from_str::<Value>(text) {
+        let status_success = map
+            .get("status")
+            .and_then(Value::as_str)
+            .is_some_and(is_successful_workflow_batch_status);
+        let steps_failed = map.get("steps_failed").and_then(Value::as_u64).unwrap_or(0);
+        if status_success && steps_failed == 0 {
+            return true;
+        }
+    }
+    let lower = text.to_ascii_lowercase();
+    let compact = lower.split_whitespace().collect::<String>();
+    (compact.contains("\"status\":\"ok\"")
+        || compact.contains("\"status\":\"success\"")
+        || lower.contains("status: ok")
+        || lower.contains("status: success")
+        || lower.contains("status = ok")
+        || lower.contains("status = success"))
+        && !compact.contains("\"status\":\"failed\"")
+        && !lower.contains("status: failed")
+        && !workflow_batch_steps_failed_nonzero(text)
+}
+
+fn is_successful_workflow_batch_status(status: &str) -> bool {
+    status.eq_ignore_ascii_case("ok") || status.eq_ignore_ascii_case("success")
+}
+
+fn workflow_batch_steps_failed_nonzero(text: &str) -> bool {
+    text.lines().any(|line| {
+        let lower = line.to_ascii_lowercase();
+        lower.contains("steps_failed") && line.chars().any(|ch| ch.is_ascii_digit() && ch != '0')
+    })
+}
+
+fn workflow_batch_summary_lines(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            let lower = trimmed.to_ascii_lowercase();
+            if [
+                "status",
+                "report_path",
+                "log_path",
+                "steps_total",
+                "steps_failed",
+                "steps_skipped",
+                "vars",
+            ]
+            .iter()
+            .any(|marker| lower.contains(marker))
+            {
+                Some(truncate(trimmed, 160))
+            } else {
+                None
+            }
+        })
+        .take(16)
+        .collect()
 }
 
 fn recent_tool_output_candidate(
@@ -793,7 +1099,10 @@ fn is_short_recoverable_tool_output(source: &str, text: &str) -> bool {
     {
         return false;
     }
-    if exact_preserve_reason(source, text).is_some() || high_next_turn_utility_tool_output(text) {
+    if exact_preserve_reason(source, text).is_some()
+        || (high_next_turn_utility_tool_output(text)
+            && !is_successful_workflow_batch_output(source, text))
+    {
         return false;
     }
     true
@@ -868,6 +1177,87 @@ fn render_short_tool_output_bundle_replacement(
             sources.join(" | ")
         }
     )
+}
+
+fn short_assistant_status_bundle_artifact(
+    items: &[ResponseItem],
+    indices: &BTreeSet<usize>,
+) -> String {
+    let mut lines = vec![
+        "short_assistant_status_bundle_artifact".to_string(),
+        format!("items: {}", indices.len()),
+        "selection: stale assistant progress/status messages with low next-turn utility"
+            .to_string(),
+        String::new(),
+    ];
+    for (slot_index, source, text) in assistant_message_text_slots(items) {
+        if indices.contains(&slot_index) {
+            lines.extend([
+                format!("--- text slot {slot_index}"),
+                format!("source: {source}"),
+                format!("tokens_estimate: {}", approx_tokens(text)),
+                format!("sha1: {}", sha1_hex(text)),
+                "content:".to_string(),
+                text.to_string(),
+                String::new(),
+            ]);
+        }
+    }
+    lines.join("\n")
+}
+
+fn render_short_assistant_status_bundle_replacement(
+    items: &[ResponseItem],
+    indices: &BTreeSet<usize>,
+    artifact_path: &Path,
+    original_tokens: usize,
+) -> String {
+    let samples = assistant_message_text_slots(items)
+        .into_iter()
+        .filter(|(slot_index, _, _)| indices.contains(slot_index))
+        .map(|(_, _, text)| truncate(text.trim(), 96))
+        .take(4)
+        .collect::<Vec<_>>();
+    format!(
+        "[prompt reduction: short_assistant_status_bundle]\noriginal_items: {}\noriginal_tokens_estimate: {original_tokens}\nartifact: `{}`\nrecovery: read artifact before using exact progress/status updates.\n\nshort_assistant_status_bundle\nutility_estimate: low next-turn utility\nselection: older assistant progress/status updates; recent, findings, handoffs, plans, failures, and user/developer/system items preserved\nsamples: {}",
+        indices.len(),
+        artifact_path.display(),
+        if samples.is_empty() {
+            "(none)".to_string()
+        } else {
+            samples.join(" | ")
+        }
+    )
+}
+
+fn assistant_message_text_slots(items: &[ResponseItem]) -> Vec<(usize, String, &str)> {
+    let mut outputs = Vec::new();
+    let mut text_slot_index = 0usize;
+    for item in items {
+        match item {
+            ResponseItem::Message { role, content, .. } => {
+                for content_item in content {
+                    match content_item {
+                        ContentItem::InputText { text } | ContentItem::OutputText { text } => {
+                            let source = format!("message:{role}");
+                            outputs.push((text_slot_index, source, text.as_str()));
+                            text_slot_index += 1;
+                        }
+                        ContentItem::InputImage { .. } => {}
+                    }
+                }
+            }
+            ResponseItem::FunctionCallOutput { output, .. }
+            | ResponseItem::CustomToolCallOutput { output, .. } => {
+                text_slot_index += usize::from(output.text_content().is_some());
+            }
+            ResponseItem::ToolSearchOutput { tools, .. } => {
+                text_slot_index += usize::from(!tools.is_empty());
+            }
+            _ => {}
+        }
+    }
+    outputs
 }
 
 fn text_function_outputs(items: &[ResponseItem]) -> Vec<(usize, &str, &str)> {
@@ -1082,6 +1472,13 @@ fn single_use_prompt_candidate(source: &str, text: &str) -> Option<CandidateRedu
             disposition: CandidateDisposition::OmitFromPrompt,
         });
     }
+    if is_single_use_helper_prompt(text) {
+        return Some(CandidateReduction {
+            reason: "single_use_helper_prompt",
+            digest: helper_prompt_digest(text),
+            disposition: CandidateDisposition::ArtifactReplacement,
+        });
+    }
     if is_proposed_plan_message(text) {
         return Some(CandidateReduction {
             reason: "single_use_proposed_plan",
@@ -1100,6 +1497,56 @@ fn single_use_prompt_candidate(source: &str, text: &str) -> Option<CandidateRedu
         });
     }
     None
+}
+
+fn is_single_use_helper_prompt(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    if !(lower.contains("helper") || lower.contains("worker") || lower.contains("agent")) {
+        return false;
+    }
+    [
+        "context_area:",
+        "do_not_inspect:",
+        "scout_evidence:",
+        "why_agent / roi:",
+        "first_reads:",
+        "tool_hints:",
+        "token_tip:",
+        "verification:",
+        "handoff:",
+    ]
+    .iter()
+    .filter(|marker| lower.contains(*marker))
+    .count()
+        >= 6
+}
+
+fn helper_prompt_digest(text: &str) -> String {
+    let markers = [
+        "CONTEXT_AREA:",
+        "DO_NOT_INSPECT:",
+        "SCOUT_EVIDENCE:",
+        "WHY_AGENT / ROI:",
+        "FIRST_READS:",
+        "TOOL_HINTS:",
+        "TOKEN_TIP:",
+        "VERIFICATION:",
+        "HANDOFF:",
+    ]
+    .iter()
+    .filter(|marker| text.contains(*marker))
+    .copied()
+    .collect::<Vec<_>>();
+    format!(
+        "single_use_helper_prompt_digest\nmarkers: {}\nlines_total: {}\nexcerpt:\n{}",
+        if markers.is_empty() {
+            "(none)".to_string()
+        } else {
+            markers.join(", ")
+        },
+        text.lines().count(),
+        excerpt(text)
+    )
 }
 
 fn is_prompt_reduction_status_notice(source: &str, text: &str) -> bool {
@@ -1994,6 +2441,9 @@ fn excerpt(text: &str) -> String {
         .collect::<String>();
     format!("{head}\n...\n{tail}")
 }
+
+#[cfg(test)]
+mod batch_reduction_tests;
 
 #[cfg(test)]
 mod tests {
