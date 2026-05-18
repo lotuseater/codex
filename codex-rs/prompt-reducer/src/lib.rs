@@ -546,7 +546,7 @@ fn reduce_text_slot(
     let original = text.clone();
     let original_tokens = approx_tokens(&original);
     stats.original_tokens = stats.original_tokens.saturating_add(original_tokens);
-    if is_auto_loop_continuation_prompt(&original) || is_prompt_reduction_replacement(&original) {
+    if should_preserve_text_slot_from_reduction(&original) {
         stats.reduced_tokens = stats.reduced_tokens.saturating_add(original_tokens);
         return Ok(());
     }
@@ -610,6 +610,10 @@ fn reduce_text_slot(
     stats.artifacts += 1;
     stats.reductions += 1;
     Ok(())
+}
+
+fn should_preserve_text_slot_from_reduction(text: &str) -> bool {
+    is_auto_loop_continuation_prompt(text) || is_prompt_reduction_replacement(text)
 }
 
 fn is_auto_loop_continuation_prompt(text: &str) -> bool {
@@ -1183,6 +1187,7 @@ fn is_short_recoverable_tool_output(source: &str, text: &str) -> bool {
         return false;
     }
     if exact_preserve_reason(source, text).is_some()
+        || should_preserve_text_slot_from_reduction(text)
         || (high_next_turn_utility_tool_output(text)
             && !is_successful_workflow_batch_output(source, text))
     {
@@ -2740,10 +2745,9 @@ mod tests {
             "Exact duplicate of earlier prompt item `text-slot-98`.",
         ]
         .join("\n");
-        let mut items = vec![
-            structured_text_output("call-a", text.clone()),
-            structured_text_output("call-b", text.clone()),
-        ];
+        let mut items = (0..6)
+            .map(|index| structured_text_output(&format!("call-{index}"), text.clone()))
+            .collect::<Vec<_>>();
         let temp = TempDir::new().unwrap();
         let config = test_config(temp.path(), 0);
 
