@@ -4014,27 +4014,19 @@ async fn build_initial_context_includes_batch_mini_programming_when_workflow_bat
     let developer_text = developer_input_texts(&context).join("\n");
 
     assert!(developer_text.contains("<batch_mini_programming_instructions>"));
-    assert!(developer_text.contains("`workflow_batch` tool is available"));
+    assert!(developer_text.contains("never include `response_length`"));
+    assert!(developer_text.contains("step payloads are objects"));
+    assert!(developer_text.contains("Use focused shell/rg for one-off searches"));
     assert!(!developer_text.contains("When the `workflow_batch` tool is available"));
-    assert!(developer_text.contains("dependent deterministic local workflows"));
-    assert!(developer_text.contains("Use it proactively"));
-    assert!(developer_text.contains("choose `workflow_batch` before shell commands"));
-    assert!(developer_text.contains("single read-only probes"));
-    assert!(developer_text.contains("bounded recursive conditional scans"));
+    assert!(developer_text.contains("compact root-confined deterministic local file/JSON IO"));
     assert!(
-        developer_text
-            .contains("Step keywords: `set`, `set_vars`, `ensure_dir`, `stat_path`, `list_files`")
+        developer_text.contains("bounded scans, transforms, assertions, loops, and reductions")
     );
-    assert!(developer_text.contains("PowerShell substitutions"));
-    assert!(developer_text.contains("Expression/composite types"));
-    assert!(developer_text.contains("Functional collection usage"));
-    assert!(developer_text.contains("Prefer Python when a task needs arbitrary algorithms"));
-    assert!(developer_text.contains("Prefer cmd only for cmd/batch-specific Windows behavior"));
-    assert!(developer_text.contains("Assertion usage"));
-    assert!(developer_text.contains("write_file"));
-    assert!(developer_text.contains("while"));
-    assert!(developer_text.contains("Command execution remains on the normal approval path"));
-    assert!(developer_text.contains("Keep batches compact"));
+    assert!(developer_text.contains("Use `workflow_batch` for compact root-confined"));
+    assert!(developer_text.contains("`spec` is `{\"steps\":[...]}`"));
+    assert!(developer_text.contains("exactly one of `spec` or `spec_path`"));
+    assert!(developer_text.contains("Python for richer algorithms or reusable prototypes"));
+    assert!(developer_text.contains("Keep batches small"));
 }
 
 #[tokio::test]

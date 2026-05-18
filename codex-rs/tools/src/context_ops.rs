@@ -104,7 +104,7 @@ pub fn create_context_ops_tools() -> Vec<ToolSpec> {
 pub fn create_workflow_batch_tool() -> ToolSpec {
     create_tool(
         WORKFLOW_BATCH_TOOL_NAME,
-        "Run a root-confined local workflow-batch spec for dependent deterministic file/JSON/edit/assert/control-flow work and return a compact execution summary. Use inline `spec` for one-shot dependent batches. Prefer this over shell commands for repeated file IO, JSON transforms, map/filter/reduce/scan operations, assertions, bounded recursive conditional scans, stat_path/list_files/ensure_dir checks, and safe PowerShell-like substitutions. Use Python for richer algorithms/data structures/libraries, cmd only for cmd/batch-specific Windows behavior, and shell/rg for single read-only probes, one-off searches, and unbounded repo-wide scans. Command execution is not exposed through this tool.",
+        "Run a root-confined local workflow-batch spec for dependent deterministic file/JSON/edit/assert/control-flow work and return a compact execution summary. Use inline `spec` for one-shot dependent batches; alternatively pass `spec_path`. Top-level arguments are exactly one of `spec` or `spec_path`, plus optional `workdir`, `report_path`, and `log_path`; do not include `response_length`. Prefer this over shell commands for repeated file IO, JSON transforms, map/filter/reduce/scan operations, assertions, bounded recursive conditional scans, stat_path/list_files/ensure_dir checks, and safe PowerShell-like substitutions. Use Python for richer algorithms/data structures/libraries, cmd only for cmd/batch-specific Windows behavior, and shell/rg for single read-only probes, one-off searches, and unbounded repo-wide scans. Command execution is not exposed through this tool.",
         object_schema(
             [
                 (
@@ -175,7 +175,7 @@ fn inline_spec_schema() -> JsonSchema {
         Some(AdditionalProperties::Boolean(true)),
     );
     schema.description = Some(
-        "Inline workflow-batch JSON spec. Provide exactly one of spec_path or spec. Shape: {\"steps\":[...]}. Step keywords include set/set_vars, ensure_dir, stat_path, list_files, read_file, read_json, write_file, append_file, write_json, copy_file, edit_file, assert, for_each, while, and branch steps with if/then/else. Expressions are JSON values and support scalars, arrays, object records via literal, refs, functional operators such as map/filter/reduce/scan, object operators such as keys/values/entries/from_entries/merge/pick/omit, comparisons eq/ne/lt/lte/gt/gte, and string/set helpers.".to_string(),
+        "Inline workflow-batch JSON spec. Provide exactly one of spec_path or spec. Shape: {\"steps\":[...]}. Step payloads are objects such as {\"read_json\":{\"path\":\"data.json\"}}, not bare path strings. Step keywords include set/set_vars, ensure_dir, stat_path, list_files, read_file, read_json, write_file, append_file, write_json, copy_file, edit_file, assert, for_each, while, and branch steps with if/then/else. Expressions are JSON values and support scalars, arrays, object records via literal, refs, functional operators such as map/filter/reduce/scan, object operators such as keys/values/entries/from_entries/merge/pick/omit, comparisons eq/ne/lt/lte/gt/gte, and string/set helpers.".to_string(),
     );
     schema
 }

@@ -27,6 +27,9 @@ fn workflow_batch_tool_spec_is_compact_and_named() {
     assert_eq!(tool.parameters.required.as_deref(), None);
     assert!(tool.description.contains("root-confined"));
     assert!(tool.description.contains("inline `spec`"));
+    assert!(tool.description.contains("spec_path"));
+    assert!(tool.description.contains("report_path"));
+    assert!(tool.description.contains("response_length"));
     assert!(tool.description.contains("dependent deterministic"));
     assert!(
         tool.description
@@ -60,5 +63,7 @@ fn workflow_batch_tool_spec_is_compact_and_named() {
     assert!(spec_description.contains("ensure_dir"));
     assert!(spec_description.contains("stat_path"));
     assert!(spec_description.contains("list_files"));
+    assert!(spec_description.contains("Step payloads are objects"));
+    assert!(spec_description.contains("not bare path strings"));
     assert!(spec_description.contains("object records via literal"));
 }
