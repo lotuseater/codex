@@ -224,6 +224,7 @@ pub enum CompactionReason {
     ContextLimit,
     ModelDownshift,
     SemanticCheckpoint,
+    EarlyContextPressure,
     RestoredSession,
 }
 

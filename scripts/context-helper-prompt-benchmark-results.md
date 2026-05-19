@@ -25,11 +25,13 @@ The ignored artifact directory contains the raw transcript excerpts, reducer pro
 
 ## Prompt Variants
 
+- `no_nudge`: empty reducer instruction used as a control in the targeted rerun
+- `standard_compaction_template`: archived pre-prune production checkpoint template used as a legacy control
 - `prune`: user's direct pruning prompt
 - `delta`: merge prior reduced context with new context delta
 - `evidence`: preserve implementation evidence, commands, outputs, constraints, and uncertainty
 
-All variants in the final v4 run received the same canonical reducer input: a deterministic prior summary plus the raw new context delta. Deterministic scoring and LLM judging used that same canonical input. Judge labels were blinded and balanced across A/B/C so each variant appeared under each label exactly four times across the 12 judgments.
+The three custom variants in the final v4 run received the same canonical reducer input: a deterministic prior summary plus the raw new context delta. Deterministic scoring and LLM judging used that same canonical input. Judge labels were blinded and balanced across A/B/C so each custom variant appeared under each label exactly four times across the 12 judgments. The current benchmark script also supports the `no_nudge` and `standard_compaction_template` baselines; the headline metrics below only include rows present in the final v4 run.
 
 ## Headline Metrics
 
@@ -52,6 +54,32 @@ All variants in the final v4 run received the same canonical reducer input: a de
 The evidence-preserving prompt retained the most paths and commands in this small run. The blinded judge split was tied between `prune` and `evidence` at 5 of 12 wins each, with `delta` winning 2 of 12. Evidence produced larger summaries, so it is not a pure token-minimization winner.
 
 The result should be treated as directional rather than final. It has only 12 judge rows and one LLM judgment per sample.
+
+## Targeted No-Nudge Control
+
+Additional targeted control run:
+`logs/context-helper-prompt-benchmarks/targeted-nonudge-control-v1`
+
+Configuration:
+
+- Thresholds: 20%, 30%
+- Selected samples: 3 per threshold, 6 total
+- Variants: `no_nudge`, `prune`, `delta`, `evidence`
+- Reducer rows: 24
+- Judge rows: 6
+
+| variant | ok rows | avg compression | avg path retain | avg command retain | avg constraint retain | avg noise markers | judge best-count |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| no_nudge | 6 | 0.073 | 0.069 | 0.022 | 0.000 | 0.000 | 0 |
+| prune | 6 | 0.202 | 0.457 | 0.136 | 0.000 | 0.000 | 0 |
+| delta | 6 | 0.186 | 0.469 | 0.033 | 0.000 | 0.000 | 0 |
+| evidence | 6 | 0.304 | 0.533 | 0.243 | 0.000 | 0.000 | 6 |
+
+The no-nudge control was not competitive on this targeted slice. It compressed aggressively but lost nearly all concrete evidence, and the blinded judge selected `evidence` for every case. One judge response had an unescaped newline inside a JSON string; the benchmark parser now salvages the structured label and score fields from that recoverable form.
+
+## Standard Template Baseline Path
+
+The benchmark and reporting scripts now include `standard_compaction_template` as an ordered baseline. The reducer prompt body is read directly from `codex-rs/core/templates/compact/prompt.md` and is sent through the same benchmark safety prefix and canonical full-context wrapper as the custom full-context variants. Report generation derives the ordered variant list from `reductions.jsonl`, so existing runs without standard-template rows still regenerate, while new runs can compare the shipped template against the custom nudges directly.
 
 ## Readable quality artifacts
 

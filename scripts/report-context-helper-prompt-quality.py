@@ -12,16 +12,18 @@ import sys
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BENCHMARK_SCRIPT = REPO_ROOT / "scripts" / "benchmark-context-helper-prompt-variants.py"
 DEFAULT_RUN_DIR = REPO_ROOT / "logs" / "context-helper-prompt-benchmarks" / "full-20-30-s6-v4"
-VARIANTS = ("prune", "delta", "evidence")
+VARIANTS = ("no_nudge", "standard_compaction_template", "prune", "delta", "evidence")
 
 
 VARIANT_NAMES = {
+    "no_nudge": "No-nudge control",
+    "standard_compaction_template": "Standard compaction template",
     "prune": "Simple prune",
     "delta": "Delta merge",
     "evidence": "Evidence-preserving",
@@ -107,6 +109,29 @@ def num(value: float | None, digits: int = 1) -> str:
     if value is None:
         return "n/a"
     return f"{value:.{digits}f}"
+
+
+def variant_name(variant: str) -> str:
+    return VARIANT_NAMES.get(variant, variant.replace("_", " ").title())
+
+
+def quality_cell(
+    rows_by_sample_variant: dict[tuple[str, str], QualityRow],
+    sample_id: str,
+    variant: str,
+) -> str:
+    row = rows_by_sample_variant.get((sample_id, variant))
+    if row is None:
+        return "n/a"
+    return num(row.quality_score)
+
+
+def sample_judge_winner(sample_id: str, judge_index: dict[tuple[str, str], dict[str, Any]]) -> str:
+    for variant in VARIANTS:
+        winner = judge_index.get((sample_id, variant), {}).get("best_variant")
+        if winner:
+            return winner
+    return "n/a"
 
 
 def markdown_table(headers: list[str], rows: list[list[Any]]) -> str:
@@ -284,6 +309,13 @@ def quality_from_row(
     )
 
 
+def mean_present(values: Iterable[float | None]) -> float | None:
+    present = [value for value in values if value is not None]
+    if not present:
+        return None
+    return statistics.mean(present)
+
+
 def aggregate_variant(rows: list[QualityRow]) -> dict[str, Any]:
     total_prompt = sum(row.prompt_tokens for row in rows)
     total_output = sum(row.output_tokens for row in rows)
@@ -298,11 +330,11 @@ def aggregate_variant(rows: list[QualityRow]) -> dict[str, Any]:
         "avg_evidence": statistics.mean(row.evidence_score for row in rows),
         "avg_readiness": statistics.mean(row.readiness_score for row in rows),
         "avg_concision": statistics.mean(row.concision_score for row in rows),
-        "avg_judge": statistics.mean(row.judge_score for row in rows if row.judge_score is not None),
-        "path_retain": statistics.mean(row.path_retain for row in rows if row.path_retain is not None),
-        "command_retain": statistics.mean(row.command_retain for row in rows if row.command_retain is not None),
-        "number_retain": statistics.mean(row.number_retain for row in rows if row.number_retain is not None),
-        "constraint_retain": statistics.mean(row.constraint_retain for row in rows if row.constraint_retain is not None),
+        "avg_judge": mean_present(row.judge_score for row in rows),
+        "path_retain": mean_present(row.path_retain for row in rows),
+        "command_retain": mean_present(row.command_retain for row in rows),
+        "number_retain": mean_present(row.number_retain for row in rows),
+        "constraint_retain": mean_present(row.constraint_retain for row in rows),
     }
 
 
@@ -314,6 +346,18 @@ def threshold_aggregate(rows: list[QualityRow]) -> dict[tuple[int, str], dict[st
 
 
 def variant_observation(variant: str) -> tuple[str, str, str]:
+    if variant == "no_nudge":
+        return (
+            "Control path for the benchmark wrapper without an explicit reducer instruction.",
+            "It can compress aggressively while losing task, path, command, and verification evidence.",
+            "Useful as a floor for judging whether any reduction instruction improves continuation quality.",
+        )
+    if variant == "standard_compaction_template":
+        return (
+            "Direct baseline using the production compaction template from codex-rs/core/templates/compact/prompt.md.",
+            "It is intentionally general and may preserve high-level handoff structure more than benchmark-specific evidence.",
+            "Best comparison point for deciding whether custom nudges improve over the shipped checkpoint prompt.",
+        )
     if variant == "prune":
         return (
             "Closest to the user's natural-language reduction prompt. It usually keeps the current goal, paths, and short next-action lists when those are prominent.",
@@ -326,10 +370,16 @@ def variant_observation(variant: str) -> tuple[str, str, str]:
             "It is most likely to omit raw evidence, command details, and older constraints if the model decides they were already represented.",
             "Best for frequent reductions where a prior checkpoint is trusted; riskier as a standalone context checkpoint for another main agent.",
         )
+    if variant == "evidence":
+        return (
+            "Best at preserving concrete paths, statuses, commands, numbers, and uncertainty markers.",
+            "It spends more tokens and sometimes keeps evidence that may no longer matter after the immediate task is clear.",
+            "Best continuation quality when the next agent must implement or verify from the checkpoint without rereading raw logs.",
+        )
     return (
-        "Best at preserving concrete paths, statuses, commands, numbers, and uncertainty markers.",
-        "It spends more tokens and sometimes keeps evidence that may no longer matter after the immediate task is clear.",
-        "Best continuation quality when the next agent must implement or verify from the checkpoint without rereading raw logs.",
+        "No curated observation is available for this run-specific variant.",
+        "Review the per-sample evidence table before using it as a default.",
+        "Treat it as an exploratory prompt until it has enough benchmark rows and judge coverage.",
     )
 
 
@@ -415,7 +465,7 @@ def build_main_report(
             ],
             [
                 [
-                    VARIANT_NAMES[variant],
+                    variant_name(variant),
                     num(by_variant[variant]["avg_quality"]),
                     num(by_variant[variant]["weighted_quality"]),
                     pct(by_variant[variant]["weighted_saved_percent"]),
@@ -441,7 +491,7 @@ def build_main_report(
             threshold_rows.append(
                 [
                     f"{threshold}%",
-                    VARIANT_NAMES[variant],
+                    variant_name(variant),
                     num(agg["avg_quality"]),
                     pct(agg["weighted_saved_percent"]),
                     f"{agg['avg_output_tokens']:.0f}",
@@ -466,7 +516,7 @@ def build_main_report(
             for sample in sample_rows
             if judge_index.get((sample["sample_id"], variant), {}).get("best")
         )
-        lines.append(f"### {VARIANT_NAMES[variant]}")
+        lines.append(f"### {variant_name(variant)}")
         lines.append("")
         lines.append(f"- Average quality: {agg['avg_quality']:.1f}/100.")
         lines.append(f"- Weighted tokens saved: {agg['weighted_saved_percent']:.1f}%.")
@@ -479,6 +529,7 @@ def build_main_report(
     lines.append("")
     sample_table = []
     rows_by_sample_variant = {(row.sample_id, row.variant): row for row in rows}
+    quality_headers = [f"{variant_name(variant)} quality" for variant in VARIANTS]
     for sample in sample_rows:
         sample_id = sample["sample_id"]
         sample_table.append(
@@ -486,16 +537,14 @@ def build_main_report(
                 sample_id,
                 f"{sample['threshold_percent']}%",
                 sample["bucket"],
-                num(rows_by_sample_variant[(sample_id, "prune")].quality_score),
-                num(rows_by_sample_variant[(sample_id, "delta")].quality_score),
-                num(rows_by_sample_variant[(sample_id, "evidence")].quality_score),
-                judge_index.get((sample_id, "prune"), {}).get("best_variant", "n/a"),
+                *[quality_cell(rows_by_sample_variant, sample_id, variant) for variant in VARIANTS],
+                sample_judge_winner(sample_id, judge_index),
                 f"test-cases/{sample_id}.md",
             ]
         )
     lines.append(
         markdown_table(
-            ["Sample", "Threshold", "Bucket", "Prune quality", "Delta quality", "Evidence quality", "Judge winner", "Readable case"],
+            ["Sample", "Threshold", "Bucket", *quality_headers, "Judge winner", "Readable case"],
             sample_table,
         )
     )
@@ -504,9 +553,10 @@ def build_main_report(
     lines.append("")
     file_rows = [
         ["Main quality analysis", abs_path(report_dir / "quality-analysis.md")],
-        ["Prune report", abs_path(report_dir / "prune-quality-and-examples.md")],
-        ["Delta report", abs_path(report_dir / "delta-quality-and-examples.md")],
-        ["Evidence report", abs_path(report_dir / "evidence-quality-and-examples.md")],
+        *[
+            [f"{variant_name(variant)} report", abs_path(report_dir / f"{variant}-quality-and-examples.md")]
+            for variant in VARIANTS
+        ],
         ["Test case index", abs_path(report_dir / "test-case-index.md")],
         ["Readable test cases directory", abs_path(report_dir / "test-cases")],
     ]
@@ -532,7 +582,7 @@ def build_variant_report(
     agg = aggregate_variant(variant_rows)
     preserved, omitted, fit = variant_observation(variant)
     lines: list[str] = []
-    lines.append(f"# {VARIANT_NAMES[variant]} Quality And Examples")
+    lines.append(f"# {variant_name(variant)} Quality And Examples")
     lines.append("")
     lines.append(f"Source run: `{run_dir.resolve()}`.")
     lines.append("")
@@ -657,6 +707,7 @@ def build_test_case_index(
     lines.append(f"Source run: `{run_dir.resolve()}`.")
     lines.append("")
     table_rows = []
+    quality_headers = [f"{variant_name(variant)} quality" for variant in VARIANTS]
     for sample in sample_rows:
         sample_id = sample["sample_id"]
         table_rows.append(
@@ -667,10 +718,8 @@ def build_test_case_index(
                 sample["session_label"],
                 sample["trigger_line"],
                 sample["context_tokens_estimate"],
-                num(rows_by_sample_variant[(sample_id, "prune")].quality_score),
-                num(rows_by_sample_variant[(sample_id, "delta")].quality_score),
-                num(rows_by_sample_variant[(sample_id, "evidence")].quality_score),
-                judge_index.get((sample_id, "prune"), {}).get("best_variant", "n/a"),
+                *[quality_cell(rows_by_sample_variant, sample_id, variant) for variant in VARIANTS],
+                sample_judge_winner(sample_id, judge_index),
                 abs_path(report_dir / "test-cases" / f"{sample_id}.md"),
             ]
         )
@@ -683,9 +732,7 @@ def build_test_case_index(
                 "Session label",
                 "Trigger line",
                 "Context tokens",
-                "Prune quality",
-                "Delta quality",
-                "Evidence quality",
+                *quality_headers,
                 "Judge winner",
                 "Readable file",
             ],
@@ -752,7 +799,7 @@ def build_test_case(
         else:
             prompt_text = "(prompt artifact missing)"
         lines.append("")
-        lines.append(f"## Variant: {VARIANT_NAMES[variant]}")
+        lines.append(f"## Variant: {variant_name(variant)}")
         lines.append("")
         lines.append(
             markdown_table(
@@ -812,10 +859,24 @@ def build_test_case(
 
 
 def build_reports(run_dir: Path) -> list[Path]:
+    global VARIANTS
+
     module = load_benchmark_module()
     sample_rows = read_jsonl(run_dir / "samples.jsonl")
     reduction_rows = read_jsonl(run_dir / "reductions.jsonl")
     judge_rows = read_jsonl(run_dir / "judge_scores.jsonl")
+    present_variants = {
+        row.get("variant")
+        for row in reduction_rows
+        if isinstance(row.get("variant"), str)
+    }
+    ordered_variants = [
+        variant
+        for variant in module.ALL_VARIANTS
+        if variant in present_variants
+    ]
+    ordered_variants.extend(sorted(present_variants.difference(ordered_variants)))
+    VARIANTS = tuple(ordered_variants)
     report_dir = run_dir / "reports"
     test_case_dir = report_dir / "test-cases"
     judge_index = judge_by_sample_variant(judge_rows)

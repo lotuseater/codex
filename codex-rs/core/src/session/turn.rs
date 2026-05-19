@@ -75,6 +75,7 @@ use codex_analytics::TurnResolvedConfigFact;
 use codex_analytics::build_track_events_context;
 use codex_async_utils::OrCancelExt;
 use codex_config::types::PromptReductionModeToml;
+use codex_context_reduction::PRUNE_NUDGE_PROMPT;
 use codex_features::Feature;
 use codex_git_utils::get_git_repo_root;
 use codex_hooks::HookEvent;
@@ -787,39 +788,56 @@ async fn run_pre_sampling_compact(
     if !pre_sampling_compacted {
         match sess
             .semantic_compact_decision(SemanticCompactInput {
-                feature_enabled: semantic_auto_compact_enabled(turn_context),
+                semantic_feature_enabled: semantic_auto_compact_enabled(turn_context),
+                context_reduction_enabled: true,
                 total_usage_tokens,
                 auto_compact_limit,
             })
             .await
         {
             SemanticCompactDecision::Compact { reason } => {
-                let git_outcome = sess
-                    .semantic_checkpoint_git_sync(turn_context, reason)
-                    .await;
-                if git_outcome.should_warn() {
-                    sess.send_event(
-                        turn_context.as_ref(),
-                        EventMsg::Warning(WarningEvent {
-                            message: git_outcome.summary(),
-                        }),
+                if reason == CompactionReason::SemanticCheckpoint {
+                    let git_outcome = sess
+                        .semantic_checkpoint_git_sync(turn_context, reason)
+                        .await;
+                    if git_outcome.should_warn() {
+                        sess.send_event(
+                            turn_context.as_ref(),
+                            EventMsg::Warning(WarningEvent {
+                                message: git_outcome.summary(),
+                            }),
+                        )
+                        .await;
+                    }
+                    let scratchpad = sess
+                        .write_semantic_compact_scratchpad(
+                            turn_context,
+                            reason,
+                            &git_outcome.summary(),
+                        )
+                        .await;
+                    let compact_result = run_auto_compact(
+                        sess,
+                        turn_context,
+                        client_session,
+                        InitialContextInjection::DoNotInject,
+                        reason,
+                        CompactionPhase::PreTurn,
                     )
                     .await;
+                    sess.cleanup_semantic_compact_scratchpad(scratchpad);
+                    reset_client_session |= compact_result?;
+                } else {
+                    reset_client_session |= run_auto_compact(
+                        sess,
+                        turn_context,
+                        client_session,
+                        InitialContextInjection::DoNotInject,
+                        reason,
+                        CompactionPhase::PreTurn,
+                    )
+                    .await?;
                 }
-                let scratchpad = sess
-                    .write_semantic_compact_scratchpad(turn_context, reason, &git_outcome.summary())
-                    .await;
-                let compact_result = run_auto_compact(
-                    sess,
-                    turn_context,
-                    client_session,
-                    InitialContextInjection::DoNotInject,
-                    reason,
-                    CompactionPhase::PreTurn,
-                )
-                .await;
-                sess.cleanup_semantic_compact_scratchpad(scratchpad);
-                reset_client_session |= compact_result?;
                 pre_sampling_compacted = true;
                 total_usage_tokens = sess.get_total_token_usage().await;
             }
@@ -918,8 +936,43 @@ pub(crate) async fn run_auto_compact(
     reason: CompactionReason,
     phase: CompactionPhase,
 ) -> CodexResult<bool> {
+    // Auto compaction should use the prune prompt even when provider-side remote compaction is
+    // available, because the remote path does not accept this local prompt.
+    run_auto_compact_with_prompt(
+        sess,
+        turn_context,
+        client_session,
+        AutoCompactPrompt::Text(PRUNE_NUDGE_PROMPT),
+        initial_context_injection,
+        reason,
+        phase,
+    )
+    .await
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum AutoCompactPrompt<'a> {
+    Configured,
+    Text(&'a str),
+}
+
+pub(crate) async fn run_auto_compact_with_prompt(
+    sess: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
+    client_session: &mut ModelClientSession,
+    prompt: AutoCompactPrompt<'_>,
+    initial_context_injection: InitialContextInjection,
+    reason: CompactionReason,
+    phase: CompactionPhase,
+) -> CodexResult<bool> {
     send_auto_compact_notice(sess, turn_context, reason, phase).await;
-    if should_use_remote_compact_task(turn_context.provider.info()) {
+    let should_use_remote_compact = prompt == AutoCompactPrompt::Configured
+        && should_use_remote_compact_task(turn_context.provider.info());
+    let prompt = match prompt {
+        AutoCompactPrompt::Configured => turn_context.compact_prompt().to_string(),
+        AutoCompactPrompt::Text(prompt) => prompt.to_string(),
+    };
+    if should_use_remote_compact {
         if turn_context.features.enabled(Feature::RemoteCompactionV2) {
             run_inline_remote_auto_compact_task_v2(
                 Arc::clone(sess),
@@ -945,6 +998,7 @@ pub(crate) async fn run_auto_compact(
         run_inline_auto_compact_task(
             Arc::clone(sess),
             Arc::clone(turn_context),
+            prompt,
             initial_context_injection,
             reason,
             phase,
@@ -982,6 +1036,7 @@ fn format_compaction_reason(reason: CompactionReason) -> &'static str {
         CompactionReason::ContextLimit => "context limit reached",
         CompactionReason::ModelDownshift => "model context window is smaller",
         CompactionReason::SemanticCheckpoint => "semantic checkpoint threshold reached",
+        CompactionReason::EarlyContextPressure => "20% context compaction threshold reached",
         CompactionReason::RestoredSession => "restored session history is large",
     }
 }

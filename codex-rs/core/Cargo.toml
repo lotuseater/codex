@@ -33,6 +33,7 @@ codex-code-mode = { workspace = true }
 codex-connectors = { workspace = true }
 codex-config = { workspace = true }
 codex-context-pack = { workspace = true }
+codex-context-reduction = { workspace = true }
 codex-context-ops-impl = { workspace = true }
 codex-core-plugins = { workspace = true }
 codex-core-skills = { workspace = true }

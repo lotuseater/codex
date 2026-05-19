@@ -243,7 +243,7 @@ impl SessionState {
 
     pub(crate) fn record_regular_turn_finished_for_semantic_compact(
         &mut self,
-        input: SemanticCompactTurnInput<'_>,
+        input: SemanticCompactTurnInput,
     ) {
         self.semantic_compact_state
             .record_regular_turn_finished(input);

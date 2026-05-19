@@ -2598,6 +2598,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-context-reduction"
+version = "0.0.0"
+dependencies = [
+ "pretty_assertions",
+]
+
+[[package]]
 name = "codex-core"
 version = "0.0.0"
 dependencies = [
@@ -2625,6 +2632,7 @@ dependencies = [
  "codex-connectors",
  "codex-context-ops-impl",
  "codex-context-pack",
+ "codex-context-reduction",
  "codex-core-plugins",
  "codex-core-skills",
  "codex-desktop-automation",

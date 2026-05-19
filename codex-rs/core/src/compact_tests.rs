@@ -1,4 +1,5 @@
 use super::*;
+use codex_context_reduction::PRUNE_NUDGE_PROMPT;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::WireApi;
 use codex_protocol::models::DEFAULT_IMAGE_DETAIL;
@@ -22,6 +23,11 @@ async fn process_compacted_history_with_test_session(
     )
     .await;
     (refreshed, initial_context)
+}
+
+#[test]
+fn default_compaction_prompt_uses_prune_nudge_prompt() {
+    assert_eq!(SUMMARIZATION_PROMPT.trim_end(), PRUNE_NUDGE_PROMPT);
 }
 
 fn user_message(text: &str) -> ResponseItem {

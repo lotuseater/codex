@@ -1,4 +1,8 @@
 use codex_analytics::CompactionReason;
+use codex_context_reduction::ContextReductionDecision;
+use codex_context_reduction::ContextReductionInput;
+use codex_context_reduction::ContextReductionPolicy;
+use codex_context_reduction::ContextReductionState;
 use codex_protocol::protocol::TokenUsage;
 
 const MIN_CONTINUATION_TURNS: u32 = 8;
@@ -9,7 +13,7 @@ const WORK_CHECKPOINT_MIN_TOTAL_TOKENS: i64 = 50_000;
 const COMMIT_CHECKPOINT_MIN_TOTAL_TOKENS: i64 = 20_000;
 const TOOL_CHECKPOINT_CALLS: u64 = 12;
 const TOOL_CHECKPOINT_MIN_TOTAL_TOKENS: i64 = 40_000;
-const COOLDOWN_TURNS: u32 = 4;
+const SEMANTIC_COOLDOWN_TURNS: u32 = 4;
 const EARLY_PRESSURE_NUMERATOR: i64 = 4;
 const EARLY_PRESSURE_DENOMINATOR: i64 = 5;
 
@@ -21,7 +25,8 @@ pub(crate) enum SemanticCompactDecision {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SemanticCompactInput {
-    pub(crate) feature_enabled: bool,
+    pub(crate) semantic_feature_enabled: bool,
+    pub(crate) context_reduction_enabled: bool,
     pub(crate) total_usage_tokens: i64,
     pub(crate) auto_compact_limit: i64,
 }
@@ -41,7 +46,8 @@ pub(crate) struct SemanticCompactState {
     work_tokens_since_last_compact: i64,
     tool_calls_since_last_compact: u64,
     git_commit_observed_since_last_compact: bool,
-    cooldown_turns_remaining: u32,
+    semantic_cooldown_turns_remaining: u32,
+    context_reduction: ContextReductionState,
 }
 
 impl SemanticCompactState {
@@ -59,7 +65,9 @@ impl SemanticCompactState {
             .tool_calls_since_last_compact
             .saturating_add(input.tool_calls);
         self.git_commit_observed_since_last_compact |= input.git_commit_observed;
-        self.cooldown_turns_remaining = self.cooldown_turns_remaining.saturating_sub(1);
+        self.semantic_cooldown_turns_remaining =
+            self.semantic_cooldown_turns_remaining.saturating_sub(1);
+        self.context_reduction.record_regular_turn_finished();
     }
 
     pub(crate) fn record_compaction_finished(&mut self) {
@@ -68,15 +76,31 @@ impl SemanticCompactState {
         self.work_tokens_since_last_compact = 0;
         self.tool_calls_since_last_compact = 0;
         self.git_commit_observed_since_last_compact = false;
-        self.cooldown_turns_remaining = COOLDOWN_TURNS;
+        self.semantic_cooldown_turns_remaining = SEMANTIC_COOLDOWN_TURNS;
+        self.context_reduction
+            .record_reduction_finished(ContextReductionPolicy::default());
     }
 
     pub(crate) fn decide(&self, input: SemanticCompactInput) -> SemanticCompactDecision {
-        if !input.feature_enabled
-            || input.auto_compact_limit <= 0
-            || input.total_usage_tokens >= input.auto_compact_limit
-            || self.cooldown_turns_remaining > 0
+        if input.auto_compact_limit <= 0 || input.total_usage_tokens >= input.auto_compact_limit {
+            return SemanticCompactDecision::Skip;
+        }
+
+        if input.context_reduction_enabled
+            && self.context_reduction.decide(
+                ContextReductionPolicy::default(),
+                ContextReductionInput {
+                    total_usage_tokens: input.total_usage_tokens,
+                    auto_compact_limit: input.auto_compact_limit,
+                },
+            ) != ContextReductionDecision::Skip
         {
+            return SemanticCompactDecision::Compact {
+                reason: CompactionReason::EarlyContextPressure,
+            };
+        }
+
+        if !input.semantic_feature_enabled || self.semantic_cooldown_turns_remaining > 0 {
             return SemanticCompactDecision::Skip;
         }
 
@@ -113,20 +137,32 @@ fn early_pressure_threshold(auto_compact_limit: i64) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
 
     fn input(total_usage_tokens: i64) -> SemanticCompactInput {
         SemanticCompactInput {
-            feature_enabled: true,
+            semantic_feature_enabled: true,
+            context_reduction_enabled: true,
             total_usage_tokens,
             auto_compact_limit: 100_000,
         }
     }
 
-    fn input_with_limit(total_usage_tokens: i64, auto_compact_limit: i64) -> SemanticCompactInput {
+    fn semantic_only_input(total_usage_tokens: i64) -> SemanticCompactInput {
         SemanticCompactInput {
-            feature_enabled: true,
+            semantic_feature_enabled: true,
+            context_reduction_enabled: false,
             total_usage_tokens,
-            auto_compact_limit,
+            auto_compact_limit: 100_000,
+        }
+    }
+
+    fn reduction_only_input(total_usage_tokens: i64) -> SemanticCompactInput {
+        SemanticCompactInput {
+            semantic_feature_enabled: false,
+            context_reduction_enabled: true,
+            total_usage_tokens,
+            auto_compact_limit: 100_000,
         }
     }
 
@@ -156,64 +192,63 @@ mod tests {
         }
     }
 
-    #[test]
-    fn semantic_compact_decision_is_feature_gated() {
-        let mut state = SemanticCompactState::default();
-        for _ in 0..MIN_CONTINUATION_TURNS {
-            state.record_regular_turn_finished(finished_continuation_turn(
-                &TokenUsage::default(),
-                0,
-                false,
-            ));
+    fn token_usage(input_tokens: i64, cached_input_tokens: i64, output_tokens: i64) -> TokenUsage {
+        TokenUsage {
+            input_tokens,
+            cached_input_tokens,
+            output_tokens,
+            ..Default::default()
         }
-
-        assert_eq!(
-            state.decide(SemanticCompactInput {
-                feature_enabled: false,
-                ..input(MIN_SEMANTIC_TOKENS)
-            }),
-            SemanticCompactDecision::Skip
-        );
     }
 
     #[test]
-    fn semantic_compact_triggers_after_long_continuation() {
-        let mut state = SemanticCompactState::default();
-        for _ in 0..MIN_CONTINUATION_TURNS {
-            state.record_regular_turn_finished(finished_continuation_turn(
-                &TokenUsage::default(),
-                0,
-                false,
-            ));
-        }
-
-        assert_eq!(
-            state.decide(input_with_limit(MIN_SEMANTIC_TOKENS, 200_000)),
-            SemanticCompactDecision::Compact {
-                reason: CompactionReason::SemanticCheckpoint,
-            }
-        );
-    }
-
-    #[test]
-    fn semantic_compact_does_not_count_regular_turns_as_continuation() {
-        let mut state = SemanticCompactState::default();
-        for _ in 0..MIN_CONTINUATION_TURNS {
-            state.record_regular_turn_finished(finished_turn(&TokenUsage::default(), 0, false));
-        }
-
-        assert_eq!(
-            state.decide(input_with_limit(MIN_SEMANTIC_TOKENS, 200_000)),
-            SemanticCompactDecision::Skip
-        );
-    }
-
-    #[test]
-    fn semantic_compact_triggers_before_context_limit_pressure() {
+    fn early_context_pressure_triggers_at_twenty_percent_without_semantic_feature() {
         let state = SemanticCompactState::default();
 
         assert_eq!(
-            state.decide(input(early_pressure_threshold(100_000))),
+            state.decide(reduction_only_input(19_999)),
+            SemanticCompactDecision::Skip
+        );
+        assert_eq!(
+            state.decide(reduction_only_input(20_000)),
+            SemanticCompactDecision::Compact {
+                reason: CompactionReason::EarlyContextPressure,
+            }
+        );
+    }
+
+    #[test]
+    fn early_context_pressure_uses_twenty_four_regular_turn_cooldown_after_compaction() {
+        let mut state = SemanticCompactState::default();
+        state.record_compaction_finished();
+
+        for _ in 0..23 {
+            state.record_regular_turn_finished(finished_turn(&TokenUsage::default(), 0, false));
+            assert_eq!(
+                state.decide(reduction_only_input(20_000)),
+                SemanticCompactDecision::Skip
+            );
+        }
+
+        state.record_regular_turn_finished(finished_turn(&TokenUsage::default(), 0, false));
+        assert_eq!(
+            state.decide(reduction_only_input(20_000)),
+            SemanticCompactDecision::Compact {
+                reason: CompactionReason::EarlyContextPressure,
+            }
+        );
+    }
+
+    #[test]
+    fn semantic_early_pressure_checkpoint_still_works() {
+        let state = SemanticCompactState::default();
+
+        assert_eq!(
+            state.decide(semantic_only_input(79_999)),
+            SemanticCompactDecision::Skip
+        );
+        assert_eq!(
+            state.decide(semantic_only_input(80_000)),
             SemanticCompactDecision::Compact {
                 reason: CompactionReason::SemanticCheckpoint,
             }
@@ -221,7 +256,7 @@ mod tests {
     }
 
     #[test]
-    fn semantic_compact_leaves_hard_limit_to_existing_path() {
+    fn semantic_continuation_checkpoint_still_works() {
         let mut state = SemanticCompactState::default();
         for _ in 0..MIN_CONTINUATION_TURNS {
             state.record_regular_turn_finished(finished_continuation_turn(
@@ -231,36 +266,8 @@ mod tests {
             ));
         }
 
-        assert_eq!(state.decide(input(100_000)), SemanticCompactDecision::Skip);
-    }
-
-    #[test]
-    fn semantic_compact_cooldown_resets_after_compaction() {
-        let mut state = SemanticCompactState::default();
-        for _ in 0..MIN_CONTINUATION_TURNS {
-            state.record_regular_turn_finished(finished_continuation_turn(
-                &TokenUsage::default(),
-                0,
-                false,
-            ));
-        }
-        state.record_compaction_finished();
-
         assert_eq!(
-            state.decide(input(MIN_SEMANTIC_TOKENS)),
-            SemanticCompactDecision::Skip
-        );
-
-        for _ in 0..COOLDOWN_TURNS {
-            state.record_regular_turn_finished(finished_continuation_turn(
-                &TokenUsage::default(),
-                0,
-                false,
-            ));
-        }
-
-        assert_eq!(
-            state.decide(input(MIN_SEMANTIC_TOKENS)),
+            state.decide(semantic_only_input(MIN_SEMANTIC_TOKENS)),
             SemanticCompactDecision::Compact {
                 reason: CompactionReason::SemanticCheckpoint,
             }
@@ -268,20 +275,15 @@ mod tests {
     }
 
     #[test]
-    fn semantic_compact_triggers_after_sustained_work_checkpoint() {
+    fn semantic_work_checkpoint_still_works() {
         let mut state = SemanticCompactState::default();
+        let usage = token_usage(6_000, 1_000, 1_000);
         for _ in 0..WORK_CHECKPOINT_TURNS {
-            let usage = TokenUsage {
-                input_tokens: 6_000,
-                cached_input_tokens: 1_000,
-                output_tokens: 500,
-                ..TokenUsage::default()
-            };
             state.record_regular_turn_finished(finished_turn(&usage, 0, false));
         }
 
         assert_eq!(
-            state.decide(input(WORK_CHECKPOINT_MIN_TOTAL_TOKENS)),
+            state.decide(semantic_only_input(WORK_CHECKPOINT_MIN_TOTAL_TOKENS)),
             SemanticCompactDecision::Compact {
                 reason: CompactionReason::SemanticCheckpoint,
             }
@@ -289,25 +291,7 @@ mod tests {
     }
 
     #[test]
-    fn semantic_compact_work_checkpoint_requires_meaningful_total_context() {
-        let mut state = SemanticCompactState::default();
-        for _ in 0..WORK_CHECKPOINT_TURNS {
-            let usage = TokenUsage {
-                input_tokens: 6_000,
-                output_tokens: 500,
-                ..TokenUsage::default()
-            };
-            state.record_regular_turn_finished(finished_turn(&usage, 0, false));
-        }
-
-        assert_eq!(
-            state.decide(input(WORK_CHECKPOINT_MIN_TOTAL_TOKENS - 1)),
-            SemanticCompactDecision::Skip
-        );
-    }
-
-    #[test]
-    fn semantic_compact_triggers_after_tool_churn_checkpoint() {
+    fn semantic_tool_checkpoint_still_works() {
         let mut state = SemanticCompactState::default();
         state.record_regular_turn_finished(finished_turn(
             &TokenUsage::default(),
@@ -316,7 +300,7 @@ mod tests {
         ));
 
         assert_eq!(
-            state.decide(input(TOOL_CHECKPOINT_MIN_TOTAL_TOKENS)),
+            state.decide(semantic_only_input(TOOL_CHECKPOINT_MIN_TOTAL_TOKENS)),
             SemanticCompactDecision::Compact {
                 reason: CompactionReason::SemanticCheckpoint,
             }
@@ -324,57 +308,49 @@ mod tests {
     }
 
     #[test]
-    fn semantic_compact_tool_checkpoint_respects_cooldown() {
+    fn semantic_git_commit_checkpoint_still_works() {
+        let mut state = SemanticCompactState::default();
+        state.record_regular_turn_finished(finished_turn(&TokenUsage::default(), 0, true));
+
+        assert_eq!(
+            state.decide(semantic_only_input(COMMIT_CHECKPOINT_MIN_TOTAL_TOKENS)),
+            SemanticCompactDecision::Compact {
+                reason: CompactionReason::SemanticCheckpoint,
+            }
+        );
+    }
+
+    #[test]
+    fn early_context_pressure_takes_precedence_over_semantic_checkpoint() {
+        let state = SemanticCompactState::default();
+
+        assert_eq!(
+            state.decide(input(80_000)),
+            SemanticCompactDecision::Compact {
+                reason: CompactionReason::EarlyContextPressure,
+            }
+        );
+    }
+
+    #[test]
+    fn semantic_checkpoint_keeps_short_cooldown_after_compaction() {
         let mut state = SemanticCompactState::default();
         state.record_compaction_finished();
-        for _ in 0..COOLDOWN_TURNS - 1 {
-            state.record_regular_turn_finished(finished_turn(
-                &TokenUsage::default(),
-                TOOL_CHECKPOINT_CALLS,
-                false,
-            ));
+
+        for _ in 0..SEMANTIC_COOLDOWN_TURNS - 1 {
+            state.record_regular_turn_finished(finished_turn(&TokenUsage::default(), 0, false));
+            assert_eq!(
+                state.decide(semantic_only_input(80_000)),
+                SemanticCompactDecision::Skip
+            );
         }
 
+        state.record_regular_turn_finished(finished_turn(&TokenUsage::default(), 0, false));
         assert_eq!(
-            state.decide(input(TOOL_CHECKPOINT_MIN_TOTAL_TOKENS)),
-            SemanticCompactDecision::Skip
-        );
-
-        state.record_regular_turn_finished(finished_turn(
-            &TokenUsage::default(),
-            TOOL_CHECKPOINT_CALLS,
-            false,
-        ));
-
-        assert_eq!(
-            state.decide(input(TOOL_CHECKPOINT_MIN_TOTAL_TOKENS)),
+            state.decide(semantic_only_input(80_000)),
             SemanticCompactDecision::Compact {
                 reason: CompactionReason::SemanticCheckpoint,
             }
-        );
-    }
-
-    #[test]
-    fn semantic_compact_triggers_after_git_commit_checkpoint() {
-        let mut state = SemanticCompactState::default();
-        state.record_regular_turn_finished(finished_turn(&TokenUsage::default(), 0, true));
-
-        assert_eq!(
-            state.decide(input(COMMIT_CHECKPOINT_MIN_TOTAL_TOKENS)),
-            SemanticCompactDecision::Compact {
-                reason: CompactionReason::SemanticCheckpoint,
-            }
-        );
-    }
-
-    #[test]
-    fn semantic_compact_git_commit_checkpoint_respects_minimum_context() {
-        let mut state = SemanticCompactState::default();
-        state.record_regular_turn_finished(finished_turn(&TokenUsage::default(), 0, true));
-
-        assert_eq!(
-            state.decide(input(COMMIT_CHECKPOINT_MIN_TOTAL_TOKENS - 1)),
-            SemanticCompactDecision::Skip
         );
     }
 }

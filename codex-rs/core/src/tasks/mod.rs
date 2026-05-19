@@ -876,7 +876,8 @@ impl Session {
         } else {
             match self
                 .semantic_compact_decision(SemanticCompactInput {
-                    feature_enabled: semantic_auto_compact_enabled(turn_context),
+                    semantic_feature_enabled: semantic_auto_compact_enabled(turn_context),
+                    context_reduction_enabled: true,
                     total_usage_tokens,
                     auto_compact_limit,
                 })

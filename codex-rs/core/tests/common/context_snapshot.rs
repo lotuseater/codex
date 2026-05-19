@@ -1,3 +1,4 @@
+use codex_core::compact::SUMMARIZATION_PROMPT;
 use regex_lite::Regex;
 use serde_json::Value;
 use similar::ChangeTag;
@@ -412,7 +413,7 @@ fn canonicalize_snapshot_text(text: &str) -> String {
             "<ENVIRONMENT_CONTEXT>".to_string()
         };
     }
-    if text.starts_with("You are performing a CONTEXT CHECKPOINT COMPACTION.") {
+    if text == SUMMARIZATION_PROMPT.trim_end() {
         return "<SUMMARIZATION_PROMPT>".to_string();
     }
     if text.starts_with("Another language model started to solve this problem")

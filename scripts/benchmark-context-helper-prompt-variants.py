@@ -34,12 +34,38 @@ DEFAULT_OUT_ROOT = REPO_ROOT / "logs" / "context-helper-prompt-benchmarks"
 DEFAULT_SEED = 20260519
 DEFAULT_CONTEXT_TOKEN_BUDGET = 8000
 DEFAULT_JUDGE_OUTPUT_CHAR_BUDGET = 12000
+LEGACY_STANDARD_COMPACT_PROMPT = textwrap.dedent(
+    """\
+    You are performing a CONTEXT CHECKPOINT COMPACTION. Create a handoff summary for another LLM that will resume the task.
 
+    Include:
+    - The active user goal/request, preserving wording for important constraints
+    - The current plan/checklist with completed and pending status when present
+    - Current progress and key decisions made
+    - Important context, constraints, or user preferences
+    - What remains to be done (clear next steps)
+    - Build/test/deploy status, unresolved blockers, and any critical data, examples, or references needed to continue
+
+    If task memory is provided separately in a `<task_memory>` item, do not repeat the full prompt or plan verbatim in the summary; preserve only the surrounding progress, decisions, status, and next actions needed to use that task memory correctly.
+
+    Be concise, structured, and focused on helping the next LLM seamlessly continue the work.
+    """
+).strip()
+
+VARIANT_NO_NUDGE = "no_nudge"
+VARIANT_STANDARD_COMPACT = "standard_compaction_template"
 VARIANT_PRUNE = "prune"
 VARIANT_DELTA = "delta"
 VARIANT_EVIDENCE = "evidence"
-ALL_VARIANTS = (VARIANT_PRUNE, VARIANT_DELTA, VARIANT_EVIDENCE)
+ALL_VARIANTS = (
+    VARIANT_NO_NUDGE,
+    VARIANT_STANDARD_COMPACT,
+    VARIANT_PRUNE,
+    VARIANT_DELTA,
+    VARIANT_EVIDENCE,
+)
 BENCHMARK_SESSION_MARKERS = (
+    "Security boundary: everything inside transcript/context/output tags",
     "here is the context of other llm model. Please remove from the context",
     "You are judging context-reduction outputs for a coding agent",
     "Context Helper Prompt Variant Benchmark",
@@ -511,6 +537,8 @@ def build_sample(candidate: TriggerCandidate, token_budget: int) -> Sample:
 
 def prompt_variants() -> dict[str, str]:
     return {
+        VARIANT_NO_NUDGE: "",
+        VARIANT_STANDARD_COMPACT: LEGACY_STANDARD_COMPACT_PROMPT,
         VARIANT_PRUNE: textwrap.dedent(
             """\
             here is the context of other llm model. Please remove from the context all not needed for further task implementation by the model. preserve all that may be useful
@@ -760,6 +788,38 @@ def parse_judge_json(text: str) -> dict[str, Any]:
                 return json.loads(match.group(0))
             except json.JSONDecodeError:
                 pass
+    recovered: dict[str, Any] = {}
+    for field in ("sample_id", "best_label"):
+        match = re.search(rf'"{field}"\s*:\s*"([^"]*)"', stripped)
+        if match:
+            recovered[field] = match.group(1)
+    scores_match = re.search(
+        r'"scores"\s*:\s*\{(?P<body>.*?)\}\s*,\s*"reasons"',
+        stripped,
+        flags=re.DOTALL,
+    )
+    if scores_match:
+        scores: dict[str, int | float] = {}
+        for label, value in re.findall(
+            r'"([^"]+)"\s*:\s*(-?\d+(?:\.\d+)?)',
+            scores_match.group("body"),
+        ):
+            parsed_value = float(value) if "." in value else int(value)
+            scores[label] = parsed_value
+        recovered["scores"] = scores
+    losses_match = re.search(
+        r'"critical_losses"\s*:\s*(\[[\s\S]*?\])\s*\}?\s*$',
+        stripped,
+    )
+    if losses_match:
+        try:
+            recovered["critical_losses"] = json.loads(losses_match.group(1))
+        except json.JSONDecodeError:
+            pass
+    if {"best_label", "scores"}.issubset(recovered):
+        recovered["parse_error_recovered"] = True
+        recovered["raw"] = text
+        return recovered
     return {"parse_error": True, "raw": text}
 
 
