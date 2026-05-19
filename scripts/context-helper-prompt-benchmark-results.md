@@ -67,3 +67,8 @@ per sampled compaction window under `reports/test-cases/`. Those sample files
 contain the canonical reducer input, full source transcript window, exact saved
 variant prompts, full reduced outputs, deterministic metrics, judge notes, and raw
 artifact paths needed to audit the result without reading JSONL directly.
+
+The exact nudge variants, common safety prefix, input wrappers, and summary
+tradeoffs are saved in:
+
+- `scripts/context-helper-nudge-variants.md`
