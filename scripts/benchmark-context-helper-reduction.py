@@ -825,6 +825,13 @@ def main() -> int:
 
     generated_at = datetime.now().astimezone()
     summary = summarize_sessions(sessions)
+    recommended = evaluate_policy(
+        token_sessions,
+        Policy(args.baseline_threshold, args.baseline_cooldown),
+        baseline_model,
+        args.new_input_cooldown,
+        args.min_future_turns,
+    )
     output = {
         "generated_at": generated_at.isoformat(),
         "sessions_root": str(sessions_root),
@@ -843,6 +850,7 @@ def main() -> int:
             "min_future_turns": args.min_future_turns,
         },
         "summary": summary,
+        "recommended": json_default(recommended),
         "core_results": core_results,
         "sensitivity_results": sensitivity_results,
         "helper_strategy_results": helper_strategy_results,
@@ -877,13 +885,6 @@ def main() -> int:
         args.out_markdown.parent.mkdir(parents=True, exist_ok=True)
         args.out_markdown.write_text(markdown, encoding="utf-8")
 
-    recommended = evaluate_policy(
-        token_sessions,
-        Policy(args.baseline_threshold, args.baseline_cooldown),
-        baseline_model,
-        args.new_input_cooldown,
-        args.min_future_turns,
-    )
     print(
         json.dumps(
             {
