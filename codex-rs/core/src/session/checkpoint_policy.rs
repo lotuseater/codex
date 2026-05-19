@@ -70,15 +70,17 @@ impl SemanticCompactState {
         self.context_reduction.record_regular_turn_finished();
     }
 
-    pub(crate) fn record_compaction_finished(&mut self) {
+    pub(crate) fn record_compaction_finished(&mut self, reason: Option<CompactionReason>) {
         self.regular_turns_since_last_compact = 0;
         self.continuation_turns_since_last_compact = 0;
         self.work_tokens_since_last_compact = 0;
         self.tool_calls_since_last_compact = 0;
         self.git_commit_observed_since_last_compact = false;
         self.semantic_cooldown_turns_remaining = SEMANTIC_COOLDOWN_TURNS;
-        self.context_reduction
-            .record_reduction_finished(ContextReductionPolicy::default());
+        if reason == Some(CompactionReason::EarlyContextPressure) {
+            self.context_reduction
+                .record_reduction_finished(ContextReductionPolicy::default());
+        }
     }
 
     pub(crate) fn decide(&self, input: SemanticCompactInput) -> SemanticCompactDecision {
@@ -220,7 +222,7 @@ mod tests {
     #[test]
     fn early_context_pressure_uses_twenty_four_regular_turn_cooldown_after_compaction() {
         let mut state = SemanticCompactState::default();
-        state.record_compaction_finished();
+        state.record_compaction_finished(Some(CompactionReason::EarlyContextPressure));
 
         for _ in 0..23 {
             state.record_regular_turn_finished(finished_turn(&TokenUsage::default(), 0, false));
@@ -251,6 +253,19 @@ mod tests {
             state.decide(semantic_only_input(80_000)),
             SemanticCompactDecision::Compact {
                 reason: CompactionReason::SemanticCheckpoint,
+            }
+        );
+    }
+
+    #[test]
+    fn other_compactions_do_not_start_early_context_pressure_cooldown() {
+        let mut state = SemanticCompactState::default();
+        state.record_compaction_finished(Some(CompactionReason::ContextLimit));
+
+        assert_eq!(
+            state.decide(reduction_only_input(20_000)),
+            SemanticCompactDecision::Compact {
+                reason: CompactionReason::EarlyContextPressure,
             }
         );
     }
@@ -335,7 +350,7 @@ mod tests {
     #[test]
     fn semantic_checkpoint_keeps_short_cooldown_after_compaction() {
         let mut state = SemanticCompactState::default();
-        state.record_compaction_finished();
+        state.record_compaction_finished(Some(CompactionReason::SemanticCheckpoint));
 
         for _ in 0..SEMANTIC_COOLDOWN_TURNS - 1 {
             state.record_regular_turn_finished(finished_turn(&TokenUsage::default(), 0, false));

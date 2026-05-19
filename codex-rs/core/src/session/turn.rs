@@ -506,6 +506,26 @@ pub(crate) async fn run_turn(
                 let needs_follow_up = model_needs_follow_up || has_pending_input;
                 let total_usage_tokens = sess.get_total_token_usage().await;
                 let token_limit_reached = total_usage_tokens >= auto_compact_limit;
+                let mut early_context_pressure_reached = false;
+                let compaction_reason = if !needs_follow_up {
+                    None
+                } else if token_limit_reached {
+                    Some(CompactionReason::ContextLimit)
+                } else {
+                    early_context_pressure_reached = matches!(
+                        sess.semantic_compact_decision(SemanticCompactInput {
+                            semantic_feature_enabled: false,
+                            context_reduction_enabled: true,
+                            total_usage_tokens,
+                            auto_compact_limit,
+                        })
+                        .await,
+                        SemanticCompactDecision::Compact {
+                            reason: CompactionReason::EarlyContextPressure
+                        }
+                    );
+                    early_context_pressure_reached.then_some(CompactionReason::EarlyContextPressure)
+                };
 
                 let estimated_token_count =
                     sess.get_estimated_token_count(turn_context.as_ref()).await;
@@ -516,6 +536,7 @@ pub(crate) async fn run_turn(
                     estimated_token_count = ?estimated_token_count,
                     auto_compact_limit,
                     token_limit_reached,
+                    early_context_pressure_reached,
                     model_needs_follow_up,
                     has_pending_input,
                     needs_follow_up,
@@ -523,13 +544,13 @@ pub(crate) async fn run_turn(
                 );
 
                 // as long as compaction works well in getting us way below the token limit, we shouldn't worry about being in an infinite loop.
-                if token_limit_reached && needs_follow_up {
+                if let Some(reason) = compaction_reason {
                     let reset_client_session = match run_auto_compact(
                         &sess,
                         &turn_context,
                         &mut client_session,
                         InitialContextInjection::BeforeLastUserMessage,
-                        CompactionReason::ContextLimit,
+                        reason,
                         CompactionPhase::MidTurn,
                     )
                     .await
@@ -983,7 +1004,8 @@ pub(crate) async fn run_auto_compact_with_prompt(
                 phase,
             )
             .await?;
-            sess.record_compaction_finished_for_semantic_compact().await;
+            sess.record_compaction_finished_for_semantic_compact(Some(reason))
+                .await;
             return Ok(false);
         }
         run_inline_remote_auto_compact_task(
@@ -1005,7 +1027,8 @@ pub(crate) async fn run_auto_compact_with_prompt(
         )
         .await?;
     }
-    sess.record_compaction_finished_for_semantic_compact().await;
+    sess.record_compaction_finished_for_semantic_compact(Some(reason))
+        .await;
     Ok(true)
 }
 

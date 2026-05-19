@@ -1,5 +1,6 @@
 //! Session-wide mutable state.
 
+use codex_analytics::CompactionReason;
 use codex_protocol::models::AdditionalPermissionProfile;
 use codex_protocol::models::ResponseItem;
 use codex_sandboxing::policy_transforms::merge_permission_profiles;
@@ -249,8 +250,12 @@ impl SessionState {
             .record_regular_turn_finished(input);
     }
 
-    pub(crate) fn record_compaction_finished_for_semantic_compact(&mut self) {
-        self.semantic_compact_state.record_compaction_finished();
+    pub(crate) fn record_compaction_finished_for_semantic_compact(
+        &mut self,
+        reason: Option<CompactionReason>,
+    ) {
+        self.semantic_compact_state
+            .record_compaction_finished(reason);
     }
 
     pub(crate) fn semantic_compact_decision(

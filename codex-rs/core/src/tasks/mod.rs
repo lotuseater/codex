@@ -770,7 +770,8 @@ impl Session {
                     .await;
                 }
                 Some(TaskKind::Compact) => {
-                    self.record_compaction_finished_for_semantic_compact().await;
+                    self.record_compaction_finished_for_semantic_compact(None)
+                        .await;
                 }
                 Some(TaskKind::Review) | None => {}
             }

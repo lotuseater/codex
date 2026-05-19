@@ -1250,9 +1250,12 @@ impl Session {
         );
     }
 
-    pub(crate) async fn record_compaction_finished_for_semantic_compact(&self) {
+    pub(crate) async fn record_compaction_finished_for_semantic_compact(
+        &self,
+        reason: Option<CompactionReason>,
+    ) {
         let mut state = self.state.lock().await;
-        state.record_compaction_finished_for_semantic_compact();
+        state.record_compaction_finished_for_semantic_compact(reason);
     }
 
     pub(crate) async fn take_plan_self_review_checkpoint_slot(&self) -> bool {
