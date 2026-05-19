@@ -52,3 +52,18 @@ All variants in the final v4 run received the same canonical reducer input: a de
 The evidence-preserving prompt retained the most paths and commands in this small run. The blinded judge split was tied between `prune` and `evidence` at 5 of 12 wins each, with `delta` winning 2 of 12. Evidence produced larger summaries, so it is not a pure token-minimization winner.
 
 The result should be treated as directional rather than final. It has only 12 judge rows and one LLM judgment per sample.
+
+## Readable quality artifacts
+
+For qualitative review, regenerate the readable reports with:
+
+```powershell
+py -3 scripts/report-context-helper-prompt-quality.py --run-dir logs/context-helper-prompt-benchmarks/full-20-30-s6-v4
+```
+
+The generated `reports/quality-analysis.md` is the best starting point. It links to
+per-variant quality reports, a `reports/test-case-index.md`, and one Markdown file
+per sampled compaction window under `reports/test-cases/`. Those sample files
+contain the canonical reducer input, full source transcript window, exact saved
+variant prompts, full reduced outputs, deterministic metrics, judge notes, and raw
+artifact paths needed to audit the result without reading JSONL directly.
