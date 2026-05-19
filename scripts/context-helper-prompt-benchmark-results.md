@@ -6,6 +6,37 @@ This is the tracked, redacted summary for the prompt-variant benchmark run saved
 
 The ignored artifact directory contains the raw transcript excerpts, reducer prompts, reducer outputs, judge outputs, and JSONL rows. Those raw artifacts are intentionally not tracked because they contain real local Codex conversation excerpts.
 
+## 2026-05-20 Targeted Standard vs Prune Run
+
+Run directory:
+
+`logs/context-helper-prompt-benchmarks/standard-vs-prune-20-24-20260520-005804`
+
+Scope:
+
+- Threshold: 20
+- Cooldown turns: 24
+- Samples: 3
+- Variants: previous non-empty standard compaction prompt vs current prune prompt
+- Preflight: ok
+
+Token and deterministic quality metrics:
+
+| variant | ok rows | avg prompt tokens | avg output tokens | avg compression | avg path retain | avg command retain | avg constraint retain | avg noise markers |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| standard_compaction_template | 3 | 2,960 | 491 | 0.170 | 0.363 | 0.044 | 0.000 | 0.000 |
+| prune | 3 | 2,797 | 572 | 0.214 | 0.598 | 0.156 | 0.000 | 0.000 |
+
+Judge results:
+
+- prune: 2 best-of-3
+- standard_compaction_template: 1 best-of-3
+- Case scores: early `prune 9` vs `standard 8`; middle `prune 9` vs `standard 5`; late `standard 9` vs `prune 8`.
+
+Conclusion:
+
+The current prune prompt used fewer prompt tokens because the instruction body is shorter, but produced larger reduced outputs in this small run. Quality favored prune overall: it retained substantially more paths and commands and won two of three LLM judge comparisons. The standard template was more aggressively compressive and won the late sample by a narrow score.
+
 ## Run Configuration
 
 - Run status: preflight ok
