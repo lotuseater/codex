@@ -544,3 +544,63 @@ thread-manager, handler, manifest, lock, or schema paths.
    by the handoffs. Do not run debug-profile Cargo.
 5. Commit only verified coherent slices with explicit pathspec staging. Do not
    use `git add .`.
+
+## 2026-05-20 Core Test Split Priority Update
+
+User direction: splitting `codex-core` tests so they compile and run in smaller,
+fast lanes has higher priority than continuing to run or wait on broad
+`codex-core` builds/tests. Treat broad release builds as validation after the
+split structure exists, not as the main way to make progress.
+
+Operating rule for parallelism:
+
+- At any moment, spawn as many Codex sessions as there are genuinely parallel,
+  non-overlapping subtasks.
+- Prefer many read-only scouts while path ownership is unclear.
+- Assign at most one worker to central harness files such as
+  `codex-rs/core/tests/all.rs`, `codex-rs/core/tests/suite/mod.rs`,
+  `codex-rs/core/Cargo.toml`, and Bazel files until a split plan gives exact
+  ownership.
+- Encourage workers to delegate bounded read-only subquestions, but require
+  each worker to keep its own handoff authoritative.
+- Root keeps Git staging/commits, manifest/lock/Bazel ownership, and final
+  verification lane selection.
+
+New priority:
+
+1. Map the `codex-core` test harness and split blockers.
+2. Create or use a small read-only prototype to rank test modules and detect
+   `super::`/shared-support dependencies.
+3. Implement the first small split lane only after the scouts identify a
+   mechanically safe module group.
+4. Run only the smallest release-profile test command that validates the new
+   split lane. Do not restart broad `codex-core` release tests while the harness
+   is still monolithic.
+
+Sessions launched for this lane:
+
+- `core_test_split_topology_scout`
+  - prompt: `.codex/workflow/agents/core_test_split_topology_scout.prompt.md`
+  - handoff: `.codex/workflow/agents/core_test_split_topology_scout.handoff.md`
+  - marker: `.codex/workflow/agents/core_test_split_topology_scout.exec.marker.txt`
+- `core_test_split_cost_map_scout`
+  - prompt: `.codex/workflow/agents/core_test_split_cost_map_scout.prompt.md`
+  - handoff: `.codex/workflow/agents/core_test_split_cost_map_scout.handoff.md`
+  - marker: `.codex/workflow/agents/core_test_split_cost_map_scout.exec.marker.txt`
+- `core_test_split_common_support_scout`
+  - prompt: `.codex/workflow/agents/core_test_split_common_support_scout.prompt.md`
+  - handoff: `.codex/workflow/agents/core_test_split_common_support_scout.handoff.md`
+  - marker: `.codex/workflow/agents/core_test_split_common_support_scout.exec.marker.txt`
+- `core_test_split_cargo_bazel_scout`
+  - prompt: `.codex/workflow/agents/core_test_split_cargo_bazel_scout.prompt.md`
+  - handoff: `.codex/workflow/agents/core_test_split_cargo_bazel_scout.handoff.md`
+  - marker: `.codex/workflow/agents/core_test_split_cargo_bazel_scout.exec.marker.txt`
+- `core_test_split_lane_plan_scout`
+  - prompt: `.codex/workflow/agents/core_test_split_lane_plan_scout.prompt.md`
+  - handoff: `.codex/workflow/agents/core_test_split_lane_plan_scout.handoff.md`
+  - marker: `.codex/workflow/agents/core_test_split_lane_plan_scout.exec.marker.txt`
+- `core_test_split_analysis_proto`
+  - prompt: `.codex/workflow/agents/core_test_split_analysis_proto.prompt.md`
+  - handoff: `.codex/workflow/agents/core_test_split_analysis_proto.handoff.md`
+  - marker: `.codex/workflow/agents/core_test_split_analysis_proto.exec.marker.txt`
+  - owned edit path: `.codex/prototypes/plan-core-test-split.ps1`.
