@@ -24,7 +24,6 @@ use crate::context_reduction_adapter::context_reduction_reason_to_compaction_rea
 use crate::context_reduction_adapter::model_auto_compact_limits;
 use crate::context_reduction_adapter::semantic_compact_input;
 use crate::feedback_tags;
-use crate::hook_runtime::PendingInputHookDisposition;
 use crate::hook_runtime::emit_hook_completed_events;
 use crate::hook_runtime::inspect_pending_input;
 use crate::hook_runtime::record_additional_contexts;
@@ -437,29 +436,25 @@ pub(crate) async fn run_turn(
         if !pending_input.is_empty() {
             let mut pending_input_iter = pending_input.into_iter();
             while let Some(pending_input_item) = pending_input_iter.next() {
-                match inspect_pending_input(&sess, &turn_context, pending_input_item).await {
-                    PendingInputHookDisposition::Accepted(pending_input) => {
-                        accepted_pending_input.push(*pending_input);
+                let outcome = inspect_pending_input(&sess, &turn_context, pending_input_item).await;
+                if outcome.should_stop {
+                    let remaining_pending_input = pending_input_iter.collect::<Vec<_>>();
+                    if !remaining_pending_input.is_empty() {
+                        let _ = sess.prepend_pending_input(remaining_pending_input).await;
+                        requeued_pending_input = true;
                     }
-                    PendingInputHookDisposition::Blocked {
-                        additional_contexts,
-                    } => {
-                        let remaining_pending_input = pending_input_iter.collect::<Vec<_>>();
-                        if !remaining_pending_input.is_empty() {
-                            let _ = sess.prepend_pending_input(remaining_pending_input).await;
-                            requeued_pending_input = true;
-                        }
-                        blocked_pending_input_contexts = additional_contexts;
-                        blocked_pending_input = true;
-                        break;
-                    }
+                    blocked_pending_input_contexts = outcome.additional_contexts;
+                    blocked_pending_input = true;
+                    break;
+                } else {
+                    accepted_pending_input.push((pending_input_item, outcome.additional_contexts));
                 }
             }
         }
 
         let has_accepted_pending_input = !accepted_pending_input.is_empty();
-        for pending_input in accepted_pending_input {
-            record_pending_input(&sess, &turn_context, pending_input).await;
+        for (pending_input, additional_contexts) in accepted_pending_input {
+            record_pending_input(&sess, &turn_context, pending_input, additional_contexts).await;
         }
         record_additional_contexts(&sess, &turn_context, blocked_pending_input_contexts).await;
 

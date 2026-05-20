@@ -26,7 +26,6 @@ use crate::context::ContextualUserFragment;
 use crate::context_reduction_adapter::context_reduction_reason_to_compaction_reason;
 use crate::context_reduction_adapter::semantic_compact_input;
 use crate::goals::GoalRuntimeEvent;
-use crate::hook_runtime::PendingInputHookDisposition;
 use crate::hook_runtime::inspect_pending_input;
 use crate::hook_runtime::record_additional_contexts;
 use crate::hook_runtime::record_pending_input;
@@ -619,15 +618,18 @@ impl Session {
         }
         if !pending_input.is_empty() {
             for pending_input_item in pending_input {
-                match inspect_pending_input(self, &turn_context, pending_input_item).await {
-                    PendingInputHookDisposition::Accepted(pending_input) => {
-                        record_pending_input(self, &turn_context, *pending_input).await;
-                    }
-                    PendingInputHookDisposition::Blocked {
-                        additional_contexts,
-                    } => {
-                        record_additional_contexts(self, &turn_context, additional_contexts).await;
-                    }
+                let outcome = inspect_pending_input(self, &turn_context, pending_input_item).await;
+                if outcome.should_stop {
+                    record_additional_contexts(self, &turn_context, outcome.additional_contexts)
+                        .await;
+                } else {
+                    record_pending_input(
+                        self,
+                        &turn_context,
+                        pending_input_item,
+                        outcome.additional_contexts,
+                    )
+                    .await;
                 }
             }
         }
