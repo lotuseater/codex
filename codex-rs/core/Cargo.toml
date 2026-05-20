@@ -42,6 +42,10 @@ name = "state"
 path = "tests/state.rs"
 
 [[test]]
+name = "telemetry"
+path = "tests/telemetry.rs"
+
+[[test]]
 name = "tools"
 path = "tests/tools.rs"
 

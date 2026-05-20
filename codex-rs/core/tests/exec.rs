@@ -9,6 +9,8 @@ mod apply_patch_cli;
 mod exec;
 #[path = "suite/exec_policy.rs"]
 mod exec_policy;
+#[path = "suite/remote_env.rs"]
+mod remote_env;
 #[path = "suite/shell_command.rs"]
 mod shell_command;
 #[path = "suite/shell_serialization.rs"]
