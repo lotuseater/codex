@@ -11,6 +11,8 @@ members = [
     "bwrap",
     "ansi-escape",
     "async-utils",
+    "app/app-catalog-api",
+    "app/app-catalog-types",
     "app-server",
     "app-server-transport",
     "app-server-daemon",
@@ -24,6 +26,14 @@ members = [
     "features",
     "first-moves",
     "repo-context-scout",
+    "session/session-api",
+    "session/session-events",
+    "session/session-factory",
+    "session/session-input",
+    "session/session-policy",
+    "session/session-runtime",
+    "session/session-runtime-api",
+    "session/session-state",
     "install-context",
     "input-queue",
     "codex-backend-openapi-models",
@@ -38,6 +48,10 @@ members = [
     "connectors",
     "config",
     "config-types",
+    "context-domain/compaction-policy",
+    "context-domain/context-budget",
+    "context-domain/history-api",
+    "context-domain/prompt-context",
     "context-pack",
     "context-reduction",
     "context-ops-impl",
@@ -47,6 +61,7 @@ members = [
     "skills",
     "core",
     "core-api",
+    "core-domain/types",
     "core-plugins",
     "core-skills",
     "hooks",
@@ -69,6 +84,7 @@ members = [
     "lmstudio",
     "login",
     "codex-mcp",
+    "mcp/elicitation-api",
     "mcp-server",
     "memories/context",
     "memories/mcp",
@@ -93,6 +109,11 @@ members = [
     "responses-api-proxy",
     "response-debug-context",
     "runtime-metrics-types",
+    "runtime-domain/auth-api",
+    "runtime-domain/model-client-api",
+    "runtime-domain/runtime-ports",
+    "runtime-domain/state-db-api",
+    "runtime-domain/telemetry-api",
     "sandboxing",
     "self-review",
     "stdio-to-uds",
@@ -133,8 +154,23 @@ members = [
     "test-binary-support",
     "thread-config-remote",
     "thread-manager-sample",
-    "thread-store",
+    "thread/thread-api",
+    "thread/thread-handle-api",
+    "thread/thread-manager-api",
+    "thread/thread-projection-api",
+    "thread/thread-store-api",
+    "thread/thread-store",
+    "tools-domain/tool-execution-api",
+    "tools-domain/tool-handler-api",
+    "tools-domain/tool-registry-api",
     "tool-schema",
+    "turn/turn-api",
+    "turn/turn-events",
+    "turn/turn-loop",
+    "turn/turn-loop-api",
+    "turn/turn-policy",
+    "turn/turn-state",
+    "turn/turn-tool-bridge",
     "turn-diff",
     "tui-render",
     "uds",
@@ -157,11 +193,14 @@ license = "Apache-2.0"
 # Internal
 app_test_support = { path = "app-server/tests/common" }
 codex-analytics = { path = "analytics" }
+codex-auth-api = { path = "runtime-domain/auth-api" }
 codex-agent-graph-store = { path = "agent-graph-store" }
 codex-agent-identity = { path = "agent-identity" }
 codex-agent-policy = { path = "agent-policy" }
 codex-ansi-escape = { path = "ansi-escape" }
 codex-api = { path = "codex-api" }
+codex-app-catalog-api = { path = "app/app-catalog-api" }
+codex-app-catalog-types = { path = "app/app-catalog-types" }
 codex-aws-auth = { path = "aws-auth" }
 codex-app-server = { path = "app-server" }
 codex-app-server-transport = { path = "app-server-transport" }
@@ -186,13 +225,16 @@ codex-code-mode = { path = "code-mode" }
 codex-code-mode-spec = { path = "code-mode-spec" }
 codex-config = { path = "config" }
 codex-config-types = { path = "config-types" }
+codex-compaction-policy = { path = "context-domain/compaction-policy" }
 codex-cognos-ops = { path = "cognos-ops" }
 codex-connectors = { path = "connectors" }
+codex-context-budget = { path = "context-domain/context-budget" }
 codex-context-pack = { path = "context-pack" }
 codex-context-reduction = { path = "context-reduction" }
 codex-context-ops-impl = { path = "context-ops-impl" }
 codex-core = { path = "core" }
 codex-core-api = { path = "core-api" }
+codex-core-domain-types = { path = "core-domain/types" }
 codex-core-plugins = { path = "core-plugins" }
 codex-core-skills = { path = "core-skills" }
 codex-desktop-automation = { path = "desktop-automation" }
@@ -215,6 +257,7 @@ codex-file-search = { path = "file-search" }
 codex-file-watcher = { path = "file-watcher" }
 codex-git-types = { path = "git-types" }
 codex-git-utils = { path = "git-utils" }
+codex-history-api = { path = "context-domain/history-api" }
 codex-hooks = { path = "hooks" }
 codex-keyring-store = { path = "keyring-store" }
 codex-linux-sandbox = { path = "linux-sandbox" }
@@ -227,8 +270,10 @@ codex-memories-extension = { path = "ext/memories" }
 codex-memories-read = { path = "memories/read" }
 codex-memories-write = { path = "memories/write" }
 codex-mcp = { path = "codex-mcp" }
+codex-mcp-elicitation-api = { path = "mcp/elicitation-api" }
 codex-mcp-server = { path = "mcp-server" }
 codex-model-provider-info = { path = "model-provider-info" }
+codex-model-client-api = { path = "runtime-domain/model-client-api" }
 codex-models-manager = { path = "models-manager" }
 codex-network-proxy-config = { path = "network-proxy-config" }
 codex-network-proxy = { path = "network-proxy" }
@@ -240,6 +285,7 @@ codex-operation-cache = { path = "operation-cache" }
 codex-permission-types = { path = "permission-types" }
 codex-process-hardening = { path = "process-hardening" }
 codex-protocol = { path = "protocol" }
+codex-prompt-context = { path = "context-domain/prompt-context" }
 codex-prompt-reducer = { path = "prompt-reducer" }
 codex-replacement-shadow = { path = "replacement-shadow" }
 codex-realtime-webrtc = { path = "realtime-webrtc" }
@@ -247,25 +293,51 @@ codex-reasoning-logic = { path = "reasoning-logic" }
 codex-responses-api-proxy = { path = "responses-api-proxy" }
 codex-response-debug-context = { path = "response-debug-context" }
 codex-runtime-metrics-types = { path = "runtime-metrics-types" }
+codex-runtime-ports = { path = "runtime-domain/runtime-ports" }
 codex-rmcp-client = { path = "rmcp-client" }
 codex-rollout = { path = "rollout" }
 codex-rollout-trace = { path = "rollout-trace" }
 codex-sandboxing = { path = "sandboxing" }
 codex-self-review = { path = "self-review" }
 codex-secrets = { path = "secrets" }
+codex-session-api = { path = "session/session-api" }
+codex-session-events = { path = "session/session-events" }
+codex-session-factory = { path = "session/session-factory" }
+codex-session-input = { path = "session/session-input" }
+codex-session-policy = { path = "session/session-policy" }
+codex-session-runtime = { path = "session/session-runtime" }
+codex-session-runtime-api = { path = "session/session-runtime-api" }
+codex-session-state = { path = "session/session-state" }
 codex-shell-command = { path = "shell-command" }
 codex-shell-escalation = { path = "shell-escalation" }
 codex-skills = { path = "skills" }
 codex-state = { path = "state" }
+codex-state-db-api = { path = "runtime-domain/state-db-api" }
 codex-task-memory = { path = "task-memory" }
+codex-telemetry-api = { path = "runtime-domain/telemetry-api" }
 codex-stdio-to-uds = { path = "stdio-to-uds" }
 codex-terminal-detection = { path = "terminal-detection" }
 codex-test-binary-support = { path = "test-binary-support" }
 codex-thread-config-remote = { path = "thread-config-remote" }
-codex-thread-store = { path = "thread-store" }
+codex-thread-api = { path = "thread/thread-api" }
+codex-thread-handle-api = { path = "thread/thread-handle-api" }
+codex-thread-manager-api = { path = "thread/thread-manager-api" }
+codex-thread-projection-api = { path = "thread/thread-projection-api" }
+codex-thread-store = { path = "thread/thread-store" }
+codex-thread-store-api = { path = "thread/thread-store-api" }
 codex-tool-schema = { path = "tool-schema" }
+codex-tool-execution-api = { path = "tools-domain/tool-execution-api" }
+codex-tool-handler-api = { path = "tools-domain/tool-handler-api" }
+codex-tool-registry-api = { path = "tools-domain/tool-registry-api" }
 codex-tools = { path = "tools" }
 codex-workflow-batch = { path = "workflow-batch" }
+codex-turn-api = { path = "turn/turn-api" }
+codex-turn-events = { path = "turn/turn-events" }
+codex-turn-loop = { path = "turn/turn-loop" }
+codex-turn-loop-api = { path = "turn/turn-loop-api" }
+codex-turn-policy = { path = "turn/turn-policy" }
+codex-turn-state = { path = "turn/turn-state" }
+codex-turn-tool-bridge = { path = "turn/turn-tool-bridge" }
 codex-turn-diff = { path = "turn-diff" }
 codex-tui-render = { path = "tui-render" }
 codex-tui = { path = "tui" }

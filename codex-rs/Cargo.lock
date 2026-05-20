@@ -1923,6 +1923,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-app-catalog-api"
+version = "0.0.0"
+dependencies = [
+ "codex-app-catalog-types",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "codex-app-catalog-types"
+version = "0.0.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "codex-app-server"
 version = "0.0.0"
 dependencies = [
@@ -1934,6 +1949,7 @@ dependencies = [
  "chrono",
  "clap",
  "codex-analytics",
+ "codex-app-catalog-types",
  "codex-app-server-protocol",
  "codex-app-server-transport",
  "codex-arg0",
@@ -1956,6 +1972,7 @@ dependencies = [
  "codex-hooks",
  "codex-login",
  "codex-mcp",
+ "codex-memories-extension",
  "codex-memories-write",
  "codex-model-provider",
  "codex-model-provider-info",
@@ -1970,6 +1987,7 @@ dependencies = [
  "codex-state",
  "codex-thread-config-remote",
  "codex-thread-store",
+ "codex-thread-store-api",
  "codex-tool-schema",
  "codex-utils-absolute-path",
  "codex-utils-cargo-bin",
@@ -2191,6 +2209,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-auth-api"
+version = "0.0.0"
+
+[[package]]
 name = "codex-aws-auth"
 version = "0.0.0"
 dependencies = [
@@ -2313,6 +2335,7 @@ dependencies = [
  "codex-memories-write",
  "codex-model-provider",
  "codex-models-manager",
+ "codex-plugin",
  "codex-protocol",
  "codex-responses-api-proxy",
  "codex-rmcp-client",
@@ -2504,6 +2527,10 @@ name = "codex-collaboration-mode-templates"
 version = "0.0.0"
 
 [[package]]
+name = "codex-compaction-policy"
+version = "0.0.0"
+
+[[package]]
 name = "codex-config"
 version = "0.0.0"
 dependencies = [
@@ -2567,7 +2594,7 @@ name = "codex-connectors"
 version = "0.0.0"
 dependencies = [
  "anyhow",
- "codex-app-server-protocol",
+ "codex-app-catalog-types",
  "hex",
  "pretty_assertions",
  "serde",
@@ -2578,6 +2605,10 @@ dependencies = [
  "tracing",
  "urlencoding",
 ]
+
+[[package]]
+name = "codex-context-budget"
+version = "0.0.0"
 
 [[package]]
 name = "codex-context-ops-impl"
@@ -2621,7 +2652,7 @@ dependencies = [
  "codex-agent-policy",
  "codex-analytics",
  "codex-api",
- "codex-app-server-protocol",
+ "codex-app-catalog-types",
  "codex-apply-patch",
  "codex-async-utils",
  "codex-blackboard",
@@ -2671,7 +2702,7 @@ dependencies = [
  "codex-task-memory",
  "codex-terminal-detection",
  "codex-test-binary-support",
- "codex-thread-store",
+ "codex-thread-store-api",
  "codex-tool-schema",
  "codex-tools",
  "codex-turn-diff",
@@ -2750,7 +2781,6 @@ dependencies = [
  "codex-app-server-protocol",
  "codex-arg0",
  "codex-config",
- "codex-core",
  "codex-exec-server",
  "codex-extension-api",
  "codex-features",
@@ -2760,6 +2790,10 @@ dependencies = [
  "codex-protocol",
  "codex-utils-absolute-path",
 ]
+
+[[package]]
+name = "codex-core-domain-types"
+version = "0.0.0"
 
 [[package]]
 name = "codex-core-plugins"
@@ -2786,6 +2820,7 @@ dependencies = [
  "libc",
  "pretty_assertions",
  "reqwest",
+ "semver",
  "serde",
  "serde_json",
  "tar",
@@ -2880,6 +2915,7 @@ dependencies = [
  "codex-utils-cargo-bin",
  "codex-utils-cli",
  "codex-utils-oss",
+ "codex-utils-sandbox-summary",
  "core_test_support",
  "libc",
  "opentelemetry",
@@ -2911,6 +2947,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "bytes",
+ "codex-api",
  "codex-app-server-protocol",
  "codex-client",
  "codex-file-system",
@@ -2923,6 +2960,7 @@ dependencies = [
  "ctor",
  "futures",
  "hex",
+ "http 1.4.0",
  "pretty_assertions",
  "prost 0.14.3",
  "reqwest",
@@ -2992,6 +3030,7 @@ dependencies = [
 name = "codex-extension-api"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
  "codex-protocol",
  "codex-tools",
 ]
@@ -3140,10 +3179,14 @@ dependencies = [
 name = "codex-guardian"
 version = "0.0.0"
 dependencies = [
- "codex-core",
+ "async-trait",
  "codex-extension-api",
  "codex-protocol",
 ]
+
+[[package]]
+name = "codex-history-api"
+version = "0.0.0"
 
 [[package]]
 name = "codex-hooks"
@@ -3179,6 +3222,7 @@ dependencies = [
 name = "codex-install-context"
 version = "0.0.0"
 dependencies = [
+ "codex-utils-absolute-path",
  "codex-utils-home-dir",
  "pretty_assertions",
  "tempfile",
@@ -3306,6 +3350,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-mcp-elicitation-api"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "codex-mcp-server"
 version = "0.0.0"
 dependencies = [
@@ -3318,6 +3370,7 @@ dependencies = [
  "codex-login",
  "codex-protocol",
  "codex-shell-command",
+ "codex-thread-store",
  "codex-utils-absolute-path",
  "codex-utils-cli",
  "codex-utils-json-to-toml",
@@ -3447,6 +3500,10 @@ dependencies = [
  "tokio",
  "tracing",
 ]
+
+[[package]]
+name = "codex-model-client-api"
+version = "0.0.0"
 
 [[package]]
 name = "codex-model-provider"
@@ -3653,6 +3710,10 @@ dependencies = [
  "libc",
  "pretty_assertions",
 ]
+
+[[package]]
+name = "codex-prompt-context"
+version = "0.0.0"
 
 [[package]]
 name = "codex-prompt-reducer"
@@ -3866,6 +3927,10 @@ name = "codex-runtime-metrics-types"
 version = "0.0.0"
 
 [[package]]
+name = "codex-runtime-ports"
+version = "0.0.0"
+
+[[package]]
 name = "codex-sandboxing"
 version = "0.0.0"
 dependencies = [
@@ -3913,6 +3978,78 @@ name = "codex-self-review"
 version = "0.0.0"
 dependencies = [
  "pretty_assertions",
+]
+
+[[package]]
+name = "codex-session-api"
+version = "0.0.0"
+dependencies = [
+ "codex-protocol",
+ "serde",
+]
+
+[[package]]
+name = "codex-session-events"
+version = "0.0.0"
+dependencies = [
+ "codex-session-api",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "codex-session-factory"
+version = "0.0.0"
+dependencies = [
+ "codex-session-api",
+ "codex-session-runtime-api",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "codex-session-input"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "codex-session-policy"
+version = "0.0.0"
+dependencies = [
+ "codex-session-api",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "codex-session-runtime"
+version = "0.0.0"
+dependencies = [
+ "codex-session-api",
+ "codex-session-events",
+ "codex-session-runtime-api",
+]
+
+[[package]]
+name = "codex-session-runtime-api"
+version = "0.0.0"
+dependencies = [
+ "codex-session-api",
+ "codex-session-events",
+ "codex-session-input",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "codex-session-state"
+version = "0.0.0"
+dependencies = [
+ "codex-session-api",
+ "serde",
 ]
 
 [[package]]
@@ -3989,6 +4126,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-state-db-api"
+version = "0.0.0"
+
+[[package]]
 name = "codex-stdio-to-uds"
 version = "0.0.0"
 dependencies = [
@@ -4013,6 +4154,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-telemetry-api"
+version = "0.0.0"
+
+[[package]]
 name = "codex-terminal-detection"
 version = "0.0.0"
 dependencies = [
@@ -4026,6 +4171,14 @@ version = "0.0.0"
 dependencies = [
  "codex-arg0",
  "tempfile",
+]
+
+[[package]]
+name = "codex-thread-api"
+version = "0.0.0"
+dependencies = [
+ "codex-protocol",
+ "serde",
 ]
 
 [[package]]
@@ -4047,14 +4200,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-thread-handle-api"
+version = "0.0.0"
+dependencies = [
+ "codex-thread-api",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "codex-thread-manager-api"
+version = "0.0.0"
+dependencies = [
+ "codex-thread-api",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "codex-thread-manager-sample"
 version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap",
+ "codex-core",
  "codex-core-api",
+ "codex-thread-store",
  "serde_json",
  "tracing",
+]
+
+[[package]]
+name = "codex-thread-projection-api"
+version = "0.0.0"
+dependencies = [
+ "codex-protocol",
+ "serde",
 ]
 
 [[package]]
@@ -4067,6 +4246,7 @@ dependencies = [
  "codex-protocol",
  "codex-rollout",
  "codex-state",
+ "codex-thread-store-api",
  "codex-utils-path",
  "pretty_assertions",
  "serde",
@@ -4077,6 +4257,30 @@ dependencies = [
  "tracing",
  "uuid",
 ]
+
+[[package]]
+name = "codex-thread-store-api"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "codex-protocol",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "codex-tool-execution-api"
+version = "0.0.0"
+
+[[package]]
+name = "codex-tool-handler-api"
+version = "0.0.0"
+
+[[package]]
+name = "codex-tool-registry-api"
+version = "0.0.0"
 
 [[package]]
 name = "codex-tool-schema"
@@ -4092,6 +4296,7 @@ name = "codex-tools"
 version = "0.0.0"
 dependencies = [
  "codex-agent-policy",
+ "codex-app-catalog-types",
  "codex-app-server-protocol",
  "codex-code-mode-spec",
  "codex-features",
@@ -4270,6 +4475,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-turn-api"
+version = "0.0.0"
+
+[[package]]
 name = "codex-turn-diff"
 version = "0.0.0"
 dependencies = [
@@ -4280,6 +4489,58 @@ dependencies = [
  "similar 3.1.0",
  "tempfile",
  "uuid",
+]
+
+[[package]]
+name = "codex-turn-events"
+version = "0.0.0"
+dependencies = [
+ "codex-turn-api",
+ "codex-turn-state",
+]
+
+[[package]]
+name = "codex-turn-loop"
+version = "0.0.0"
+dependencies = [
+ "codex-turn-api",
+ "codex-turn-events",
+ "codex-turn-loop-api",
+ "codex-turn-policy",
+ "codex-turn-state",
+ "codex-turn-tool-bridge",
+]
+
+[[package]]
+name = "codex-turn-loop-api"
+version = "0.0.0"
+dependencies = [
+ "codex-turn-api",
+ "codex-turn-events",
+ "codex-turn-state",
+]
+
+[[package]]
+name = "codex-turn-policy"
+version = "0.0.0"
+dependencies = [
+ "codex-turn-api",
+ "codex-turn-state",
+]
+
+[[package]]
+name = "codex-turn-state"
+version = "0.0.0"
+dependencies = [
+ "codex-turn-api",
+]
+
+[[package]]
+name = "codex-turn-tool-bridge"
+version = "0.0.0"
+dependencies = [
+ "codex-turn-api",
+ "codex-turn-events",
 ]
 
 [[package]]
@@ -4339,6 +4600,7 @@ version = "0.0.0"
 dependencies = [
  "clap",
  "codex-protocol",
+ "codex-shell-command",
  "pretty_assertions",
  "serde",
  "toml 1.1.2+spec-1.1.0",
