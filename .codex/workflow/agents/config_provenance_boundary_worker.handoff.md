@@ -18,6 +18,10 @@ Owned edit paths:
 - `ConfigLayerSource::User` now carries `profile: Option<ProfileV2Name>` in the config-types owner type, with `ProfileV2Name` owned in `config-types`.
 - Core config tests now use the non-protocol config-layer source type through the existing `codex_config` public API instead of importing `codex_app_server_protocol`.
 
+## Commit Note
+
+The provenance code changes and the initial handoff landed in `444b583f15` while another worker committed the shared index as `Split core agents tests`. I did not reset, amend, or rewrite that mixed commit; this handoff records the ownership-boundary slice state and the remaining direct-dependency note below.
+
 ## Boundary Note
 
 `codex-core` does not currently have a direct `codex-config-types` dependency; it depends on `codex-config`. Because this worker is not allowed to edit manifests or lockfiles, I did not add a direct `codex-config-types` dependency to core. A future root-owned dependency-boundary slice can decide whether core should import `codex_config_types::ConfigLayerSource` directly by adding the manifest dependency, or keep using the existing `codex_config` re-export as the public config-domain API.
