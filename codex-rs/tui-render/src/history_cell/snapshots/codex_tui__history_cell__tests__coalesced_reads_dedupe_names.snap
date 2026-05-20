@@ -1,0 +1,7 @@
+---
+source: tui-render/src/history_cell/tests.rs
+assertion_line: 1638
+expression: rendered
+---
+• Explored
+  └ Read auth.rs, shimmer.rs

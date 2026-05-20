@@ -1,0 +1,10 @@
+---
+source: tui-render/src/history_cell/tests.rs
+assertion_line: 532
+expression: rendered
+---
+/ps
+
+Background terminals
+
+  • No background terminals running.

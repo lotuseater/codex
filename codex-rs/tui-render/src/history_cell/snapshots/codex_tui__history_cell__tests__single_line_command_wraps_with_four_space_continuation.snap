@@ -1,0 +1,9 @@
+---
+source: tui-render/src/history_cell/tests.rs
+assertion_line: 1712
+expression: rendered
+---
+• Ran a_very_long_token_
+  │ without_spaces_to_
+  │ force_wrapping
+  └ (no output)

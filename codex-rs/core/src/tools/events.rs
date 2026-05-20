@@ -118,7 +118,6 @@ pub(crate) enum ToolEmitter {
         cwd: AbsolutePathBuf,
         source: ExecCommandSource,
         parsed_cmd: Vec<ParsedCommand>,
-        freeform: bool,
     },
     ApplyPatch {
         changes: HashMap<PathBuf, FileChange>,
@@ -134,19 +133,13 @@ pub(crate) enum ToolEmitter {
 }
 
 impl ToolEmitter {
-    pub fn shell(
-        command: Vec<String>,
-        cwd: AbsolutePathBuf,
-        source: ExecCommandSource,
-        freeform: bool,
-    ) -> Self {
+    pub fn shell(command: Vec<String>, cwd: AbsolutePathBuf, source: ExecCommandSource) -> Self {
         let parsed_cmd = parse_command(&command);
         Self::Shell {
             command,
             cwd,
             source,
             parsed_cmd,
-            freeform,
         }
     }
 
@@ -335,12 +328,7 @@ impl ToolEmitter {
         output: &ExecToolCallOutput,
         ctx: ToolEventCtx<'_>,
     ) -> String {
-        match self {
-            Self::Shell { freeform: true, .. } => {
-                super::format_exec_output_for_model_freeform(output, ctx.turn.truncation_policy)
-            }
-            _ => super::format_exec_output_for_model_structured(output, ctx.turn.truncation_policy),
-        }
+        super::format_exec_output_for_model(output, ctx.turn.truncation_policy)
     }
 
     pub async fn finish(

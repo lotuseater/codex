@@ -42,9 +42,27 @@ pub struct ThreadSessionState {
     /// when the server knows it.
     pub active_permission_profile: Option<ActivePermissionProfile>,
     pub cwd: AbsolutePathBuf,
+    pub runtime_workspace_roots: Vec<AbsolutePathBuf>,
     pub instruction_source_paths: Vec<AbsolutePathBuf>,
     pub reasoning_effort: Option<codex_protocol::openai_models::ReasoningEffort>,
     pub message_history: Option<MessageHistoryMetadata>,
     pub network_proxy: Option<SessionNetworkProxyRuntime>,
     pub rollout_path: Option<PathBuf>,
+}
+
+impl ThreadSessionState {
+    pub fn set_cwd_retargeting_implicit_runtime_workspace_root(&mut self, cwd: AbsolutePathBuf) {
+        let previous_cwd = std::mem::replace(&mut self.cwd, cwd.clone());
+        if !self.runtime_workspace_roots.contains(&previous_cwd) {
+            return;
+        }
+
+        let previous_roots = std::mem::take(&mut self.runtime_workspace_roots);
+        self.runtime_workspace_roots.push(cwd);
+        for root in previous_roots {
+            if root != previous_cwd && !self.runtime_workspace_roots.contains(&root) {
+                self.runtime_workspace_roots.push(root);
+            }
+        }
+    }
 }

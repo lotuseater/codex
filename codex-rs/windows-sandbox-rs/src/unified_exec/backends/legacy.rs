@@ -1,6 +1,5 @@
 use super::windows_common::finish_driver_spawn;
 use super::windows_common::normalize_windows_tty_input;
-use crate::acl::revoke_ace;
 use crate::conpty::ConptyInstance;
 use crate::conpty::spawn_conpty_process_as_user;
 use crate::desktop::LaunchDesktop;
@@ -16,7 +15,6 @@ use crate::spawn_prep::apply_legacy_session_acl_rules;
 use crate::spawn_prep::legacy_session_capability_roots;
 use crate::spawn_prep::prepare_legacy_session_security;
 use crate::spawn_prep::prepare_legacy_spawn_context;
-use crate::token::LocalSid;
 use anyhow::Result;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_pty::ProcessDriver;
@@ -24,7 +22,6 @@ use codex_utils_pty::SpawnedProcess;
 use codex_utils_pty::TerminalSize;
 use std::collections::HashMap;
 use std::path::Path;
-use std::path::PathBuf;
 use std::ptr;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
@@ -209,7 +206,6 @@ fn finalize_exit(
     process_handle: Arc<StdMutex<Option<usize>>>,
     thread_handle: HANDLE,
     output_join: std::thread::JoinHandle<()>,
-    guards: Vec<(PathBuf, String)>,
     logs_base_dir: Option<&Path>,
     command: Vec<String>,
 ) {
@@ -245,14 +241,6 @@ fn finalize_exit(
         log_success(&command, logs_base_dir);
     } else {
         log_failure(&command, &format!("exit code {exit_code}"), logs_base_dir);
-    }
-
-    unsafe {
-        for (path, cap_sid) in guards {
-            if let Ok(sid) = LocalSid::from_string(&cap_sid) {
-                revoke_ace(&path, sid.as_ptr());
-            }
-        }
     }
 }
 
@@ -329,8 +317,7 @@ pub(crate) async fn spawn_windows_sandbox_session_legacy(
         prepare_legacy_session_security(&common.policy, codex_home, cwd, capability_roots)?;
     allow_null_device_for_workspace_write(common.is_workspace_write);
 
-    let persist_aces = common.is_workspace_write;
-    let guards = apply_legacy_session_acl_rules(
+    apply_legacy_session_acl_rules(
         &common.policy,
         sandbox_policy_cwd,
         codex_home,
@@ -343,7 +330,6 @@ pub(crate) async fn spawn_windows_sandbox_session_legacy(
             readonly_sid_str: security.readonly_sid_str.as_deref(),
             write_root_sids: &security.write_root_sids,
         },
-        persist_aces,
     )?;
 
     let (writer_tx, writer_rx) = mpsc::channel::<Vec<u8>>(128);
@@ -379,13 +365,6 @@ pub(crate) async fn spawn_windows_sandbox_session_legacy(
         Ok(handles) => handles,
         Err(err) => {
             unsafe {
-                if !persist_aces {
-                    for (path, cap_sid) in &guards {
-                        if let Ok(sid) = LocalSid::from_string(cap_sid) {
-                            revoke_ace(path, sid.as_ptr());
-                        }
-                    }
-                }
                 CloseHandle(security.h_token);
             }
             return Err(err);
@@ -396,7 +375,6 @@ pub(crate) async fn spawn_windows_sandbox_session_legacy(
     let process_handle = Arc::new(StdMutex::new(Some(pi.hProcess as usize)));
     let wait_handle = Arc::clone(&process_handle);
     let command_for_wait = command.clone();
-    let guards_for_wait = if persist_aces { Vec::new() } else { guards };
     let hpc_for_wait = hpc_handle.clone();
     // pi (PROCESS_INFORMATION) and token_handle are HANDLE = *mut c_void = !Send under
     // windows-sys 0.61+. Capture only the addresses across the spawn boundary.
@@ -435,7 +413,6 @@ pub(crate) async fn spawn_windows_sandbox_session_legacy(
             wait_handle,
             pi_h_thread,
             output_join,
-            guards_for_wait,
             common.logs_base_dir.as_deref(),
             command_for_wait,
         );

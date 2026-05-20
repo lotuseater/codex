@@ -12,6 +12,7 @@ use codex_utils_cli::CliConfigOverrides;
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
+#[command(version)]
 struct AppServerArgs {
     /// Transport endpoint URL. Supported values: `stdio://` (default),
     /// `unix://`, `unix://PATH`, `ws://IP:PORT`, `off`.

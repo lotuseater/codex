@@ -1,0 +1,12 @@
+---
+source: tui-render/src/history_cell/tests.rs
+assertion_line: 674
+expression: rendered
+---
+/ps
+
+Background terminals
+
+  • just fix
+    ↳   indented first
+          more indented
