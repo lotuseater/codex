@@ -46,6 +46,12 @@ Date: 2026-05-20
   `codex-core`, restore the old non-Windows gate around
   `request_permissions.rs`, and remove stale residual-router queue language
   from this handoff.
+- Root is launching those review follow-ups as disjoint external workers:
+  `core_protocol_dependency_followup_worker`,
+  `request_permissions_gate_worker`, and
+  `codex_otel_compile_followup_worker` at 2026-05-21T02:18+03:00. They
+  inherit the same no-build/test policy until their owned refactor is complete,
+  then only focused prompt-authorized verification is allowed.
 - No broad builds/tests should run from root. Workers must not build or run
   tests until their owned refactor is complete; after that, only focused
   prompt-authorized verification is allowed. Workers should commit coherent
@@ -837,9 +843,11 @@ Next external worker queue status:
 2. `core_compile_tools_worker`: still active/unknown; no handoff yet.
 3. `app_server_boundary_finish_worker`: launched at 2026-05-21T01:57+03:00.
 4. `config_connectors_boundary_worker`: launched at 2026-05-21T01:57+03:00.
-5. Follow-up needed from review: route the `codex-core` direct
-   `codex-app-server-protocol` dependency issue to the correct owner and
-   restore/confirm the `request_permissions.rs` non-Windows gate.
+5. `core_protocol_dependency_followup_worker`: launched at
+   2026-05-21T02:18+03:00.
+6. `request_permissions_gate_worker`: launched at 2026-05-21T02:18+03:00.
+7. `codex_otel_compile_followup_worker`: launched at
+   2026-05-21T02:18+03:00.
 
 Launched at 2026-05-21 01:12 Europe/Kiev via
 `.codex/workflow/scripts/Start-CodexWorker.ps1 -Mode Exec`:
@@ -856,6 +864,12 @@ Additional launched at 2026-05-21 01:57 Europe/Kiev via the same script:
 - `app_server_boundary_finish_worker`
 - `config_connectors_boundary_worker`
 - `compaction_output_plan_worker`
+
+Additional review follow-ups launched after `recent_worker_review_worker`:
+
+- `core_protocol_dependency_followup_worker`
+- `request_permissions_gate_worker`
+- `codex_otel_compile_followup_worker`
 
 Ignored runtime prompt/marker paths for these sessions:
 
