@@ -21,11 +21,23 @@ Date: 2026-05-20
   `cargo check -p codex-core` progressed past the owned config/permissions
   blocker and then stopped on a downstream `codex-otel` compile error recorded
   in `logs/core-config-cargo-check-release-20260521-015907.log`.
-- Existing external sessions still have markers but no handoff files yet:
-  `core_compile_session_thread_worker`, `core_compile_tools_worker`, and
-  `recent_worker_review_worker`. Treat those lanes as active/unknown and do not
-  duplicate their core or review ownership until handoffs appear or root
-  confirms they are stale.
+- `core_compile_session_thread_worker` wrote a handoff with uncommitted,
+  formatted session/thread changes. It reports `git diff --check` clean, but no
+  commit because the focused `cargo check -p codex-core --release --lib`
+  stopped first in the out-of-lane `codex-otel`
+  `ResponseEvent::Incomplete` exhaustive-match error
+  (`logs/codex-core-lib-release-check-20260521-021630.log`).
+- `core_compile_tools_worker` wrote a handoff with uncommitted tool-router and
+  spec-plan changes. It reports `just fmt`, static `ToolExecutor` scan, and
+  `git diff --check` clean, but no commit because the same `codex-otel`
+  compile blocker stopped focused release verification
+  (`logs/codex-core-tools-router-release-check-20260521-021708.log`).
+- Existing external sessions with markers but no handoff files yet:
+  `app_server_boundary_finish_worker`, `config_connectors_boundary_worker`,
+  `core_protocol_dependency_followup_worker`,
+  `request_permissions_gate_worker`, and `codex_otel_compile_followup_worker`.
+  Treat those lanes as active/unknown and do not duplicate their ownership until
+  handoffs appear or root confirms they are stale.
 - Root launched only disjoint follow-up edit lanes at
   2026-05-21T01:57+03:00:
   `app_server_boundary_finish_worker`,
@@ -839,8 +851,10 @@ Workflow cleanup performed by root:
 
 Next external worker queue status:
 
-1. `core_compile_session_thread_worker`: still active/unknown; no handoff yet.
-2. `core_compile_tools_worker`: still active/unknown; no handoff yet.
+1. `core_compile_session_thread_worker`: handoff received; uncommitted changes
+   await `codex-otel` blocker resolution and root integration.
+2. `core_compile_tools_worker`: handoff received; uncommitted changes await
+   `codex-otel` blocker resolution and root integration.
 3. `app_server_boundary_finish_worker`: launched at 2026-05-21T01:57+03:00.
 4. `config_connectors_boundary_worker`: launched at 2026-05-21T01:57+03:00.
 5. `core_protocol_dependency_followup_worker`: launched at
