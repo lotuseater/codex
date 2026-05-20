@@ -19,8 +19,8 @@ use serde_json::Value;
 use serde_json::json;
 use std::fs;
 
-use crate::suite::apply_patch_cli::apply_patch_harness;
-use crate::suite::apply_patch_cli::mount_apply_patch;
+use super::apply_patch_cli::apply_patch_harness;
+use super::apply_patch_cli::mount_apply_patch;
 
 const FIXTURE_JSON: &str = r#"{
     "description": "This is an example JSON file.",
