@@ -26,6 +26,9 @@ use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::RolloutLine;
 use codex_protocol::protocol::WarningEvent;
 use codex_protocol::user_input::UserInput;
+use core_test_support::compact_fixtures::COMPACT_WARNING_MESSAGE;
+use core_test_support::compact_fixtures::FIRST_REPLY;
+use core_test_support::compact_fixtures::SUMMARY_TEXT;
 use core_test_support::context_snapshot;
 use core_test_support::context_snapshot::ContextSnapshotOptions;
 use core_test_support::context_snapshot::ContextSnapshotRenderMode;
@@ -60,8 +63,6 @@ use std::path::Path;
 use wiremock::MockServer;
 // --- Test helpers -----------------------------------------------------------
 
-pub(super) const FIRST_REPLY: &str = "FIRST_REPLY";
-pub(super) const SUMMARY_TEXT: &str = "SUMMARY_ONLY_CONTEXT";
 const THIRD_USER_MSG: &str = "next turn";
 const AUTO_SUMMARY_TEXT: &str = "AUTO_SUMMARY";
 const FIRST_AUTO_MSG: &str = "token limit start";
@@ -78,8 +79,6 @@ const DUMMY_CALL_ID: &str = "call-multi-auto";
 const FUNCTION_CALL_LIMIT_MSG: &str = "function call limit push";
 const POST_AUTO_USER_MSG: &str = "post auto follow-up";
 const PRETURN_CONTEXT_DIFF_CWD: &str = "/tmp/PRETURN_CONTEXT_DIFF_CWD";
-
-pub(super) const COMPACT_WARNING_MESSAGE: &str = "Heads up: Long threads and multiple compactions can cause the model to be less accurate. Start a new thread when possible to keep threads small and targeted.";
 
 fn ev_shell_command_call(call_id: &str, command: &str) -> serde_json::Value {
     ev_function_call(

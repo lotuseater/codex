@@ -7,9 +7,6 @@
 //! request payload that Codex would send to the model and assert that the
 //! model-visible history matches the expected sequence of messages.
 
-use super::compact::COMPACT_WARNING_MESSAGE;
-use super::compact::FIRST_REPLY;
-use super::compact::SUMMARY_TEXT;
 use anyhow::Result;
 use codex_core::CodexThread;
 use codex_core::ThreadManager;
@@ -23,6 +20,9 @@ use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::WarningEvent;
 use codex_protocol::user_input::UserInput;
+use core_test_support::compact_fixtures::COMPACT_WARNING_MESSAGE;
+use core_test_support::compact_fixtures::FIRST_REPLY;
+use core_test_support::compact_fixtures::SUMMARY_TEXT;
 use core_test_support::context_snapshot;
 use core_test_support::context_snapshot::ContextSnapshotOptions;
 use core_test_support::context_snapshot::ContextSnapshotRenderMode;
