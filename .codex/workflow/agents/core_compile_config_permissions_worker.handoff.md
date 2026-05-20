@@ -39,4 +39,5 @@ Date: 2026-05-21
 
 ## Commit
 
-- Commit pending after this handoff is written and path-scoped staging excludes unrelated dirty files.
+- Code fix commit: `72245564ff` (`Fix config permission project root glob helper`).
+- Path-scoped staging excluded unrelated dirty files.
