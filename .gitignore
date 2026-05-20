@@ -108,6 +108,8 @@ __pycache__/
 .codex/workflow/agents/*.marker.txt
 .codex/workflow/agents/*.reads.report.json
 .codex/workflow/agents/*.reads.log.jsonl
+.codex/workflow/agents/*.report.json
+.codex/workflow/agents/*.log.jsonl
 .codex/workflow/agents/*help.txt
 .codex/workflow/*.log.jsonl
 .codex/workflow/*.report.json
