@@ -20,7 +20,6 @@ use codex_api::RealtimeWebsocketClient;
 use codex_api::RealtimeWebsocketEvents;
 use codex_api::RealtimeWebsocketWriter;
 use codex_api::map_api_error;
-use codex_app_server_protocol::AuthMode;
 use codex_config::config_toml::RealtimeWsMode;
 use codex_config::config_toml::RealtimeWsVersion;
 use codex_login::CodexAuth;
@@ -621,7 +620,7 @@ async fn prepare_realtime_start(
     let transport = params
         .transport
         .unwrap_or(ConversationStartTransport::Websocket);
-    let mut api_provider = provider.to_api_provider(Some(AuthMode::ApiKey))?;
+    let mut api_provider = provider.to_api_provider(/*auth_mode*/ None)?;
     if let Some(realtime_ws_base_url) = &config.experimental_realtime_ws_base_url {
         api_provider.base_url = realtime_ws_base_url.clone();
     }

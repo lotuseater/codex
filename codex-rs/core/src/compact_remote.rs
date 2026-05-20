@@ -22,8 +22,8 @@ use codex_analytics::CompactionImplementation;
 use codex_analytics::CompactionPhase;
 use codex_analytics::CompactionReason;
 use codex_analytics::CompactionTrigger;
-use codex_app_server_protocol::AuthMode;
 use codex_config::types::PromptReductionModeToml;
+use codex_login::CodexAuth;
 use codex_prompt_reducer::PromptReductionConfig;
 use codex_prompt_reducer::PromptReductionStats;
 use codex_protocol::error::CodexErr;
@@ -199,6 +199,10 @@ async fn run_remote_compact_task_inner_impl(
             output_schema: None,
             output_schema_strict: true,
         };
+        let is_api_key_auth = matches!(
+            sess.services.auth_manager.auth().await,
+            Some(CodexAuth::ApiKey(_))
+        );
         let result = sess
             .services
             .model_client
@@ -208,9 +212,7 @@ async fn run_remote_compact_task_inner_impl(
                 CompactConversationRequestSettings {
                     effort: turn_context.reasoning_effort,
                     summary: turn_context.reasoning_summary,
-                    service_tier: if sess.services.auth_manager.auth_mode()
-                        == Some(AuthMode::ApiKey)
-                    {
+                    service_tier: if is_api_key_auth {
                         None
                     } else {
                         turn_context.config.service_tier.clone()

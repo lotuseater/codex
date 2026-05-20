@@ -61,7 +61,6 @@ use codex_api::auth_header_telemetry;
 use codex_api::build_session_headers;
 use codex_api::create_text_param_for_request;
 use codex_api::response_create_client_metadata;
-use codex_app_server_protocol::AuthMode;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_login::RefreshTokenError;
@@ -447,7 +446,7 @@ impl ModelClient {
         let request_telemetry = Self::build_request_telemetry(
             session_telemetry,
             AuthRequestTelemetryContext::new(
-                client_setup.auth.as_ref().map(CodexAuth::auth_mode),
+                client_setup.auth.as_ref(),
                 client_setup.api_auth.as_ref(),
                 PendingUnauthorizedRetry::default(),
             ),
@@ -574,7 +573,7 @@ impl ModelClient {
         let request_telemetry = Self::build_request_telemetry(
             session_telemetry,
             AuthRequestTelemetryContext::new(
-                client_setup.auth.as_ref().map(CodexAuth::auth_mode),
+                client_setup.auth.as_ref(),
                 client_setup.api_auth.as_ref(),
                 PendingUnauthorizedRetry::default(),
             ),
@@ -1092,7 +1091,7 @@ impl ModelClientSession {
             ))
         })?;
         let auth_context = AuthRequestTelemetryContext::new(
-            client_setup.auth.as_ref().map(CodexAuth::auth_mode),
+            client_setup.auth.as_ref(),
             client_setup.api_auth.as_ref(),
             PendingUnauthorizedRetry::default(),
         );
@@ -1236,7 +1235,7 @@ impl ModelClientSession {
             let client_setup = self.client.current_client_setup().await?;
             let transport = ReqwestTransport::new(build_reqwest_client());
             let request_auth_context = AuthRequestTelemetryContext::new(
-                client_setup.auth.as_ref().map(CodexAuth::auth_mode),
+                client_setup.auth.as_ref(),
                 client_setup.api_auth.as_ref(),
                 pending_retry,
             );
@@ -1351,7 +1350,7 @@ impl ModelClientSession {
         loop {
             let client_setup = self.client.current_client_setup().await?;
             let request_auth_context = AuthRequestTelemetryContext::new(
-                client_setup.auth.as_ref().map(CodexAuth::auth_mode),
+                client_setup.auth.as_ref(),
                 client_setup.api_auth.as_ref(),
                 pending_retry,
             );
@@ -1928,17 +1927,17 @@ struct AuthRequestTelemetryContext {
 
 impl AuthRequestTelemetryContext {
     fn new(
-        auth_mode: Option<AuthMode>,
+        auth: Option<&CodexAuth>,
         api_auth: &dyn AuthProvider,
         retry: PendingUnauthorizedRetry,
     ) -> Self {
         let auth_telemetry = auth_header_telemetry(api_auth);
         Self {
-            auth_mode: auth_mode.map(|mode| match mode {
-                AuthMode::ApiKey => "ApiKey",
-                AuthMode::Chatgpt | AuthMode::ChatgptAuthTokens | AuthMode::AgentIdentity => {
-                    "Chatgpt"
-                }
+            auth_mode: auth.map(|auth| match auth {
+                CodexAuth::ApiKey(_) => "ApiKey",
+                CodexAuth::Chatgpt(_)
+                | CodexAuth::ChatgptAuthTokens(_)
+                | CodexAuth::AgentIdentity(_) => "Chatgpt",
             }),
             auth_header_attached: auth_telemetry.attached,
             auth_header_name: auth_telemetry.name,

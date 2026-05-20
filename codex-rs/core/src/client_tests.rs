@@ -14,7 +14,6 @@ use crate::GenerateAttestationFuture;
 use crate::client_common::Prompt;
 use codex_api::ApiError;
 use codex_api::ResponseEvent;
-use codex_app_server_protocol::AuthMode;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_model_provider::BearerAuthProvider;
@@ -587,8 +586,9 @@ async fn dropped_backpressured_response_stream_traces_cancelled_partial_output()
 
 #[test]
 fn auth_request_telemetry_context_tracks_attached_auth_and_retry_phase() {
+    let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
     let auth_context = AuthRequestTelemetryContext::new(
-        Some(AuthMode::Chatgpt),
+        Some(&auth),
         &BearerAuthProvider::for_test(Some("access-token"), Some("workspace-123")),
         PendingUnauthorizedRetry::from_recovery(UnauthorizedRecoveryExecution {
             mode: "managed",
