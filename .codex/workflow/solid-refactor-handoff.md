@@ -4,6 +4,55 @@ Date: 2026-05-20
 
 ## Latest Update
 
+### 2026-05-21T01:54+03:00 root orchestration checkpoint
+
+- Integrated completed residual core test routing:
+  `core_tests_residual_router_worker` finished and committed `d0a3390511`
+  (`Route residual core integration tests`). `codex-rs/core/tests/all.rs`
+  and `codex-rs/core/tests/suite/mod.rs` are deleted; residual modules are
+  routed into split binaries including the new `telemetry` lane.
+- Integrated completed manifest/dependency boundary repair:
+  `boundary_dependency_manifest_worker` finished and committed
+  `ed932df956` (`Wire boundary crates in workspace manifests`), then recorded
+  handoff commit `a0ad874831` (`Record boundary dependency manifest handoff`).
+- Integrated completed core config/permissions compile repair:
+  `core_compile_config_permissions_worker` committed `72245564ff`
+  (`Fix config permission project root glob helper`). Its focused release
+  `cargo check -p codex-core` progressed past the owned config/permissions
+  blocker and then stopped on a downstream `codex-otel` compile error recorded
+  in `logs/core-config-cargo-check-release-20260521-015907.log`.
+- Existing external sessions still have markers but no handoff files yet:
+  `core_compile_session_thread_worker`, `core_compile_tools_worker`, and
+  `recent_worker_review_worker`. Treat those lanes as active/unknown and do not
+  duplicate their core or review ownership until handoffs appear or root
+  confirms they are stale.
+- Root launched only disjoint follow-up edit lanes at
+  2026-05-21T01:57+03:00:
+  `app_server_boundary_finish_worker`,
+  `config_connectors_boundary_worker`, and
+  `compaction_output_plan_worker`.
+- Workflow scratch cleanup: `.codex/workflow/agents/*.tmp.txt` is now
+  gitignored after an active core-tools worker wrote
+  `core_compile_tools_worker_missing_output.tmp.txt`; root left the file in
+  place because that lane is still active/unknown.
+- `compaction_output_plan_worker` finished quickly. It kept and normalized
+  `.codex/workflow/compaction-max-output-plan.md` as a durable workflow plan,
+  committed it as `556654f05d` (`solid-refactor: record compaction max output
+  plan`), then recorded its handoff as `4998853d02`
+  (`solid-refactor: record compaction output plan handoff`).
+- `recent_worker_review_worker` completed delegated review and committed
+  `0a465f27b3` (`Record recent worker review handoff`). It flagged three
+  follow-ups: restore/resolve direct `codex-app-server-protocol` ownership for
+  `codex-core`, restore the old non-Windows gate around
+  `request_permissions.rs`, and remove stale residual-router queue language
+  from this handoff.
+- No broad builds/tests should run from root. Workers must not build or run
+  tests until their owned refactor is complete; after that, only focused
+  prompt-authorized verification is allowed. Workers should commit coherent
+  scoped changes when safe and write concise `*.handoff.md` files.
+- Compact early: update this file again around 40-45% context and compact
+  before 50%.
+
 - `core_tests_agents_lane_worker` moved the agents/delegation integration-test
   modules from `codex-rs/core/tests/suite/` into
   `codex-rs/core/tests/agents/` and simplified `codex-rs/core/tests/agents.rs`
@@ -769,9 +818,9 @@ Known blockers before broad verification:
   `core/src/config/permissions.rs`, `core/src/tools/router.rs`,
   `core/src/tools/spec_plan.rs`, and thread-store callsites with changed
   `LocalThreadStore` / `LocalThreadStoreConfig` APIs.
-- Residual unassigned suite modules include the permissions/hooks family called
-  out by the exec/permissions worker, especially `hooks_mcp.rs`,
-  `permissions_messages.rs`, and `request_permissions.rs`.
+- Residual suite routing is complete as of `d0a3390511`. Review follow-up:
+  confirm/fix the `request_permissions.rs` platform gate in
+  `codex-rs/core/tests/permissions.rs` before releasing that split lane.
 
 Workflow cleanup performed by root:
 
@@ -782,28 +831,15 @@ Workflow cleanup performed by root:
 - Added scoped `.gitignore` rules for future workflow scratch, prompt, marker,
   and read-report files.
 
-Next external worker queue:
+Next external worker queue status:
 
-1. `core_tests_residual_router_worker`: route remaining unassigned
-   `codex-rs/core/tests/suite/*.rs` modules into the correct split binaries or
-   create a narrow additional split binary. Do not recreate `all.rs` or
-   `suite/mod.rs`.
-2. `core_compile_session_thread_worker`: repair session/thread-manager
-   compile blockers around `core/src/session/turn.rs`,
-   `core/src/session/mod.rs`, `core/src/thread_manager.rs`, and thread-store
-   API callsites.
-3. `core_compile_tools_worker`: repair tool-router/spec-plan compile blockers
-   around `core/src/tools/router.rs`, `core/src/tools/spec_plan.rs`, and
-   adjacent owned tool adapter files.
-4. `core_compile_config_permissions_worker`: repair config/permissions compile
-   blockers around `core/src/config/permissions.rs` and adjacent config
-   boundary files without widening protocol dependencies.
-5. `boundary_dependency_manifest_worker`: repair manifest/dependency/Bazel
-   boundary issues needed by the source workers, including lockfile refreshes
-   only if dependencies change.
-6. `recent_worker_review_worker`: review recent worker commits and handoffs
-   for regressions, ownership mistakes, and missing follow-up tasks; write a
-   findings handoff instead of editing source.
+1. `core_compile_session_thread_worker`: still active/unknown; no handoff yet.
+2. `core_compile_tools_worker`: still active/unknown; no handoff yet.
+3. `app_server_boundary_finish_worker`: launched at 2026-05-21T01:57+03:00.
+4. `config_connectors_boundary_worker`: launched at 2026-05-21T01:57+03:00.
+5. Follow-up needed from review: route the `codex-core` direct
+   `codex-app-server-protocol` dependency issue to the correct owner and
+   restore/confirm the `request_permissions.rs` non-Windows gate.
 
 Launched at 2026-05-21 01:12 Europe/Kiev via
 `.codex/workflow/scripts/Start-CodexWorker.ps1 -Mode Exec`:
@@ -814,6 +850,12 @@ Launched at 2026-05-21 01:12 Europe/Kiev via
 - `core_compile_config_permissions_worker`
 - `boundary_dependency_manifest_worker`
 - `recent_worker_review_worker`
+
+Additional launched at 2026-05-21 01:57 Europe/Kiev via the same script:
+
+- `app_server_boundary_finish_worker`
+- `config_connectors_boundary_worker`
+- `compaction_output_plan_worker`
 
 Ignored runtime prompt/marker paths for these sessions:
 

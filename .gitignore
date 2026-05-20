@@ -114,6 +114,7 @@ __pycache__/
 .codex/workflow/agents/*-log.jsonl
 .codex/workflow/agents/*.report.json
 .codex/workflow/agents/*.log.jsonl
+.codex/workflow/agents/*.tmp.txt
 .codex/workflow/agents/*help.txt
 .codex/workflow/*.log.jsonl
 .codex/workflow/*.report.json
