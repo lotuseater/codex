@@ -582,6 +582,8 @@ pub enum ConfigLayerSource {
         /// This is the path to the user's config.toml file, though it is not
         /// guaranteed to exist.
         file: AbsolutePathBuf,
+        #[serde(default)]
+        profile: Option<ProfileV2Name>,
     },
 
     /// Path to a .codex/ folder within a project. There could be multiple of
@@ -760,6 +762,8 @@ pub enum HookEventName {
     UserPromptSubmit,
     Stop,
 }
+
+pub type ProfileV2Name = String;
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "snake_case")]
