@@ -77,11 +77,11 @@ pub(crate) fn token_context_percent_used(
     if model_context_window <= 0 {
         return None;
     }
-    Some(
-        ((context_tokens.max(0) as f64 / model_context_window as f64) * 100.0)
-            .clamp(0.0, 100.0)
-            .round() as i64,
-    )
+    let usage = TokenUsage {
+        total_tokens: context_tokens.max(0),
+        ..TokenUsage::default()
+    };
+    Some((100 - usage.percent_of_context_window_remaining(model_context_window)).clamp(0, 100))
 }
 
 pub(crate) fn semantic_compact_turn_input(

@@ -261,10 +261,7 @@ async fn run_compact_task_inner_impl(
     let summary_suffix = get_last_assistant_message_from_turn(history_items).unwrap_or_default();
     let summary_text = format!("{SUMMARY_PREFIX}\n{summary_suffix}");
     let user_messages = collect_user_messages(history_items);
-    let task_memory_item = crate::task_memory::build_task_memory_item(history_items);
-    let task_memory_digest = task_memory_item
-        .as_ref()
-        .and_then(crate::task_memory::task_memory_item_digest);
+    let mut task_memory = crate::task_memory::CompactionTaskMemory::from_history(history_items);
 
     let mut new_history = build_compacted_history(Vec::new(), &user_messages, &summary_text);
 
@@ -275,10 +272,8 @@ async fn run_compact_task_inner_impl(
     ) {
         replacement_context = sess.build_initial_context(turn_context.as_ref()).await;
     }
-    if let Some(item) = task_memory_item {
-        replacement_context.push(item);
-    }
-    crate::task_memory::remove_task_memory_items(&mut new_history);
+    task_memory.push_into_replacement_context(&mut replacement_context);
+    crate::task_memory::CompactionTaskMemory::remove_from_history(&mut new_history);
     if !replacement_context.is_empty() {
         new_history = insert_initial_context_before_last_real_user_or_summary(
             new_history,
@@ -295,7 +290,7 @@ async fn run_compact_task_inner_impl(
     };
     sess.replace_compacted_history(new_history, reference_context_item, compacted_item)
         .await;
-    sess.reset_task_memory_throttle_after_compaction(task_memory_digest.as_deref())
+    sess.reset_task_memory_throttle_after_compaction(task_memory.digest())
         .await;
     client_session.reset_websocket_session();
     sess.recompute_token_usage(&turn_context).await;

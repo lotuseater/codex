@@ -154,10 +154,8 @@ async fn run_remote_compact_task_inner_impl(
     }
 
     let trace_input_history = history.raw_items().to_vec();
-    let task_memory_item = crate::task_memory::build_task_memory_item(&trace_input_history);
-    let task_memory_digest = task_memory_item
-        .as_ref()
-        .and_then(crate::task_memory::task_memory_item_digest);
+    let mut task_memory =
+        crate::task_memory::CompactionTaskMemory::from_history(&trace_input_history);
     let prompt_input = history.for_prompt(&turn_context.model_info.input_modalities);
     let tool_router = built_tools(
         sess.as_ref(),
@@ -219,7 +217,7 @@ async fn run_remote_compact_task_inner_impl(
         turn_context.as_ref(),
         compacted_history,
         initial_context_injection,
-        task_memory_item,
+        &mut task_memory,
     )
     .await;
 
@@ -237,7 +235,7 @@ async fn run_remote_compact_task_inner_impl(
     });
     sess.replace_compacted_history(new_history, reference_context_item, compacted_item)
         .await;
-    sess.reset_task_memory_throttle_after_compaction(task_memory_digest.as_deref())
+    sess.reset_task_memory_throttle_after_compaction(task_memory.digest())
         .await;
     sess.recompute_token_usage(turn_context).await;
 

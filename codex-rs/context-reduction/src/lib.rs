@@ -540,6 +540,34 @@ mod tests {
     }
 
     #[test]
+    fn other_compactions_do_not_reset_early_pressure_cooldown() {
+        let mut state = SemanticCompactState::default();
+        state.record_compaction_finished(Some(ContextReductionReason::EarlyContextPressure));
+
+        for _ in 0..12 {
+            state.record_regular_turn_finished(turn_input(1));
+        }
+
+        state.record_compaction_finished(Some(ContextReductionReason::ContextLimit));
+
+        for _ in 0..11 {
+            state.record_regular_turn_finished(turn_input(1));
+            assert_eq!(
+                state.decide(semantic_input_with_visible_percent(false, 1, 20)),
+                SemanticCompactDecision::Skip
+            );
+        }
+
+        state.record_regular_turn_finished(turn_input(1));
+        assert_eq!(
+            state.decide(semantic_input_with_visible_percent(false, 1, 20)),
+            SemanticCompactDecision::Compact {
+                reason: ContextReductionReason::EarlyContextPressure,
+            }
+        );
+    }
+
+    #[test]
     fn semantic_checkpoint_still_fires_after_work_checkpoint() {
         let mut state = SemanticCompactState::default();
         for _ in 0..6 {

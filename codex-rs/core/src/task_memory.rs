@@ -28,6 +28,37 @@ impl BuiltTaskMemory {
     }
 }
 
+pub(crate) struct CompactionTaskMemory {
+    item: Option<ResponseItem>,
+    digest: Option<String>,
+}
+
+impl CompactionTaskMemory {
+    pub(crate) fn from_history(items: &[ResponseItem]) -> Self {
+        let memory = build_task_memory(items);
+        let digest = memory.as_ref().map(|memory| memory.digest().to_string());
+        let item = memory.map(BuiltTaskMemory::into_response_item);
+        Self { item, digest }
+    }
+
+    pub(crate) fn digest(&self) -> Option<&str> {
+        self.digest.as_deref()
+    }
+
+    pub(crate) fn push_into_replacement_context(
+        &mut self,
+        replacement_context: &mut Vec<ResponseItem>,
+    ) {
+        if let Some(item) = self.item.take() {
+            replacement_context.push(item);
+        }
+    }
+
+    pub(crate) fn remove_from_history(history: &mut Vec<ResponseItem>) {
+        remove_task_memory_items(history);
+    }
+}
+
 pub(crate) fn build_task_memory(items: &[ResponseItem]) -> Option<BuiltTaskMemory> {
     let items = task_memory_input_items(items);
     codex_task_memory::build_task_memory_with_summary_prefix(&items, SUMMARY_PREFIX)

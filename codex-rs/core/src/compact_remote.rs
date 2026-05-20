@@ -179,10 +179,8 @@ async fn run_remote_compact_task_inner_impl(
         // compact endpoint. The checkpoint below records it separately from the next sampling request,
         // whose prompt will repeat current developer/context prefix items.
         let trace_input_history = prepared.history.raw_items().to_vec();
-        let task_memory_item = crate::task_memory::build_task_memory_item(&trace_input_history);
-        let task_memory_digest = task_memory_item
-            .as_ref()
-            .and_then(crate::task_memory::task_memory_item_digest);
+        let mut task_memory =
+            crate::task_memory::CompactionTaskMemory::from_history(&trace_input_history);
         let tool_router = built_tools(
             sess.as_ref(),
             turn_context.as_ref(),
@@ -249,7 +247,7 @@ async fn run_remote_compact_task_inner_impl(
             turn_context.as_ref(),
             new_history,
             initial_context_injection,
-            task_memory_item,
+            &mut task_memory,
         )
         .await;
 
@@ -272,7 +270,7 @@ async fn run_remote_compact_task_inner_impl(
         });
         sess.replace_compacted_history(new_history, reference_context_item, compacted_item)
             .await;
-        sess.reset_task_memory_throttle_after_compaction(task_memory_digest.as_deref())
+        sess.reset_task_memory_throttle_after_compaction(task_memory.digest())
             .await;
         sess.recompute_token_usage(turn_context).await;
 
@@ -289,7 +287,7 @@ pub(crate) async fn process_compacted_history(
     turn_context: &TurnContext,
     mut compacted_history: Vec<ResponseItem>,
     initial_context_injection: InitialContextInjection,
-    task_memory_item: Option<ResponseItem>,
+    task_memory: &mut crate::task_memory::CompactionTaskMemory,
 ) -> Vec<ResponseItem> {
     // Mid-turn compaction is the only path that must inject initial context above the last user
     // message in the replacement history. Pre-turn compaction instead injects context after the
@@ -302,11 +300,9 @@ pub(crate) async fn process_compacted_history(
     } else {
         Vec::new()
     };
-    if let Some(item) = task_memory_item {
-        injected_context.push(item);
-    }
+    task_memory.push_into_replacement_context(&mut injected_context);
 
-    crate::task_memory::remove_task_memory_items(&mut compacted_history);
+    crate::task_memory::CompactionTaskMemory::remove_from_history(&mut compacted_history);
     compacted_history.retain(should_keep_compacted_history_item);
     insert_initial_context_before_last_real_user_or_summary(compacted_history, injected_context)
 }

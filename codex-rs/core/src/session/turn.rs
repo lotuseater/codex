@@ -140,8 +140,6 @@ use tracing::trace;
 use tracing::trace_span;
 use tracing::warn;
 
-const RESTORED_SESSION_AUTO_COMPACT_TOKEN_LIMIT: i64 = 80_000;
-
 /// Takes a user message as input and runs a loop where, at each sampling request, the model
 /// replies with either:
 ///
