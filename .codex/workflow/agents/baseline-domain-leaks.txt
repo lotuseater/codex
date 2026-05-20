@@ -1,0 +1,123 @@
+codex-rs/core-domain\types\Cargo.toml:4:name = "codex-core-domain-types"
+codex-rs/core-domain\types\Cargo.toml:9:name = "codex_core_domain_types"
+codex-rs/thread\thread-manager-api\src\lib.rs:4://! depending on concrete sessions, stores, app-server protocol, or `codex-core`.
+codex-rs/thread\thread-store\src\thread_metadata_sync.rs:16:use codex_thread_store_api::GitInfoPatch;
+codex-rs/thread\thread-store\src\thread_metadata_sync.rs:17:use codex_thread_store_api::ResumeThreadParams;
+codex-rs/thread\thread-store\src\thread_metadata_sync.rs:19:use codex_thread_store_api::CreateThreadParams;
+codex-rs/thread\thread-store\src\thread_metadata_sync.rs:20:use codex_thread_store_api::ThreadMetadataPatch;
+codex-rs/thread\thread-store\src\thread_metadata_sync.rs:392:    use codex_thread_store_api::ThreadEventPersistenceMode;
+codex-rs/thread\thread-store\src\thread_metadata_sync.rs:393:    use codex_thread_store_api::ThreadPersistenceMetadata;
+codex-rs/thread\thread-api\src\lib.rs:5://! stores or `codex-core`.
+codex-rs/thread\thread-store-api\Cargo.toml:4:name = "codex-thread-store-api"
+codex-rs/thread\thread-store-api\Cargo.toml:8:name = "codex_thread_store_api"
+codex-rs/thread\thread-store\Cargo.toml:4:name = "codex-thread-store"
+codex-rs/thread\thread-store\Cargo.toml:8:name = "codex_thread_store"
+codex-rs/thread\thread-store\Cargo.toml:22:codex-thread-store-api = { workspace = true }
+codex-rs/thread\thread-store\src\live_thread.rs:9:use codex_thread_store_api::AppendThreadItemsParams;
+codex-rs/thread\thread-store\src\live_thread.rs:10:use codex_thread_store_api::CreateThreadParams;
+codex-rs/thread\thread-store\src\live_thread.rs:11:use codex_thread_store_api::LiveThreadFactory;
+codex-rs/thread\thread-store\src\live_thread.rs:12:use codex_thread_store_api::LiveThreadHandle;
+codex-rs/thread\thread-store\src\live_thread.rs:13:use codex_thread_store_api::LoadThreadHistoryParams;
+codex-rs/thread\thread-store\src\live_thread.rs:14:use codex_thread_store_api::ReadThreadParams;
+codex-rs/thread\thread-store\src\live_thread.rs:15:use codex_thread_store_api::ResumeThreadParams;
+codex-rs/thread\thread-store\src\live_thread.rs:16:use codex_thread_store_api::StoredThread;
+codex-rs/thread\thread-store\src\live_thread.rs:17:use codex_thread_store_api::StoredThreadHistory;
+codex-rs/thread\thread-store\src\live_thread.rs:18:use codex_thread_store_api::ThreadEventPersistenceMode;
+codex-rs/thread\thread-store\src\live_thread.rs:19:use codex_thread_store_api::ThreadMetadataPatch;
+codex-rs/thread\thread-store\src\live_thread.rs:20:use codex_thread_store_api::ThreadStore;
+codex-rs/thread\thread-store\src\live_thread.rs:21:use codex_thread_store_api::ThreadStoreFuture;
+codex-rs/thread\thread-store\src\live_thread.rs:22:use codex_thread_store_api::ThreadStoreResult;
+codex-rs/thread\thread-store\src\live_thread.rs:23:use codex_thread_store_api::UpdateThreadMetadataParams;
+codex-rs/thread\thread-store\src\in_memory.rs:14:use codex_thread_store_api::LoadThreadHistoryParams;
+codex-rs/thread\thread-store\src\in_memory.rs:15:use codex_thread_store_api::ReadThreadByRolloutPathParams;
+codex-rs/thread\thread-store\src\in_memory.rs:16:use codex_thread_store_api::ResumeThreadParams;
+codex-rs/thread\thread-store\src\in_memory.rs:18:use codex_thread_store_api::AppendThreadItemsParams;
+codex-rs/thread\thread-store\src\in_memory.rs:19:use codex_thread_store_api::ArchiveThreadParams;
+codex-rs/thread\thread-store\src\in_memory.rs:20:use codex_thread_store_api::CreateThreadParams;
+codex-rs/thread\thread-store\src\in_memory.rs:21:use codex_thread_store_api::ListThreadsParams;
+codex-rs/thread\thread-store\src\in_memory.rs:22:use codex_thread_store_api::ReadThreadParams;
+codex-rs/thread\thread-store\src\in_memory.rs:23:use codex_thread_store_api::StoredThread;
+codex-rs/thread\thread-store\src\in_memory.rs:24:use codex_thread_store_api::StoredThreadHistory;
+codex-rs/thread\thread-store\src\in_memory.rs:25:use codex_thread_store_api::ThreadMetadataPatch;
+codex-rs/thread\thread-store\src\in_memory.rs:26:use codex_thread_store_api::ThreadPage;
+codex-rs/thread\thread-store\src\in_memory.rs:27:use codex_thread_store_api::ThreadStore;
+codex-rs/thread\thread-store\src\in_memory.rs:28:use codex_thread_store_api::ThreadStoreError;
+codex-rs/thread\thread-store\src\in_memory.rs:29:use codex_thread_store_api::ThreadStoreResult;
+codex-rs/thread\thread-store\src\in_memory.rs:30:use codex_thread_store_api::UpdateThreadMetadataParams;
+codex-rs/thread\thread-store\src\in_memory.rs:42:    use codex_thread_store_api::ListItemsParams;
+codex-rs/thread\thread-store\src\in_memory.rs:43:    use codex_thread_store_api::ListTurnsParams;
+codex-rs/thread\thread-store\src\in_memory.rs:44:    use codex_thread_store_api::StoredTurnItemsView;
+codex-rs/thread\thread-store\src\in_memory.rs:57:                sort_direction: codex_thread_store_api::SortDirection::Asc,
+codex-rs/thread\thread-store\src\in_memory.rs:76:                sort_direction: codex_thread_store_api::SortDirection::Asc,
+codex-rs/thread\thread-store\src\lib.rs:4://! Storage-neutral contracts live in `codex-thread-store-api`; this crate owns concrete store
+codex-rs/thread\thread-store\src\factory.rs:5:use codex_thread_store_api::ThreadStore;
+codex-rs/thread\thread-store\src\local\archive_thread.rs:7:use codex_thread_store_api::ArchiveThreadParams;
+codex-rs/thread\thread-store\src\local\archive_thread.rs:8:use codex_thread_store_api::ThreadStoreError;
+codex-rs/thread\thread-store\src\local\archive_thread.rs:9:use codex_thread_store_api::ThreadStoreResult;
+codex-rs/thread\thread-store\src\local\archive_thread.rs:77:    use codex_thread_store_api::ListThreadsParams;
+codex-rs/thread\thread-store\src\local\archive_thread.rs:78:    use codex_thread_store_api::ThreadSortKey;
+codex-rs/thread\thread-store\src\local\archive_thread.rs:79:    use codex_thread_store_api::ThreadStore;
+codex-rs/thread\thread-store\src\local\archive_thread.rs:107:                sort_direction: codex_thread_store_api::SortDirection::Desc,
+codex-rs/thread\thread-store\src\local\helpers.rs:20:use codex_thread_store_api::StoredThread;
+codex-rs/thread\thread-store\src\local\helpers.rs:21:use codex_thread_store_api::ThreadStoreError;
+codex-rs/thread\thread-store\src\local\helpers.rs:22:use codex_thread_store_api::ThreadStoreResult;
+codex-rs/thread\thread-store\src\local\list_threads.rs:9:use codex_thread_store_api::SortDirection;
+codex-rs/thread\thread-store\src\local\list_threads.rs:15:use codex_thread_store_api::ListThreadsParams;
+codex-rs/thread\thread-store\src\local\list_threads.rs:16:use codex_thread_store_api::ThreadPage;
+codex-rs/thread\thread-store\src\local\list_threads.rs:17:use codex_thread_store_api::ThreadSortKey;
+codex-rs/thread\thread-store\src\local\list_threads.rs:18:use codex_thread_store_api::ThreadStoreError;
+codex-rs/thread\thread-store\src\local\list_threads.rs:19:use codex_thread_store_api::ThreadStoreResult;
+codex-rs/thread\thread-store\src\local\list_threads.rs:201:    use codex_thread_store_api::ThreadStore;
+codex-rs/thread\thread-store\src\local\live_writer.rs:8:use codex_thread_store_api::ResumeThreadParams;
+codex-rs/thread\thread-store\src\local\live_writer.rs:13:use codex_thread_store_api::AppendThreadItemsParams;
+codex-rs/thread\thread-store\src\local\live_writer.rs:14:use codex_thread_store_api::CreateThreadParams;
+codex-rs/thread\thread-store\src\local\live_writer.rs:15:use codex_thread_store_api::ReadThreadParams;
+codex-rs/thread\thread-store\src\local\live_writer.rs:16:use codex_thread_store_api::ThreadStoreError;
+codex-rs/thread\thread-store\src\local\live_writer.rs:17:use codex_thread_store_api::ThreadStoreResult;
+codex-rs/thread\thread-store\src\local\mod.rs:17:use codex_thread_store_api::LoadThreadHistoryParams;
+codex-rs/thread\thread-store\src\local\mod.rs:18:use codex_thread_store_api::ReadThreadByRolloutPathParams;
+codex-rs/thread\thread-store\src\local\mod.rs:19:use codex_thread_store_api::ResumeThreadParams;
+codex-rs/thread\thread-store\src\local\mod.rs:26:use codex_thread_store_api::AppendThreadItemsParams;
+codex-rs/thread\thread-store\src\local\mod.rs:27:use codex_thread_store_api::ArchiveThreadParams;
+codex-rs/thread\thread-store\src\local\mod.rs:28:use codex_thread_store_api::CreateThreadParams;
+codex-rs/thread\thread-store\src\local\mod.rs:29:use codex_thread_store_api::ListThreadsParams;
+codex-rs/thread\thread-store\src\local\mod.rs:30:use codex_thread_store_api::ReadThreadParams;
+codex-rs/thread\thread-store\src\local\mod.rs:31:use codex_thread_store_api::StoredThread;
+codex-rs/thread\thread-store\src\local\mod.rs:32:use codex_thread_store_api::StoredThreadHistory;
+codex-rs/thread\thread-store\src\local\mod.rs:33:use codex_thread_store_api::ThreadPage;
+codex-rs/thread\thread-store\src\local\mod.rs:34:use codex_thread_store_api::ThreadStore;
+codex-rs/thread\thread-store\src\local\mod.rs:35:use codex_thread_store_api::ThreadStoreError;
+codex-rs/thread\thread-store\src\local\mod.rs:36:use codex_thread_store_api::ThreadStoreResult;
+codex-rs/thread\thread-store\src\local\mod.rs:37:use codex_thread_store_api::UpdateThreadMetadataParams;
+codex-rs/thread\thread-store\src\local\mod.rs:301:    use codex_thread_store_api::ThreadEventPersistenceMode;
+codex-rs/thread\thread-store\src\local\mod.rs:302:    use codex_thread_store_api::ThreadPersistenceMetadata;
+codex-rs/thread\thread-store\src\local\create_thread.rs:6:use codex_thread_store_api::CreateThreadParams;
+codex-rs/thread\thread-store\src\local\create_thread.rs:7:use codex_thread_store_api::ThreadStoreError;
+codex-rs/thread\thread-store\src\local\create_thread.rs:8:use codex_thread_store_api::ThreadStoreResult;
+codex-rs/thread\thread-store\src\local\read_thread.rs:22:use codex_thread_store_api::ReadThreadParams;
+codex-rs/thread\thread-store\src\local\read_thread.rs:23:use codex_thread_store_api::StoredThread;
+codex-rs/thread\thread-store\src\local\read_thread.rs:24:use codex_thread_store_api::StoredThreadHistory;
+codex-rs/thread\thread-store\src\local\read_thread.rs:25:use codex_thread_store_api::ThreadStoreError;
+codex-rs/thread\thread-store\src\local\read_thread.rs:26:use codex_thread_store_api::ThreadStoreResult;
+codex-rs/thread\thread-store\src\local\read_thread.rs:427:    use codex_thread_store_api::ThreadStore;
+codex-rs/thread\thread-store\src\local\unarchive_thread.rs:10:use codex_thread_store_api::ArchiveThreadParams;
+codex-rs/thread\thread-store\src\local\unarchive_thread.rs:11:use codex_thread_store_api::StoredThread;
+codex-rs/thread\thread-store\src\local\unarchive_thread.rs:12:use codex_thread_store_api::ThreadStoreError;
+codex-rs/thread\thread-store\src\local\unarchive_thread.rs:13:use codex_thread_store_api::ThreadStoreResult;
+codex-rs/thread\thread-store\src\local\unarchive_thread.rs:116:    use codex_thread_store_api::ThreadStore;
+codex-rs/thread\thread-store\src\local\update_thread_metadata.rs:17:use codex_thread_store_api::GitInfoPatch;
+codex-rs/thread\thread-store\src\local\update_thread_metadata.rs:24:use codex_thread_store_api::ReadThreadParams;
+codex-rs/thread\thread-store\src\local\update_thread_metadata.rs:25:use codex_thread_store_api::StoredThread;
+codex-rs/thread\thread-store\src\local\update_thread_metadata.rs:26:use codex_thread_store_api::ThreadMetadataPatch;
+codex-rs/thread\thread-store\src\local\update_thread_metadata.rs:27:use codex_thread_store_api::ThreadStoreError;
+codex-rs/thread\thread-store\src\local\update_thread_metadata.rs:28:use codex_thread_store_api::ThreadStoreResult;
+codex-rs/thread\thread-store\src\local\update_thread_metadata.rs:29:use codex_thread_store_api::UpdateThreadMetadataParams;
+codex-rs/thread\thread-store\src\local\update_thread_metadata.rs:627:    use codex_thread_store_api::GitInfoPatch;
+codex-rs/thread\thread-store\src\local\update_thread_metadata.rs:628:    use codex_thread_store_api::ListThreadsParams;
+codex-rs/thread\thread-store\src\local\update_thread_metadata.rs:629:    use codex_thread_store_api::ResumeThreadParams;
+codex-rs/thread\thread-store\src\local\update_thread_metadata.rs:630:    use codex_thread_store_api::SortDirection;
+codex-rs/thread\thread-store\src\local\update_thread_metadata.rs:631:    use codex_thread_store_api::ThreadEventPersistenceMode;
+codex-rs/thread\thread-store\src\local\update_thread_metadata.rs:632:    use codex_thread_store_api::ThreadMetadataPatch;
+codex-rs/thread\thread-store\src\local\update_thread_metadata.rs:633:    use codex_thread_store_api::ThreadPersistenceMetadata;
+codex-rs/thread\thread-store\src\local\update_thread_metadata.rs:634:    use codex_thread_store_api::ThreadSortKey;
+codex-rs/thread\thread-store\src\local\update_thread_metadata.rs:635:    use codex_thread_store_api::ThreadStore;

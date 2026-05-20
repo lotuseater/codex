@@ -1,0 +1,56 @@
+{
+  "name": null,
+  "status": "ok",
+  "spec": "<inline>",
+  "log": "C:\\Users\\Oleh\\Documents\\GitHub\\open_ai\\codex\\.codex\\workflow\\thread-store-api-copy-log.jsonl",
+  "vars": {},
+  "steps_total": 4,
+  "steps_failed": 0,
+  "steps_skipped": 0,
+  "steps": [
+    {
+      "id": "step_1",
+      "status": "ok",
+      "elapsed_ms": 0,
+      "rc": null,
+      "stdout_digest": null,
+      "stdout_preview": null,
+      "stderr_preview": null,
+      "note": "created directory",
+      "iteration": null
+    },
+    {
+      "id": "step_2",
+      "status": "ok",
+      "elapsed_ms": 0,
+      "rc": null,
+      "stdout_digest": null,
+      "stdout_preview": null,
+      "stderr_preview": null,
+      "note": "bytes=1484",
+      "iteration": null
+    },
+    {
+      "id": "step_3",
+      "status": "ok",
+      "elapsed_ms": 0,
+      "rc": null,
+      "stdout_digest": null,
+      "stdout_preview": null,
+      "stderr_preview": null,
+      "note": "bytes=4555",
+      "iteration": null
+    },
+    {
+      "id": "step_4",
+      "status": "ok",
+      "elapsed_ms": 0,
+      "rc": null,
+      "stdout_digest": null,
+      "stdout_preview": null,
+      "stderr_preview": null,
+      "note": "bytes=26950",
+      "iteration": null
+    }
+  ]
+}
