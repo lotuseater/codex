@@ -99,3 +99,17 @@ scripts/cargo-release-only-rustc-wrapper.pdb
 # Python bytecode files
 __pycache__/
 *.pyc
+
+# Codex workflow scratch
+.codex/workflow-batch/
+.codex/workflow/.tmp/
+.codex/workflow/agents/*.prompt.md
+.codex/workflow/agents/*.exec.marker.txt
+.codex/workflow/agents/*.marker.txt
+.codex/workflow/agents/*.reads.report.json
+.codex/workflow/agents/*.reads.log.jsonl
+.codex/workflow/agents/*help.txt
+.codex/workflow/*.log.jsonl
+.codex/workflow/*.report.json
+.codex/workflow/*-output.txt
+.codex/workflow/*-latest.txt

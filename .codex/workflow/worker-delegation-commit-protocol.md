@@ -4,10 +4,12 @@ Use this protocol for external Codex worker sessions launched from this repo.
 
 ## Delegation
 
-- You are encouraged to spawn or reuse up to three focused helper/subagent sessions when it reduces context, speeds independent codebase questions, or improves review quality.
-- Delegate only bounded tasks inside your lane. Give helpers exact first reads, forbidden paths, and the handoff detail you need back.
-- Do not delegate across another worker's ownership lane. If you find cross-lane work, write it in your handoff for root.
-- Ask helpers for compact findings or patches only; root remains responsible for final cross-lane integration.
+- Do not spawn additional Codex workers, helper sessions, or subagents from a
+  worker session unless root explicitly changes this instruction in your prompt.
+- Keep your lane bounded to the paths root assigned. If you find cross-lane
+  work, write it in your handoff for root instead of expanding your scope.
+- Keep handoffs compact: summarize findings, touched files, verification, commit
+  hash, and blockers. Do not paste raw transcripts.
 
 ## Git Commit Protocol
 

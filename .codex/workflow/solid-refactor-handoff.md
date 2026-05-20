@@ -2,6 +2,19 @@
 
 Date: 2026-05-20
 
+## Latest Update
+
+- `core_tests_agents_lane_worker` moved the agents/delegation integration-test
+  modules from `codex-rs/core/tests/suite/` into
+  `codex-rs/core/tests/agents/` and simplified `codex-rs/core/tests/agents.rs`
+  to use normal sibling module declarations.
+- Worker handoff:
+  `.codex/workflow/agents/core_tests_agents_lane_worker.handoff.md`.
+- Focused release verification for `codex-core --test agents` is blocked before
+  the integration target compiles by unrelated shared `codex-core` library
+  errors from other in-flight refactor lanes; see
+  `logs/test-local-release-codex-core-all-20260521-003300.log`.
+
 ## Current User Intent
 
 - Implement the SOLID/clean-architecture refactor in `C:\Users\Oleh\Documents\GitHub\open_ai\codex`.
@@ -604,3 +617,190 @@ Sessions launched for this lane:
   - handoff: `.codex/workflow/agents/core_test_split_analysis_proto.handoff.md`
   - marker: `.codex/workflow/agents/core_test_split_analysis_proto.exec.marker.txt`
   - owned edit path: `.codex/prototypes/plan-core-test-split.ps1`.
+
+## 2026-05-20 Continuation: Execution Rules
+
+- Compact early. Before root or any worker crosses roughly 50% of its token
+  budget, update this handoff or the worker handoff first, then compact. Do not
+  wait for a near-limit automatic compaction.
+- Use external Codex worker sessions for breadth. Prefer
+  `.codex/workflow/scripts/Start-CodexWorker.ps1 -Mode Exec` with prompt,
+  marker, and handoff files under `.codex/workflow/agents/` when there are
+  independent edit lanes; do not treat in-process agent thread limits as the
+  team-size limit.
+- Edit workers may proceed on path-owned non-test SOLID/refactor slices in
+  parallel with the core test split. They must not run broad `codex-core` builds
+  or tests until the split harness is verified, and root still owns manifests,
+  Bazel wiring, lockfiles, aggregate verification, staging, and commits.
+- The current test split is already partially implemented in the working tree:
+  `codex-rs/core/tests/all.rs` and `codex-rs/core/tests/suite/mod.rs` are
+  deleted, shared dispatch bootstrap lives in `codex-rs/core/tests/support/`,
+  and the first split binaries are `agents`, `client`, `compact`, `config`,
+  `exec`, `permissions`, `state`, and `tools`.
+
+## 2026-05-20 23:52 +03: External Edit Worker Wave
+
+Root correction after user reminder:
+
+- No root build/test work should run while the split/refactor is still in
+  progress. A prior root attempt to compile `--test compact --no-run` was
+  stopped; do not repeat that lane until the worker refactors finish.
+- Worker prompts now say: do not run `cargo`, `just`, `bazel`, build scripts, or
+  test scripts while refactor edits are in progress; finish owned refactor
+  edits first, then use only a narrow non-broad owned-slice check if appropriate.
+- Worker prompts now also ask each worker to stage only owned changed paths and
+  commit with a concise message when their edits are complete. If Git refuses
+  because of merge/unmerged state, workers must record the exact blocker in
+  their handoff.
+- Compact early: before root or any worker crosses roughly 50% of token budget,
+  update this handoff or the worker handoff first, then compact.
+
+All launched via `.codex/workflow/scripts/Start-CodexWorker.ps1 -Mode Exec`.
+Markers existed with `starting mode=Exec` immediately after launch.
+
+- `core_tests_harness_manifest_worker`
+  - prompt: `.codex/workflow/agents/core_tests_harness_manifest_worker.prompt.md`
+  - handoff: `.codex/workflow/agents/core_tests_harness_manifest_worker.handoff.md`
+  - marker: `.codex/workflow/agents/core_tests_harness_manifest_worker.exec.marker.txt`
+  - owns core test manifest/Bazel/support wiring.
+- `core_tests_compact_lane_worker`
+  - prompt: `.codex/workflow/agents/core_tests_compact_lane_worker.prompt.md`
+  - handoff: `.codex/workflow/agents/core_tests_compact_lane_worker.handoff.md`
+  - marker: `.codex/workflow/agents/core_tests_compact_lane_worker.exec.marker.txt`
+  - owns compact/context/resume suite lane.
+- `core_tests_exec_permissions_lane_worker`
+  - prompt: `.codex/workflow/agents/core_tests_exec_permissions_lane_worker.prompt.md`
+  - handoff: `.codex/workflow/agents/core_tests_exec_permissions_lane_worker.handoff.md`
+  - marker: `.codex/workflow/agents/core_tests_exec_permissions_lane_worker.exec.marker.txt`
+  - owns exec/sandbox/permissions suite lanes.
+- `core_tests_config_state_lane_worker`
+  - prompt: `.codex/workflow/agents/core_tests_config_state_lane_worker.prompt.md`
+  - handoff: `.codex/workflow/agents/core_tests_config_state_lane_worker.handoff.md`
+  - marker: `.codex/workflow/agents/core_tests_config_state_lane_worker.exec.marker.txt`
+  - owns config/state suite lanes.
+- `core_tests_agents_lane_worker`
+  - prompt: `.codex/workflow/agents/core_tests_agents_lane_worker.prompt.md`
+  - handoff: `.codex/workflow/agents/core_tests_agents_lane_worker.handoff.md`
+  - marker: `.codex/workflow/agents/core_tests_agents_lane_worker.exec.marker.txt`
+  - owns agents/delegation suite lane.
+- `core_tests_client_lane_worker`
+  - prompt: `.codex/workflow/agents/core_tests_client_lane_worker.prompt.md`
+  - handoff: `.codex/workflow/agents/core_tests_client_lane_worker.handoff.md`
+  - marker: `.codex/workflow/agents/core_tests_client_lane_worker.exec.marker.txt`
+  - owns client/realtime/websocket suite lane.
+- `core_tests_tools_lane_worker`
+  - prompt: `.codex/workflow/agents/core_tests_tools_lane_worker.prompt.md`
+  - handoff: `.codex/workflow/agents/core_tests_tools_lane_worker.handoff.md`
+  - marker: `.codex/workflow/agents/core_tests_tools_lane_worker.exec.marker.txt`
+  - owns tools/MCP/plugins suite lane.
+- `thread_store_api_recording_repair_worker`
+  - prompt: `.codex/workflow/agents/thread_store_api_recording_repair_worker.prompt.md`
+  - handoff: `.codex/workflow/agents/thread_store_api_recording_repair_worker.handoff.md`
+  - marker: `.codex/workflow/agents/thread_store_api_recording_repair_worker.exec.marker.txt`
+  - owns thread-store API recording utility repair.
+- `config_provenance_boundary_worker`
+  - prompt: `.codex/workflow/agents/config_provenance_boundary_worker.prompt.md`
+  - handoff: `.codex/workflow/agents/config_provenance_boundary_worker.handoff.md`
+  - marker: `.codex/workflow/agents/config_provenance_boundary_worker.exec.marker.txt`
+  - owns config provenance boundary cleanup.
+- `boundary_delta_edit_worker`
+  - prompt: `.codex/workflow/agents/boundary_delta_edit_worker.prompt.md`
+  - handoff: `.codex/workflow/agents/boundary_delta_edit_worker.handoff.md`
+  - marker: `.codex/workflow/agents/boundary_delta_edit_worker.exec.marker.txt`
+  - owns one non-overlapping boundary-delta edit slice.
+
+## 2026-05-21 Root Resume Rollup
+
+User directive for this resume:
+
+- Root is an orchestrator, not the primary implementer.
+- Use external Codex terminal sessions via
+  `.codex/workflow/scripts/Start-CodexWorker.ps1`; do not use in-process agents
+  for this lane.
+- Workers may edit only explicitly owned paths and should commit coherent scoped
+  changes when safe.
+- Workers must not run builds/tests while their owned refactor is in progress.
+  After the refactor is complete, only focused release verification is allowed;
+  no broad `codex-core` or workspace verification until the split-test and
+  compile-blocker lanes settle.
+- Root should delegate review work to a spawned session rather than self-review.
+- Compact early: update this handoff around 40-45% context and compact before
+  50%; prompts and handoffs must ask for concise summaries, not raw transcripts.
+
+Finished worker results folded in:
+
+- `core_tests_tools_lane_worker`: tools/MCP/plugins test lane complete and
+  committed as `2cfee083d0`.
+- `core_tests_client_lane_worker`: client/realtime/websocket test lane complete
+  and committed as `3db90f6110`.
+- `core_tests_agents_lane_worker`: agents/delegation test lane complete and
+  committed as `444b583f15`.
+- `core_tests_harness_manifest_worker`: split test harness/manifest wiring
+  complete and committed as `92039a4e32`.
+- `core_tests_exec_permissions_lane_worker`: exec/permissions wrappers complete
+  and committed as `5b68c4973b`; remaining removed permissions-related modules
+  need residual routing.
+- `core_tests_config_state_lane_worker`: config/state wrappers complete and
+  committed as `a86d553882`.
+- `core_tests_compact_lane_worker`: compact/context/resume lane complete and
+  committed as `14727b4a61`.
+- `thread_store_api_recording_repair_worker`: recording API utility repair
+  complete, focused release check passed, committed as `3a00d81024`.
+- `config_provenance_boundary_worker`: no config-provenance source edits were
+  needed; handoff committed as `f3ea64c83e`.
+- `boundary_delta_edit_worker`: core `AuthMode` protocol import cleanup
+  complete and committed as `8939c9d0a7`.
+
+Current test split shape:
+
+- `codex-rs/core/tests/all.rs` and `codex-rs/core/tests/suite/mod.rs` are gone.
+- Split integration binaries now include `agents.rs`, `client.rs`,
+  `compact.rs`, `config.rs`, `exec.rs`, `permissions.rs`, `state.rs`, and
+  `tools.rs`; `responses_headers.rs` remains standalone.
+- Shared support moved to `codex-rs/core/tests/support/mod.rs`.
+- Compact fixtures live in `codex-rs/core/tests/common/compact_fixtures.rs`
+  and are exported from `common/lib.rs`.
+
+Known blockers before broad verification:
+
+- Shared `codex-core` library compile errors still block split-test release
+  checks.
+- Reported hotspots include `core/src/session/turn.rs`,
+  `core/src/config/permissions.rs`, `core/src/tools/router.rs`,
+  `core/src/tools/spec_plan.rs`, and thread-store callsites with changed
+  `LocalThreadStore` / `LocalThreadStoreConfig` APIs.
+- Residual unassigned suite modules include the permissions/hooks family called
+  out by the exec/permissions worker, especially `hooks_mcp.rs`,
+  `permissions_messages.rs`, and `request_permissions.rs`.
+
+Workflow cleanup performed by root:
+
+- Deleted completed one-shot worker prompt files, exec/marker files,
+  read-report JSON, help text, `.codex/workflow-batch/`, and
+  `.codex/workflow/.tmp/`.
+- Kept `*.handoff.md` files as orchestration history.
+- Added scoped `.gitignore` rules for future workflow scratch, prompt, marker,
+  and read-report files.
+
+Next external worker queue:
+
+1. `core_tests_residual_router_worker`: route remaining unassigned
+   `codex-rs/core/tests/suite/*.rs` modules into the correct split binaries or
+   create a narrow additional split binary. Do not recreate `all.rs` or
+   `suite/mod.rs`.
+2. `core_compile_session_thread_worker`: repair session/thread-manager
+   compile blockers around `core/src/session/turn.rs`,
+   `core/src/session/mod.rs`, `core/src/thread_manager.rs`, and thread-store
+   API callsites.
+3. `core_compile_tools_worker`: repair tool-router/spec-plan compile blockers
+   around `core/src/tools/router.rs`, `core/src/tools/spec_plan.rs`, and
+   adjacent owned tool adapter files.
+4. `core_compile_config_permissions_worker`: repair config/permissions compile
+   blockers around `core/src/config/permissions.rs` and adjacent config
+   boundary files without widening protocol dependencies.
+5. `boundary_dependency_manifest_worker`: repair manifest/dependency/Bazel
+   boundary issues needed by the source workers, including lockfile refreshes
+   only if dependencies change.
+6. `recent_worker_review_worker`: review recent worker commits and handoffs
+   for regressions, ownership mistakes, and missing follow-up tasks; write a
+   findings handoff instead of editing source.
