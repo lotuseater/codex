@@ -34,7 +34,6 @@ use codex_protocol::permissions::FileSystemSandboxEntry;
 use codex_protocol::permissions::FileSystemSandboxPolicy;
 use codex_protocol::permissions::FileSystemSpecialPath;
 use codex_protocol::permissions::NetworkSandboxPolicy;
-use codex_protocol::permissions::project_roots_glob_pattern;
 use codex_utils_absolute_path::AbsolutePathBuf;
 
 use super::ProjectConfig;
@@ -544,6 +543,10 @@ fn compile_scoped_filesystem_pattern(
             Ok(base.join(&subpath).to_string_lossy().to_string())
         }
     }
+}
+
+fn project_roots_glob_pattern(subpath: &Path) -> String {
+    subpath.to_string_lossy().into_owned()
 }
 
 fn compile_read_write_glob_path(path: &str, access: FileSystemAccessMode) -> io::Result<&str> {
