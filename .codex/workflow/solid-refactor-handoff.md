@@ -804,3 +804,21 @@ Next external worker queue:
 6. `recent_worker_review_worker`: review recent worker commits and handoffs
    for regressions, ownership mistakes, and missing follow-up tasks; write a
    findings handoff instead of editing source.
+
+Launched at 2026-05-21 01:12 Europe/Kiev via
+`.codex/workflow/scripts/Start-CodexWorker.ps1 -Mode Exec`:
+
+- `core_tests_residual_router_worker`
+- `core_compile_session_thread_worker`
+- `core_compile_tools_worker`
+- `core_compile_config_permissions_worker`
+- `boundary_dependency_manifest_worker`
+- `recent_worker_review_worker`
+
+Ignored runtime prompt/marker paths for these sessions:
+
+- `.codex/workflow/agents/<worker>.prompt.md`
+- `.codex/workflow/agents/<worker>.exec.marker.txt`
+
+Root should next read their `*.handoff.md` files when the tabs finish, fold the
+results into this document, and compact early before 50% context.
