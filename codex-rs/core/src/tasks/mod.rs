@@ -23,17 +23,16 @@ use tracing::warn;
 use crate::compact::InitialContextInjection;
 use crate::config::Config;
 use crate::context::ContextualUserFragment;
+use crate::context_reduction_adapter::context_reduction_reason_to_compaction_reason;
+use crate::context_reduction_adapter::semantic_compact_input;
 use crate::goals::GoalRuntimeEvent;
 use crate::hook_runtime::PendingInputHookDisposition;
 use crate::hook_runtime::inspect_pending_input;
 use crate::hook_runtime::record_additional_contexts;
 use crate::hook_runtime::record_pending_input;
-use crate::session::checkpoint_policy::SemanticCompactDecision;
-use crate::session::checkpoint_policy::SemanticCompactInput;
 use crate::session::session::Session;
 use crate::session::turn::auto_compact_token_limit;
 use crate::session::turn::run_auto_compact;
-use crate::session::turn::semantic_auto_compact_enabled;
 use crate::session::turn_context::TurnContext;
 use crate::state::ActiveTurn;
 use crate::state::RunningTask;
@@ -41,6 +40,7 @@ use crate::state::TaskKind;
 use codex_analytics::CompactionPhase;
 use codex_analytics::CompactionReason;
 use codex_analytics::TurnTokenUsageFact;
+use codex_context_reduction::SemanticCompactDecision;
 use codex_login::AuthManager;
 use codex_models_manager::manager::SharedModelsManager;
 use codex_otel::SessionTelemetry;
@@ -872,19 +872,22 @@ impl Session {
     ) -> anyhow::Result<()> {
         let total_usage_tokens = self.get_total_token_usage().await;
         let auto_compact_limit = auto_compact_token_limit(turn_context);
+        let visible_context_percent_used = self.visible_context_percent_used().await;
         let reason = if total_usage_tokens >= auto_compact_limit {
             Some(CompactionReason::ContextLimit)
         } else {
             match self
-                .semantic_compact_decision(SemanticCompactInput {
-                    semantic_feature_enabled: semantic_auto_compact_enabled(turn_context),
-                    context_reduction_enabled: true,
+                .semantic_compact_decision(semantic_compact_input(
+                    turn_context,
                     total_usage_tokens,
                     auto_compact_limit,
-                })
+                    visible_context_percent_used,
+                ))
                 .await
             {
-                SemanticCompactDecision::Compact { reason } => Some(reason),
+                SemanticCompactDecision::Compact { reason } => {
+                    Some(context_reduction_reason_to_compaction_reason(reason))
+                }
                 SemanticCompactDecision::Skip => None,
             }
         };

@@ -30,6 +30,9 @@ use crate::context::ContextualUserFragment;
 use crate::context::NetworkRuleSaved;
 use crate::context::PermissionsInstructions;
 use crate::context::PersonalitySpecInstructions;
+use crate::context_reduction_adapter::compaction_reason_to_context_reduction_reason;
+use crate::context_reduction_adapter::semantic_compact_turn_input;
+use crate::context_reduction_adapter::token_context_percent_used;
 use crate::default_skill_metadata_budget;
 use crate::environment_selection::ResolvedTurnEnvironments;
 use crate::exec_policy::ExecPolicyManager;
@@ -192,7 +195,6 @@ use codex_protocol::exec_output::StreamOutput;
 
 pub(crate) mod blackboard;
 mod checkpoint_git;
-pub(crate) mod checkpoint_policy;
 mod checkpoint_scratchpad;
 mod config_lock;
 mod desktop_automation;
@@ -1112,8 +1114,8 @@ impl Session {
 
     pub(crate) async fn semantic_compact_decision(
         &self,
-        input: checkpoint_policy::SemanticCompactInput,
-    ) -> checkpoint_policy::SemanticCompactDecision {
+        input: codex_context_reduction::SemanticCompactInput,
+    ) -> codex_context_reduction::SemanticCompactDecision {
         let state = self.state.lock().await;
         state.semantic_compact_decision(input)
     }
@@ -1240,14 +1242,12 @@ impl Session {
         is_continuation_turn: bool,
     ) {
         let mut state = self.state.lock().await;
-        state.record_regular_turn_finished_for_semantic_compact(
-            checkpoint_policy::SemanticCompactTurnInput {
-                token_usage: turn_token_usage,
-                tool_calls,
-                git_commit_observed,
-                is_continuation_turn,
-            },
-        );
+        state.record_regular_turn_finished_for_semantic_compact(semantic_compact_turn_input(
+            turn_token_usage,
+            tool_calls,
+            git_commit_observed,
+            is_continuation_turn,
+        ));
     }
 
     pub(crate) async fn record_compaction_finished_for_semantic_compact(
@@ -1255,7 +1255,9 @@ impl Session {
         reason: Option<CompactionReason>,
     ) {
         let mut state = self.state.lock().await;
-        state.record_compaction_finished_for_semantic_compact(reason);
+        state.record_compaction_finished_for_semantic_compact(
+            reason.and_then(compaction_reason_to_context_reduction_reason),
+        );
     }
 
     pub(crate) async fn take_plan_self_review_checkpoint_slot(&self) -> bool {
@@ -1282,6 +1284,15 @@ impl Session {
     pub(crate) async fn total_token_usage(&self) -> Option<TokenUsage> {
         let state = self.state.lock().await;
         state.token_info().map(|info| info.total_token_usage)
+    }
+
+    pub(crate) async fn visible_context_percent_used(&self) -> Option<i64> {
+        let state = self.state.lock().await;
+        let token_info = state.token_info()?;
+        token_context_percent_used(
+            token_info.last_token_usage.total_tokens,
+            token_info.model_context_window,
+        )
     }
 
     /// Returns the complete token usage snapshot currently cached for this session.

@@ -1,6 +1,6 @@
 //! Session-wide mutable state.
 
-use codex_analytics::CompactionReason;
+use codex_context_reduction::ContextReductionReason;
 use codex_protocol::models::AdditionalPermissionProfile;
 use codex_protocol::models::ResponseItem;
 use codex_sandboxing::policy_transforms::merge_permission_profiles;
@@ -9,13 +9,13 @@ use std::collections::HashSet;
 
 use crate::context_manager::ContextManager;
 use crate::session::PreviousTurnSettings;
-use crate::session::checkpoint_policy::SemanticCompactDecision;
-use crate::session::checkpoint_policy::SemanticCompactInput;
-use crate::session::checkpoint_policy::SemanticCompactState;
-use crate::session::checkpoint_policy::SemanticCompactTurnInput;
 use crate::session::session::SessionConfiguration;
 use crate::session_startup_prewarm::SessionStartupPrewarmHandle;
 use crate::task_memory::TaskMemoryThrottleState;
+use codex_context_reduction::SemanticCompactDecision;
+use codex_context_reduction::SemanticCompactInput;
+use codex_context_reduction::SemanticCompactState;
+use codex_context_reduction::SemanticCompactTurnInput;
 use codex_protocol::protocol::RateLimitSnapshot;
 use codex_protocol::protocol::TokenUsage;
 use codex_protocol::protocol::TokenUsageInfo;
@@ -252,7 +252,7 @@ impl SessionState {
 
     pub(crate) fn record_compaction_finished_for_semantic_compact(
         &mut self,
-        reason: Option<CompactionReason>,
+        reason: Option<ContextReductionReason>,
     ) {
         self.semantic_compact_state
             .record_compaction_finished(reason);
