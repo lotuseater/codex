@@ -4,6 +4,7 @@ use crate::tools::handlers::CodeModeExecuteHandler;
 use crate::tools::handlers::CodeModeWaitHandler;
 use crate::tools::handlers::ContextOpsHandler;
 use crate::tools::handlers::CreateGoalHandler;
+use crate::tools::handlers::DesktopAutomationHandler;
 use crate::tools::handlers::DynamicToolHandler;
 use crate::tools::handlers::ExecCommandHandler;
 use crate::tools::handlers::ExecCommandHandlerOptions;
@@ -61,6 +62,7 @@ use codex_tools::ToolName;
 use codex_tools::ToolSpec;
 use codex_tools::ToolsConfig;
 use codex_tools::collect_code_mode_exec_prompt_tool_definitions;
+use codex_tools::create_desktop_automation_tools;
 use codex_tools::create_first_moves_tools;
 use codex_tools::create_workflow_batch_tool;
 use codex_tools::default_namespace_description;
@@ -366,6 +368,11 @@ pub(crate) fn collect_tool_executors(
         executors.push(Arc::new(ContextOpsHandler::new(
             create_workflow_batch_tool(),
         )));
+    }
+    if config.desktop_automation_enabled {
+        for tool in create_desktop_automation_tools(config.desktop_automation_allow_input) {
+            executors.push(Arc::new(DesktopAutomationHandler::new(tool)));
+        }
     }
 
     if config.environment_mode.has_environment() {

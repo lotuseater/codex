@@ -25,7 +25,9 @@ use crate::tools::handlers::shell_spec::request_permissions_tool_description;
 use crate::tools::handlers::view_image_spec::ViewImageToolOptions;
 use crate::tools::handlers::view_image_spec::create_view_image_tool;
 use crate::tools::registry::ToolRegistry;
-use codex_app_server_protocol::AppInfo;
+use codex_app_catalog_types::AppInfo;
+#[cfg(windows)]
+use codex_desktop_automation::DAB_FIND_WINDOW_TOOL;
 use codex_extension_api::ExtensionToolExecutor;
 use codex_extension_api::ToolCall as ExtensionToolCall;
 use codex_extension_api::ToolExecutor;
@@ -187,6 +189,47 @@ fn first_moves_tools_follow_first_moves_config() {
         enabled_registry
             .supports_parallel_tool_calls(&ToolName::plain(FIRST_MOVES_STATS_TOOL_NAME))
     );
+}
+
+#[cfg(windows)]
+#[test]
+fn desktop_automation_tools_follow_desktop_automation_config() {
+    let model_info = model_info();
+    let available_models = Vec::new();
+    let mut features = Features::with_defaults();
+    features.enable(Feature::ComputerUse);
+    let config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        image_generation_tool_auth_allowed: false,
+        web_search_mode: None,
+        session_source: SessionSource::Cli,
+        permission_profile: &PermissionProfile::Disabled,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    })
+    .with_desktop_automation_config(/*enabled*/ true, /*allow_input*/ false);
+
+    let disabled_config = config
+        .clone()
+        .with_desktop_automation_config(/*enabled*/ false, /*allow_input*/ false);
+    let (disabled_tools, disabled_registry) = build_specs(
+        &disabled_config,
+        /*mcp_tools*/ None,
+        /*deferred_mcp_tools*/ None,
+        &[],
+    );
+    assert_lacks_tool_name(&disabled_tools, DAB_FIND_WINDOW_TOOL);
+    assert!(!disabled_registry.has_handler(&ToolName::plain(DAB_FIND_WINDOW_TOOL)));
+
+    let (enabled_tools, enabled_registry) = build_specs(
+        &config,
+        /*mcp_tools*/ None,
+        /*deferred_mcp_tools*/ None,
+        &[],
+    );
+    assert_contains_tool_names(&enabled_tools, &[DAB_FIND_WINDOW_TOOL]);
+    assert!(enabled_registry.has_handler(&ToolName::plain(DAB_FIND_WINDOW_TOOL)));
 }
 
 #[test]

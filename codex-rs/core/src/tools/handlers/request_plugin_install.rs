@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use codex_app_server_protocol::AppInfo;
+use codex_app_catalog_types::AppInfo;
 use codex_config::types::ToolSuggestDisabledTool;
 use codex_mcp::CODEX_APPS_MCP_SERVER_NAME;
 use codex_rmcp_client::ElicitationAction;
@@ -8,16 +8,18 @@ use codex_rmcp_client::ElicitationResponse;
 use codex_tools::DiscoverableTool;
 use codex_tools::DiscoverableToolAction;
 use codex_tools::DiscoverableToolType;
-use codex_tools::LIST_AVAILABLE_PLUGINS_TO_INSTALL_TOOL_NAME;
 use codex_tools::REQUEST_PLUGIN_INSTALL_PERSIST_ALWAYS_VALUE;
 use codex_tools::REQUEST_PLUGIN_INSTALL_PERSIST_KEY;
 use codex_tools::REQUEST_PLUGIN_INSTALL_TOOL_NAME;
 use codex_tools::RequestPluginInstallArgs;
+use codex_tools::RequestPluginInstallEntry;
 use codex_tools::RequestPluginInstallResult;
 use codex_tools::ToolName;
 use codex_tools::ToolSpec;
 use codex_tools::all_requested_connectors_picked_up;
 use codex_tools::build_request_plugin_install_elicitation_request;
+use codex_tools::collect_request_plugin_install_entries;
+use codex_tools::create_request_plugin_install_tool;
 use codex_tools::filter_request_plugin_install_discoverable_tools_for_client;
 use codex_tools::verified_connector_install_completed;
 use rmcp::model::RequestId;
@@ -33,11 +35,22 @@ use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::context::boxed_tool_output;
 use crate::tools::handlers::parse_arguments;
-use crate::tools::handlers::request_plugin_install_spec::create_request_plugin_install_tool;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
 
-pub struct RequestPluginInstallHandler;
+pub struct RequestPluginInstallHandler {
+    request_plugin_install_entries: Vec<RequestPluginInstallEntry>,
+}
+
+impl RequestPluginInstallHandler {
+    pub fn new(discoverable_tools: Vec<DiscoverableTool>) -> Self {
+        Self {
+            request_plugin_install_entries: collect_request_plugin_install_entries(
+                &discoverable_tools,
+            ),
+        }
+    }
+}
 
 impl ToolExecutor<ToolInvocation> for RequestPluginInstallHandler {
     fn tool_name(&self) -> ToolName {
@@ -45,7 +58,9 @@ impl ToolExecutor<ToolInvocation> for RequestPluginInstallHandler {
     }
 
     fn spec(&self) -> Option<ToolSpec> {
-        Some(create_request_plugin_install_tool())
+        Some(create_request_plugin_install_tool(
+            &self.request_plugin_install_entries,
+        ))
     }
 
     fn supports_parallel_tool_calls(&self) -> bool {
@@ -129,7 +144,7 @@ impl ToolExecutor<ToolInvocation> for RequestPluginInstallHandler {
             .find(|tool| tool.tool_type() == args.tool_type && tool.id() == args.tool_id)
             .ok_or_else(|| {
                 FunctionCallError::RespondToModel(format!(
-                    "tool_id must match one of the discoverable tools returned by {LIST_AVAILABLE_PLUGINS_TO_INSTALL_TOOL_NAME}"
+                    "tool_id must match one of the installable tools described by {REQUEST_PLUGIN_INSTALL_TOOL_NAME}"
                 ))
             })?;
 
