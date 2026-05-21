@@ -6,6 +6,94 @@ Status: active refactor-first orchestration; compact-safe current state.
 This handoff is the current source of truth. It intentionally omits old launch
 history except where it affects active process ownership.
 
+## Compact Checkpoint - 2026-05-21 13:52 Europe/Kiev
+
+- Branch is synced with origin: `git rev-list --left-right --count
+  HEAD...origin/slow-context-budget-mode` returned `0 0`.
+- Latest pushed checkpoint remains `e0654303c9 Document SOLID fix verification
+  state`; this section is the next docs/report update after that commit.
+- No Cargo/rustc/link/cl process is active.
+- New read-only reports now landed:
+  - `solid_refactor_readonly_agent_depth_review_worker.handoff.md`: depth
+    policy leak appears fixed. The reviewer marked `status: finding` because
+    this is a broader agent graph-store/policy adapter slice, not a depth-only
+    patch; commit only with required untracked graph-store module files,
+    manifest/lock updates, and focused core verification after the
+    test-support dependency blocker is repaired.
+  - `solid_refactor_commit_ready_app_server_bazel_audit_worker.handoff.md`:
+    app-server permission/profile/schema is `blocked-by-mixed-diff`; no safe
+    path-level add list. Bazel BUILD scaffolds are `commit-ready` as a separate
+    path-only slice independent of dirty `Cargo.lock`.
+  - `solid_refactor_readonly_workspace_roots_review_worker.handoff.md`: current
+    source snapshot appears to fix the P1 workspace-root drop, but status is
+    `blocked-moving-tree` until the owner
+    `solid_refactor_fix_session_workspace_roots_worker` handoff lands.
+  - `solid_refactor_readonly_dependency_lock_review_worker.handoff.md`: current
+    dependency/lock state is mixed. Do not file-level commit `codex-rs/Cargo.lock`,
+    `codex-rs/core/Cargo.toml`, `codex-rs/core-api/Cargo.toml`, or
+    `codex-rs/core-domain/types/Cargo.toml` until source owners settle and
+    staging is split by owner.
+- Still missing handoff:
+  - `.codex/workflow/agents/solid_refactor_fix_session_workspace_roots_worker.handoff.md`.
+- Active implementation session:
+  - `solid_refactor_fix_session_workspace_roots_worker`: PowerShell `26904`,
+    `pwsh` `18832`, Python `5604`/`6768`, Codex `3664`.
+  - Other read-only review/audit wrappers may remain open after writing
+    reports; treat them as complete unless their handoff timestamp changes.
+- Current completion estimate: about 78% complete. Remaining repo-controlled
+  work is roughly 2-3 hours if verification remains incremental:
+  1. Wait for `solid_refactor_fix_session_workspace_roots_worker.handoff.md`.
+  2. Update findings based on that owner handoff.
+  3. Repair `codex-rs/core/tests/common/Cargo.toml` thread-store deps so
+     focused core `multi_agent_v2` release verification can run.
+  4. Commit/push docs/report checkpoint, then integrate clean product slices:
+     Bazel BUILD scaffolds first, agent graph-store/policy adapter after core
+     verification, workspace-root settings after owner handoff/tests, then
+     core-api/domain and app-server schema/source only after mixed diffs split.
+
+## Compact Checkpoint - 2026-05-21 13:46 Europe/Kiev
+
+- Branch is synced with origin: `git rev-list --left-right --count
+  HEAD...origin/slow-context-budget-mode` returned `0 0`.
+- Latest pushed checkpoint: `e0654303c9 Document SOLID fix verification state`.
+- No Cargo/rustc/link/cl process is active. It is safe to run the next
+  targeted release verification after worker handoffs are integrated, but do
+  not start broad build lanes by default.
+- New read-only reports landed after `e0654303c9`:
+  - `.codex/workflow/agents/solid_refactor_readonly_agent_depth_review_worker.handoff.md`
+    reports `status: finding`: the depth policy leak appears fixed, but the
+    diff is a broader agent graph-store/policy adapter slice, not a depth-only
+    patch. Commit it only with the required untracked graph-store module files,
+    manifest/lock updates, and focused core verification after the separate
+    test-support dependency blocker is repaired.
+  - `.codex/workflow/agents/solid_refactor_commit_ready_app_server_bazel_audit_worker.handoff.md`
+    reports app-server permission/profile schema is `blocked-by-mixed-diff`
+    and cannot be path-added safely. It says the Bazel BUILD scaffold slice is
+    `commit-ready` with a path-only add list and should stay separate from
+    dirty `Cargo.lock` and source changes.
+- Still missing handoffs:
+  - `.codex/workflow/agents/solid_refactor_fix_session_workspace_roots_worker.handoff.md`.
+  - `.codex/workflow/agents/solid_refactor_readonly_workspace_roots_review_worker.handoff.md`.
+  - `.codex/workflow/agents/solid_refactor_readonly_dependency_lock_review_worker.handoff.md`.
+- Live external worker/session snapshot:
+  - `solid_refactor_fix_session_workspace_roots_worker`: PowerShell `26904`,
+    Codex `3664`.
+  - `solid_refactor_readonly_workspace_roots_review_worker`: PowerShell `2524`,
+    Codex `17628`.
+  - `solid_refactor_readonly_dependency_lock_review_worker`: PowerShell
+    `30696`, Codex `11308`.
+  - Completed-report wrapper windows may remain open for
+    `solid_refactor_commit_ready_app_server_bazel_audit_worker` and
+    `solid_refactor_readonly_agent_depth_review_worker`; treat them as
+    complete unless a new handoff timestamp appears.
+- Current completion estimate: about 75% complete. Remaining repo-controlled
+  work is roughly 2-4 hours if verification remains incremental: integrate the
+  workspace-roots handoff, repair core test-support deps, wait for dependency
+  lock review, then commit/push clean slices in this order where possible:
+  Bazel BUILD scaffolds, agent graph-store/policy adapter, workspace-root
+  settings fix, core-api/domain lock/Bazel follow-up, and finally app-server
+  schema/source once mixed diffs are separated.
+
 ## Continuation Checkpoint - 2026-05-21 13:18 Europe/Kiev
 
 - Branch was still synced before this handoff update:
