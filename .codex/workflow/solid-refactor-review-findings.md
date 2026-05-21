@@ -50,6 +50,8 @@ Root-owned next action: route resume-descendant depth through `codex-agent-polic
 
 Root-owned next action: remove only the dead `codex-replacement-shadow` dependency from `codex-rs/core/Cargo.toml`; keep `codex-context-ops-impl`; then run the required lock/Bazel follow-up after source boundaries settle.
 
+Self-review update: `7917c50e52` already committed the dead `codex-replacement-shadow` removal from `codex-rs/core/Cargo.toml` and `codex-rs/Cargo.lock` because those worker files were staged when the review handoff commit was made. Treat that source slice as pending verification, not green, until the active replacement-shadow worker or current Cargo/rustc lane reports success.
+
 ### P2 - Tests/schema/lock changes need separate commit boundaries
 
 `solid_refactor_area_review_tests_schema_worker.handoff.md` classified the dirty schema, lock, manifest, and test-support changes. It explicitly warns not to commit app-server schema JSON, Bazel scaffold files, workflow prompts/handoffs, and core test-support changes as one blob.

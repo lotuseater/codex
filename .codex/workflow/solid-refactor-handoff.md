@@ -10,9 +10,15 @@ history except where it affects active process ownership.
 
 - Branch is synced with origin: `git rev-list --left-right --count HEAD...origin/slow-context-budget-mode` returned `0 0`.
 - Latest pushed orchestration commits:
+  - `7917c50e52 Add core API retry review handoff`.
   - `88c98ca0b6 Document SOLID core API review fallback`.
   - `21fccba985 Fix SOLID review handoff prompts`.
   - Earlier docs/review setup commits: `39a414106b`, `55cbc90c48`.
+- Self-review correction: `7917c50e52` was not docs-only. It also included
+  the replacement-shadow dependency cleanup from already-staged worker files:
+  `codex-rs/core/Cargo.toml` and `codex-rs/Cargo.lock` each removed the dead
+  `codex-replacement-shadow` entry. Do not assume that source slice is verified
+  until the active worker/verification lane reports success.
 - Active build/verification lane exists now. Do not start competing Cargo/Bazel/build work until it finishes:
   - Process IDs are volatile; recheck before acting.
   - Latest refresh during self-review saw `cargo.exe:27964` and `rustc.exe:18424`.
@@ -30,6 +36,10 @@ history except where it affects active process ownership.
 - Review state:
   - Core-api quick review found no concrete import/API regression from the identifier move; keep core-api/domain source plus `Cargo.lock` separate from app-server schema JSON and run the named release/Bazel lock checks before committing that source slice.
   - Core-api retry review adds a commit blocker: `codex-rs/Cargo.lock` is stale/mixed for the `codex-core-api -> codex-core-domain-types` dependency move and must be refreshed with the required Bazel lock flow before the core-api slice is committed.
+  - Replacement-shadow dependency cleanup is now committed in `7917c50e52`, but
+    the active verification lane is still running; wait for
+    `solid_refactor_fix_replacement_shadow_dep_worker.handoff.md` or process
+    completion before treating it as green.
   - Retry session-settings review reconfirmed the P1 workspace-root data-loss blocker.
   - Retry tests/schema review reconfirmed two blockers before schema/test commits: workspace-root data loss and stale permission-shape schema/test drift; schema JSON must stay with its owning DTO/source change.
 - Main next action after compaction:
