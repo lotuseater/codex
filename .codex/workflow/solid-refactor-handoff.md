@@ -16,6 +16,8 @@ history except where it affects active process ownership.
 - Active build/verification lane exists now. Do not start competing Cargo/Bazel/build work until it finishes:
   - `cargo.exe:13464`
   - `cl.exe:13720`, `cl.exe:16672`, `cl.exe:31016`, `cl.exe:33960`
+  - Final pre-compaction refresh after pushing this checkpoint saw `cargo.exe:13332`
+    and `rustc.exe:30340`; the earlier `cl.exe` lane may have rolled forward.
 - Active visible orchestration/fix sessions:
   - `solid_refactor_area_review_retry_core_api_worker`: PowerShell `34688`, Codex `25128`; no handoff seen yet.
   - `solid_refactor_commit_grouping_worker`: PowerShell `33944`, Codex `12432`; no handoff seen yet.
