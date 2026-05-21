@@ -6,6 +6,36 @@ Status: active refactor-first orchestration; compact-safe current state.
 This handoff is the current source of truth. It intentionally omits old launch
 history except where it affects active process ownership.
 
+## Compaction Checkpoint - 2026-05-21 12:45 Europe/Kiev
+
+- Branch is synced with origin: `git rev-list --left-right --count HEAD...origin/slow-context-budget-mode` returned `0 0`.
+- Latest pushed orchestration commits:
+  - `88c98ca0b6 Document SOLID core API review fallback`.
+  - `21fccba985 Fix SOLID review handoff prompts`.
+  - Earlier docs/review setup commits: `39a414106b`, `55cbc90c48`.
+- Active build/verification lane exists now. Do not start competing Cargo/Bazel/build work until it finishes:
+  - `cargo.exe:13464`
+  - `cl.exe:13720`, `cl.exe:16672`, `cl.exe:31016`, `cl.exe:33960`
+- Active visible orchestration/fix sessions:
+  - `solid_refactor_area_review_retry_core_api_worker`: PowerShell `34688`, Codex `25128`; no handoff seen yet.
+  - `solid_refactor_commit_grouping_worker`: PowerShell `33944`, Codex `12432`; no handoff seen yet.
+  - `solid_refactor_fix_session_workspace_roots_worker`: PowerShell `26904`, Codex `3664`; likely owns the active verification lane.
+  - `solid_refactor_fix_agent_depth_policy_worker`: PowerShell `25236`, Codex `15848`.
+  - `solid_refactor_fix_replacement_shadow_dep_worker`: PowerShell `23324`, Codex `5144`.
+- New useful handoffs landed after the last commit and should be committed with this handoff update:
+  - `.codex/workflow/agents/solid_refactor_area_review_core_api_quick_worker.handoff.md`
+  - `.codex/workflow/agents/solid_refactor_area_review_retry_session_settings_worker.handoff.md`
+  - `.codex/workflow/agents/solid_refactor_area_review_retry_tests_schema_worker.handoff.md`
+- Review state:
+  - Core-api quick review found no concrete import/API regression from the identifier move; keep core-api/domain source plus `Cargo.lock` separate from app-server schema JSON and run the named release/Bazel lock checks before committing that source slice.
+  - Retry session-settings review reconfirmed the P1 workspace-root data-loss blocker.
+  - Retry tests/schema review reconfirmed two blockers before schema/test commits: workspace-root data loss and stale permission-shape schema/test drift; schema JSON must stay with its owning DTO/source change.
+- Main next action after compaction:
+  1. Monitor active fix workers and read their `.handoff.md` files as they land.
+  2. Do not launch more verification while `cargo.exe`/`cl.exe` are active.
+  3. Commit/push this compact checkpoint plus the three new review handoffs as a docs-only orchestration slice.
+  4. Once implementation workers finish, integrate only verified source slices by ownership.
+
 ## Objective
 
 Refactor `codex-core` and its tests so core code does not depend directly or
