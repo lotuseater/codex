@@ -29,6 +29,8 @@ Do not use that worker as a completed review gate. The replacement plan is multi
 - The core-api identifier move still needs lock/Bazel/schema follow-up after source review confirms the boundary is correct.
 - The stale test API repair handoff reports edits but no test run; it needs targeted release test execution after review.
 - Generated app-server schema files are dirty and should be committed only with the DTO/source changes that caused them.
+- Closed gap: `solid_refactor_fix_replacement_shadow_dep_worker.handoff.md` verified the already-committed `codex-replacement-shadow` cleanup with `just bazel-lock-update`, `just bazel-lock-check`, and `cargo check -p codex-core --release --locked`.
+- New gap from `solid_refactor_fix_agent_depth_policy_worker.handoff.md`: the agent-depth policy source fix and owner-crate test passed, but core `multi_agent_v2` release verification is blocked until `codex-rs/core/tests/common/Cargo.toml` declares the thread-store dependencies imported by `codex-rs/core/tests/common/test_codex.rs`.
 
 ## Scoped Review Handoff Findings
 
@@ -42,7 +44,7 @@ Root-owned next action: restore runtime root propagation through the proper upda
 
 `solid_refactor_area_review_agent_tools_worker.handoff.md` found that regular child spawn uses the extracted `codex-agent-policy` depth helper, but recursive persisted-descendant resume still computes depth locally. This leaves duplicated policy in `codex-core` and can drift from the new owner crate.
 
-Root-owned next action: route resume-descendant depth through `codex-agent-policy`, add owner-crate tests for the policy, and keep `codex-core` as adapter only.
+Root-owned next action: review the `solid_refactor_fix_agent_depth_policy_worker` source diff, then fix the separate core test-support dependency blocker before rerunning the focused core `multi_agent_v2` release verification.
 
 ### P2 - Replacement-shadow source deletion is safe, but dependency cleanup remains incomplete
 
@@ -50,7 +52,7 @@ Root-owned next action: route resume-descendant depth through `codex-agent-polic
 
 Root-owned next action: remove only the dead `codex-replacement-shadow` dependency from `codex-rs/core/Cargo.toml`; keep `codex-context-ops-impl`; then run the required lock/Bazel follow-up after source boundaries settle.
 
-Self-review update: `7917c50e52` already committed the dead `codex-replacement-shadow` removal from `codex-rs/core/Cargo.toml` and `codex-rs/Cargo.lock` because those worker files were staged when the review handoff commit was made. Treat that source slice as pending verification, not green, until the active replacement-shadow worker or current Cargo/rustc lane reports success.
+Self-review update: `7917c50e52` already committed the dead `codex-replacement-shadow` removal from `codex-rs/core/Cargo.toml` and `codex-rs/Cargo.lock` because those worker files were staged when the review handoff commit was made. The follow-up `solid_refactor_fix_replacement_shadow_dep_worker.handoff.md` verified that cleanup; treat the stale `codex-replacement-shadow` core dependency finding as fixed, while leaving unrelated dirty `codex-thread-store` and `codex-core-domain-types`/`serde` manifest/lock hunks to their owning workers.
 
 ### P2 - Tests/schema/lock changes need separate commit boundaries
 

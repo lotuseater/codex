@@ -6,6 +6,57 @@ Status: active refactor-first orchestration; compact-safe current state.
 This handoff is the current source of truth. It intentionally omits old launch
 history except where it affects active process ownership.
 
+## Continuation Checkpoint - 2026-05-21 13:18 Europe/Kiev
+
+- Branch was still synced before this handoff update:
+  `git rev-list --left-right --count HEAD...origin/slow-context-budget-mode`
+  returned `0 0`.
+- `solid_refactor_fix_replacement_shadow_dep_worker.handoff.md` landed and
+  verified the replacement-shadow dependency cleanup:
+  - `just bazel-lock-update`: passed.
+  - `just bazel-lock-check`: passed.
+  - `cargo check -p codex-core --release --locked`: passed; log
+    `logs/solid-refactor-codex-core-release-check-20260521-125117.log`.
+  - Treat the stale `codex-replacement-shadow` core dependency finding as fixed
+    at current branch `HEAD`.
+- Follow-up at 2026-05-21 13:28 Europe/Kiev: the release lane exited; no
+  `cargo.exe`, `rustc.exe`, `link.exe`, or `cl.exe` rows were active.
+- `solid_refactor_fix_agent_depth_policy_worker.handoff.md` landed:
+  - Source fix: recursive persisted-descendant resume now calls the
+    `codex-agent-policy` depth helper instead of doing local `parent_depth + 1`
+    arithmetic in core.
+  - Verification passed: `just fmt` and
+    `scripts\test-local-codex-release.ps1 -Package codex-agent-policy`.
+  - Core verification is still blocked outside that worker's ownership:
+    `codex-rs/core/tests/common/test_codex.rs` imports
+    `codex_thread_store` / `codex_thread_store_api`, but
+    `codex-rs/core/tests/common/Cargo.toml` does not declare those
+    dependencies.
+- Active visible implementation workers still missing handoffs:
+  - `solid_refactor_fix_session_workspace_roots_worker`: PowerShell `26904`,
+    Codex `3664`.
+  - `solid_refactor_fix_agent_depth_policy_worker`: handoff landed; wrapper
+    windows may remain open, but root should treat this worker as complete
+    unless its read-only reviewer finds a concrete regression.
+- Active read-only review/audit workers launched or still running; all are
+  command-banned from Cargo/Bazel/tests/schema generation and may write only
+  their assigned handoff:
+  - `solid_refactor_commit_ready_app_server_bazel_audit_worker`: app-server
+    permission/schema and Bazel scaffold commit readiness.
+  - `solid_refactor_readonly_agent_depth_review_worker`: source sanity review
+    for the agent-depth policy fix.
+  - `solid_refactor_readonly_workspace_roots_review_worker`: current
+    workspace-root settings data-flow review; expected to report
+    `blocked-moving-tree` if the owner worker is still active.
+  - `solid_refactor_readonly_dependency_lock_review_worker`: dependency,
+    lock, and core test-support boundary audit.
+- Current completion estimate: about 70-75% of the refactor orchestration is
+  complete. The remaining critical path is the workspace-roots worker handoff,
+  core test-support dependency repair, focused release verification, and scoped
+  commit/push of ready source groups. Expected repo-controlled time is roughly
+  2-4 hours if verification stays incremental; longer if core/app-server checks
+  force rebuilds or uncover source regressions.
+
 ## Compaction Checkpoint - 2026-05-21 12:45 Europe/Kiev
 
 - Branch is synced with origin: `git rev-list --left-right --count HEAD...origin/slow-context-budget-mode` returned `0 0`.
