@@ -176,11 +176,21 @@ the overseer into a second director. Instead:
 
 - Check the director periodically at coarse checkpoints: after a worker wave,
   before compaction, after a long idle period, or when the user asks for status.
-- Prefer repo artifacts over terminal streaming: read the director handoff,
-  fresh worker handoffs, prompt files, marker files, and the singleton state.
-- Spot-check rule compliance only: one director, no source edits by director,
-  no broad builds/tests before refactor completion, workers launched visibly,
-  handoffs updated, and next wave prompts scoped.
+- Use the checkpoint script first, and only escalate if its action line says to:
+  `powershell -ExecutionPolicy Bypass -File .codex\workflow\agents\check-solid-refactor-director.ps1`.
+- Prefer repo artifacts over terminal streaming: read only fresh worker handoffs,
+  the director handoff, prompt files, and marker files that the checkpoint points
+  to.
+- Do not re-check singleton director processes during normal oversight. The
+  start/stop/relaunch scripts own that. Only use those checks when a duplicate
+  or relaunch problem is visible to the user.
+- Spot-check rule compliance only: no source edits by director, no broad
+  builds/tests before refactor completion, workers launched visibly, handoffs
+  updated, and next wave prompts scoped.
+- Keep the normal oversight budget to one checkpoint command and, if needed,
+  one concise follow-up. Avoid ad hoc `Get-Process`, Codex transcript searches,
+  broad git status, or source/doc exploration unless a checkpoint exposes a
+  concrete problem.
 - If the director drifts, send Esc with
   `.codex\workflow\agents\interrupt-solid-refactor-director.ps1`, then send one
   concise redirect follow-up. Do not start reading every line.
