@@ -274,3 +274,41 @@ Use the interrupt script before `/compact`, urgent redirection, or stopping an
 unwanted action. It prefers the remembered window handle, uses an 800 ms default
 activation wait only as fallback, and sends only Esc; it is meant to be a fast
 control operation, not a conversational follow-up.
+
+## Director Drift Corrections
+
+If the director starts a broad automatic review itself, interrupt it fast and
+redirect. The director should not become the reviewer; it should delegate review
+work to a fresh visible Codex worker session with a scoped prompt and a handoff.
+
+Use one scripted interrupt:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .codex\workflow\agents\interrupt-solid-refactor-director.ps1
+```
+
+Then send one concise redirect:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .codex\workflow\agents\send-solid-refactor-director-followup.ps1 -Message "Stop broad self-review. Delegate review to a spawned visible codex-workers session with a scoped prompt and handoff. You are the director only: read handoffs, assign workers, integrate short handoffs, and keep context compact."
+```
+
+Do not stream every director line to detect this. Check at coarse checkpoints
+from artifacts and visible state. Interrupt only when there is clear drift:
+broad self-review, direct source edits by the director, hidden/background worker
+launches, broad builds/tests before architecture completion, or duplicate
+director windows.
+
+## Director Post-Compaction Reminder
+
+After the director compacts or resumes from compaction, send a reminder before
+letting it continue. The reminder should restate the details the director tends
+to forget:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .codex\workflow\agents\send-solid-refactor-director-followup.ps1 -Message "Post-compaction reminder: reread .codex\\workflow\\solid-refactor-handoff.md, docs\\current-project-architecture-solid-refactor-plan.md, docs\\current-project-architecture-solid-review.md, and fresh worker handoffs under .codex\\workflow\\agents\\. Continue as director only. Spawn real separate visible Codex worker windows via codex-workers as described in the handoff; do not do broad review or source edits yourself. Refactor and clear architecture boundaries first. Until the SOLID architecture refactor is genuinely complete, avoid broad builds/tests/schema generation/formatters/Bazel/lock refresh/release builds. Allowed checks are source/static checks such as rg, git diff --check, PowerShell parser checks for changed ps1, and scripts/check-cargo-dependency-boundaries.ps1 -SolidRefactor -Json. Keep worker prompts scoped, require short handoffs, and update your handoff before compacting again."
+```
+
+If a new operational problem appears while overseeing, it is acceptable for the
+overseer to change or add scripts and update this memo, then verify only that
+workflow slice. Keep those fixes separate from product/refactor source.
