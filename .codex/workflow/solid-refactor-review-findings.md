@@ -30,10 +30,32 @@ Do not use that worker as a completed review gate. The replacement plan is multi
 - The stale test API repair handoff reports edits but no test run; it needs targeted release test execution after review.
 - Generated app-server schema files are dirty and should be committed only with the DTO/source changes that caused them.
 
-## Scoped Reviews To Launch
+## Scoped Review Handoff Findings
 
-- Session settings and workspace-root data flow.
-- Context-ops and replacement-shadow deletion/dependency cleanup.
-- Core-api identifier export move and consumer fallout.
-- Agent policy plus tools telemetry boundary.
-- Core tests, schema fixtures, manifest/Bazel/lock fallout.
+### P1 - Runtime workspace roots are still being dropped on turn/session settings updates
+
+`solid_refactor_area_review_session_settings_worker.handoff.md` confirmed the earlier root finding: `turn/start.runtimeWorkspaceRoots` remains public API, but the dirty `SessionSettingsUpdate` / `CodexThread::thread_settings_update` path no longer carries the runtime workspace-root data through to session settings after a thread already exists.
+
+Root-owned next action: restore runtime root propagation through the proper update model instead of passing `None`, then run the focused release-profile session/thread tests named in that handoff.
+
+### P2 - Resume-descendant depth bypasses the extracted agent spawn-depth policy
+
+`solid_refactor_area_review_agent_tools_worker.handoff.md` found that regular child spawn uses the extracted `codex-agent-policy` depth helper, but recursive persisted-descendant resume still computes depth locally. This leaves duplicated policy in `codex-core` and can drift from the new owner crate.
+
+Root-owned next action: route resume-descendant depth through `codex-agent-policy`, add owner-crate tests for the policy, and keep `codex-core` as adapter only.
+
+### P2 - Replacement-shadow source deletion is safe, but dependency cleanup remains incomplete
+
+`solid_refactor_area_review_context_ops_worker.handoff.md` found no live Rust references to `replacement_shadow` and classified the deleted handler as safe. It also confirmed `codex-replacement-shadow` remains a dead `codex-core` dependency while `codex-context-ops-impl` is still required by file-outline/search handlers.
+
+Root-owned next action: remove only the dead `codex-replacement-shadow` dependency from `codex-rs/core/Cargo.toml`; keep `codex-context-ops-impl`; then run the required lock/Bazel follow-up after source boundaries settle.
+
+### P2 - Tests/schema/lock changes need separate commit boundaries
+
+`solid_refactor_area_review_tests_schema_worker.handoff.md` classified the dirty schema, lock, manifest, and test-support changes. It explicitly warns not to commit app-server schema JSON, Bazel scaffold files, workflow prompts/handoffs, and core test-support changes as one blob.
+
+Root-owned next action: commit orchestration docs/prompts separately; commit test-support/stale-test repairs only after focused release verification; commit app-server schema JSON only with the DTO/source change that caused it; keep Bazel/lock refreshes with their owning dependency or schema changes.
+
+## Scoped Reviews Still Outstanding
+
+- Core-api identifier export move and consumer fallout. A retry visible worker is active with handoff target `.codex/workflow/agents/solid_refactor_area_review_retry_core_api_worker.handoff.md`.

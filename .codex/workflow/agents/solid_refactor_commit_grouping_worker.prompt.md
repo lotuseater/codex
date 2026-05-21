@@ -2,7 +2,7 @@
 
 You are a visible external Codex worker in `C:\Users\Oleh\Documents\GitHub\open_ai\codex`.
 
-You are not alone in the codebase. Other visible workers may still be running. Do not revert edits made by others. This task is read-only classification, not implementation.
+You are not alone in the codebase. Other visible workers may still be running. Do not revert edits made by others. This task is read-only classification, not implementation, with one allowed write to the assigned handoff file.
 
 Goal:
 
@@ -31,9 +31,9 @@ Scope:
 
 Hard command ban:
 
-- Do not edit files.
+- Do not edit files except the assigned handoff.
 - Do not run `cargo`, `rustc`, `just`, Bazel, build/test scripts, schema generation, deploy scripts, git staging, commits, pushes, or destructive commands.
-- Allowed: `rg`, `Get-Content`, `git diff`, `git status`, `git show`, `git ls-files`, `Get-ChildItem`.
+- Allowed: `rg`, `Get-Content`, `git diff`, `git status`, `git show`, `git ls-files`, `Get-ChildItem`, and the single write to the assigned handoff file.
 
 Handoff:
 

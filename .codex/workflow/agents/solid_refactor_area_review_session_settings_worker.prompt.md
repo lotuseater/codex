@@ -2,7 +2,7 @@
 
 You are a visible external Codex review worker in `C:\Users\Oleh\Documents\GitHub\open_ai\codex`.
 
-You are not alone in the codebase. Do not edit files. Do not stage, commit, or push. This is a read-only handoff-review.
+You are not alone in the codebase. Do not edit source or project files except for writing the exact handoff file named at the end of this prompt. Do not stage, commit, or push. This is a read-only handoff-review with one allowed handoff write.
 
 Read first:
 - `AGENTS.md`
@@ -16,7 +16,7 @@ Scope:
 - Determine whether dropping `workspace_roots` and `profile_workspace_roots` is intentional and fully propagated, or a real regression.
 - Check tests that should cover runtime workspace root update behavior.
 
-Allowed commands: `rg`, `Get-Content`, `git diff`, `git show`, `git status`.
-Forbidden: `apply_patch`, file edits, `cargo`, `rustc`, `just`, Bazel, scripts, schema generation, staging, commits, pushes.
+Allowed commands: `rg`, `Get-Content`, `git diff`, `git show`, `git status`, and the single write to the assigned handoff file.
+Forbidden: `apply_patch`, source/project file edits outside the assigned handoff, `cargo`, `rustc`, `just`, Bazel, scripts, schema generation, staging, commits, pushes.
 
 Write `.codex/workflow/agents/solid_refactor_area_review_session_settings_worker.handoff.md` with findings first, file:line evidence, and exact root-owned next action.

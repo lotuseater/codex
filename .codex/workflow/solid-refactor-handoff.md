@@ -33,9 +33,10 @@ Work order:
 - Worker commit cadence:
   - Editable workers own their coherent slice through commit and push after
     their allowed verification is green and the remote is not ahead.
-  - Read-only, review-only, or command-banned workers must not commit; their
-    handoff must mark commit-ready files, missing verification, and the exact
-    root commit boundary.
+  - Read-only, review-only, or command-banned workers may write only their
+    assigned `.handoff.md`; they must not commit, and the handoff must mark
+    commit-ready files, missing verification, and the exact root commit
+    boundary.
   - Root should not let useful verified work sit in the dirty tree while
     starting unrelated slices. Group dirty work by ownership, verify the
     narrowest safe lane, commit, and push before widening the next wave.
@@ -101,6 +102,23 @@ Still pending from wave 3:
 - `solid_refactor_review_handoffs_worker` was stopped by root before handoff
   because it over-expanded a read-only review into broad source scanning. Treat
   its visible log as partial evidence only, not as a completed review result.
+- Prompt contract correction on 2026-05-21:
+  - The five `solid_refactor_area_review_*_worker.prompt.md` files and commit
+    grouping prompt now state that review workers may write only their assigned
+    `.handoff.md`.
+  - The original scoped review prompts were contradictory: they asked for a
+    handoff but also said no file edits. Treat missing original handoffs as
+    prompt fallout, not reviewer failure.
+- Completed scoped review handoffs now present:
+  - `.codex/workflow/agents/solid_refactor_area_review_agent_tools_worker.handoff.md`.
+  - `.codex/workflow/agents/solid_refactor_area_review_context_ops_worker.handoff.md`.
+- Retry scoped review workers were launched visibly for missing areas:
+  - `solid_refactor_area_review_retry_core_api_worker.prompt.md` ->
+    `.codex/workflow/agents/solid_refactor_area_review_retry_core_api_worker.handoff.md`.
+  - `solid_refactor_area_review_retry_session_settings_worker.prompt.md` ->
+    `.codex/workflow/agents/solid_refactor_area_review_retry_session_settings_worker.handoff.md`.
+  - `solid_refactor_area_review_retry_tests_schema_worker.prompt.md` ->
+    `.codex/workflow/agents/solid_refactor_area_review_retry_tests_schema_worker.handoff.md`.
 - `solid_refactor_commit_grouping_worker.prompt.md` exists locally as a possible
   read-only grouping prompt, but it has not been launched. Do not launch it
   until the blocking source-review questions below are handled.
