@@ -14,11 +14,6 @@ impl Session {
         state.semantic_compact_decision(input)
     }
 
-    pub(crate) async fn record_model_move_finished_for_semantic_compact(&self) {
-        let mut state = self.state.lock().await;
-        state.record_model_move_finished_for_semantic_compact();
-    }
-
     pub(crate) async fn is_post_turn_compact_max_output_suppressed(
         &self,
         total_usage_tokens: i64,

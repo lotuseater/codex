@@ -506,7 +506,6 @@ pub(crate) async fn run_turn(
                 can_drain_pending_input = true;
                 let has_pending_input = sess.has_pending_input().await;
                 let needs_follow_up = model_needs_follow_up || has_pending_input;
-                sess.record_model_move_finished_for_semantic_compact().await;
                 let total_usage_tokens = sess.get_total_token_usage().await;
                 let visible_context_percent_used = sess.visible_context_percent_used().await;
                 let token_limit_reached = total_usage_tokens >= auto_compact_limit;

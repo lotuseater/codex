@@ -276,10 +276,6 @@ impl SessionState {
             .record_regular_turn_finished(input);
     }
 
-    pub(crate) fn record_model_move_finished_for_semantic_compact(&mut self) {
-        self.semantic_compact_state.record_model_move_finished();
-    }
-
     pub(crate) fn observe_visible_context_percent_for_semantic_compact(
         &mut self,
         policy: codex_context_reduction::ContextReductionPolicy,

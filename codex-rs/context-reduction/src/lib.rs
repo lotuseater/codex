@@ -183,14 +183,11 @@ impl SemanticCompactState {
             .observe_visible_context_percent(policy, visible_context_percent_used);
     }
 
-    pub fn record_model_move_finished(&mut self) {
-        self.early_context_pressure_state
-            .record_regular_turn_finished();
-    }
-
     pub fn record_regular_turn_finished(&mut self, input: SemanticCompactTurnInput) {
         self.semantic_cooldown_remaining_turns =
             self.semantic_cooldown_remaining_turns.saturating_sub(1);
+        self.early_context_pressure_state
+            .record_regular_turn_finished();
         self.regular_turns_since_last_compact =
             self.regular_turns_since_last_compact.saturating_add(1);
         if input.is_continuation_turn {
@@ -632,14 +629,14 @@ mod tests {
         state.record_compaction_finished(Some(ContextReductionReason::EarlyContextPressure));
 
         for _ in 0..23 {
-            state.record_model_move_finished();
+            state.record_regular_turn_finished(turn_input(1));
             assert_eq!(
                 state.decide(semantic_input(false, 20_000)),
                 SemanticCompactDecision::Skip
             );
         }
 
-        state.record_model_move_finished();
+        state.record_regular_turn_finished(turn_input(1));
         assert_eq!(
             state.decide(semantic_input(false, 20_000)),
             SemanticCompactDecision::Compact {
@@ -654,14 +651,14 @@ mod tests {
         state.record_compaction_finished(Some(ContextReductionReason::EarlyContextPressure));
 
         for _ in 0..23 {
-            state.record_model_move_finished();
+            state.record_regular_turn_finished(turn_input(1));
             assert_eq!(
                 state.decide(semantic_input_with_visible_percent(false, 1, 20)),
                 SemanticCompactDecision::Skip
             );
         }
 
-        state.record_model_move_finished();
+        state.record_regular_turn_finished(turn_input(1));
         assert_eq!(
             state.decide(semantic_input_with_visible_percent(false, 1, 20)),
             SemanticCompactDecision::Compact {
@@ -676,14 +673,14 @@ mod tests {
         state.record_compaction_finished(Some(ContextReductionReason::SemanticCheckpoint));
 
         for _ in 0..23 {
-            state.record_model_move_finished();
+            state.record_regular_turn_finished(turn_input(1));
             assert_eq!(
                 state.decide(semantic_input(false, 20_000)),
                 SemanticCompactDecision::Skip
             );
         }
 
-        state.record_model_move_finished();
+        state.record_regular_turn_finished(turn_input(1));
         assert_eq!(
             state.decide(semantic_input(false, 20_000)),
             SemanticCompactDecision::Compact {
@@ -698,20 +695,20 @@ mod tests {
         state.record_compaction_finished(Some(ContextReductionReason::EarlyContextPressure));
 
         for _ in 0..12 {
-            state.record_model_move_finished();
+            state.record_regular_turn_finished(turn_input(1));
         }
 
         state.record_compaction_finished(Some(ContextReductionReason::ContextLimit));
 
         for _ in 0..23 {
-            state.record_model_move_finished();
+            state.record_regular_turn_finished(turn_input(1));
             assert_eq!(
                 state.decide(semantic_input_with_visible_percent(false, 1, 20)),
                 SemanticCompactDecision::Skip
             );
         }
 
-        state.record_model_move_finished();
+        state.record_regular_turn_finished(turn_input(1));
         assert_eq!(
             state.decide(semantic_input_with_visible_percent(false, 1, 20)),
             SemanticCompactDecision::Compact {

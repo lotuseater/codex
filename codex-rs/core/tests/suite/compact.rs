@@ -1684,6 +1684,110 @@ async fn auto_compact_runs_after_token_limit_hit() {
     );
 }
 
+#[cfg_attr(windows, ignore)]
+#[cfg_attr(not(windows), tokio::test(flavor = "multi_thread", worker_threads = 2))]
+async fn post_turn_auto_compaction_incomplete_max_output_tokens_does_not_retry_or_replace_history()
+{
+    skip_if_no_network!();
+
+    let server = start_mock_server().await;
+    let first_turn = sse(vec![
+        ev_assistant_message("m1", FIRST_REPLY),
+        ev_completed_with_tokens("r1", /*total_tokens*/ 200_001),
+    ]);
+    let truncated_compaction = sse(vec![
+        ev_assistant_message("m2", "TRUNCATED_SUMMARY"),
+        ev_incomplete_with_tokens("r2", "max_output_tokens", /*total_tokens*/ 25),
+    ]);
+    let next_turn = sse(vec![
+        ev_assistant_message("m3", "after failed post-turn compact"),
+        ev_completed_with_tokens("r3", /*total_tokens*/ 100),
+    ]);
+    let request_log =
+        mount_sse_sequence(&server, vec![first_turn, truncated_compaction, next_turn]).await;
+
+    let model_provider = non_openai_model_provider(&server);
+    let codex = Codex::test_codex()
+        .with_config(move |config| {
+            config.model_provider = model_provider;
+            set_test_compact_prompt(config);
+            config.model_auto_compact_token_limit = Some(200_000);
+        })
+        .build(&server)
+        .await
+        .expect("build codex")
+        .codex;
+
+    codex
+        .submit(Op::UserInput {
+            environments: None,
+            items: vec![UserInput::Text {
+                text: "USER_ONE".into(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+        })
+        .await
+        .expect("submit first user");
+
+    let error_message = wait_for_event_match(&codex, |event| match event {
+        EventMsg::Error(err)
+            if err
+                .message
+                .contains("context compaction response incomplete: max_output_tokens") =>
+        {
+            Some(err.message.clone())
+        }
+        _ => None,
+    })
+    .await;
+    assert!(
+        error_message.contains("context compaction response incomplete: max_output_tokens"),
+        "expected post-turn compaction incomplete error, got {error_message}"
+    );
+
+    codex
+        .submit(Op::UserInput {
+            environments: None,
+            items: vec![UserInput::Text {
+                text: "USER_TWO".into(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+        })
+        .await
+        .expect("submit second user");
+    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+
+    let requests = request_log.requests();
+    assert_eq!(
+        requests.len(),
+        3,
+        "post-turn max-output compaction should not retry immediately"
+    );
+    let next_turn_body = requests[2].body_json().to_string();
+    assert!(
+        body_contains_text(&next_turn_body, "USER_ONE"),
+        "failed compaction must keep original user history"
+    );
+    assert!(
+        body_contains_text(&next_turn_body, FIRST_REPLY),
+        "failed compaction must keep original assistant history"
+    );
+    assert!(
+        body_contains_text(&next_turn_body, "USER_TWO"),
+        "later user turn should still be sent"
+    );
+    assert!(
+        !body_contains_text(&next_turn_body, "TRUNCATED_SUMMARY"),
+        "truncated post-turn compaction output must not be recorded"
+    );
+    assert!(
+        !body_contains_text(&next_turn_body, SUMMARY_PREFIX),
+        "failed post-turn compaction must not replace history with a summary"
+    );
+}
+
 // Windows CI only: bump to 4 workers to prevent SSE/event starvation and test timeouts.
 #[cfg_attr(windows, tokio::test(flavor = "multi_thread", worker_threads = 4))]
 #[cfg_attr(not(windows), tokio::test(flavor = "multi_thread", worker_threads = 2))]
