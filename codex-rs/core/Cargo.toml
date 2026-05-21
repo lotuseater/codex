@@ -103,7 +103,6 @@ codex-model-provider = { workspace = true }
 codex-operation-cache = { workspace = true }
 codex-prompt-reducer = { workspace = true }
 codex-protocol = { workspace = true }
-codex-replacement-shadow = { workspace = true }
 codex-response-debug-context = { workspace = true }
 codex-rollout = { workspace = true }
 codex-rollout-trace = { workspace = true }

@@ -14,10 +14,8 @@ history except where it affects active process ownership.
   - `21fccba985 Fix SOLID review handoff prompts`.
   - Earlier docs/review setup commits: `39a414106b`, `55cbc90c48`.
 - Active build/verification lane exists now. Do not start competing Cargo/Bazel/build work until it finishes:
-  - `cargo.exe:13464`
-  - `cl.exe:13720`, `cl.exe:16672`, `cl.exe:31016`, `cl.exe:33960`
-  - Final pre-compaction refresh after pushing this checkpoint saw `cargo.exe:13332`
-    and `rustc.exe:30340`; the earlier `cl.exe` lane may have rolled forward.
+  - Process IDs are volatile; recheck before acting.
+  - Latest refresh during self-review saw `cargo.exe:27964` and `rustc.exe:18424`.
 - Active visible orchestration/fix sessions:
   - `solid_refactor_area_review_retry_core_api_worker`: PowerShell `34688`, Codex `25128`; no handoff seen yet.
   - `solid_refactor_commit_grouping_worker`: PowerShell `33944`, Codex `12432`; no handoff seen yet.
@@ -26,10 +24,12 @@ history except where it affects active process ownership.
   - `solid_refactor_fix_replacement_shadow_dep_worker`: PowerShell `23324`, Codex `5144`.
 - New useful handoffs landed after the last commit and should be committed with this handoff update:
   - `.codex/workflow/agents/solid_refactor_area_review_core_api_quick_worker.handoff.md`
+  - `.codex/workflow/agents/solid_refactor_area_review_retry_core_api_worker.handoff.md`
   - `.codex/workflow/agents/solid_refactor_area_review_retry_session_settings_worker.handoff.md`
   - `.codex/workflow/agents/solid_refactor_area_review_retry_tests_schema_worker.handoff.md`
 - Review state:
   - Core-api quick review found no concrete import/API regression from the identifier move; keep core-api/domain source plus `Cargo.lock` separate from app-server schema JSON and run the named release/Bazel lock checks before committing that source slice.
+  - Core-api retry review adds a commit blocker: `codex-rs/Cargo.lock` is stale/mixed for the `codex-core-api -> codex-core-domain-types` dependency move and must be refreshed with the required Bazel lock flow before the core-api slice is committed.
   - Retry session-settings review reconfirmed the P1 workspace-root data-loss blocker.
   - Retry tests/schema review reconfirmed two blockers before schema/test commits: workspace-root data loss and stale permission-shape schema/test drift; schema JSON must stay with its owning DTO/source change.
 - Main next action after compaction:

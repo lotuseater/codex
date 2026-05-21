@@ -64,4 +64,6 @@ Core-api visible retry workers were still running without a handoff, so root per
 
 Root found no direct source consumer of `codex_core_api::ThreadId`, `codex_core_api::{... ThreadId ...}`, or `codex_core_api::identifiers` outside the core-api boundary. `ProtocolThreadId` appears only in the core-api export layer, which matches the intended split between protocol and domain identifiers.
 
-Root-owned next action: keep the core-api source slice separate from app-server schema JSON, then run focused release verification plus `just bazel-lock-update` / `just bazel-lock-check` after the source blockers in other areas are fixed.
+`solid_refactor_area_review_retry_core_api_worker.handoff.md` adds a concrete commit blocker: `codex-rs/Cargo.lock` is stale/mixed for the new `codex-core-api -> codex-core-domain-types` dependency. The app-server schema JSON still does not belong to this core-api identifier slice.
+
+Root-owned next action: keep the core-api source slice separate from app-server schema JSON, refresh dependency/Bazel locks after source blockers settle, then run focused release verification plus `just bazel-lock-update` / `just bazel-lock-check` before committing the core-api slice.
