@@ -7,14 +7,14 @@ use crate::tools::context::ToolPayload;
 use crate::tools::registry::AnyToolResult;
 use crate::tools::registry::ToolArgumentDiffConsumer;
 use crate::tools::registry::ToolRegistry;
-use crate::tools::spec_plan::build_tool_router;
+use crate::tools::spec::collect_tool_router_parts;
+use crate::tools::spec_plan::build_tool_registry_builder_from_executors;
+use codex_extension_api::ExtensionToolExecutor;
 use codex_mcp::ToolInfo;
 use codex_protocol::dynamic_tools::DynamicToolSpec;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::models::SearchToolCallParams;
 use codex_tools::DiscoverableTool;
-use codex_tools::ToolCall as ExtensionToolCall;
-use codex_tools::ToolExecutor;
 use codex_tools::ToolName;
 use codex_tools::ToolSpec;
 use std::sync::Arc;
@@ -40,13 +40,27 @@ pub(crate) struct ToolRouterParams<'a> {
     pub(crate) mcp_tools: Option<Vec<ToolInfo>>,
     pub(crate) deferred_mcp_tools: Option<Vec<ToolInfo>>,
     pub(crate) discoverable_tools: Option<Vec<DiscoverableTool>>,
-    pub(crate) extension_tool_executors: Vec<Arc<dyn ToolExecutor<ExtensionToolCall>>>,
+    pub(crate) extension_tool_executors: Vec<Arc<dyn ExtensionToolExecutor>>,
     pub(crate) dynamic_tools: &'a [DynamicToolSpec],
 }
 
 impl ToolRouter {
     pub fn from_turn_context(turn_context: &TurnContext, params: ToolRouterParams<'_>) -> Self {
-        build_tool_router(turn_context, params)
+        let parts = collect_tool_router_parts(
+            &turn_context.tools_config,
+            params.mcp_tools,
+            params.deferred_mcp_tools,
+            params.discoverable_tools,
+            &params.extension_tool_executors,
+            params.dynamic_tools,
+        );
+        let (model_visible_specs, registry) = build_tool_registry_builder_from_executors(
+            &turn_context.tools_config,
+            parts.executors,
+            parts.hosted_specs,
+        )
+        .build();
+        Self::from_parts(registry, model_visible_specs)
     }
 
     pub(crate) fn from_parts(registry: ToolRegistry, model_visible_specs: Vec<ToolSpec>) -> Self {
@@ -217,9 +231,7 @@ impl ToolRouter {
     }
 }
 
-pub(crate) fn extension_tool_executors(
-    session: &Session,
-) -> Vec<Arc<dyn ToolExecutor<ExtensionToolCall>>> {
+pub(crate) fn extension_tool_executors(session: &Session) -> Vec<Arc<dyn ExtensionToolExecutor>> {
     session
         .services
         .extensions

@@ -34,7 +34,7 @@ use codex_protocol::protocol::ThreadSource;
 use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::user_input::UserInput;
 use codex_state::DirectionalThreadSpawnEdgeStatus;
-use codex_thread_store::ReadThreadParams;
+use codex_thread_store_api::ReadThreadParams;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::collections::VecDeque;

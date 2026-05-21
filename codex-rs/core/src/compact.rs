@@ -46,6 +46,15 @@ use codex_model_provider_info::ModelProviderInfo;
 pub const SUMMARIZATION_PROMPT: &str = include_str!("../templates/compact/prompt.md");
 pub const SUMMARY_PREFIX: &str = include_str!("../templates/compact/summary_prefix.md");
 const COMPACT_USER_MESSAGE_MAX_TOKENS: usize = 20_000;
+const RESPONSE_INCOMPLETE_REASON_MAX_OUTPUT_TOKENS: &str = "max_output_tokens";
+
+pub(crate) fn is_compaction_max_output_tokens(err: &CodexErr) -> bool {
+    matches!(
+        err,
+        CodexErr::CompactionIncomplete { reason }
+            if reason == RESPONSE_INCOMPLETE_REASON_MAX_OUTPUT_TOKENS
+    )
+}
 
 /// Controls whether compaction replacement history must include initial context.
 ///
@@ -231,6 +240,11 @@ async fn run_compact_task_inner_impl(
                     continue;
                 }
                 sess.set_total_tokens_full(turn_context.as_ref()).await;
+                let event = EventMsg::Error(e.to_error_event(/*message_prefix*/ None));
+                sess.send_event(&turn_context, event).await;
+                return Err(e);
+            }
+            Err(e @ CodexErr::CompactionIncomplete { .. }) => {
                 let event = EventMsg::Error(e.to_error_event(/*message_prefix*/ None));
                 sess.send_event(&turn_context, event).await;
                 return Err(e);
@@ -560,6 +574,7 @@ async fn drain_to_completed(
             &InferenceTraceContext::disabled(),
         )
         .await?;
+    let mut output_items = Vec::new();
     loop {
         let maybe_event = stream.next().await;
         let Some(event) = maybe_event else {
@@ -570,8 +585,7 @@ async fn drain_to_completed(
         };
         match event {
             Ok(ResponseEvent::OutputItemDone(item)) => {
-                sess.record_into_history(std::slice::from_ref(&item), turn_context)
-                    .await;
+                output_items.push(item);
             }
             Ok(ResponseEvent::ServerReasoningIncluded(included)) => {
                 sess.set_server_reasoning_included(included).await;
@@ -580,9 +594,19 @@ async fn drain_to_completed(
                 sess.update_rate_limits(turn_context, snapshot).await;
             }
             Ok(ResponseEvent::Completed { token_usage, .. }) => {
+                sess.record_into_history(&output_items, turn_context).await;
                 sess.update_token_usage_info(turn_context, token_usage.as_ref())
                     .await;
                 return Ok(());
+            }
+            Ok(ResponseEvent::Incomplete {
+                token_usage,
+                reason,
+                ..
+            }) => {
+                sess.update_token_usage_info(turn_context, token_usage.as_ref())
+                    .await;
+                return Err(CodexErr::CompactionIncomplete { reason });
             }
             Ok(_) => continue,
             Err(e) => return Err(e),

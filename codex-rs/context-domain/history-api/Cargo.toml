@@ -1,0 +1,13 @@
+[package]
+edition.workspace = true
+license.workspace = true
+name = "codex-history-api"
+version.workspace = true
+
+[lib]
+doctest = false
+name = "codex_history_api"
+path = "src/lib.rs"
+
+[lints]
+workspace = true

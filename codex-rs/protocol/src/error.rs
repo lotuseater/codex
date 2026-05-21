@@ -76,6 +76,9 @@ pub enum CodexErr {
     /// Optionally includes the requested delay before retrying the turn.
     #[error("stream disconnected before completion: {0}")]
     Stream(String, Option<Duration>),
+    /// Returned when context compaction receives a terminal incomplete response.
+    #[error("context compaction response incomplete: {reason}")]
+    CompactionIncomplete { reason: String },
     #[error(
         "Codex ran out of room in the model's context window. Start a new thread or clear earlier history before retrying."
     )]
@@ -182,6 +185,7 @@ impl CodexErr {
             | CodexErr::Sandbox(_)
             | CodexErr::LandlockSandboxExecutableNotProvided
             | CodexErr::RetryLimit(_)
+            | CodexErr::CompactionIncomplete { .. }
             | CodexErr::ContextWindowExceeded
             | CodexErr::ThreadNotFound(_)
             | CodexErr::AgentLimitReached { .. }

@@ -3,7 +3,6 @@ use crate::agent::AgentControl;
 use crate::attestation::AttestationProvider;
 use crate::codex_thread::CodexThread;
 use crate::config::Config;
-use crate::config::ThreadStoreConfig;
 use crate::environment_selection::default_thread_environment_selections;
 use crate::environment_selection::resolve_environment_selections;
 use crate::mcp::McpManager;
@@ -16,8 +15,6 @@ use crate::shell_snapshot::ShellSnapshot;
 use crate::tasks::InterruptedTurnHistoryMarker;
 use crate::tasks::interrupted_turn_history_marker;
 use codex_analytics::AnalyticsEventsClient;
-use codex_app_server_protocol::ThreadHistoryBuilder;
-use codex_app_server_protocol::TurnStatus;
 use codex_core_plugins::PluginsManager;
 use codex_exec_server::EnvironmentManager;
 use codex_extension_api::ExtensionRegistry;
@@ -52,16 +49,16 @@ use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::protocol::W3cTraceContext;
 use codex_rollout::state_db::StateDbHandle;
 use codex_state::DirectionalThreadSpawnEdgeStatus;
-use codex_thread_store::InMemoryThreadStore;
-use codex_thread_store::LocalThreadStore;
-use codex_thread_store::LocalThreadStoreConfig;
-use codex_thread_store::ReadThreadByRolloutPathParams;
-use codex_thread_store::ReadThreadParams;
-use codex_thread_store::StoredThread;
-use codex_thread_store::ThreadMetadataPatch;
-use codex_thread_store::ThreadStore;
-use codex_thread_store::ThreadStoreError;
-use codex_thread_store::UpdateThreadMetadataParams;
+use codex_thread_store_api::LiveThreadFactory;
+use codex_thread_store_api::ReadThreadByRolloutPathParams;
+use codex_thread_store_api::ReadThreadParams;
+use codex_thread_store_api::RecordingLiveThreadFactory;
+use codex_thread_store_api::RecordingThreadStore;
+use codex_thread_store_api::StoredThread;
+use codex_thread_store_api::ThreadMetadataPatch;
+use codex_thread_store_api::ThreadStore;
+use codex_thread_store_api::ThreadStoreError;
+use codex_thread_store_api::UpdateThreadMetadataParams;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
@@ -207,6 +204,7 @@ pub(crate) struct ThreadManagerState {
     mcp_manager: Arc<McpManager>,
     extensions: Arc<ExtensionRegistry<Config>>,
     thread_store: Arc<dyn ThreadStore>,
+    live_thread_factory: Arc<dyn LiveThreadFactory>,
     attestation_provider: Option<Arc<dyn AttestationProvider>>,
     session_source: SessionSource,
     installation_id: String,
@@ -227,19 +225,6 @@ pub fn build_models_manager(
     )
 }
 
-pub fn thread_store_from_config(
-    config: &Config,
-    state_db: Option<StateDbHandle>,
-) -> Arc<dyn ThreadStore> {
-    match &config.experimental_thread_store {
-        ThreadStoreConfig::Local => Arc::new(LocalThreadStore::new(
-            LocalThreadStoreConfig::from_config(config),
-            state_db,
-        )),
-        ThreadStoreConfig::InMemory { id } => InMemoryThreadStore::for_id(id),
-    }
-}
-
 impl ThreadManager {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -250,6 +235,7 @@ impl ThreadManager {
         extensions: Arc<ExtensionRegistry<Config>>,
         analytics_events_client: Option<AnalyticsEventsClient>,
         thread_store: Arc<dyn ThreadStore>,
+        live_thread_factory: Arc<dyn LiveThreadFactory>,
         state_db: Option<StateDbHandle>,
         installation_id: String,
         attestation_provider: Option<Arc<dyn AttestationProvider>>,
@@ -278,6 +264,7 @@ impl ThreadManager {
                 mcp_manager,
                 extensions,
                 thread_store,
+                live_thread_factory,
                 attestation_provider,
                 auth_manager,
                 session_source,
@@ -359,14 +346,7 @@ impl ThreadManager {
         ));
         // This test constructor has no Config input. Tests that need a non-local
         // process store should construct ThreadManager::new with an explicit store.
-        let thread_store: Arc<dyn ThreadStore> = Arc::new(LocalThreadStore::new(
-            LocalThreadStoreConfig {
-                codex_home: codex_home.clone(),
-                sqlite_home: codex_home.clone(),
-                default_model_provider_id: OPENAI_PROVIDER_ID.to_string(),
-            },
-            state_db.clone(),
-        ));
+        let thread_store: Arc<dyn ThreadStore> = Arc::new(RecordingThreadStore::default());
         Self {
             state: Arc::new(ThreadManagerState {
                 threads: Arc::new(RwLock::new(HashMap::new())),
@@ -379,6 +359,7 @@ impl ThreadManager {
                 mcp_manager,
                 extensions: empty_extension_registry(),
                 thread_store,
+                live_thread_factory: Arc::new(RecordingLiveThreadFactory::new()),
                 attestation_provider: None,
                 auth_manager,
                 session_source: SessionSource::Exec,
@@ -1221,6 +1202,8 @@ impl ThreadManagerState {
             environment_selections,
             analytics_events_client: self.analytics_events_client.clone(),
             thread_store: Arc::clone(&self.thread_store),
+            live_thread_factory: Arc::clone(&self.live_thread_factory),
+            state_db: self.state_db.clone(),
             attestation_provider: self.attestation_provider.clone(),
         })
         .await?;
@@ -1392,19 +1375,60 @@ struct SnapshotTurnState {
     active_turn_start_index: Option<usize>,
 }
 
+struct SnapshotActiveTurn {
+    id: String,
+    rollout_start_index: usize,
+    in_progress: bool,
+}
+
 fn snapshot_turn_state(history: &InitialHistory) -> SnapshotTurnState {
     let rollout_items = history.get_rollout_items();
-    let mut builder = ThreadHistoryBuilder::new();
-    for item in &rollout_items {
-        builder.handle_rollout_item(item);
+    let mut active_turn: Option<SnapshotActiveTurn> = None;
+    let mut inactive_explicit_turn_ids = HashSet::new();
+
+    for (rollout_index, item) in rollout_items.iter().enumerate() {
+        let RolloutItem::EventMsg(event) = item else {
+            continue;
+        };
+
+        match event {
+            EventMsg::TurnStarted(payload) => {
+                finish_snapshot_active_turn(&mut active_turn, &mut inactive_explicit_turn_ids);
+                active_turn = Some(SnapshotActiveTurn {
+                    id: payload.turn_id.clone(),
+                    rollout_start_index: rollout_index,
+                    in_progress: true,
+                });
+            }
+            EventMsg::TurnComplete(payload) => {
+                if active_turn
+                    .as_ref()
+                    .is_some_and(|turn| turn.id == payload.turn_id)
+                    || !inactive_explicit_turn_ids.contains(&payload.turn_id)
+                {
+                    finish_snapshot_active_turn(&mut active_turn, &mut inactive_explicit_turn_ids);
+                }
+            }
+            EventMsg::TurnAborted(payload) => {
+                if let Some(turn_id) = payload.turn_id.as_deref() {
+                    if active_turn.as_ref().is_some_and(|turn| turn.id == turn_id)
+                        || !inactive_explicit_turn_ids.contains(turn_id)
+                    {
+                        mark_snapshot_active_turn_inactive(&mut active_turn);
+                    }
+                } else {
+                    mark_snapshot_active_turn_inactive(&mut active_turn);
+                }
+            }
+            EventMsg::Error(payload) if payload.affects_turn_status() => {
+                mark_snapshot_active_turn_inactive(&mut active_turn);
+            }
+            _ => {}
+        }
     }
-    let active_turn_id = builder.active_turn_id_if_explicit();
-    if builder.has_active_turn() && active_turn_id.is_some() {
-        let active_turn_snapshot = builder.active_turn_snapshot();
-        if active_turn_snapshot
-            .as_ref()
-            .is_some_and(|turn| turn.status != TurnStatus::InProgress)
-        {
+
+    if let Some(active_turn) = active_turn {
+        if !active_turn.in_progress {
             return SnapshotTurnState {
                 ends_mid_turn: false,
                 active_turn_id: None,
@@ -1414,8 +1438,8 @@ fn snapshot_turn_state(history: &InitialHistory) -> SnapshotTurnState {
 
         return SnapshotTurnState {
             ends_mid_turn: true,
-            active_turn_id,
-            active_turn_start_index: builder.active_turn_start_index(),
+            active_turn_id: Some(active_turn.id),
+            active_turn_start_index: Some(active_turn.rollout_start_index),
         };
     }
 
@@ -1442,6 +1466,21 @@ fn snapshot_turn_state(history: &InitialHistory) -> SnapshotTurnState {
         }),
         active_turn_id: None,
         active_turn_start_index: None,
+    }
+}
+
+fn finish_snapshot_active_turn(
+    active_turn: &mut Option<SnapshotActiveTurn>,
+    inactive_explicit_turn_ids: &mut HashSet<String>,
+) {
+    if let Some(turn) = active_turn.take() {
+        inactive_explicit_turn_ids.insert(turn.id);
+    }
+}
+
+fn mark_snapshot_active_turn_inactive(active_turn: &mut Option<SnapshotActiveTurn>) {
+    if let Some(turn) = active_turn.as_mut() {
+        turn.in_progress = false;
     }
 }
 

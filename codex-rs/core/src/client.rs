@@ -1528,7 +1528,8 @@ impl ModelClientSession {
                 // Wait for the v2 warmup request to complete before sending the first turn request.
                 while let Some(event) = stream.next().await {
                     match event {
-                        Ok(ResponseEvent::Completed { .. }) => break,
+                        Ok(ResponseEvent::Completed { .. })
+                        | Ok(ResponseEvent::Incomplete { .. }) => break,
                         Err(err) => return Err(err),
                         _ => {}
                     }
@@ -1835,6 +1836,58 @@ where
                         .await
                         .is_err()
                     {
+                        return;
+                    }
+                }
+                Ok(ResponseEvent::Incomplete {
+                    response_id,
+                    token_usage,
+                    reason,
+                }) => {
+                    feedback_tags!(last_model_response_id = &response_id);
+                    if let Some(usage) = &token_usage {
+                        session_telemetry.sse_event_completed(
+                            usage.input_tokens,
+                            usage.output_tokens,
+                            Some(usage.cached_input_tokens),
+                            Some(usage.reasoning_output_tokens),
+                            usage.total_tokens,
+                        );
+                    }
+                    if reason == "max_output_tokens" {
+                        inference_trace_attempt.record_completed(
+                            &response_id,
+                            upstream_request_id,
+                            &token_usage,
+                            &items_added,
+                        );
+                    } else {
+                        inference_trace_attempt.record_failed(
+                            format!("response incomplete: {reason}"),
+                            upstream_request_id,
+                            &items_added,
+                        );
+                    }
+                    if let Some(sender) = tx_last_response.take() {
+                        let _ = sender.send(LastResponse {
+                            response_id: response_id.clone(),
+                            items_added: std::mem::take(&mut items_added),
+                        });
+                    }
+                    if tx_event
+                        .send(Ok(ResponseEvent::Incomplete {
+                            response_id,
+                            token_usage,
+                            reason,
+                        }))
+                        .await
+                        .is_err()
+                    {
+                        inference_trace_attempt.record_cancelled(
+                            STREAM_DROPPED_REASON,
+                            upstream_request_id,
+                            &items_added,
+                        );
                         return;
                     }
                 }

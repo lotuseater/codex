@@ -32,6 +32,7 @@ use crate::memory_citation::MemoryCitation;
 use crate::models::ActivePermissionProfile;
 use crate::models::BaseInstructions;
 use crate::models::ContentItem;
+use crate::models::ImageDetail;
 use crate::models::MessagePhase;
 use crate::models::PermissionProfile;
 use crate::models::ResponseInputItem;
@@ -846,6 +847,9 @@ pub enum EventMsg {
     /// Optional means unknown — UIs should not display when `None`.
     TokenCount(TokenCountEvent),
 
+    /// Runtime thread settings were applied.
+    ThreadSettingsApplied(ThreadSettingsAppliedEvent),
+
     /// Agent text output message
     AgentMessage(AgentMessageEvent),
 
@@ -1619,6 +1623,9 @@ pub struct TokenCountEvent {
     pub rate_limits: Option<RateLimitSnapshot>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+pub struct ThreadSettingsAppliedEvent {}
+
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema, TS)]
 pub struct RateLimitSnapshot {
     pub limit_id: Option<String>,
@@ -1768,7 +1775,7 @@ pub struct AgentMessageEvent {
     pub memory_citation: Option<MemoryCitation>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, TS)]
 pub struct UserMessageEvent {
     pub message: String,
     /// Image URLs sourced from `UserInput::Image`. These are safe
@@ -1776,11 +1783,15 @@ pub struct UserMessageEvent {
     /// the model.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub images: Option<Vec<String>>,
+    #[serde(default)]
+    pub image_details: Vec<Option<ImageDetail>>,
     /// Local file paths sourced from `UserInput::LocalImage`. These are kept so
     /// the UI can reattach images when editing history, and should not be sent
     /// to the model or treated as API-ready URLs.
     #[serde(default)]
     pub local_images: Vec<std::path::PathBuf>,
+    #[serde(default)]
+    pub local_image_details: Vec<Option<ImageDetail>>,
     /// UI-defined spans within `message` used to render or persist special elements.
     #[serde(default)]
     pub text_elements: Vec<crate::user_input::TextElement>,
@@ -3095,6 +3106,8 @@ impl<'de> Deserialize<'de> for SessionConfiguredEvent {
 pub enum ThreadGoalStatus {
     Active,
     Paused,
+    Blocked,
+    UsageLimited,
     BudgetLimited,
     Complete,
 }

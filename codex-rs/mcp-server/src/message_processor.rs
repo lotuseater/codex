@@ -5,6 +5,7 @@ use codex_arg0::Arg0DispatchPaths;
 use codex_core::StateDbHandle;
 use codex_core::ThreadManager;
 use codex_core::config::Config;
+use codex_core::config::ThreadStoreConfig;
 use codex_exec_server::EnvironmentManager;
 use codex_extension_api::empty_extension_registry;
 use codex_login::AuthManager;
@@ -13,6 +14,9 @@ use codex_login::default_client::get_codex_user_agent;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::Submission;
+use codex_thread_store::StoreLiveThreadFactory;
+use codex_thread_store::ThreadStoreSelection;
+use codex_thread_store::thread_store_from_config;
 use rmcp::model::CallToolRequestParams;
 use rmcp::model::CallToolResult;
 use rmcp::model::ClientNotification;
@@ -46,6 +50,13 @@ pub(crate) struct MessageProcessor {
     running_requests_id_to_codex_uuid: Arc<Mutex<HashMap<RequestId, ThreadId>>>,
 }
 
+fn thread_store_selection(config: &Config) -> ThreadStoreSelection {
+    match &config.experimental_thread_store {
+        ThreadStoreConfig::Local => ThreadStoreSelection::Local,
+        ThreadStoreConfig::InMemory { id } => ThreadStoreSelection::InMemory { id: id.clone() },
+    }
+}
+
 impl MessageProcessor {
     /// Create a new `MessageProcessor`, retaining a handle to the outgoing
     /// `Sender` so handlers can enqueue messages to be written to stdout.
@@ -70,7 +81,12 @@ impl MessageProcessor {
             environment_manager,
             empty_extension_registry(),
             /*analytics_events_client*/ None,
-            codex_core::thread_store_from_config(config.as_ref(), state_db.clone()),
+            thread_store_from_config(
+                config.as_ref(),
+                thread_store_selection(config.as_ref()),
+                state_db.clone(),
+            ),
+            Arc::new(StoreLiveThreadFactory::new()),
             state_db.clone(),
             installation_id,
             /*attestation_provider*/ None,

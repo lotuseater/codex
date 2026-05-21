@@ -27,6 +27,8 @@ use super::serialize_function_output;
 pub struct ReadMcpResourceHandler;
 
 impl ToolExecutor<ToolInvocation> for ReadMcpResourceHandler {
+    type Output = Box<dyn crate::tools::context::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         ToolName::plain("read_mcp_resource")
     }

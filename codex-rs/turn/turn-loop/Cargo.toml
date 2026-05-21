@@ -1,0 +1,18 @@
+[package]
+edition.workspace = true
+license.workspace = true
+name = "codex-turn-loop"
+version.workspace = true
+
+[lib]
+doctest = false
+name = "codex_turn_loop"
+path = "src/lib.rs"
+
+[dependencies]
+codex-turn-api = { workspace = true }
+codex-turn-events = { workspace = true }
+codex-turn-loop-api = { workspace = true }
+codex-turn-policy = { workspace = true }
+codex-turn-state = { workspace = true }
+codex-turn-tool-bridge = { workspace = true }

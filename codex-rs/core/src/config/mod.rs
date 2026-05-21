@@ -60,6 +60,7 @@ use codex_config::types::TuiNotificationSettings;
 use codex_config::types::TuiPetAnchor;
 use codex_config::types::UriBasedFileOpener;
 use codex_config::types::WindowsSandboxModeToml;
+use codex_context_reduction::DEFAULT_TRIGGER_CONTEXT_PERCENT;
 use codex_core_plugins::PluginsConfigInput;
 use codex_exec_server::ExecutorFileSystem;
 use codex_exec_server::LOCAL_FS;
@@ -237,6 +238,23 @@ fn resolve_mcp_oauth_credentials_store_mode(
             OAuthCredentialsStoreMode::Keyring | OAuthCredentialsStoreMode::Auto,
         ) => OAuthCredentialsStoreMode::File,
         (_, mode) => mode,
+    }
+}
+
+fn resolve_model_compact_percentage(
+    configured: Option<i64>,
+    startup_warnings: &mut Vec<String>,
+) -> u8 {
+    match configured {
+        None => DEFAULT_TRIGGER_CONTEXT_PERCENT,
+        Some(value) if (0..=100).contains(&value) => value as u8,
+        Some(value) => {
+            startup_warnings.push(format!(
+                "configured value for `model_compact_percentage` must be between 0 and 100; \
+                 using default {DEFAULT_TRIGGER_CONTEXT_PERCENT}"
+            ));
+            DEFAULT_TRIGGER_CONTEXT_PERCENT
+        }
     }
 }
 
@@ -432,6 +450,10 @@ pub struct Config {
 
     /// Token usage threshold triggering auto-compaction of conversation history.
     pub model_auto_compact_token_limit: Option<i64>,
+
+    /// Percentage of the auto-compaction token limit that triggers early
+    /// context-pressure compaction.
+    pub model_compact_percentage: u8,
 
     /// Prompt-clone reduction mode used immediately before model requests.
     pub prompt_reduction_mode: PromptReductionModeToml,
@@ -3223,6 +3245,10 @@ impl Config {
             review_model,
             model_context_window: cfg.model_context_window,
             model_auto_compact_token_limit: cfg.model_auto_compact_token_limit,
+            model_compact_percentage: resolve_model_compact_percentage(
+                cfg.model_compact_percentage,
+                &mut startup_warnings,
+            ),
             prompt_reduction_mode: cfg.prompt_reduction_mode.unwrap_or_default(),
             model_provider_id,
             model_provider,

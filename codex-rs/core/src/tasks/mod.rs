@@ -21,6 +21,7 @@ use tracing::trace;
 use tracing::warn;
 
 use crate::compact::InitialContextInjection;
+use crate::compact::is_compaction_max_output_tokens;
 use crate::config::Config;
 use crate::context::ContextualUserFragment;
 use crate::context_reduction_adapter::context_reduction_reason_to_compaction_reason;
@@ -876,6 +877,12 @@ impl Session {
         let auto_compact_limit = auto_compact_token_limit(turn_context);
         let visible_context_percent_used = self.visible_context_percent_used().await;
         let reason = if total_usage_tokens >= auto_compact_limit {
+            if self
+                .is_post_turn_compact_max_output_suppressed(total_usage_tokens, auto_compact_limit)
+                .await
+            {
+                return Ok(());
+            }
             Some(CompactionReason::ContextLimit)
         } else {
             match self
@@ -901,7 +908,7 @@ impl Session {
             return Ok(());
         }
         let mut client_session = self.services.model_client.new_session();
-        if reason == CompactionReason::SemanticCheckpoint {
+        let compact_result = if reason == CompactionReason::SemanticCheckpoint {
             let git_outcome = self
                 .semantic_checkpoint_git_sync(turn_context, reason)
                 .await;
@@ -927,7 +934,7 @@ impl Session {
             )
             .await;
             self.cleanup_semantic_compact_scratchpad(scratchpad);
-            compact_result?;
+            compact_result
         } else {
             run_auto_compact(
                 self,
@@ -937,8 +944,19 @@ impl Session {
                 reason,
                 CompactionPhase::PostTurn,
             )
-            .await?;
+            .await
+        };
+        if reason == CompactionReason::ContextLimit
+            && let Err(err) = &compact_result
+            && is_compaction_max_output_tokens(err)
+        {
+            self.record_post_turn_compact_max_output_suppression(
+                total_usage_tokens,
+                auto_compact_limit,
+            )
+            .await;
         }
+        compact_result?;
         Ok(())
     }
 

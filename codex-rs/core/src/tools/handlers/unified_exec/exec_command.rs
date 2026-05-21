@@ -69,6 +69,8 @@ impl ExecCommandHandler {
 }
 
 impl ToolExecutor<ToolInvocation> for ExecCommandHandler {
+    type Output = Box<dyn crate::tools::context::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         ToolName::plain("exec_command")
     }

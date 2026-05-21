@@ -27,6 +27,8 @@ use super::serialize_function_output;
 pub struct ListMcpResourceTemplatesHandler;
 
 impl ToolExecutor<ToolInvocation> for ListMcpResourceTemplatesHandler {
+    type Output = Box<dyn crate::tools::context::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         ToolName::plain("list_mcp_resource_templates")
     }

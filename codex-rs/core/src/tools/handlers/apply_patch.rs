@@ -298,6 +298,8 @@ async fn effective_patch_permissions(
 }
 
 impl ToolExecutor<ToolInvocation> for ApplyPatchHandler {
+    type Output = Box<dyn crate::tools::context::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         ToolName::plain("apply_patch")
     }

@@ -75,13 +75,13 @@ use crate::tools::handlers::UpdateGoalHandler;
 use crate::tools::registry::ToolExecutor;
 use crate::tools::router::ToolCallSource;
 use crate::turn_diff_tracker::TurnDiffTracker;
-use codex_app_server_protocol::AppInfo;
-use codex_app_server_protocol::McpElicitationSchema;
+use codex_app_catalog_types::AppInfo;
 use codex_config::config_toml::ConfigToml;
 use codex_config::config_toml::ProjectConfig;
 use codex_execpolicy::Decision;
 use codex_execpolicy::NetworkRuleProtocol;
 use codex_execpolicy::Policy;
+use codex_mcp_elicitation_api::McpElicitationSchema;
 use codex_network_proxy::NetworkProxyConfig;
 use codex_otel::MetricsClient;
 use codex_otel::MetricsConfig;
@@ -128,6 +128,8 @@ use codex_protocol::protocol::W3cTraceContext;
 use codex_protocol::request_user_input::RequestUserInputAnswer;
 use codex_protocol::request_user_input::RequestUserInputResponse;
 use codex_rmcp_client::ElicitationAction;
+use codex_thread_store_api::RecordingLiveThreadFactory;
+use codex_thread_store_api::RecordingThreadStore;
 use codex_tools::ShellCommandBackendConfig;
 use codex_tools::ToolEnvironmentMode;
 use core_test_support::PathBufExt;
@@ -3733,10 +3735,9 @@ async fn session_new_fails_when_zsh_fork_enabled_without_zsh_path() {
         AgentControl::default(),
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         /*analytics_events_client*/ None,
-        Arc::new(codex_thread_store::LocalThreadStore::new(
-            codex_thread_store::LocalThreadStoreConfig::from_config(config.as_ref()),
-            /*state_db*/ None,
-        )),
+        Arc::new(RecordingThreadStore::default()),
+        Arc::new(RecordingLiveThreadFactory::new()),
+        /*state_db*/ None,
         codex_rollout_trace::ThreadTraceContext::disabled(),
         /*attestation_provider*/ None,
     )
@@ -3885,10 +3886,8 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         network_approval: Arc::clone(&network_approval),
         state_db: None,
         live_thread: None,
-        thread_store: Arc::new(codex_thread_store::LocalThreadStore::new(
-            codex_thread_store::LocalThreadStoreConfig::from_config(config.as_ref()),
-            /*state_db*/ None,
-        )),
+        thread_store: Arc::new(RecordingThreadStore::default()),
+        live_thread_factory: Arc::new(RecordingLiveThreadFactory::new()),
         attestation_provider: None,
         model_client: ModelClient::new(
             Some(auth_manager.clone()),
@@ -4160,10 +4159,9 @@ async fn make_session_with_config_and_rx(
         AgentControl::default(),
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         /*analytics_events_client*/ None,
-        Arc::new(codex_thread_store::LocalThreadStore::new(
-            codex_thread_store::LocalThreadStoreConfig::from_config(config.as_ref()),
-            /*state_db*/ None,
-        )),
+        Arc::new(RecordingThreadStore::default()),
+        Arc::new(RecordingLiveThreadFactory::new()),
+        /*state_db*/ None,
         codex_rollout_trace::ThreadTraceContext::disabled(),
         /*attestation_provider*/ None,
     )
@@ -4264,17 +4262,16 @@ async fn make_session_with_history_source_and_agent_control_and_rx(
         agent_control,
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         /*analytics_events_client*/ None,
-        Arc::new(codex_thread_store::LocalThreadStore::new(
-            codex_thread_store::LocalThreadStoreConfig::from_config(config.as_ref()),
-            Some(
-                codex_state::StateRuntime::init(
-                    config.sqlite_home.clone(),
-                    config.model_provider_id.clone(),
-                )
-                .await
-                .expect("state db should initialize"),
-            ),
-        )),
+        Arc::new(RecordingThreadStore::default()),
+        Arc::new(RecordingLiveThreadFactory::new()),
+        Some(
+            codex_state::StateRuntime::init(
+                config.sqlite_home.clone(),
+                config.model_provider_id.clone(),
+            )
+            .await
+            .expect("state db should initialize"),
+        ),
         codex_rollout_trace::ThreadTraceContext::disabled(),
         /*attestation_provider*/ None,
     )
@@ -5302,8 +5299,8 @@ async fn spawn_task_turn_span_inherits_dispatch_trace_context() {
 #[tokio::test]
 async fn shutdown_complete_does_not_append_to_thread_store_after_shutdown() {
     let (mut session, _turn_context) = make_session_and_context().await;
-    let store = Arc::new(codex_thread_store::InMemoryThreadStore::default());
-    let thread_store: Arc<dyn codex_thread_store::ThreadStore> = store.clone();
+    let store = Arc::new(InMemoryThreadStore::default());
+    let thread_store: Arc<dyn codex_thread_store_api::ThreadStore> = store.clone();
     let config = session.get_config().await;
     let live_thread = LiveThread::create(
         Arc::clone(&thread_store),
@@ -5335,7 +5332,7 @@ async fn shutdown_complete_does_not_append_to_thread_store_after_shutdown() {
     assert!(handlers::shutdown(&session, "sub-1".to_string()).await);
 
     assert_eq!(
-        codex_thread_store::InMemoryThreadStoreCalls {
+        InMemoryThreadStoreCalls {
             create_thread: 1,
             shutdown_thread: 1,
             ..Default::default()
@@ -5745,10 +5742,8 @@ where
         network_approval: Arc::clone(&network_approval),
         state_db: state_db.clone(),
         live_thread: None,
-        thread_store: Arc::new(codex_thread_store::LocalThreadStore::new(
-            codex_thread_store::LocalThreadStoreConfig::from_config(config.as_ref()),
-            state_db,
-        )),
+        thread_store: Arc::new(RecordingThreadStore::default()),
+        live_thread_factory: Arc::new(RecordingLiveThreadFactory::new()),
         attestation_provider: None,
         model_client: ModelClient::new(
             Some(Arc::clone(&auth_manager)),

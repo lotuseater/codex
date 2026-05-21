@@ -91,6 +91,36 @@ async fn replace_history_clears_auto_compact_window_prefill_without_advancing() 
 }
 
 #[tokio::test]
+async fn post_turn_compact_max_output_suppression_is_keyed_to_same_over_limit_state() {
+    let session_configuration = make_session_configuration_for_tests().await;
+    let mut state = SessionState::new(session_configuration);
+
+    assert!(!state.is_post_turn_compact_max_output_suppressed(
+        /*total_usage_tokens*/ 1_000, /*auto_compact_limit*/ 900,
+    ));
+
+    state.record_post_turn_compact_max_output_suppression(
+        /*total_usage_tokens*/ 1_000, /*auto_compact_limit*/ 900,
+    );
+
+    assert!(state.is_post_turn_compact_max_output_suppressed(
+        /*total_usage_tokens*/ 1_000, /*auto_compact_limit*/ 900,
+    ));
+    assert!(!state.is_post_turn_compact_max_output_suppressed(
+        /*total_usage_tokens*/ 1_001, /*auto_compact_limit*/ 900,
+    ));
+    assert!(!state.is_post_turn_compact_max_output_suppressed(
+        /*total_usage_tokens*/ 1_000, /*auto_compact_limit*/ 901,
+    ));
+
+    state.replace_history(Vec::new(), /*reference_context_item*/ None);
+
+    assert!(!state.is_post_turn_compact_max_output_suppressed(
+        /*total_usage_tokens*/ 1_000, /*auto_compact_limit*/ 900,
+    ));
+}
+
+#[tokio::test]
 async fn set_rate_limits_defaults_to_codex_when_limit_id_missing_after_other_bucket() {
     let session_configuration = make_session_configuration_for_tests().await;
     let mut state = SessionState::new(session_configuration);

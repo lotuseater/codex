@@ -1,4 +1,9 @@
 use super::*;
+use crate::app_catalog_protocol::app_infos_to_v2;
+use codex_app_catalog_types::AppInfo;
+use codex_app_server_protocol::AppListUpdatedNotification;
+use codex_app_server_protocol::AppsListParams;
+use codex_app_server_protocol::AppsListResponse;
 
 #[derive(Clone)]
 pub(crate) struct AppsRequestProcessor {
@@ -348,7 +353,7 @@ fn paginate_apps(
 
     let effective_limit = limit.unwrap_or(total as u32).max(1) as usize;
     let end = start.saturating_add(effective_limit).min(total);
-    let data = connectors[start..end].to_vec();
+    let data = app_infos_to_v2(connectors[start..end].to_vec());
     let next_cursor = if end < total {
         Some(end.to_string())
     } else {
@@ -364,7 +369,9 @@ async fn send_app_list_updated_notification(
 ) {
     outgoing
         .send_server_notification(ServerNotification::AppListUpdated(
-            AppListUpdatedNotification { data },
+            AppListUpdatedNotification {
+                data: app_infos_to_v2(data),
+            },
         ))
         .await;
 }

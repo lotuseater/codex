@@ -21,6 +21,8 @@ pub struct RequestUserInputHandler {
 }
 
 impl ToolExecutor<ToolInvocation> for RequestUserInputHandler {
+    type Output = Box<dyn crate::tools::context::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         ToolName::plain(REQUEST_USER_INPUT_TOOL_NAME)
     }

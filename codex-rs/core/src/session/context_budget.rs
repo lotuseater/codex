@@ -14,6 +14,44 @@ impl Session {
         state.semantic_compact_decision(input)
     }
 
+    pub(crate) async fn record_model_move_finished_for_semantic_compact(&self) {
+        let mut state = self.state.lock().await;
+        state.record_model_move_finished_for_semantic_compact();
+    }
+
+    pub(crate) async fn is_post_turn_compact_max_output_suppressed(
+        &self,
+        total_usage_tokens: i64,
+        auto_compact_limit: i64,
+    ) -> bool {
+        let state = self.state.lock().await;
+        state.is_post_turn_compact_max_output_suppressed(total_usage_tokens, auto_compact_limit)
+    }
+
+    pub(crate) async fn record_post_turn_compact_max_output_suppression(
+        &self,
+        total_usage_tokens: i64,
+        auto_compact_limit: i64,
+    ) {
+        let mut state = self.state.lock().await;
+        state.record_post_turn_compact_max_output_suppression(
+            total_usage_tokens,
+            auto_compact_limit,
+        );
+    }
+
+    pub(crate) async fn observe_visible_context_percent_for_semantic_compact(
+        &self,
+        policy: codex_context_reduction::ContextReductionPolicy,
+        visible_context_percent_used: Option<i64>,
+    ) {
+        let mut state = self.state.lock().await;
+        state.observe_visible_context_percent_for_semantic_compact(
+            policy,
+            visible_context_percent_used,
+        );
+    }
+
     pub(crate) async fn refresh_git_checkpoint_baseline(&self, cwd: &Path) {
         if !self.enabled(Feature::SemanticCheckpointGitSync) {
             return;

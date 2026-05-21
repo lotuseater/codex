@@ -493,12 +493,16 @@ impl NetworkSandboxPolicy {
 pub enum FileSystemAccessMode {
     Read,
     Write,
+    Deny,
     None,
 }
 
 impl FileSystemAccessMode {
     pub fn can_read(self) -> bool {
-        !matches!(self, FileSystemAccessMode::None)
+        !matches!(
+            self,
+            FileSystemAccessMode::Deny | FileSystemAccessMode::None
+        )
     }
 
     pub fn can_write(self) -> bool {
@@ -1427,6 +1431,7 @@ impl FileSystemSandboxPolicy {
                         }
                         FileSystemPath::Special { value } => match value {
                             FileSystemSpecialPath::Root => match entry.access {
+                                FileSystemAccessMode::Deny => {}
                                 FileSystemAccessMode::None => {}
                                 FileSystemAccessMode::Read => {}
                                 FileSystemAccessMode::Write => {
@@ -3479,6 +3484,7 @@ impl FileSystemPermissions {
             match entry.access {
                 FileSystemAccessMode::Read => read.push(path.clone()),
                 FileSystemAccessMode::Write => write.push(path.clone()),
+                FileSystemAccessMode::Deny => return None,
                 FileSystemAccessMode::None => return None,
             }
         }

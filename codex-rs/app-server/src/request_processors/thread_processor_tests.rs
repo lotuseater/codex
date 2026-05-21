@@ -78,7 +78,7 @@ mod thread_processor_behavior_tests {
     use codex_protocol::protocol::SessionSource;
     use codex_protocol::protocol::SubAgentSource;
     use codex_state::ThreadMetadataBuilder;
-    use codex_thread_store::StoredThread;
+    use codex_thread_store_api::StoredThread;
     use codex_utils_absolute_path::test_support::PathBufExt;
     use codex_utils_absolute_path::test_support::test_path_buf;
     use pretty_assertions::assert_eq;

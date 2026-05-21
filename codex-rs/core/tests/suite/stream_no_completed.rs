@@ -20,6 +20,13 @@ fn sse_incomplete() -> String {
     })])
 }
 
+fn sse_incomplete_max_output_tokens() -> String {
+    responses::sse(vec![
+        responses::ev_assistant_message("msg-incomplete", "partial answer"),
+        responses::ev_incomplete_with_tokens("resp-incomplete", "max_output_tokens", 42),
+    ])
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn retries_on_early_close() {
     skip_if_no_network!();
@@ -96,6 +103,101 @@ async fn retries_on_early_close() {
         requests.len(),
         2,
         "expected retry after incomplete SSE stream"
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn follows_up_on_max_output_tokens_incomplete() {
+    skip_if_no_network!();
+
+    let incomplete_sse = sse_incomplete_max_output_tokens();
+    let completed_sse = responses::sse_completed("resp-ok");
+
+    let (server, _) = start_streaming_sse_server(vec![
+        vec![StreamingSseChunk {
+            gate: None,
+            body: incomplete_sse,
+        }],
+        vec![StreamingSseChunk {
+            gate: None,
+            body: completed_sse,
+        }],
+    ])
+    .await;
+
+    let model_provider = ModelProviderInfo {
+        name: "openai".into(),
+        base_url: Some(format!("{}/v1", server.uri())),
+        env_key: Some("PATH".into()),
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        auth: None,
+        aws: None,
+        wire_api: WireApi::Responses,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: Some(0),
+        stream_max_retries: Some(0),
+        stream_idle_timeout_ms: Some(2000),
+        websocket_connect_timeout_ms: None,
+        requires_openai_auth: false,
+        experimental_resume_stream: false,
+        supports_reasoning_summaries: false,
+        supports_responses: true,
+        supports_websockets: false,
+    };
+
+    let TestCodex { codex, .. } = test_codex()
+        .with_config(move |config| {
+            config.model_provider = model_provider;
+        })
+        .build_with_streaming_server(&server)
+        .await
+        .unwrap();
+
+    codex
+        .submit(Op::UserInput {
+            environments: None,
+            items: vec![UserInput::Text {
+                text: "hello".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+            thread_settings: Default::default(),
+        })
+        .await
+        .unwrap();
+
+    wait_for_event(&codex, |event| {
+        matches!(
+            event,
+            EventMsg::TokenCount(ev)
+                if ev
+                    .info
+                    .as_ref()
+                    .is_some_and(|info| info.last_token_usage.total_tokens == 42)
+        )
+    })
+    .await;
+
+    let terminal = wait_for_event(&codex, |event| {
+        matches!(event, EventMsg::TurnComplete(_) | EventMsg::Error(_))
+    })
+    .await;
+    assert!(
+        matches!(terminal, EventMsg::TurnComplete(_)),
+        "expected follow-up to complete the turn, got {terminal:?}"
+    );
+
+    let requests = server.requests().await;
+    assert_eq!(
+        requests.len(),
+        2,
+        "expected max_output_tokens incomplete response to trigger a follow-up request"
     );
 
     server.shutdown().await;

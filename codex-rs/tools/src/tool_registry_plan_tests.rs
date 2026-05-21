@@ -19,7 +19,7 @@ use crate::WaitAgentTimeoutOptions;
 use crate::create_exec_command_tool;
 use crate::mcp_call_tool_result_output_schema;
 use crate::request_user_input_available_modes;
-use codex_app_server_protocol::AppInfo;
+use codex_app_catalog_types::AppInfo;
 use codex_features::Feature;
 use codex_features::Features;
 use codex_protocol::config_types::ModeKind;

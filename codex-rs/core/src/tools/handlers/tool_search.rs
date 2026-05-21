@@ -54,6 +54,8 @@ impl ToolSearchHandler {
 }
 
 impl ToolExecutor<ToolInvocation> for ToolSearchHandler {
+    type Output = Box<dyn crate::tools::context::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         ToolName::plain(TOOL_SEARCH_TOOL_NAME)
     }

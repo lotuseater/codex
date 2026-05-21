@@ -6,7 +6,6 @@ mod tests;
 
 use self::layer_io::LoadedConfigLayers;
 use crate::CONFIG_TOML_FILE;
-use crate::ProfileV2Name;
 use crate::cloud_requirements::CloudRequirementsLoader;
 use crate::config_requirements::ConfigRequirementsToml;
 use crate::config_requirements::ConfigRequirementsWithSources;
@@ -26,6 +25,7 @@ use crate::state::ConfigLayerEntry;
 use crate::state::ConfigLayerStack;
 use crate::state::ConfigLoadOptions;
 use crate::state::LoaderOverrides;
+use crate::state::UserConfigLayerSource;
 use crate::strict_config::config_error_from_ignored_toml_value_fields;
 use crate::strict_config::ignored_toml_value_field;
 use crate::strict_config::unknown_feature_toml_value_field;
@@ -218,8 +218,7 @@ pub async fn load_config_layers_state(
     let base_user_file = AbsolutePathBuf::resolve_path_against_base(CONFIG_TOML_FILE, codex_home);
     let base_user_layer = load_user_config_layer(
         fs,
-        &base_user_file,
-        /*profile*/ None,
+        UserConfigLayerSource::unprofiled(base_user_file.clone()),
         ignore_user_config,
         strict_config,
     )
@@ -244,11 +243,14 @@ pub async fn load_config_layers_state(
     layers.push(base_user_layer);
 
     if active_user_file != base_user_file {
+        let active_user_layer_source = match active_user_profile.clone() {
+            Some(profile) => UserConfigLayerSource::profiled(active_user_file.clone(), profile),
+            None => UserConfigLayerSource::unprofiled(active_user_file.clone()),
+        };
         layers.push(
             load_user_config_layer(
                 fs,
-                &active_user_file,
-                active_user_profile.as_ref(),
+                active_user_layer_source,
                 ignore_user_config,
                 strict_config,
             )
@@ -385,30 +387,20 @@ pub async fn load_config_layers_state(
 
 async fn load_user_config_layer(
     fs: &dyn ExecutorFileSystem,
-    user_file: &AbsolutePathBuf,
-    profile: Option<&ProfileV2Name>,
+    source: UserConfigLayerSource,
     ignore_user_config: bool,
     strict_config: bool,
 ) -> io::Result<ConfigLayerEntry> {
-    let profile = profile.map(ToString::to_string);
     if ignore_user_config {
         return Ok(ConfigLayerEntry::new(
-            ConfigLayerSource::User {
-                file: user_file.clone(),
-                profile,
-            },
+            source.into(),
             TomlValue::Table(toml::map::Map::new()),
         ));
     }
 
-    load_config_toml_for_required_layer(fs, user_file, strict_config, |config_toml| {
-        ConfigLayerEntry::new(
-            ConfigLayerSource::User {
-                file: user_file.clone(),
-                profile: profile.clone(),
-            },
-            config_toml,
-        )
+    let user_file = source.file.clone();
+    load_config_toml_for_required_layer(fs, &user_file, strict_config, |config_toml| {
+        ConfigLayerEntry::new(source.clone().into(), config_toml)
     })
     .await
 }

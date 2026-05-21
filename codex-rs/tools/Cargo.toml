@@ -8,6 +8,7 @@ version.workspace = true
 workspace = true
 
 [dependencies]
+codex-app-catalog-types = { workspace = true }
 codex-app-server-protocol = { workspace = true }
 codex-agent-policy = { workspace = true }
 codex-code-mode-spec = { workspace = true }

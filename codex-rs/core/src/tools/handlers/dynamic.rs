@@ -62,6 +62,8 @@ impl DynamicToolHandler {
 }
 
 impl ToolExecutor<ToolInvocation> for DynamicToolHandler {
+    type Output = Box<dyn crate::tools::context::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         self.tool_name.clone()
     }

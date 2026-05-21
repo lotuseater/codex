@@ -3,19 +3,45 @@ use codex_model_provider_info::WireApi;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
 use codex_protocol::user_input::UserInput;
+use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
+use core_test_support::responses::ev_incomplete;
 use core_test_support::responses::ev_response_created;
+use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::sse;
 use core_test_support::skip_if_no_network;
 use core_test_support::test_codex::TestCodex;
 use core_test_support::test_codex::test_codex;
 use core_test_support::wait_for_event;
+use pretty_assertions::assert_eq;
 use wiremock::Mock;
 use wiremock::MockServer;
 use wiremock::ResponseTemplate;
 use wiremock::matchers::body_string_contains;
 use wiremock::matchers::method;
 use wiremock::matchers::path;
+
+fn mock_responses_provider(server: &MockServer) -> ModelProviderInfo {
+    ModelProviderInfo {
+        name: "mock-openai".into(),
+        base_url: Some(format!("{}/v1", server.uri())),
+        env_key: Some("PATH".into()),
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        auth: None,
+        aws: None,
+        wire_api: WireApi::Responses,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: Some(1),
+        stream_max_retries: Some(1),
+        stream_idle_timeout_ms: Some(2_000),
+        websocket_connect_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    }
+}
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn continue_after_stream_error() {
@@ -60,28 +86,7 @@ async fn continue_after_stream_error() {
         .mount(&server)
         .await;
 
-    // Configure a provider that uses the Responses API and points at our mock
-    // server. Use an existing env var (PATH) to satisfy the auth plumbing
-    // without requiring a real secret.
-    let provider = ModelProviderInfo {
-        name: "mock-openai".into(),
-        base_url: Some(format!("{}/v1", server.uri())),
-        env_key: Some("PATH".into()),
-        env_key_instructions: None,
-        experimental_bearer_token: None,
-        auth: None,
-        aws: None,
-        wire_api: WireApi::Responses,
-        query_params: None,
-        http_headers: None,
-        env_http_headers: None,
-        request_max_retries: Some(1),
-        stream_max_retries: Some(1),
-        stream_idle_timeout_ms: Some(2_000),
-        websocket_connect_timeout_ms: None,
-        requires_openai_auth: false,
-        supports_websockets: false,
-    };
+    let provider = mock_responses_provider(&server);
 
     let TestCodex { codex, .. } = test_codex()
         .with_config(move |config| {
@@ -129,4 +134,55 @@ async fn continue_after_stream_error() {
         .unwrap();
 
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn continue_after_response_incomplete_max_output_tokens() {
+    skip_if_no_network!();
+
+    let server = MockServer::start().await;
+    let mock = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_response_created("resp-incomplete"),
+                ev_assistant_message("msg-partial", "partial answer"),
+                ev_incomplete("resp-incomplete", "max_output_tokens"),
+            ]),
+            sse(vec![
+                ev_response_created("resp-follow-up"),
+                ev_assistant_message("msg-final", "final answer"),
+                ev_completed("resp-follow-up"),
+            ]),
+        ],
+    )
+    .await;
+
+    let provider = mock_responses_provider(&server);
+    let TestCodex { codex, .. } = test_codex()
+        .with_config(move |config| {
+            config.base_instructions = Some("You are a helpful assistant".to_string());
+            config.model_provider = provider;
+        })
+        .build(&server)
+        .await
+        .unwrap();
+
+    codex
+        .submit(Op::UserInput {
+            environments: None,
+            items: vec![UserInput::Text {
+                text: "continue after incomplete".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+            thread_settings: Default::default(),
+        })
+        .await
+        .unwrap();
+
+    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+
+    assert_eq!(mock.requests().len(), 2);
 }

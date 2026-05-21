@@ -15,6 +15,8 @@ use super::*;
 pub struct SpawnAgentsOnCsvHandler;
 
 impl ToolExecutor<ToolInvocation> for SpawnAgentsOnCsvHandler {
+    type Output = Box<dyn crate::tools::context::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         ToolName::plain("spawn_agents_on_csv")
     }

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::app_catalog_protocol::app_infos_to_v2;
 use crate::config_manager::ConfigManager;
 use crate::config_manager_service::ConfigManagerError;
 use crate::error_code::internal_error;
@@ -252,7 +253,9 @@ impl ConfigRequestProcessor {
             );
             outgoing
                 .send_server_notification(ServerNotification::AppListUpdated(
-                    AppListUpdatedNotification { data },
+                    AppListUpdatedNotification {
+                        data: app_infos_to_v2(data),
+                    },
                 ))
                 .await;
         });

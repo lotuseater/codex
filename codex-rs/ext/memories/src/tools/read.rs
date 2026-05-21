@@ -38,6 +38,8 @@ impl<B> ToolExecutor<ToolCall> for ReadTool<B>
 where
     B: MemoriesBackend,
 {
+    type Output = Box<dyn codex_extension_api::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         memory_tool_name(READ_TOOL_NAME)
     }

@@ -31,6 +31,8 @@ struct TestHandler {
 }
 
 impl ToolExecutor<ToolInvocation> for TestHandler {
+    type Output = Box<dyn crate::tools::context::ToolOutput>;
+
     fn tool_name(&self) -> codex_tools::ToolName {
         self.tool_name.clone()
     }

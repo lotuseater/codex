@@ -1,4 +1,4 @@
-//! Public facade for thread management APIs built on `codex-core`.
+//! Public facade for non-core APIs used by thread management samples.
 
 #![deny(private_bounds, private_interfaces, unreachable_pub)]
 
@@ -24,26 +24,6 @@ pub use codex_config::types::TuiKeymap;
 pub use codex_config::types::TuiNotificationSettings;
 pub use codex_config::types::TuiPetAnchor;
 pub use codex_config::types::UriBasedFileOpener;
-pub use codex_core::CodexThread;
-pub use codex_core::ForkSnapshot;
-pub use codex_core::McpManager;
-pub use codex_core::NewThread;
-pub use codex_core::StartThreadOptions;
-pub use codex_core::StateDbHandle;
-pub use codex_core::ThreadManager;
-pub use codex_core::ThreadShutdownReport;
-pub use codex_core::config::Config;
-pub use codex_core::config::Constrained;
-pub use codex_core::config::GhostSnapshotConfig;
-pub use codex_core::config::MultiAgentV2Config;
-pub use codex_core::config::Permissions;
-pub use codex_core::config::TerminalResizeReflowConfig;
-pub use codex_core::config::ThreadStoreConfig;
-pub use codex_core::config::find_codex_home;
-pub use codex_core::init_state_db;
-pub use codex_core::resolve_installation_id;
-pub use codex_core::skills::SkillsManager;
-pub use codex_core::thread_store_from_config;
 pub use codex_exec_server::EnvironmentManager;
 pub use codex_exec_server::ExecServerRuntimePaths;
 pub use codex_extension_api::empty_extension_registry;

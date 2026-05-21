@@ -46,6 +46,7 @@ use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_completed_with_tokens;
 use core_test_support::responses::ev_function_call;
+use core_test_support::responses::ev_incomplete_with_tokens;
 use core_test_support::responses::mount_compact_json_once;
 use core_test_support::responses::mount_response_sequence;
 use core_test_support::responses::mount_sse_once;
@@ -3699,6 +3700,105 @@ async fn snapshot_request_shape_pre_turn_compaction_context_window_exceeded() {
     assert!(
         error_message.contains("ran out of room in the model's context window"),
         "expected context window exceeded message, got {error_message}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn manual_compaction_incomplete_max_output_tokens_does_not_replace_history() {
+    skip_if_no_network!();
+
+    let server = start_mock_server().await;
+    let first_turn = sse(vec![
+        ev_assistant_message("m1", FIRST_REPLY),
+        ev_completed_with_tokens("r1", /*total_tokens*/ 100),
+    ]);
+    let truncated_compaction = sse(vec![
+        ev_assistant_message("m2", "TRUNCATED_SUMMARY"),
+        ev_incomplete_with_tokens("r2", "max_output_tokens", /*total_tokens*/ 25),
+    ]);
+    let next_turn = sse(vec![
+        ev_assistant_message("m3", "after failed compact"),
+        ev_completed_with_tokens("r3", /*total_tokens*/ 100),
+    ]);
+    let request_log =
+        mount_sse_sequence(&server, vec![first_turn, truncated_compaction, next_turn]).await;
+
+    let mut model_provider = non_openai_model_provider(&server);
+    model_provider.stream_max_retries = Some(0);
+    let codex = test_codex()
+        .with_config(move |config| {
+            config.model_provider = model_provider;
+            set_test_compact_prompt(config);
+            config.model_auto_compact_token_limit = Some(200_000);
+        })
+        .build(&server)
+        .await
+        .expect("build codex")
+        .codex;
+
+    codex
+        .submit(Op::UserInput {
+            environments: None,
+            items: vec![UserInput::Text {
+                text: "USER_ONE".to_string(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+        })
+        .await
+        .expect("submit first user");
+    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+
+    codex.submit(Op::Compact).await.expect("run /compact");
+    let error_message = wait_for_event_match(&codex, |event| match event {
+        EventMsg::Error(err) => Some(err.message.clone()),
+        _ => None,
+    })
+    .await;
+    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+
+    codex
+        .submit(Op::UserInput {
+            environments: None,
+            items: vec![UserInput::Text {
+                text: "USER_TWO".to_string(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+        })
+        .await
+        .expect("submit second user");
+    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+
+    let requests = request_log.requests();
+    assert_eq!(requests.len(), 3);
+    assert!(
+        error_message.contains("context compaction response incomplete: max_output_tokens"),
+        "expected compaction incomplete error, got {error_message}"
+    );
+
+    let next_turn_body = requests[2].body_json().to_string();
+    assert!(
+        body_contains_text(&next_turn_body, "USER_ONE"),
+        "failed compaction should leave pre-compact user history intact"
+    );
+    assert!(
+        body_contains_text(&next_turn_body, FIRST_REPLY),
+        "failed compaction should leave pre-compact assistant history intact"
+    );
+    assert!(
+        body_contains_text(&next_turn_body, "USER_TWO"),
+        "next user message should still be sent after failed compaction"
+    );
+    assert!(
+        !body_contains_text(&next_turn_body, "TRUNCATED_SUMMARY"),
+        "truncated compaction output must not be recorded as valid history"
+    );
+    assert!(
+        !body_contains_text(&next_turn_body, SUMMARY_PREFIX),
+        "failed compaction must not replace history with a summary"
     );
 }
 

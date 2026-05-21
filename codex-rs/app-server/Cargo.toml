@@ -31,6 +31,7 @@ axum = { workspace = true, default-features = false, features = [
     "ws",
 ] }
 codex-analytics = { workspace = true }
+codex-app-catalog-types = { workspace = true }
 codex-arg0 = { workspace = true }
 codex-cloud-requirements = { workspace = true }
 codex-config = { workspace = true }
@@ -69,6 +70,7 @@ codex-sandboxing = { workspace = true }
 codex-state = { workspace = true }
 codex-thread-config-remote = { workspace = true }
 codex-thread-store = { workspace = true }
+codex-thread-store-api = { workspace = true }
 codex-tool-schema = { workspace = true }
 codex-utils-absolute-path = { workspace = true }
 codex-utils-json-to-toml = { workspace = true }

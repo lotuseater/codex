@@ -2,15 +2,15 @@ use std::future::Future;
 use std::pin::Pin;
 
 use codex_tools::FunctionCallError;
-use codex_tools::JsonToolOutput;
 use codex_tools::ToolCall;
 use codex_tools::ToolExecutor;
 use codex_tools::ToolExposure;
 use codex_tools::ToolName;
+use codex_tools::ToolOutput;
 use codex_tools::ToolSpec;
 
 /// Model-facing output returned by extension-owned tools.
-pub type ExtensionToolOutput = JsonToolOutput;
+pub type ExtensionToolOutput = Box<dyn ToolOutput>;
 
 /// Future returned by an extension-owned executable tool.
 pub type ExtensionToolFuture<'a> =

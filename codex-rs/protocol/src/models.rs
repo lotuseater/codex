@@ -24,6 +24,10 @@ pub use codex_permission_types::PermissionProfile;
 pub use codex_permission_types::SandboxEnforcement;
 pub use codex_permission_types::SandboxPermissions;
 
+pub const BUILT_IN_PERMISSION_PROFILE_READ_ONLY: &str = "read-only";
+pub const BUILT_IN_PERMISSION_PROFILE_WORKSPACE: &str = "workspace-write";
+pub const BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS: &str = "danger-full-access";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ResponseInputItem {
@@ -247,6 +251,8 @@ pub enum ResponseItem {
         revised_prompt: Option<String>,
         result: String,
     },
+    #[serde(rename = "compaction_trigger")]
+    CompactionTrigger,
     #[serde(alias = "compaction_summary")]
     Compaction { encrypted_content: String },
     ContextCompaction {
@@ -422,6 +428,7 @@ pub fn local_image_content_items_with_label_number(
     path: &std::path::Path,
     file_bytes: Vec<u8>,
     label_number: Option<usize>,
+    detail: ImageDetail,
     mode: PromptImageMode,
 ) -> Vec<ContentItem> {
     match load_for_prompt_bytes(path, file_bytes, mode) {
@@ -434,7 +441,7 @@ pub fn local_image_content_items_with_label_number(
             }
             items.push(ContentItem::InputImage {
                 image_url: image.into_data_url(),
-                detail: Some(DEFAULT_IMAGE_DETAIL),
+                detail: Some(detail),
             });
             if label_number.is_some() {
                 items.push(ContentItem::InputText {
@@ -579,7 +586,7 @@ impl From<Vec<UserInput>> for ResponseInputItem {
                 .into_iter()
                 .flat_map(|c| match c {
                     UserInput::Text { text, .. } => vec![ContentItem::InputText { text }],
-                    UserInput::Image { image_url } => {
+                    UserInput::Image { image_url, detail } => {
                         image_index += 1;
                         vec![
                             ContentItem::InputText {
@@ -587,20 +594,21 @@ impl From<Vec<UserInput>> for ResponseInputItem {
                             },
                             ContentItem::InputImage {
                                 image_url,
-                                detail: Some(DEFAULT_IMAGE_DETAIL),
+                                detail: Some(detail.unwrap_or(DEFAULT_IMAGE_DETAIL)),
                             },
                             ContentItem::InputText {
                                 text: image_close_tag_text(),
                             },
                         ]
                     }
-                    UserInput::LocalImage { path } => {
+                    UserInput::LocalImage { path, detail } => {
                         image_index += 1;
                         match std::fs::read(&path) {
                             Ok(file_bytes) => local_image_content_items_with_label_number(
                                 &path,
                                 file_bytes,
                                 Some(image_index),
+                                detail.unwrap_or(DEFAULT_IMAGE_DETAIL),
                                 PromptImageMode::ResizeToFit,
                             ),
                             Err(err) => vec![local_image_error_placeholder(&path, err)],

@@ -1,0 +1,17 @@
+[package]
+edition.workspace = true
+license.workspace = true
+name = "codex-mcp-elicitation-api"
+version.workspace = true
+
+[lib]
+doctest = false
+name = "codex_mcp_elicitation_api"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }

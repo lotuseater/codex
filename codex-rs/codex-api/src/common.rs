@@ -89,6 +89,11 @@ pub enum ResponseEvent {
         /// so we rely on fallback logic when this is `None`.
         end_turn: Option<bool>,
     },
+    Incomplete {
+        response_id: String,
+        token_usage: Option<TokenUsage>,
+        reason: String,
+    },
     OutputTextDelta(String),
     ToolCallInputDelta {
         item_id: String,

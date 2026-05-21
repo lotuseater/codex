@@ -9,6 +9,7 @@ use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::user_input::UserInput;
+use codex_thread_store_api::UnsupportedLiveThreadFactory;
 use tokio_util::sync::CancellationToken;
 
 use crate::config::Config;
@@ -55,6 +56,7 @@ pub async fn build_prompt_input(
         empty_extension_registry(),
         /*analytics_events_client*/ None,
         thread_store,
+        Arc::new(UnsupportedLiveThreadFactory::new()),
         state_db.clone(),
         installation_id,
         /*attestation_provider*/ None,

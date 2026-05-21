@@ -6,6 +6,7 @@ use codex_protocol::approvals::NetworkPolicyAmendment as CoreNetworkPolicyAmendm
 use codex_protocol::approvals::NetworkPolicyRuleAction as CoreNetworkPolicyRuleAction;
 use codex_protocol::models::ActivePermissionProfile as CoreActivePermissionProfile;
 use codex_protocol::models::AdditionalPermissionProfile as CoreAdditionalPermissionProfile;
+use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_READ_ONLY;
 use codex_protocol::models::FileSystemPermissions as CoreFileSystemPermissions;
 use codex_protocol::models::NetworkPermissions as CoreNetworkPermissions;
 use codex_protocol::permissions::FileSystemAccessMode as CoreFileSystemAccessMode;
@@ -178,7 +179,8 @@ v2_enum_from_core!(
     pub enum FileSystemAccessMode from CoreFileSystemAccessMode {
         Read,
         Write,
-        Deny
+        Deny,
+        None
     }
 );
 
@@ -344,7 +346,7 @@ impl ActivePermissionProfile {
     }
 
     pub fn read_only() -> Self {
-        CoreActivePermissionProfile::read_only().into()
+        CoreActivePermissionProfile::new(BUILT_IN_PERMISSION_PROFILE_READ_ONLY).into()
     }
 }
 
@@ -362,6 +364,7 @@ impl From<ActivePermissionProfile> for CoreActivePermissionProfile {
         Self {
             id: value.id,
             extends: value.extends,
+            modifications: Vec::new(),
         }
     }
 }

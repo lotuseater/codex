@@ -13,8 +13,8 @@ use crate::tools::handlers::ExecCommandHandler;
 use crate::tools::handlers::ShellCommandHandler;
 use crate::tools::registry::ToolExecutor;
 use crate::turn_diff_tracker::TurnDiffTracker;
-use codex_app_server_protocol::ConfigLayerSource;
 use codex_config::ConfigLayerEntry;
+use codex_config::ConfigLayerSource;
 use codex_config::ConfigRequirements;
 use codex_config::ConfigRequirementsToml;
 use codex_exec_server::EnvironmentManager;
@@ -34,6 +34,8 @@ use codex_protocol::request_permissions::PermissionGrantScope;
 use codex_protocol::request_permissions::RequestPermissionProfile;
 use codex_protocol::request_permissions::RequestPermissionsArgs;
 use codex_protocol::request_permissions::RequestPermissionsResponse;
+use codex_thread_store_api::RecordingLiveThreadFactory;
+use codex_thread_store_api::RecordingThreadStore;
 use codex_tools::ShellCommandBackendConfig;
 use core_test_support::PathExt;
 use core_test_support::TempDirExt;
@@ -733,10 +735,7 @@ async fn guardian_subagent_does_not_inherit_parent_exec_policy_rules() {
         /*bundled_skills_enabled*/ true,
     ));
     let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
-    let thread_store = Arc::new(codex_thread_store::LocalThreadStore::new(
-        codex_thread_store::LocalThreadStoreConfig::from_config(&config),
-        /*state_db*/ None,
-    ));
+    let thread_store = Arc::new(RecordingThreadStore::default());
 
     let CodexSpawnOk { codex, .. } = Codex::spawn(CodexSpawnArgs {
         config,
@@ -767,6 +766,8 @@ async fn guardian_subagent_does_not_inherit_parent_exec_policy_rules() {
         },
         analytics_events_client: None,
         thread_store,
+        live_thread_factory: Arc::new(RecordingLiveThreadFactory::new()),
+        state_db: None,
         attestation_provider: None,
     })
     .await

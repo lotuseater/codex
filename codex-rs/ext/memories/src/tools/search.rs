@@ -47,6 +47,8 @@ impl<B> ToolExecutor<ToolCall> for SearchTool<B>
 where
     B: MemoriesBackend,
 {
+    type Output = Box<dyn codex_extension_api::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         memory_tool_name(SEARCH_TOOL_NAME)
     }

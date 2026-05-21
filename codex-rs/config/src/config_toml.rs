@@ -107,6 +107,11 @@ pub struct ConfigToml {
     /// Token usage threshold triggering auto-compaction of conversation history.
     pub model_auto_compact_token_limit: Option<i64>,
 
+    /// Percentage of the auto-compaction token limit that triggers early
+    /// context-pressure compaction. Defaults to 20 when omitted. Set to 0 to
+    /// disable early context-pressure compaction.
+    pub model_compact_percentage: Option<i64>,
+
     /// Prompt-clone reduction mode. Defaults to conservative reduction when omitted.
     pub prompt_reduction_mode: Option<PromptReductionModeToml>,
 

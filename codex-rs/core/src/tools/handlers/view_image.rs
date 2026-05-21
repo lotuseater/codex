@@ -65,6 +65,8 @@ enum ViewImageDetail {
 }
 
 impl ToolExecutor<ToolInvocation> for ViewImageHandler {
+    type Output = Box<dyn crate::tools::context::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         ToolName::plain("view_image")
     }

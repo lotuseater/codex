@@ -230,6 +230,7 @@ mod tests {
     use crate::tools::context::FunctionToolOutput;
     use crate::tools::context::ToolInvocation;
     use crate::tools::registry::CoreToolRuntime;
+    use crate::tools::registry::RegisteredTool;
     use crate::tools::registry::ToolExecutor;
     use crate::tools::registry::ToolRegistry;
     use crate::turn_diff_tracker::TurnDiffTracker;
@@ -244,8 +245,9 @@ mod tests {
         tool_name: codex_tools::ToolName,
     }
 
-    #[async_trait::async_trait]
     impl ToolExecutor<ToolInvocation> for ImmediateHandler {
+        type Output = Box<dyn crate::tools::context::ToolOutput>;
+
         fn tool_name(&self) -> codex_tools::ToolName {
             self.tool_name.clone()
         }
@@ -316,7 +318,7 @@ mod tests {
         let tool_name = codex_tools::ToolName::plain("test_tool");
         let handler = Arc::new(ImmediateHandler {
             tool_name: tool_name.clone(),
-        }) as Arc<dyn CoreToolRuntime>;
+        }) as Arc<dyn RegisteredTool>;
         let router = Arc::new(ToolRouter::from_parts(
             ToolRegistry::from_tools([handler]),
             Vec::new(),

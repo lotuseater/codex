@@ -46,6 +46,8 @@ impl ToolOutput for PlanToolOutput {
 }
 
 impl ToolExecutor<ToolInvocation> for PlanHandler {
+    type Output = Box<dyn crate::tools::context::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         ToolName::plain("update_plan")
     }

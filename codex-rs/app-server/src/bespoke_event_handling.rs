@@ -1519,7 +1519,7 @@ async fn handle_thread_rollback_failed(
 }
 
 fn thread_rollback_response_from_stored_thread(
-    stored_thread: codex_thread_store::StoredThread,
+    stored_thread: codex_thread_store_api::StoredThread,
     session_id: String,
     fallback_model_provider: &str,
     fallback_cwd: &AbsolutePathBuf,
@@ -2099,8 +2099,8 @@ mod tests {
     use codex_protocol::protocol::TokenUsage;
     use codex_protocol::protocol::TokenUsageInfo;
     use codex_protocol::protocol::UserMessageEvent;
-    use codex_thread_store::StoredThread;
-    use codex_thread_store::StoredThreadHistory;
+    use codex_thread_store_api::StoredThread;
+    use codex_thread_store_api::StoredThreadHistory;
     use codex_utils_absolute_path::AbsolutePathBuf;
     use codex_utils_absolute_path::test_support::PathBufExt;
     use codex_utils_absolute_path::test_support::test_path_buf;

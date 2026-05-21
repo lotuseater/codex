@@ -1,0 +1,19 @@
+[package]
+edition.workspace = true
+license.workspace = true
+name = "codex-session-policy"
+version.workspace = true
+
+[lib]
+doctest = false
+name = "codex_session_policy"
+path = "src/lib.rs"
+test = false
+
+[lints]
+workspace = true
+
+[dependencies]
+codex-session-api = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }

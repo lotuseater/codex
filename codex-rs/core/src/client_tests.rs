@@ -32,6 +32,7 @@ use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::protocol::InternalSessionSource;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
+use codex_protocol::protocol::TokenUsage;
 use codex_rollout_trace::CompactionTraceContext;
 use codex_rollout_trace::ExecutionStatus;
 use codex_rollout_trace::InferenceTraceAttempt;
@@ -533,6 +534,68 @@ async fn response_stream_records_last_model_feedback_ids() {
         tags.get("last_model_response_id").map(String::as_str),
         Some("\"resp-123\"")
     );
+}
+
+#[tokio::test]
+async fn response_stream_records_incomplete_as_terminal_response() -> anyhow::Result<()> {
+    let item = output_message("msg-1", "partial answer");
+    let token_usage = TokenUsage {
+        input_tokens: 11,
+        cached_input_tokens: 5,
+        output_tokens: 7,
+        reasoning_output_tokens: 3,
+        total_tokens: 18,
+    };
+    let api_stream = futures::stream::iter([
+        Ok(ResponseEvent::OutputItemDone(item.clone())),
+        Ok(ResponseEvent::Incomplete {
+            response_id: "resp-incomplete".to_string(),
+            token_usage: Some(token_usage.clone()),
+            reason: "max_output_tokens".to_string(),
+        }),
+    ]);
+
+    let (mut stream, last_response_rx) = super::map_response_events(
+        Some("req-123".to_string()),
+        api_stream,
+        test_session_telemetry(),
+        InferenceTraceAttempt::disabled(),
+    );
+
+    let observed_item = stream
+        .next()
+        .await
+        .expect("mapped stream should yield output item")?;
+    assert!(matches!(
+        observed_item,
+        ResponseEvent::OutputItemDone(ResponseItem::Message { .. })
+    ));
+
+    let terminal = stream
+        .next()
+        .await
+        .expect("mapped stream should yield incomplete terminal event")?;
+    match terminal {
+        ResponseEvent::Incomplete {
+            response_id,
+            token_usage: observed_usage,
+            reason,
+        } => {
+            assert_eq!(response_id, "resp-incomplete");
+            assert_eq!(observed_usage, Some(token_usage));
+            assert_eq!(reason, "max_output_tokens");
+        }
+        other => panic!("expected incomplete terminal event, got {other:?}"),
+    }
+    assert!(stream.next().await.is_none());
+
+    let last_response = last_response_rx
+        .await
+        .expect("incomplete terminal event should record last response");
+    assert_eq!(last_response.response_id, "resp-incomplete");
+    assert_eq!(last_response.items_added, vec![item]);
+
+    Ok(())
 }
 
 #[tokio::test]

@@ -744,9 +744,12 @@ async fn run_websocket_response_stream(
                 }
                 match process_responses_event(event) {
                     Ok(Some(event)) => {
-                        let is_completed = matches!(event, ResponseEvent::Completed { .. });
+                        let is_terminal = matches!(
+                            event,
+                            ResponseEvent::Completed { .. } | ResponseEvent::Incomplete { .. }
+                        );
                         let _ = tx_event.send(Ok(event)).await;
-                        if is_completed {
+                        if is_terminal {
                             break;
                         }
                     }

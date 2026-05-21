@@ -15,6 +15,7 @@ use codex_client::Response;
 use codex_client::StreamResponse;
 use codex_client::TransportError;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::protocol::TokenUsage;
 use futures::StreamExt;
 use http::HeaderMap;
 use http::StatusCode;
@@ -166,6 +167,73 @@ async fn responses_stream_parses_items_and_completed_end_to_end() -> Result<()> 
         }
         other => panic!("unexpected third event: {other:?}"),
     }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn responses_stream_parses_incomplete_end_to_end() -> Result<()> {
+    let incomplete = serde_json::json!({
+        "type": "response.incomplete",
+        "response": {
+            "id": "resp-incomplete",
+            "incomplete_details": {
+                "reason": "max_output_tokens"
+            },
+            "usage": {
+                "input_tokens": 7,
+                "input_tokens_details": {
+                    "cached_tokens": 2
+                },
+                "output_tokens": 8,
+                "output_tokens_details": {
+                    "reasoning_tokens": 3
+                },
+                "total_tokens": 15
+            }
+        }
+    });
+    let completed_after_terminal = serde_json::json!({
+        "type": "response.completed",
+        "response": { "id": "resp-after-incomplete" }
+    });
+
+    let body = build_responses_body(vec![incomplete, completed_after_terminal]);
+    let transport = FixtureSseTransport::new(body);
+    let client = ResponsesClient::new(transport, provider("openai"), Arc::new(NoAuth));
+
+    let mut stream = client
+        .stream(
+            serde_json::json!({"echo": true}),
+            HeaderMap::new(),
+            Compression::None,
+            /*turn_state*/ None,
+        )
+        .await?;
+
+    let mut events = Vec::new();
+    while let Some(ev) = stream.next().await {
+        events.push(ev?);
+    }
+    let events: Vec<ResponseEvent> = events
+        .into_iter()
+        .filter(|ev| !matches!(ev, ResponseEvent::RateLimits(_)))
+        .collect();
+
+    assert_eq!(
+        events,
+        vec![ResponseEvent::Incomplete {
+            response_id: "resp-incomplete".to_string(),
+            token_usage: Some(TokenUsage {
+                input_tokens: 7,
+                cached_input_tokens: 2,
+                output_tokens: 8,
+                reasoning_output_tokens: 3,
+                total_tokens: 15,
+            }),
+            reason: "max_output_tokens".to_string(),
+        }]
+    );
 
     Ok(())
 }

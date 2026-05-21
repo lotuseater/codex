@@ -1,0 +1,13 @@
+[package]
+edition.workspace = true
+license.workspace = true
+name = "codex-core-domain-types"
+version.workspace = true
+
+[lib]
+doctest = false
+name = "codex_core_domain_types"
+path = "src/lib.rs"
+
+[lints]
+workspace = true

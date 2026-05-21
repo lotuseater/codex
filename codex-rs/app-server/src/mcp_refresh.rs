@@ -111,17 +111,27 @@ mod tests {
     use codex_config::ThreadConfigLoader;
     use codex_config::ThreadConfigSource;
     use codex_core::config::ConfigOverrides;
+    use codex_core::config::ThreadStoreConfig;
     use codex_core::init_state_db;
-    use codex_core::thread_store_from_config;
     use codex_exec_server::EnvironmentManager;
     use codex_login::AuthManager;
     use codex_login::CodexAuth;
     use codex_protocol::protocol::SessionSource;
+    use codex_thread_store::StoreLiveThreadFactory;
+    use codex_thread_store::ThreadStoreSelection;
+    use codex_thread_store::thread_store_from_config;
     use codex_utils_absolute_path::AbsolutePathBuf;
     use pretty_assertions::assert_eq;
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering;
     use tempfile::TempDir;
+
+    fn thread_store_selection(config: &Config) -> ThreadStoreSelection {
+        match &config.experimental_thread_store {
+            ThreadStoreConfig::Local => ThreadStoreSelection::Local,
+            ThreadStoreConfig::InMemory { id } => ThreadStoreSelection::InMemory { id: id.clone() },
+        }
+    }
 
     #[tokio::test]
     async fn strict_refresh_reports_thread_planning_failures() -> anyhow::Result<()> {
@@ -179,7 +189,11 @@ mod tests {
         let state_db = init_state_db(&good_config)
             .await
             .expect("refresh tests require state db");
-        let thread_store = thread_store_from_config(&good_config, Some(state_db.clone()));
+        let thread_store = thread_store_from_config(
+            &good_config,
+            thread_store_selection(&good_config),
+            Some(state_db.clone()),
+        );
         let thread_manager = Arc::new_cyclic(|thread_manager| {
             ThreadManager::new(
                 &good_config,
@@ -189,6 +203,7 @@ mod tests {
                 thread_extensions(guardian_agent_spawner(thread_manager.clone())),
                 /*analytics_events_client*/ None,
                 thread_store,
+                Arc::new(StoreLiveThreadFactory::new()),
                 Some(state_db.clone()),
                 "11111111-1111-4111-8111-111111111111".to_string(),
                 /*attestation_provider*/ None,

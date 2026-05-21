@@ -89,6 +89,8 @@ impl CodeModeExecuteHandler {
 }
 
 impl ToolExecutor<ToolInvocation> for CodeModeExecuteHandler {
+    type Output = Box<dyn crate::tools::context::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         ToolName::plain(PUBLIC_TOOL_NAME)
     }

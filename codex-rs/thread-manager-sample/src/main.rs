@@ -8,6 +8,19 @@ use std::sync::Arc;
 use anyhow::Context;
 use anyhow::bail;
 use clap::Parser;
+use codex_core::CodexThread;
+use codex_core::NewThread;
+use codex_core::ThreadManager;
+use codex_core::config::Config;
+use codex_core::config::Constrained;
+use codex_core::config::GhostSnapshotConfig;
+use codex_core::config::MultiAgentV2Config;
+use codex_core::config::Permissions;
+use codex_core::config::TerminalResizeReflowConfig;
+use codex_core::config::ThreadStoreConfig;
+use codex_core::config::find_codex_home;
+use codex_core::init_state_db;
+use codex_core::resolve_installation_id;
 use codex_core_api::AbsolutePathBuf;
 use codex_core_api::AltScreenMode;
 use codex_core_api::ApprovalsReviewer;
@@ -16,35 +29,25 @@ use codex_core_api::AskForApproval;
 use codex_core_api::AuthCredentialsStoreMode;
 use codex_core_api::AuthManager;
 use codex_core_api::AutoCompactTokenLimitScope;
-use codex_core_api::CodexThread;
-use codex_core_api::Config;
 use codex_core_api::ConfigLayerStack;
-use codex_core_api::Constrained;
 use codex_core_api::EnvironmentManager;
 use codex_core_api::EventMsg;
 use codex_core_api::ExecServerRuntimePaths;
 use codex_core_api::Features;
-use codex_core_api::GhostSnapshotConfig;
 use codex_core_api::History;
 use codex_core_api::MemoriesConfig;
 use codex_core_api::ModelAvailabilityNuxConfig;
-use codex_core_api::MultiAgentV2Config;
-use codex_core_api::NewThread;
 use codex_core_api::Notice;
 use codex_core_api::OAuthCredentialsStoreMode;
 use codex_core_api::OPENAI_PROVIDER_ID;
 use codex_core_api::Op;
 use codex_core_api::OtelConfig;
 use codex_core_api::PermissionProfile;
-use codex_core_api::Permissions;
 use codex_core_api::ProjectConfig;
 use codex_core_api::RealtimeAudioConfig;
 use codex_core_api::RealtimeConfig;
 use codex_core_api::SessionPickerViewMode;
 use codex_core_api::SessionSource;
-use codex_core_api::TerminalResizeReflowConfig;
-use codex_core_api::ThreadManager;
-use codex_core_api::ThreadStoreConfig;
 use codex_core_api::ToolSuggestConfig;
 use codex_core_api::TuiKeymap;
 use codex_core_api::TuiNotificationSettings;
@@ -55,12 +58,11 @@ use codex_core_api::WebSearchMode;
 use codex_core_api::arg0_dispatch_or_else;
 use codex_core_api::built_in_model_providers;
 use codex_core_api::empty_extension_registry;
-use codex_core_api::find_codex_home;
-use codex_core_api::init_state_db;
 use codex_core_api::item_event_to_server_notification;
-use codex_core_api::resolve_installation_id;
 use codex_core_api::set_default_originator;
-use codex_core_api::thread_store_from_config;
+use codex_thread_store::StoreLiveThreadFactory;
+use codex_thread_store::ThreadStoreSelection;
+use codex_thread_store::thread_store_from_config;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -114,7 +116,9 @@ async fn run_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         config.codex_self_exe.clone(),
         config.codex_linux_sandbox_exe.clone(),
     )?;
-    let thread_store = thread_store_from_config(&config, state_db.clone());
+    let thread_store =
+        thread_store_from_config(&config, thread_store_selection(&config), state_db.clone());
+    let live_thread_factory = Arc::new(StoreLiveThreadFactory::new());
     let environment_manager = Arc::new(
         EnvironmentManager::from_codex_home(config.codex_home.clone(), Some(local_runtime_paths))
             .await?,
@@ -128,6 +132,7 @@ async fn run_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         empty_extension_registry(),
         /*analytics_events_client*/ None,
         Arc::clone(&thread_store),
+        live_thread_factory,
         state_db,
         installation_id,
         /*attestation_provider*/ None,
@@ -149,6 +154,13 @@ async fn run_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     shutdown_result.context("shut down Codex thread")?;
 
     Ok(())
+}
+
+fn thread_store_selection(config: &Config) -> ThreadStoreSelection {
+    match &config.experimental_thread_store {
+        ThreadStoreConfig::Local => ThreadStoreSelection::Local,
+        ThreadStoreConfig::InMemory { id } => ThreadStoreSelection::InMemory { id: id.clone() },
+    }
 }
 
 fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::Result<Config> {

@@ -106,6 +106,19 @@ struct ResponseCompleted {
 }
 
 #[derive(Debug, Deserialize)]
+struct ResponseIncomplete {
+    id: String,
+    #[serde(default)]
+    usage: Option<ResponseCompletedUsage>,
+    incomplete_details: ResponseIncompleteDetails,
+}
+
+#[derive(Debug, Deserialize)]
+struct ResponseIncompleteDetails {
+    reason: String,
+}
+
+#[derive(Debug, Deserialize)]
 struct ResponseCompletedUsage {
     input_tokens: i64,
     input_tokens_details: Option<ResponseCompletedInputTokensDetails>,
@@ -345,15 +358,26 @@ pub fn process_responses_event(
             )));
         }
         "response.incomplete" => {
-            let reason = event.response.as_ref().and_then(|response| {
-                response
-                    .get("incomplete_details")
-                    .and_then(|details| details.get("reason"))
-                    .and_then(Value::as_str)
-            });
-            let reason = reason.unwrap_or("unknown");
-            let message = format!("Incomplete response returned, reason: {reason}");
-            return Err(ResponsesEventError::Api(ApiError::Stream(message)));
+            if let Some(resp_val) = event.response {
+                match serde_json::from_value::<ResponseIncomplete>(resp_val) {
+                    Ok(resp) => {
+                        return Ok(Some(ResponseEvent::Incomplete {
+                            response_id: resp.id,
+                            token_usage: resp.usage.map(Into::into),
+                            reason: resp.incomplete_details.reason,
+                        }));
+                    }
+                    Err(err) => {
+                        let error = format!("failed to parse ResponseIncomplete: {err}");
+                        debug!("{error}");
+                        return Err(ResponsesEventError::Api(ApiError::Stream(error)));
+                    }
+                }
+            } else {
+                return Err(ResponsesEventError::Api(ApiError::Stream(
+                    "response.incomplete missing response payload".into(),
+                )));
+            }
         }
         "response.completed" => {
             if let Some(resp_val) = event.response {
@@ -468,11 +492,14 @@ pub async fn process_sse(
 
         match process_responses_event(event) {
             Ok(Some(event)) => {
-                let is_completed = matches!(event, ResponseEvent::Completed { .. });
+                let is_terminal = matches!(
+                    event,
+                    ResponseEvent::Completed { .. } | ResponseEvent::Incomplete { .. }
+                );
                 if tx_event.send(Ok(event)).await.is_err() {
                     return;
                 }
-                if is_completed {
+                if is_terminal {
                     return;
                 }
             }

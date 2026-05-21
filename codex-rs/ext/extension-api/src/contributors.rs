@@ -1,17 +1,15 @@
 use std::future::Future;
 use std::sync::Arc;
 
+use crate::ExtensionData;
 use codex_protocol::items::TurnItem;
 use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::TokenUsageInfo;
-use codex_tools::ToolCall;
-use codex_tools::ToolExecutor;
-
-use crate::ExtensionData;
 
 mod prompt;
 mod thread_lifecycle;
 mod tool_lifecycle;
+mod tools;
 mod turn_lifecycle;
 
 pub use prompt::PromptFragment;
@@ -24,6 +22,9 @@ pub use tool_lifecycle::ToolCallSource;
 pub use tool_lifecycle::ToolFinishInput;
 pub use tool_lifecycle::ToolLifecycleFuture;
 pub use tool_lifecycle::ToolStartInput;
+pub use tools::ExtensionToolExecutor;
+pub use tools::ExtensionToolFuture;
+pub use tools::ExtensionToolOutput;
 pub use turn_lifecycle::TurnAbortInput;
 pub use turn_lifecycle::TurnStartInput;
 pub use turn_lifecycle::TurnStopInput;
@@ -114,7 +115,7 @@ pub trait ToolContributor: Send + Sync {
         &self,
         session_store: &ExtensionData,
         thread_store: &ExtensionData,
-    ) -> Vec<Arc<dyn ToolExecutor<ToolCall>>>;
+    ) -> Vec<Arc<dyn ExtensionToolExecutor>>;
 }
 
 /// Contributor for host-owned tool lifecycle gates.

@@ -53,6 +53,8 @@ impl RequestPluginInstallHandler {
 }
 
 impl ToolExecutor<ToolInvocation> for RequestPluginInstallHandler {
+    type Output = Box<dyn crate::tools::context::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         ToolName::plain(REQUEST_PLUGIN_INSTALL_TOOL_NAME)
     }

@@ -66,6 +66,7 @@ pub enum ContextReductionDecision {
 #[derive(Debug, Default)]
 pub struct ContextReductionState {
     cooldown_remaining_turns: u32,
+    visible_threshold_observed: bool,
 }
 
 impl ContextReductionState {
@@ -73,7 +74,24 @@ impl ContextReductionState {
         self.cooldown_remaining_turns = self.cooldown_remaining_turns.saturating_sub(1);
     }
 
+    pub fn observe_visible_context_percent(
+        &mut self,
+        policy: ContextReductionPolicy,
+        visible_context_percent_used: Option<i64>,
+    ) {
+        if visible_context_percent_used
+            .is_some_and(|percent| percent >= i64::from(policy.trigger_context_percent()))
+        {
+            self.visible_threshold_observed = true;
+        }
+    }
+
+    pub fn clear_observed_visible_threshold(&mut self) {
+        self.visible_threshold_observed = false;
+    }
+
     pub fn record_reduction_finished(&mut self, policy: ContextReductionPolicy) {
+        self.clear_observed_visible_threshold();
         self.cooldown_remaining_turns = policy.turn_cooldown();
     }
 
@@ -86,9 +104,10 @@ impl ContextReductionState {
         else {
             return ContextReductionDecision::Skip;
         };
-        let visible_threshold_reached = input
-            .visible_context_percent_used
-            .is_some_and(|percent| percent >= i64::from(policy.trigger_context_percent()));
+        let visible_threshold_reached = self.visible_threshold_observed
+            || input
+                .visible_context_percent_used
+                .is_some_and(|percent| percent >= i64::from(policy.trigger_context_percent()));
 
         if input.total_usage_tokens >= input.auto_compact_limit
             || self.cooldown_remaining_turns > 0
@@ -128,6 +147,7 @@ pub enum SemanticCompactDecision {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SemanticCompactInput {
     pub enabled: bool,
+    pub policy: ContextReductionPolicy,
     pub total_usage_tokens: i64,
     pub auto_compact_limit: i64,
     pub visible_context_percent_used: Option<i64>,
@@ -154,9 +174,21 @@ pub struct SemanticCompactState {
 }
 
 impl SemanticCompactState {
-    pub fn record_regular_turn_finished(&mut self, input: SemanticCompactTurnInput) {
+    pub fn observe_visible_context_percent(
+        &mut self,
+        policy: ContextReductionPolicy,
+        visible_context_percent_used: Option<i64>,
+    ) {
+        self.early_context_pressure_state
+            .observe_visible_context_percent(policy, visible_context_percent_used);
+    }
+
+    pub fn record_model_move_finished(&mut self) {
         self.early_context_pressure_state
             .record_regular_turn_finished();
+    }
+
+    pub fn record_regular_turn_finished(&mut self, input: SemanticCompactTurnInput) {
         self.semantic_cooldown_remaining_turns =
             self.semantic_cooldown_remaining_turns.saturating_sub(1);
         self.regular_turns_since_last_compact =
@@ -174,17 +206,15 @@ impl SemanticCompactState {
         self.git_commit_observed_since_last_compact |= input.git_commit_observed;
     }
 
-    pub fn record_compaction_finished(&mut self, reason: Option<ContextReductionReason>) {
+    pub fn record_compaction_finished(&mut self, _reason: Option<ContextReductionReason>) {
         self.semantic_cooldown_remaining_turns = SEMANTIC_COOLDOWN_TURNS;
         self.regular_turns_since_last_compact = 0;
         self.continuation_turns_since_last_compact = 0;
         self.work_tokens_since_last_compact = 0;
         self.tool_calls_since_last_compact = 0;
         self.git_commit_observed_since_last_compact = false;
-        if reason == Some(ContextReductionReason::EarlyContextPressure) {
-            self.early_context_pressure_state
-                .record_reduction_finished(ContextReductionPolicy::default());
-        }
+        self.early_context_pressure_state
+            .record_reduction_finished(ContextReductionPolicy::default());
     }
 
     pub fn decide(&self, input: SemanticCompactInput) -> SemanticCompactDecision {
@@ -194,7 +224,7 @@ impl SemanticCompactState {
 
         if matches!(
             self.early_context_pressure_state.decide(
-                ContextReductionPolicy::default(),
+                input.policy,
                 ContextReductionInput {
                     total_usage_tokens: input.total_usage_tokens,
                     auto_compact_limit: input.auto_compact_limit,
@@ -336,6 +366,7 @@ mod tests {
     fn semantic_input(enabled: bool, total_usage_tokens: i64) -> SemanticCompactInput {
         SemanticCompactInput {
             enabled,
+            policy: ContextReductionPolicy::default(),
             total_usage_tokens,
             auto_compact_limit: 100_000,
             visible_context_percent_used: None,
@@ -349,6 +380,7 @@ mod tests {
     ) -> SemanticCompactInput {
         SemanticCompactInput {
             enabled,
+            policy: ContextReductionPolicy::default(),
             total_usage_tokens,
             auto_compact_limit: 100_000,
             visible_context_percent_used: Some(visible_context_percent_used),
@@ -398,6 +430,83 @@ mod tests {
                 100_001
             ),
             Some(20_001)
+        );
+    }
+
+    #[test]
+    fn semantic_early_pressure_uses_configured_policy() {
+        let state = SemanticCompactState::default();
+        let policy = ContextReductionPolicy::new(35, DEFAULT_TURN_COOLDOWN);
+
+        assert_eq!(
+            state.decide(SemanticCompactInput {
+                enabled: true,
+                policy,
+                total_usage_tokens: 34_999,
+                auto_compact_limit: 100_000,
+                visible_context_percent_used: None,
+            }),
+            SemanticCompactDecision::Skip
+        );
+        assert_eq!(
+            state.decide(SemanticCompactInput {
+                enabled: true,
+                policy,
+                total_usage_tokens: 35_000,
+                auto_compact_limit: 100_000,
+                visible_context_percent_used: None,
+            }),
+            SemanticCompactDecision::Compact {
+                reason: ContextReductionReason::EarlyContextPressure,
+            }
+        );
+    }
+
+    #[test]
+    fn observed_visible_percent_uses_configured_policy() {
+        let mut state = SemanticCompactState::default();
+        let policy = ContextReductionPolicy::new(35, DEFAULT_TURN_COOLDOWN);
+
+        state.observe_visible_context_percent(policy, Some(34));
+        assert_eq!(
+            state.decide(SemanticCompactInput {
+                enabled: true,
+                policy,
+                total_usage_tokens: 1,
+                auto_compact_limit: 100_000,
+                visible_context_percent_used: None,
+            }),
+            SemanticCompactDecision::Skip
+        );
+
+        state.observe_visible_context_percent(policy, Some(35));
+        assert_eq!(
+            state.decide(SemanticCompactInput {
+                enabled: true,
+                policy,
+                total_usage_tokens: 1,
+                auto_compact_limit: 100_000,
+                visible_context_percent_used: None,
+            }),
+            SemanticCompactDecision::Compact {
+                reason: ContextReductionReason::EarlyContextPressure,
+            }
+        );
+    }
+
+    #[test]
+    fn zero_percent_policy_disables_semantic_early_pressure() {
+        let state = SemanticCompactState::default();
+
+        assert_eq!(
+            state.decide(SemanticCompactInput {
+                enabled: true,
+                policy: ContextReductionPolicy::new(0, DEFAULT_TURN_COOLDOWN),
+                total_usage_tokens: 99_999,
+                auto_compact_limit: 100_000,
+                visible_context_percent_used: Some(100),
+            }),
+            SemanticCompactDecision::Skip
         );
     }
 
@@ -483,19 +592,54 @@ mod tests {
     }
 
     #[test]
-    fn early_pressure_cooldown_requires_twenty_four_regular_turns() {
+    fn observed_visible_context_percent_latches_until_decision() {
+        let mut state = SemanticCompactState::default();
+        state.observe_visible_context_percent(
+            ContextReductionPolicy::default(),
+            Some(i64::from(DEFAULT_TRIGGER_CONTEXT_PERCENT)),
+        );
+        state.observe_visible_context_percent(
+            ContextReductionPolicy::default(),
+            Some(i64::from(DEFAULT_TRIGGER_CONTEXT_PERCENT) - 1),
+        );
+
+        assert_eq!(
+            state.decide(semantic_input(false, 1)),
+            SemanticCompactDecision::Compact {
+                reason: ContextReductionReason::EarlyContextPressure,
+            }
+        );
+    }
+
+    #[test]
+    fn non_early_compaction_clears_observed_visible_context_percent() {
+        let mut state = SemanticCompactState::default();
+        state.observe_visible_context_percent(
+            ContextReductionPolicy::default(),
+            Some(i64::from(DEFAULT_TRIGGER_CONTEXT_PERCENT)),
+        );
+        state.record_compaction_finished(Some(ContextReductionReason::SemanticCheckpoint));
+
+        assert_eq!(
+            state.decide(semantic_input(false, 1)),
+            SemanticCompactDecision::Skip
+        );
+    }
+
+    #[test]
+    fn early_pressure_cooldown_requires_twenty_four_model_moves() {
         let mut state = SemanticCompactState::default();
         state.record_compaction_finished(Some(ContextReductionReason::EarlyContextPressure));
 
         for _ in 0..23 {
-            state.record_regular_turn_finished(turn_input(1));
+            state.record_model_move_finished();
             assert_eq!(
                 state.decide(semantic_input(false, 20_000)),
                 SemanticCompactDecision::Skip
             );
         }
 
-        state.record_regular_turn_finished(turn_input(1));
+        state.record_model_move_finished();
         assert_eq!(
             state.decide(semantic_input(false, 20_000)),
             SemanticCompactDecision::Compact {
@@ -510,14 +654,14 @@ mod tests {
         state.record_compaction_finished(Some(ContextReductionReason::EarlyContextPressure));
 
         for _ in 0..23 {
-            state.record_regular_turn_finished(turn_input(1));
+            state.record_model_move_finished();
             assert_eq!(
                 state.decide(semantic_input_with_visible_percent(false, 1, 20)),
                 SemanticCompactDecision::Skip
             );
         }
 
-        state.record_regular_turn_finished(turn_input(1));
+        state.record_model_move_finished();
         assert_eq!(
             state.decide(semantic_input_with_visible_percent(false, 1, 20)),
             SemanticCompactDecision::Compact {
@@ -527,10 +671,19 @@ mod tests {
     }
 
     #[test]
-    fn other_compactions_do_not_start_early_pressure_cooldown() {
+    fn other_compactions_start_early_pressure_cooldown() {
         let mut state = SemanticCompactState::default();
         state.record_compaction_finished(Some(ContextReductionReason::SemanticCheckpoint));
 
+        for _ in 0..23 {
+            state.record_model_move_finished();
+            assert_eq!(
+                state.decide(semantic_input(false, 20_000)),
+                SemanticCompactDecision::Skip
+            );
+        }
+
+        state.record_model_move_finished();
         assert_eq!(
             state.decide(semantic_input(false, 20_000)),
             SemanticCompactDecision::Compact {
@@ -540,25 +693,25 @@ mod tests {
     }
 
     #[test]
-    fn other_compactions_do_not_reset_early_pressure_cooldown() {
+    fn other_compactions_reset_early_pressure_cooldown() {
         let mut state = SemanticCompactState::default();
         state.record_compaction_finished(Some(ContextReductionReason::EarlyContextPressure));
 
         for _ in 0..12 {
-            state.record_regular_turn_finished(turn_input(1));
+            state.record_model_move_finished();
         }
 
         state.record_compaction_finished(Some(ContextReductionReason::ContextLimit));
 
-        for _ in 0..11 {
-            state.record_regular_turn_finished(turn_input(1));
+        for _ in 0..23 {
+            state.record_model_move_finished();
             assert_eq!(
                 state.decide(semantic_input_with_visible_percent(false, 1, 20)),
                 SemanticCompactDecision::Skip
             );
         }
 
-        state.record_regular_turn_finished(turn_input(1));
+        state.record_model_move_finished();
         assert_eq!(
             state.decide(semantic_input_with_visible_percent(false, 1, 20)),
             SemanticCompactDecision::Compact {
@@ -577,6 +730,7 @@ mod tests {
         assert_eq!(
             state.decide(SemanticCompactInput {
                 enabled: true,
+                policy: ContextReductionPolicy::default(),
                 total_usage_tokens: 50_000,
                 auto_compact_limit: 1_000_000,
                 visible_context_percent_used: None,
@@ -650,6 +804,21 @@ mod tests {
                 semantic_compact_decision: SemanticCompactDecision::Skip,
             }),
             Some(PostSamplingAutoCompactAction::AfterFinalResponse(
+                ContextReductionReason::ContextLimit
+            ))
+        );
+    }
+
+    #[test]
+    fn post_sampling_context_limit_compacts_before_follow_up() {
+        assert_eq!(
+            post_sampling_auto_compact_action(PostSamplingAutoCompactInput {
+                needs_follow_up: true,
+                total_usage_tokens: 100_000,
+                auto_compact_limit: 100_000,
+                semantic_compact_decision: SemanticCompactDecision::Skip,
+            }),
+            Some(PostSamplingAutoCompactAction::BeforeFollowUp(
                 ContextReductionReason::ContextLimit
             ))
         );

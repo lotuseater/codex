@@ -16,7 +16,7 @@ pub fn normalize_output_image_detail(
             Some(ImageDetail::Original)
         }
         Some(ImageDetail::Original) | None => None,
-        Some(ImageDetail::High) => Some(ImageDetail::High),
+        Some(detail @ (ImageDetail::Auto | ImageDetail::Low | ImageDetail::High)) => Some(detail),
     }
 }
 

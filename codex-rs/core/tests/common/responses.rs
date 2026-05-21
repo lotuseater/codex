@@ -627,6 +627,29 @@ pub fn ev_completed(id: &str) -> Value {
     })
 }
 
+pub fn ev_incomplete(id: &str, reason: &str) -> Value {
+    ev_incomplete_with_tokens(id, reason, 0)
+}
+
+pub fn ev_incomplete_with_tokens(id: &str, reason: &str, total_tokens: i64) -> Value {
+    serde_json::json!({
+        "type": "response.incomplete",
+        "response": {
+            "id": id,
+            "incomplete_details": {
+                "reason": reason
+            },
+            "usage": {
+                "input_tokens": total_tokens,
+                "input_tokens_details": null,
+                "output_tokens": 0,
+                "output_tokens_details": null,
+                "total_tokens": total_tokens
+            }
+        }
+    })
+}
+
 /// Convenience: SSE event for a created response with a specific id.
 pub fn ev_response_created(id: &str) -> Value {
     serde_json::json!({

@@ -42,6 +42,8 @@ where
 }
 
 impl ToolExecutor<ToolInvocation> for CodeModeWaitHandler {
+    type Output = Box<dyn crate::tools::context::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         ToolName::plain(WAIT_TOOL_NAME)
     }

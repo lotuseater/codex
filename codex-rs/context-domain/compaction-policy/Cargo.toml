@@ -1,0 +1,13 @@
+[package]
+edition.workspace = true
+license.workspace = true
+name = "codex-compaction-policy"
+version.workspace = true
+
+[lib]
+doctest = false
+name = "codex_compaction_policy"
+path = "src/lib.rs"
+
+[lints]
+workspace = true

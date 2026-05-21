@@ -89,6 +89,7 @@ codex-login = { workspace = true }
 codex-memories-context = { workspace = true }
 codex-memories-read = { workspace = true }
 codex-mcp = { workspace = true }
+codex-mcp-elicitation-api = { workspace = true }
 codex-model-provider-info = { workspace = true, features = ["runtime"] }
 codex-models-manager = { workspace = true }
 codex-shell-command = { workspace = true }

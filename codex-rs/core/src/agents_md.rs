@@ -16,7 +16,7 @@
 //! 3.  We do **not** walk past the project root.
 
 use crate::config::Config;
-use codex_app_server_protocol::ConfigLayerSource;
+use codex_config::ConfigLayerSource;
 use codex_config::ConfigLayerStackOrdering;
 use codex_config::default_project_root_markers;
 use codex_config::merge_toml_values;

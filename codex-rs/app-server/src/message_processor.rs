@@ -67,6 +67,7 @@ use codex_arg0::Arg0DispatchPaths;
 use codex_chatgpt::workspace_settings;
 use codex_core::ThreadManager;
 use codex_core::config::Config;
+use codex_core::config::ThreadStoreConfig;
 use codex_exec_server::EnvironmentManager;
 use codex_feedback::CodexFeedback;
 use codex_login::AuthManager;
@@ -79,6 +80,9 @@ use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::W3cTraceContext;
 use codex_rollout::StateDbHandle;
 use codex_state::log_db::LogDbLayer;
+use codex_thread_store::StoreLiveThreadFactory;
+use codex_thread_store::ThreadStoreSelection;
+use codex_thread_store::thread_store_from_config;
 use tokio::sync::Mutex;
 use tokio::sync::Semaphore;
 use tokio::sync::broadcast;
@@ -271,6 +275,13 @@ pub(crate) struct MessageProcessorArgs {
     pub(crate) plugin_startup_tasks: crate::PluginStartupTasks,
 }
 
+pub(crate) fn thread_store_selection(config: &Config) -> ThreadStoreSelection {
+    match &config.experimental_thread_store {
+        ThreadStoreConfig::Local => ThreadStoreSelection::Local,
+        ThreadStoreConfig::InMemory { id } => ThreadStoreSelection::InMemory { id: id.clone() },
+    }
+}
+
 impl MessageProcessor {
     /// Create a new `MessageProcessor`, retaining a handle to the outgoing
     /// `Sender` so handlers can enqueue messages to be written to stdout.
@@ -300,7 +311,12 @@ impl MessageProcessor {
         // The thread store is intentionally process-scoped. Config reloads can
         // affect per-thread behavior, but they must not move newly started,
         // resumed, or forked threads to a different persistence backend/root.
-        let thread_store = codex_core::thread_store_from_config(config.as_ref(), state_db.clone());
+        let thread_store = thread_store_from_config(
+            config.as_ref(),
+            thread_store_selection(config.as_ref()),
+            state_db.clone(),
+        );
+        let live_thread_factory = Arc::new(StoreLiveThreadFactory::new());
         let environment_manager_for_requests = Arc::clone(&environment_manager);
         let thread_manager = Arc::new_cyclic(|thread_manager| {
             ThreadManager::new(
@@ -311,6 +327,7 @@ impl MessageProcessor {
                 thread_extensions(guardian_agent_spawner(thread_manager.clone())),
                 Some(analytics_events_client.clone()),
                 Arc::clone(&thread_store),
+                live_thread_factory.clone(),
                 state_db.clone(),
                 installation_id,
                 Some(app_server_attestation_provider(

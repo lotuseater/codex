@@ -4,6 +4,132 @@ Date: 2026-05-20
 
 ## Latest Update
 
+### 2026-05-21T03:13+03:00 no-build resume wave launched
+
+- Root verified the current orchestration state after interruption:
+  - `codex_otel_compile_followup_worker` finished a source fix in
+    `codex-rs/otel/src/events/session_telemetry.rs`; release verification was
+    interrupted/deferred and no commit was created.
+  - `config_connectors_boundary_worker` finished its source refactor slice in
+    `codex-rs/config/**` and `codex-rs/connectors/**`; no commit was created
+    because verification and ownership grouping are still deferred.
+  - `app_server_boundary_finish_worker` was interrupted during an app-server
+    release check/build and wrote no handoff. Treat it as stale, not active.
+  - `core_protocol_dependency_followup_worker` has a prompt/marker but no live
+    process and no handoff. Treat it as stale, not active.
+- Root launched the next refactor-first/no-build wave:
+  `app_server_boundary_resume_worker`,
+  `core_protocol_dependency_resume_worker`, and
+  `dirty_tree_ownership_mapper_worker`.
+- All next-wave workers are instructed not to run `cargo`, `rustc`, `just`,
+  build scripts, tests, schema generation, or subagents. If they need
+  verification they must record exact commands for root/endgame and stop.
+- Root should monitor for accidental build processes and stop only that build
+  tree; useful refactor workers should continue when possible.
+- Additional safe parallelism after launch:
+  `scratch_cleanup_inventory_worker`,
+  `manifest_dependency_inventory_worker`, and
+  `verification_matrix_planner_worker`.
+  These are read-only/no-build workers. They should not edit code, manifests, or
+  handoffs other than their own handoff files. They exist to prepare cleanup,
+  dependency ownership, and endgame verification sequencing while the edit
+  workers run.
+- Delegated review follow-up:
+  `orchestration_artifacts_review_worker` found two prompt path defects after
+  launch. Root fixed them in the prompt files:
+  - `app_server_boundary_resume_worker.prompt.md` now points at
+    `codex-rs/app-server-protocol/src/protocol/v2/mod.rs` plus relevant split
+    v2 modules instead of missing `protocol/v2.rs`.
+  - `verification_matrix_planner_worker.prompt.md` now points at root
+    `justfile` instead of missing `codex-rs/justfile`.
+  The affected sessions were launched before these prompt-file fixes; do not
+  duplicate the app-server edit worker unless it reports that the stale first
+  read blocked progress.
+- Completed handoffs received from this wave:
+  - `app_server_boundary_resume_worker`: source-only resume completed in
+    app-server/app-server-protocol ownership. It handled the stale missing
+    `protocol/v2.rs` prompt path by using the split v2 module layout. No
+    outside-owner blocker was found. Verification, schema refresh, and root
+    lockfile updates remain deferred to endgame.
+  - `dirty_tree_ownership_mapper_worker`: read-only dirty-tree ownership map
+    completed. It groups the moving tree by family and recommends narrow
+    reconcilers by ownership family, not broad directory. Suggested eventual
+    commit order: workflow/handoffs, codex-otel compile unblocker,
+    config/connectors, app-catalog/app-server boundary,
+    thread-store relocation/projection, core tools/plugin/skill, core test
+    split, domain crate/manifest wiring, docs.
+  - `scratch_cleanup_inventory_worker`: read-only artifact inventory completed.
+    `.gitignore` already covers active prompt/marker/report scratch patterns;
+    root should keep durable `*.handoff.md` files and delete stale scratch only
+    after corresponding handoffs are preserved.
+  - `verification_matrix_planner_worker`: read-only deferred verification
+    matrix completed. It did not run build/test/schema/lock commands. Use it
+    after refactor source ownership is clean to stage release-only verification,
+    schema/lock updates, final build/deploy, and compaction validation.
+  - `manifest_dependency_inventory_worker`: read-only manifest/dependency
+    ownership inventory completed. It reports root workspace manifests and
+    lockfiles currently clean, identifies changed package manifests as owned by
+    their source-family workers, and defers lock/Bazel refresh until the final
+    manifest/BUILD set is stable. It also flags that source imports of
+    app-server protocol DTOs from `codex-core` still need to be resolved rather
+    than hidden by adding app-server-protocol as a core dependency.
+- Still waiting for handoffs:
+  `core_protocol_dependency_resume_worker`.
+- Duplicate manifest retry cleanup: root briefly launched
+  `manifest_dependency_inventory_retry_worker` after suspecting the original
+  died. The original produced
+  `.codex/workflow/agents/manifest_dependency_inventory_worker.handoff.md`, so
+  root stopped the retry process tree, closed the completed original wrapper,
+  and deleted only the retry marker scratch file. No build processes were
+  active during the cleanup.
+- Follow-up duplicate cleanup correction: an orphaned retry child chain later
+  started an accidental no-build-phase Cargo lane:
+  `cargo test -p codex-core --release -j 1 --test compac...`.
+  Root traced it to the stale retry Codex process, stopped the Cargo/rustc
+  build and the duplicate retry Codex process, and rechecked that no `cargo`,
+  `rustc`, `just`, linker, or compiler processes remained.
+
+### 2026-05-21T02:46+03:00 config/connectors boundary handoff integration
+
+- Received `.codex/workflow/agents/config_connectors_boundary_worker.handoff.md`.
+  The worker completed its owned source refactor slice but did not create a
+  commit because focused verification was blocked by an active Cargo lane,
+  existing unrelated dirty owned paths, and a manifest-owned connector
+  dependency change.
+- Worker-owned source changes are in `codex-rs/config/src/state.rs`,
+  `codex-rs/config/src/loader/mod.rs`, `codex-rs/config/src/lib.rs`, and
+  `codex-rs/connectors/src/lib.rs`: user config layer identity is now carried
+  by `UserConfigLayerSource`, and connector directory fetching now has
+  `ConnectorDirectoryFetchPolicy` plus
+  `list_all_connectors_with_fetch_policy`.
+- Verification reported by the handoff: `cargo fmt -p codex-config -p
+  codex-connectors` ran, and `git diff --check -- codex-rs/config
+  codex-rs/config-types codex-rs/connectors` passed with only CRLF warnings.
+  Focused `codex-config` / `codex-connectors` release tests were not started
+  because `cargo test -p codex-app-server-protocol --release -j 1` was still
+  active.
+- Next owners from the handoff: root/build owner should run focused release
+  tests for `codex-config` and `codex-connectors` after the active lane
+  finishes; manifest/root owner must decide whether the dirty connector
+  manifest and `codex_app_catalog_types` import move belong in the same
+  connector boundary slice; app-server/chatgpt owners should migrate remaining
+  external `list_all_connectors_with_options(..., force_refetch, ...)`
+  callsites to the enum-based API.
+
+### 2026-05-21T02:43+03:00 request permissions gate integration
+
+- Integrated `request_permissions_gate_worker`: handoff reports complete and
+  commit `62663cc4ed` (`solid-refactor: restore request permissions platform
+  gate`) restored the non-Windows cfg on
+  `codex-rs/core/tests/permissions.rs` for `suite/request_permissions.rs`.
+- Focused `codex-core` release verification remains deferred as reported by the
+  worker handoff: the test was not run because another live build was active and
+  free disk was low.
+- Remaining marker-only/active review follow-ups are
+  `core_protocol_dependency_followup_worker` and
+  `codex_otel_compile_followup_worker`; do not duplicate those lanes until
+  their handoffs appear or root confirms they are stale.
+
 ### 2026-05-21T01:54+03:00 root orchestration checkpoint
 
 - Integrated completed residual core test routing:
@@ -33,9 +159,9 @@ Date: 2026-05-20
   compile blocker stopped focused release verification
   (`logs/codex-core-tools-router-release-check-20260521-021708.log`).
 - Existing external sessions with markers but no handoff files yet:
-  `app_server_boundary_finish_worker`, `config_connectors_boundary_worker`,
-  `core_protocol_dependency_followup_worker`,
-  `request_permissions_gate_worker`, and `codex_otel_compile_followup_worker`.
+  `app_server_boundary_finish_worker`,
+  `core_protocol_dependency_followup_worker`, and
+  `codex_otel_compile_followup_worker`.
   Treat those lanes as active/unknown and do not duplicate their ownership until
   handoffs appear or root confirms they are stale.
 - Root launched only disjoint follow-up edit lanes at
@@ -856,10 +982,14 @@ Next external worker queue status:
 2. `core_compile_tools_worker`: handoff received; uncommitted changes await
    `codex-otel` blocker resolution and root integration.
 3. `app_server_boundary_finish_worker`: launched at 2026-05-21T01:57+03:00.
-4. `config_connectors_boundary_worker`: launched at 2026-05-21T01:57+03:00.
+4. `config_connectors_boundary_worker`: handoff received; owned source slice is
+   uncommitted pending focused release verification and manifest/root ownership
+   decision.
 5. `core_protocol_dependency_followup_worker`: launched at
    2026-05-21T02:18+03:00.
-6. `request_permissions_gate_worker`: launched at 2026-05-21T02:18+03:00.
+6. `request_permissions_gate_worker`: handoff received and code commit
+   integrated; focused release verification deferred by live build contention
+   and low free disk.
 7. `codex_otel_compile_followup_worker`: launched at
    2026-05-21T02:18+03:00.
 
@@ -876,14 +1006,20 @@ Launched at 2026-05-21 01:12 Europe/Kiev via
 Additional launched at 2026-05-21 01:57 Europe/Kiev via the same script:
 
 - `app_server_boundary_finish_worker`
-- `config_connectors_boundary_worker`
 - `compaction_output_plan_worker`
+
+Completed/uncommitted handoff received from that launch group:
+
+- `config_connectors_boundary_worker`
 
 Additional review follow-ups launched after `recent_worker_review_worker`:
 
 - `core_protocol_dependency_followup_worker`
-- `request_permissions_gate_worker`
 - `codex_otel_compile_followup_worker`
+
+Completed review follow-up integrated:
+
+- `request_permissions_gate_worker` (`62663cc4ed`)
 
 Ignored runtime prompt/marker paths for these sessions:
 

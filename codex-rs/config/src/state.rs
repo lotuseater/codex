@@ -11,6 +11,7 @@ use codex_config_types::ConfigLayerSource;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
+use std::path::Path;
 use std::path::PathBuf;
 use toml::Value as TomlValue;
 
@@ -36,6 +37,8 @@ pub struct LoaderOverrides {
     pub managed_config_path: Option<PathBuf>,
     pub system_config_path: Option<PathBuf>,
     pub system_requirements_path: Option<PathBuf>,
+    pub user_config_path: Option<AbsolutePathBuf>,
+    pub user_config_profile: Option<crate::ProfileV2Name>,
     pub ignore_managed_requirements: bool,
     pub ignore_user_config: bool,
     pub ignore_user_and_project_exec_policy_rules: bool,
@@ -55,6 +58,8 @@ impl LoaderOverrides {
             managed_config_path: Some(base.join("managed_config.toml")),
             system_config_path: Some(base.join("config.toml")),
             system_requirements_path: Some(base.join("requirements.toml")),
+            user_config_path: None,
+            user_config_profile: None,
             ignore_managed_requirements: false,
             ignore_user_config: false,
             ignore_user_and_project_exec_policy_rules: false,
@@ -71,6 +76,52 @@ impl LoaderOverrides {
         Self {
             managed_config_path: Some(managed_config_path),
             ..Self::without_managed_config_for_tests()
+        }
+    }
+
+    pub fn user_config_path(&self, codex_home: &Path) -> std::io::Result<AbsolutePathBuf> {
+        if let Some(path) = self.user_config_path.as_ref() {
+            return Ok(path.clone());
+        }
+        let file_name = self
+            .user_config_profile
+            .as_ref()
+            .map(|profile| format!("{profile}.config.toml"))
+            .unwrap_or_else(|| crate::CONFIG_TOML_FILE.to_string());
+        Ok(AbsolutePathBuf::resolve_path_against_base(
+            file_name, codex_home,
+        ))
+    }
+}
+
+/// Identifies a user config layer by its config file and optional profile-v2 name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UserConfigLayerSource {
+    pub(crate) file: AbsolutePathBuf,
+    pub(crate) profile: Option<crate::ProfileV2Name>,
+}
+
+impl UserConfigLayerSource {
+    pub fn unprofiled(file: AbsolutePathBuf) -> Self {
+        Self {
+            file,
+            profile: None,
+        }
+    }
+
+    pub fn profiled(file: AbsolutePathBuf, profile: crate::ProfileV2Name) -> Self {
+        Self {
+            file,
+            profile: Some(profile),
+        }
+    }
+}
+
+impl From<UserConfigLayerSource> for ConfigLayerSource {
+    fn from(source: UserConfigLayerSource) -> Self {
+        ConfigLayerSource::User {
+            file: source.file,
+            profile: source.profile,
         }
     }
 }
@@ -163,7 +214,7 @@ impl ConfigLayerEntry {
         match &self.name {
             ConfigLayerSource::Mdm { .. } => None,
             ConfigLayerSource::System { file } => file.parent(),
-            ConfigLayerSource::User { file } => file.parent(),
+            ConfigLayerSource::User { file, .. } => file.parent(),
             ConfigLayerSource::Project { dot_codex_folder } => Some(dot_codex_folder.clone()),
             ConfigLayerSource::SessionFlags => None,
             ConfigLayerSource::LegacyManagedConfigTomlFromFile { .. } => None,
@@ -264,6 +315,33 @@ impl ConfigLayerStack {
             .and_then(|index| self.layers.get(index))
     }
 
+    pub fn get_user_config_file(&self) -> Option<&AbsolutePathBuf> {
+        match &self.get_user_layer()?.name {
+            ConfigLayerSource::User { file, .. } => Some(file),
+            ConfigLayerSource::Mdm { .. }
+            | ConfigLayerSource::System { .. }
+            | ConfigLayerSource::Project { .. }
+            | ConfigLayerSource::SessionFlags
+            | ConfigLayerSource::LegacyManagedConfigTomlFromFile { .. }
+            | ConfigLayerSource::LegacyManagedConfigTomlFromMdm => None,
+        }
+    }
+
+    pub fn effective_user_config(&self) -> Option<TomlValue> {
+        let mut merged = TomlValue::Table(toml::map::Map::new());
+        let mut found = false;
+        for layer in self.get_layers(
+            ConfigLayerStackOrdering::LowestPrecedenceFirst,
+            /*include_disabled*/ false,
+        ) {
+            if matches!(layer.name, ConfigLayerSource::User { .. }) {
+                merge_toml_values(&mut merged, &layer.config);
+                found = true;
+            }
+        }
+        found.then_some(merged)
+    }
+
     pub fn requirements(&self) -> &ConfigRequirements {
         &self.requirements
     }
@@ -277,12 +355,18 @@ impl ConfigLayerStack {
     /// replaced; otherwise, it is inserted into the stack at the appropriate
     /// position based on precedence rules.
     pub fn with_user_config(&self, config_toml: &AbsolutePathBuf, user_config: TomlValue) -> Self {
-        self.with_user_layer(Some(ConfigLayerEntry::new(
-            ConfigLayerSource::User {
-                file: config_toml.clone(),
-            },
+        self.with_user_config_layer(
+            UserConfigLayerSource::unprofiled(config_toml.clone()),
             user_config,
-        )))
+        )
+    }
+
+    pub fn with_user_config_layer(
+        &self,
+        source: UserConfigLayerSource,
+        user_config: TomlValue,
+    ) -> Self {
+        self.with_user_layer(Some(ConfigLayerEntry::new(source.into(), user_config)))
     }
 
     /// Returns a new stack with the user layer copied from `other`, preserving
@@ -293,33 +377,62 @@ impl ConfigLayerStack {
 
     fn with_user_layer(&self, user_layer: Option<ConfigLayerEntry>) -> Self {
         let mut layers = self.layers.clone();
-        let user_layer_index = match (self.user_layer_index, user_layer) {
-            (Some(index), Some(user_layer)) => {
-                layers[index] = user_layer;
-                Some(index)
-            }
-            (Some(index), None) => {
-                layers.remove(index);
-                None
-            }
-            (None, Some(user_layer)) => {
-                let user_layer_index = match layers
-                    .iter()
-                    .position(|layer| layer.name.precedence() > user_layer.name.precedence())
-                {
-                    Some(index) => {
-                        layers.insert(index, user_layer);
-                        index
-                    }
-                    None => {
-                        layers.push(user_layer);
-                        layers.len() - 1
-                    }
+        match user_layer {
+            Some(user_layer) => {
+                let matching_index = match &user_layer.name {
+                    ConfigLayerSource::User {
+                        file: user_file, ..
+                    } => layers.iter().position(|layer| {
+                        matches!(
+                            &layer.name,
+                            ConfigLayerSource::User { file, .. } if file == user_file
+                        )
+                    }),
+                    ConfigLayerSource::Mdm { .. }
+                    | ConfigLayerSource::System { .. }
+                    | ConfigLayerSource::Project { .. }
+                    | ConfigLayerSource::SessionFlags
+                    | ConfigLayerSource::LegacyManagedConfigTomlFromFile { .. }
+                    | ConfigLayerSource::LegacyManagedConfigTomlFromMdm => None,
                 };
-                Some(user_layer_index)
+                let Some(index) = matching_index else {
+                    let user_layer_index = match layers
+                        .iter()
+                        .rposition(|layer| matches!(layer.name, ConfigLayerSource::User { .. }))
+                    {
+                        Some(index) => index + 1,
+                        None => match layers.iter().position(|layer| {
+                            layer.name.precedence() > user_layer.name.precedence()
+                        }) {
+                            Some(index) => index,
+                            None => layers.len(),
+                        },
+                    };
+                    layers.insert(user_layer_index, user_layer);
+                    let user_layer_index = layers
+                        .iter()
+                        .rposition(|layer| matches!(layer.name, ConfigLayerSource::User { .. }));
+                    return Self {
+                        layers,
+                        user_layer_index,
+                        requirements: self.requirements.clone(),
+                        requirements_toml: self.requirements_toml.clone(),
+                        ignore_user_and_project_exec_policy_rules: self
+                            .ignore_user_and_project_exec_policy_rules,
+                        startup_warnings: self.startup_warnings.clone(),
+                    };
+                };
+                layers[index] = user_layer;
             }
-            (None, None) => None,
+            None => {
+                if let Some(index) = self.user_layer_index {
+                    layers.remove(index);
+                }
+            }
         };
+        let user_layer_index = layers
+            .iter()
+            .rposition(|layer| matches!(layer.name, ConfigLayerSource::User { .. }));
         Self {
             layers,
             user_layer_index,
@@ -412,12 +525,6 @@ fn verify_layer_ordering(layers: &[ConfigLayerEntry]) -> std::io::Result<Option<
     let mut previous_project_dot_codex_folder: Option<&AbsolutePathBuf> = None;
     for (index, layer) in layers.iter().enumerate() {
         if matches!(layer.name, ConfigLayerSource::User { .. }) {
-            if user_layer_index.is_some() {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "multiple user config layers found",
-                ));
-            }
             user_layer_index = Some(index);
         }
 

@@ -21,6 +21,8 @@ use super::goal_response;
 pub struct UpdateGoalHandler;
 
 impl ToolExecutor<ToolInvocation> for UpdateGoalHandler {
+    type Output = Box<dyn crate::tools::context::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         ToolName::plain(UPDATE_GOAL_TOOL_NAME)
     }

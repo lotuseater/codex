@@ -51,19 +51,19 @@ use chrono::Utc;
 use codex_analytics::AnalyticsEventsClient;
 use codex_analytics::CompactionReason;
 use codex_analytics::SubAgentThreadStartedInput;
-use codex_app_server_protocol::McpServerElicitationRequest;
-use codex_app_server_protocol::McpServerElicitationRequestParams;
 use codex_config::types::OAuthCredentialsStoreMode;
 use codex_exec_server::Environment;
 use codex_exec_server::EnvironmentManager;
 use codex_exec_server::FileSystemSandboxContext;
 use codex_extension_api::PromptSlot;
-use codex_features::FEATURES;
 use codex_features::Feature;
+use codex_features::FEATURES;
 use codex_features::unstable_features_warning_message;
 use codex_hooks::Hooks;
 use codex_hooks::HooksConfig;
 use codex_login::AuthManager;
+use codex_mcp_elicitation_api::McpServerElicitationRequest;
+use codex_mcp_elicitation_api::McpServerElicitationRequestParams;
 use codex_login::CodexAuth;
 use codex_login::auth_env_telemetry::collect_auth_env_telemetry;
 use codex_login::default_client::originator;
@@ -134,15 +134,15 @@ use codex_rollout_trace::ThreadTraceContext;
 use codex_sandboxing::policy_transforms::intersect_permission_profiles;
 use codex_shell_command::parse_command::parse_command;
 use codex_terminal_detection::user_agent;
-use codex_thread_store::CreateThreadParams;
-use codex_thread_store::LiveThread;
-use codex_thread_store::LiveThreadInitGuard;
-use codex_thread_store::LocalThreadStore;
-use codex_thread_store::ReadThreadParams;
-use codex_thread_store::ResumeThreadParams;
-use codex_thread_store::ThreadEventPersistenceMode;
-use codex_thread_store::ThreadPersistenceMetadata;
-use codex_thread_store::ThreadStore;
+use codex_thread_store_api::CreateThreadParams;
+use codex_thread_store_api::LiveThreadFactory;
+use codex_thread_store_api::LiveThreadHandle;
+use codex_thread_store_api::ReadThreadDynamicToolsParams;
+use codex_thread_store_api::ReadThreadParams;
+use codex_thread_store_api::ResumeThreadParams;
+use codex_thread_store_api::ThreadEventPersistenceMode;
+use codex_thread_store_api::ThreadPersistenceMetadata;
+use codex_thread_store_api::ThreadStore;
 use codex_utils_output_truncation::TruncationPolicy;
 use futures::future::BoxFuture;
 use futures::future::Shared;
@@ -424,6 +424,8 @@ pub(crate) struct CodexSpawnArgs {
     pub(crate) environment_selections: ResolvedTurnEnvironments,
     pub(crate) analytics_events_client: Option<AnalyticsEventsClient>,
     pub(crate) thread_store: Arc<dyn ThreadStore>,
+    pub(crate) live_thread_factory: Arc<dyn LiveThreadFactory>,
+    pub(crate) state_db: Option<StateDbHandle>,
     pub(crate) attestation_provider: Option<Arc<dyn AttestationProvider>>,
 }
 
@@ -484,6 +486,8 @@ impl Codex {
             environment_selections,
             analytics_events_client,
             thread_store,
+            live_thread_factory,
+            state_db,
             attestation_provider,
         } = args;
         let (tx_sub, rx_sub) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);
@@ -571,20 +575,12 @@ impl Codex {
                 InitialHistory::New | InitialHistory::Cleared => None,
             };
             match thread_id {
-                Some(thread_id) => {
-                    let state_db_ctx = if config.ephemeral {
-                        None
-                    } else if let Some(local_store) =
-                        thread_store.as_any().downcast_ref::<LocalThreadStore>()
-                    {
-                        local_store.state_db().await
-                    } else {
-                        None
-                    };
-                    state_db::get_dynamic_tools(state_db_ctx.as_deref(), thread_id, "codex_spawn")
-                        .await
-                }
+                Some(thread_id) if !config.ephemeral => thread_store
+                    .read_thread_dynamic_tools(ReadThreadDynamicToolsParams { thread_id })
+                    .await
+                    .unwrap_or(None),
                 None => None,
+                Some(_) => None,
             }
         } else {
             None
@@ -670,6 +666,8 @@ impl Codex {
             environment_manager,
             analytics_events_client,
             thread_store,
+            live_thread_factory,
+            state_db,
             parent_rollout_thread_trace,
             attestation_provider,
         )
@@ -851,7 +849,7 @@ pub(crate) fn session_loop_termination_from_handle(
 }
 
 async fn thread_title_from_thread_store(
-    live_thread: Option<&LiveThread>,
+    live_thread: Option<&Arc<dyn LiveThreadHandle>>,
     thread_store: &Arc<dyn ThreadStore>,
     conversation_id: ThreadId,
 ) -> Option<String> {
@@ -1052,12 +1050,12 @@ impl Session {
     pub(crate) fn live_thread_for_persistence(
         &self,
         operation: &str,
-    ) -> anyhow::Result<&LiveThread> {
+    ) -> anyhow::Result<&Arc<dyn LiveThreadHandle>> {
         self.live_thread()
             .ok_or_else(|| anyhow::anyhow!("Session persistence is disabled; cannot {operation}."))
     }
 
-    pub(crate) fn live_thread(&self) -> Option<&LiveThread> {
+    pub(crate) fn live_thread(&self) -> Option<&Arc<dyn LiveThreadHandle>> {
         self.services.live_thread.as_ref()
     }
 
@@ -3006,8 +3004,29 @@ impl Session {
 
     pub(crate) async fn send_token_count_event(&self, turn_context: &TurnContext) {
         let (info, rate_limits) = {
-            let state = self.state.lock().await;
-            state.token_info_and_rate_limits()
+            let mut state = self.state.lock().await;
+            let (info, rate_limits) = state.token_info_and_rate_limits();
+            let visible_context_percent_used = info.as_ref().and_then(|token_info| {
+                let token_info_percent =
+                    crate::context_reduction_adapter::token_context_percent_used(
+                        token_info.last_token_usage.total_tokens,
+                        token_info.model_context_window,
+                    );
+                let active_context_percent =
+                    crate::context_reduction_adapter::token_context_percent_used(
+                        state.get_total_token_usage(state.server_reasoning_included()),
+                        token_info.model_context_window,
+                    );
+                [token_info_percent, active_context_percent]
+                    .into_iter()
+                    .flatten()
+                    .max()
+            });
+            state.observe_visible_context_percent_for_semantic_compact(
+                crate::context_reduction_adapter::context_reduction_policy(),
+                visible_context_percent_used,
+            );
+            (info, rate_limits)
         };
         let event = EventMsg::TokenCount(TokenCountEvent { info, rate_limits });
         self.send_event(turn_context, event).await;

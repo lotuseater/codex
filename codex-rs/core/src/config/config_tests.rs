@@ -64,6 +64,7 @@ use codex_config::types::TuiNotificationSettings;
 use codex_config::types::TuiPetAnchor;
 use codex_config::types::WindowsSandboxModeToml;
 use codex_config::types::WindowsToml;
+use codex_context_reduction::DEFAULT_TRIGGER_CONTEXT_PERCENT;
 use codex_core_plugins::PluginsManager;
 use codex_exec_server::LOCAL_FS;
 use codex_features::Feature;
@@ -216,6 +217,62 @@ async fn load_config_normalizes_relative_cwd_override() -> std::io::Result<()> {
     .await?;
 
     assert_eq!(config.cwd, expected_cwd);
+    Ok(())
+}
+
+#[tokio::test]
+async fn load_config_resolves_model_compact_percentage() -> std::io::Result<()> {
+    let codex_home = tempdir()?;
+    let default_config = Config::load_from_base_config_with_overrides(
+        ConfigToml::default(),
+        ConfigOverrides::default(),
+        codex_home.abs(),
+    )
+    .await?;
+
+    assert_eq!(
+        default_config.model_compact_percentage,
+        DEFAULT_TRIGGER_CONTEXT_PERCENT
+    );
+
+    let codex_home = tempdir()?;
+    let configured = Config::load_from_base_config_with_overrides(
+        ConfigToml {
+            model_compact_percentage: Some(35),
+            ..Default::default()
+        },
+        ConfigOverrides::default(),
+        codex_home.abs(),
+    )
+    .await?;
+
+    assert_eq!(configured.model_compact_percentage, 35);
+    Ok(())
+}
+
+#[tokio::test]
+async fn load_config_warns_and_defaults_invalid_model_compact_percentage() -> std::io::Result<()> {
+    let codex_home = tempdir()?;
+    let config = Config::load_from_base_config_with_overrides(
+        ConfigToml {
+            model_compact_percentage: Some(101),
+            ..Default::default()
+        },
+        ConfigOverrides::default(),
+        codex_home.abs(),
+    )
+    .await?;
+
+    assert_eq!(
+        config.model_compact_percentage,
+        DEFAULT_TRIGGER_CONTEXT_PERCENT
+    );
+    assert!(
+        config
+            .startup_warnings
+            .iter()
+            .any(|warning| warning.contains("model_compact_percentage"))
+    );
     Ok(())
 }
 
@@ -7829,6 +7886,7 @@ async fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             review_model: None,
             model_context_window: None,
             model_auto_compact_token_limit: None,
+            model_compact_percentage: DEFAULT_TRIGGER_CONTEXT_PERCENT,
             model_auto_compact_token_limit_scope: AutoCompactTokenLimitScope::Total,
             service_tier: None,
             context_budget_mode: ContextBudgetMode::Slow,
@@ -8338,6 +8396,7 @@ async fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         review_model: None,
         model_context_window: None,
         model_auto_compact_token_limit: None,
+        model_compact_percentage: DEFAULT_TRIGGER_CONTEXT_PERCENT,
         model_auto_compact_token_limit_scope: AutoCompactTokenLimitScope::Total,
         service_tier: None,
         context_budget_mode: ContextBudgetMode::Slow,
@@ -8512,6 +8571,7 @@ async fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         review_model: None,
         model_context_window: None,
         model_auto_compact_token_limit: None,
+        model_compact_percentage: DEFAULT_TRIGGER_CONTEXT_PERCENT,
         model_auto_compact_token_limit_scope: AutoCompactTokenLimitScope::Total,
         service_tier: None,
         context_budget_mode: ContextBudgetMode::Slow,
@@ -8671,6 +8731,7 @@ async fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         review_model: None,
         model_context_window: None,
         model_auto_compact_token_limit: None,
+        model_compact_percentage: DEFAULT_TRIGGER_CONTEXT_PERCENT,
         model_auto_compact_token_limit_scope: AutoCompactTokenLimitScope::Total,
         service_tier: None,
         context_budget_mode: ContextBudgetMode::Slow,

@@ -2,6 +2,18 @@ use super::*;
 use crate::error_code::method_not_found;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
+use codex_thread_store_api::ArchiveThreadParams as StoreArchiveThreadParams;
+use codex_thread_store_api::GitInfoPatch as StoreGitInfoPatch;
+use codex_thread_store_api::ListThreadsParams as StoreListThreadsParams;
+use codex_thread_store_api::ReadThreadByRolloutPathParams as StoreReadThreadByRolloutPathParams;
+use codex_thread_store_api::ReadThreadParams as StoreReadThreadParams;
+use codex_thread_store_api::SortDirection as StoreSortDirection;
+use codex_thread_store_api::StoredThread;
+use codex_thread_store_api::StoredThreadHistory;
+use codex_thread_store_api::ThreadMetadataPatch as StoreThreadMetadataPatch;
+use codex_thread_store_api::ThreadSortKey as StoreThreadSortKey;
+use codex_thread_store_api::ThreadStore;
+use codex_thread_store_api::ThreadStoreError;
 
 const THREAD_LIST_DEFAULT_LIMIT: usize = 25;
 const THREAD_LIST_MAX_LIMIT: usize = 100;
@@ -3317,26 +3329,15 @@ impl ThreadRequestProcessor {
                 })
                 .await
                 .map_err(|err| conversation_summary_thread_id_read_error(conversation_id, err)),
-            GetConversationSummaryParams::RolloutPath { rollout_path } => {
-                let Some(local_thread_store) = self
-                    .thread_store
-                    .as_any()
-                    .downcast_ref::<LocalThreadStore>()
-                else {
-                    return Err(invalid_request(
-                        "rollout path queries are only supported with the local thread store",
-                    ));
-                };
-
-                local_thread_store
-                    .read_thread_by_rollout_path(
-                        rollout_path.clone(),
-                        /*include_archived*/ true,
-                        /*include_history*/ false,
-                    )
-                    .await
-                    .map_err(|err| conversation_summary_rollout_path_read_error(&rollout_path, err))
-            }
+            GetConversationSummaryParams::RolloutPath { rollout_path } => self
+                .thread_store
+                .read_thread_by_rollout_path(StoreReadThreadByRolloutPathParams {
+                    rollout_path: rollout_path.clone(),
+                    include_archived: true,
+                    include_history: false,
+                })
+                .await
+                .map_err(|err| conversation_summary_rollout_path_read_error(&rollout_path, err)),
         };
 
         let stored_thread = read_result?;
@@ -3791,7 +3792,7 @@ pub(crate) fn thread_from_stored_thread(
     thread: StoredThread,
     fallback_provider: &str,
     fallback_cwd: &AbsolutePathBuf,
-) -> (Thread, Option<codex_thread_store::StoredThreadHistory>) {
+) -> (Thread, Option<StoredThreadHistory>) {
     let path = thread.rollout_path;
     let git_info = thread.git_info.map(|info| ApiGitInfo {
         sha: info.commit_hash.map(|sha| sha.0),

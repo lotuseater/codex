@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use codex_app_server_protocol::AppInfo;
+use codex_app_catalog_types::AppInfo;
 use codex_app_server_protocol::McpElicitationObjectType;
 use codex_app_server_protocol::McpElicitationSchema;
 use codex_app_server_protocol::McpServerElicitationRequest;

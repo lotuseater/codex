@@ -8,6 +8,8 @@ use std::sync::Arc;
 pub(crate) struct Handler;
 
 impl ToolExecutor<ToolInvocation> for Handler {
+    type Output = Box<dyn crate::tools::context::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         ToolName::namespaced(MULTI_AGENT_V1_NAMESPACE, "resume_agent")
     }

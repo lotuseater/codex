@@ -46,6 +46,8 @@ impl McpHandler {
 }
 
 impl ToolExecutor<ToolInvocation> for McpHandler {
+    type Output = Box<dyn crate::tools::context::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         self.tool_info.canonical_tool_name()
     }

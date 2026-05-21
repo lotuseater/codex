@@ -2677,6 +2677,7 @@ dependencies = [
  "codex-hooks",
  "codex-login",
  "codex-mcp",
+ "codex-mcp-elicitation-api",
  "codex-memories-context",
  "codex-memories-read",
  "codex-model-provider",

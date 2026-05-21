@@ -341,6 +341,7 @@ fn access_covers(requested: FileSystemAccessMode, granted: FileSystemAccessMode)
         FileSystemAccessMode::Read => requested.can_read(),
         FileSystemAccessMode::Write => requested.can_write(),
         FileSystemAccessMode::Deny => false,
+        FileSystemAccessMode::None => false,
     }
 }
 

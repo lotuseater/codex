@@ -419,6 +419,10 @@ impl SessionTelemetry {
             ResponseEvent::Completed {
                 token_usage: Some(token_usage),
                 ..
+            }
+            | ResponseEvent::Incomplete {
+                token_usage: Some(token_usage),
+                ..
             } => {
                 handle_responses_span.record("gen_ai.usage.input_tokens", token_usage.input_tokens);
                 handle_responses_span.record(
@@ -1176,6 +1180,7 @@ impl SessionTelemetry {
                 SessionTelemetry::responses_item_type(item)
             }
             ResponseEvent::Completed { .. } => "completed".into(),
+            ResponseEvent::Incomplete { .. } => "incomplete".into(),
             ResponseEvent::OutputTextDelta(_) => "text_delta".into(),
             ResponseEvent::ToolCallInputDelta { .. } => "tool_input_delta".into(),
             ResponseEvent::ReasoningSummaryDelta { .. } => "reasoning_summary_delta".into(),

@@ -1,6 +1,7 @@
 use crate::session::turn_context::TurnContext;
 use codex_analytics::CompactionReason;
 use codex_context_reduction::AutoCompactBudgetMode;
+use codex_context_reduction::ContextReductionPolicy;
 use codex_context_reduction::ContextReductionReason;
 use codex_context_reduction::ModelAutoCompactLimits;
 use codex_context_reduction::SemanticCompactInput;
@@ -55,6 +56,10 @@ pub(crate) fn semantic_auto_compact_enabled(turn_context: &TurnContext) -> bool 
         && turn_context.collaboration_mode.mode != ModeKind::Plan
 }
 
+pub(crate) fn context_reduction_policy() -> ContextReductionPolicy {
+    ContextReductionPolicy::default()
+}
+
 pub(crate) fn semantic_compact_input(
     turn_context: &TurnContext,
     total_usage_tokens: i64,
@@ -63,9 +68,28 @@ pub(crate) fn semantic_compact_input(
 ) -> SemanticCompactInput {
     SemanticCompactInput {
         enabled: semantic_auto_compact_enabled(turn_context),
+        policy: context_reduction_policy(),
         total_usage_tokens,
         auto_compact_limit,
         visible_context_percent_used,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use codex_context_reduction::DEFAULT_TRIGGER_CONTEXT_PERCENT;
+    use codex_context_reduction::DEFAULT_TURN_COOLDOWN;
+
+    #[test]
+    fn context_reduction_policy_is_fixed_twenty_percent_with_twenty_four_turn_cooldown() {
+        let policy = context_reduction_policy();
+
+        assert_eq!(
+            policy.trigger_context_percent(),
+            DEFAULT_TRIGGER_CONTEXT_PERCENT
+        );
+        assert_eq!(policy.turn_cooldown(), DEFAULT_TURN_COOLDOWN);
     }
 }
 

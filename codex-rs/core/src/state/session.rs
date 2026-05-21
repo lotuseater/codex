@@ -46,6 +46,14 @@ pub(crate) struct SessionState {
     granted_permissions: Option<AdditionalPermissionProfile>,
     next_turn_is_first: bool,
     restored_session_auto_compact_pending: bool,
+    post_turn_compact_max_output_suppression: Option<PostTurnCompactSuppression>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PostTurnCompactSuppression {
+    history_version: u64,
+    total_usage_tokens: i64,
+    auto_compact_limit: i64,
 }
 
 impl SessionState {
@@ -69,6 +77,7 @@ impl SessionState {
             granted_permissions: None,
             next_turn_is_first: true,
             restored_session_auto_compact_pending: false,
+            post_turn_compact_max_output_suppression: None,
         }
     }
 
@@ -113,6 +122,10 @@ impl SessionState {
 
     pub(crate) fn clone_history(&self) -> ContextManager {
         self.history.clone()
+    }
+
+    pub(crate) fn history_version(&self) -> u64 {
+        self.history.history_version()
     }
 
     pub(crate) fn replace_history(
@@ -263,6 +276,19 @@ impl SessionState {
             .record_regular_turn_finished(input);
     }
 
+    pub(crate) fn record_model_move_finished_for_semantic_compact(&mut self) {
+        self.semantic_compact_state.record_model_move_finished();
+    }
+
+    pub(crate) fn observe_visible_context_percent_for_semantic_compact(
+        &mut self,
+        policy: codex_context_reduction::ContextReductionPolicy,
+        visible_context_percent_used: Option<i64>,
+    ) {
+        self.semantic_compact_state
+            .observe_visible_context_percent(policy, visible_context_percent_used);
+    }
+
     pub(crate) fn record_compaction_finished_for_semantic_compact(
         &mut self,
         reason: Option<ContextReductionReason>,
@@ -276,6 +302,38 @@ impl SessionState {
         input: SemanticCompactInput,
     ) -> SemanticCompactDecision {
         self.semantic_compact_state.decide(input)
+    }
+
+    pub(crate) fn is_post_turn_compact_max_output_suppressed(
+        &self,
+        total_usage_tokens: i64,
+        auto_compact_limit: i64,
+    ) -> bool {
+        self.post_turn_compact_max_output_suppression
+            == Some(
+                self.post_turn_compact_suppression_marker(total_usage_tokens, auto_compact_limit),
+            )
+    }
+
+    pub(crate) fn record_post_turn_compact_max_output_suppression(
+        &mut self,
+        total_usage_tokens: i64,
+        auto_compact_limit: i64,
+    ) {
+        self.post_turn_compact_max_output_suppression =
+            Some(self.post_turn_compact_suppression_marker(total_usage_tokens, auto_compact_limit));
+    }
+
+    fn post_turn_compact_suppression_marker(
+        &self,
+        total_usage_tokens: i64,
+        auto_compact_limit: i64,
+    ) -> PostTurnCompactSuppression {
+        PostTurnCompactSuppression {
+            history_version: self.history_version(),
+            total_usage_tokens,
+            auto_compact_limit,
+        }
     }
 
     pub(crate) fn git_checkpoint_baseline_dirty_paths(

@@ -14,6 +14,8 @@ use super::*;
 pub struct ReportAgentJobResultHandler;
 
 impl ToolExecutor<ToolInvocation> for ReportAgentJobResultHandler {
+    type Output = Box<dyn crate::tools::context::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         ToolName::plain("report_agent_job_result")
     }

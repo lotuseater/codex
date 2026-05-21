@@ -28,8 +28,9 @@ use codex_models_manager::manager::SharedModelsManager;
 use codex_otel::SessionTelemetry;
 use codex_rollout::state_db::StateDbHandle;
 use codex_rollout_trace::ThreadTraceContext;
-use codex_thread_store::LiveThread;
-use codex_thread_store::ThreadStore;
+use codex_thread_store_api::LiveThreadFactory;
+use codex_thread_store_api::LiveThreadHandle;
+use codex_thread_store_api::ThreadStore;
 use std::path::PathBuf;
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
@@ -69,8 +70,9 @@ pub(crate) struct SessionServices {
     pub(crate) network_proxy: Option<StartedNetworkProxy>,
     pub(crate) network_approval: Arc<NetworkApprovalService>,
     pub(crate) state_db: Option<StateDbHandle>,
-    pub(crate) live_thread: Option<LiveThread>,
+    pub(crate) live_thread: Option<Arc<dyn LiveThreadHandle>>,
     pub(crate) thread_store: Arc<dyn ThreadStore>,
+    pub(crate) live_thread_factory: Arc<dyn LiveThreadFactory>,
     pub(crate) attestation_provider: Option<Arc<dyn AttestationProvider>>,
     /// Session-scoped model client shared across turns.
     pub(crate) model_client: ModelClient,

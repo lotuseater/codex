@@ -91,10 +91,17 @@ The turn loop must not import session concrete types. Session runtime starts a t
 
 Move app-server protocol leakage out of core:
 
+- Start with config provenance. Replace core imports of
+  `codex_app_server_protocol::ConfigLayerSource` with the existing
+  `codex_config_types::ConfigLayerSource` owner before touching broader wire
+  projection types.
 - Create core-owned types for auth mode, config layer source/provenance, app info/branding/metadata, dynamic tool response shape, and notification-neutral event DTOs.
 - Move all conversions between core-owned types and app-server protocol types to app-server/TUI-client adapter crates.
 - Remove `codex-app-server-protocol` from `codex-core` and from new domain/API crates.
 - Reclassify `codex-core-api`: either delete facade-only exports as callers migrate, or keep it only as an outer client facade that may not be used by domain crates.
+- Do not start this phase with MCP elicitation request/schema types,
+  `ThreadHistoryBuilder`, or `TurnStatus`; those are wire/projection boundaries
+  that need their own review.
 
 ## Phase 6: Tool, Context, And Runtime Ports
 
@@ -121,6 +128,14 @@ Commit logical slices even if the project does not compile:
 10. Continue with tool/context/runtime splits as separate commits.
 
 Stage only files owned by the active slice. Never include unrelated dirty work in these commits.
+
+## Subagent Contract
+
+All worker agents must follow `.codex/workflow/solid-refactor-subagent-contract.md`.
+Root owns workspace manifests, lockfiles, Bazel files, Git state, staging,
+commits, formatting, and verification. Workers own only explicitly assigned
+folder trees or focused files and must not create nested workspaces,
+`Cargo.lock`, `target/`, path dependencies, or compatibility re-export shims.
 
 ## Verification
 

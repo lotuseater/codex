@@ -17,6 +17,8 @@ use codex_tools::ToolSpec;
 pub struct RequestPermissionsHandler;
 
 impl ToolExecutor<ToolInvocation> for RequestPermissionsHandler {
+    type Output = Box<dyn crate::tools::context::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         ToolName::plain("request_permissions")
     }

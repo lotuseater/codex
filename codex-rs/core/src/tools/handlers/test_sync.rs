@@ -58,6 +58,8 @@ fn barrier_map() -> &'static tokio::sync::Mutex<HashMap<String, BarrierState>> {
 }
 
 impl ToolExecutor<ToolInvocation> for TestSyncHandler {
+    type Output = Box<dyn crate::tools::context::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         ToolName::plain("test_sync_tool")
     }

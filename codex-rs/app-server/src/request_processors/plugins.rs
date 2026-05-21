@@ -1,10 +1,45 @@
 use super::*;
+use crate::app_catalog_protocol::app_summary_from_catalog;
 use crate::error_code::internal_error;
 use crate::error_code::invalid_request;
+use codex_app_catalog_types::AppInfo;
 use codex_app_server_protocol::PluginAvailability;
+use codex_app_server_protocol::PluginDetail;
+use codex_app_server_protocol::PluginInstallParams;
 use codex_app_server_protocol::PluginInstallPolicy;
+use codex_app_server_protocol::PluginInstallResponse;
+use codex_app_server_protocol::PluginInterface;
+use codex_app_server_protocol::PluginListMarketplaceKind;
+use codex_app_server_protocol::PluginListParams;
+use codex_app_server_protocol::PluginListResponse;
+use codex_app_server_protocol::PluginMarketplaceEntry;
+use codex_app_server_protocol::PluginReadParams;
+use codex_app_server_protocol::PluginReadResponse;
+use codex_app_server_protocol::PluginShareCheckoutParams;
+use codex_app_server_protocol::PluginShareCheckoutResponse;
+use codex_app_server_protocol::PluginShareContext;
+use codex_app_server_protocol::PluginShareDeleteParams;
+use codex_app_server_protocol::PluginShareDeleteResponse;
+use codex_app_server_protocol::PluginShareDiscoverability;
+use codex_app_server_protocol::PluginShareListItem;
+use codex_app_server_protocol::PluginShareListParams;
+use codex_app_server_protocol::PluginShareListResponse;
+use codex_app_server_protocol::PluginSharePrincipal;
 use codex_app_server_protocol::PluginSharePrincipalRole;
+use codex_app_server_protocol::PluginSharePrincipalType;
+use codex_app_server_protocol::PluginShareSaveParams;
+use codex_app_server_protocol::PluginShareSaveResponse;
+use codex_app_server_protocol::PluginShareTarget;
 use codex_app_server_protocol::PluginShareTargetRole;
+use codex_app_server_protocol::PluginShareUpdateDiscoverability;
+use codex_app_server_protocol::PluginShareUpdateTargetsParams;
+use codex_app_server_protocol::PluginShareUpdateTargetsResponse;
+use codex_app_server_protocol::PluginSkillReadParams;
+use codex_app_server_protocol::PluginSkillReadResponse;
+use codex_app_server_protocol::PluginSource;
+use codex_app_server_protocol::PluginSummary;
+use codex_app_server_protocol::PluginUninstallParams;
+use codex_app_server_protocol::PluginUninstallResponse;
 use codex_config::types::McpServerConfig;
 use codex_core_plugins::remote::RemotePluginScope;
 use codex_core_plugins::remote::is_valid_remote_plugin_id;
@@ -1803,14 +1838,14 @@ async fn load_plugin_app_summaries(
             Ok(_) => {
                 return plugin_connectors
                     .into_iter()
-                    .map(AppSummary::from)
+                    .map(|connector| app_summary_from_catalog(connector, /*needs_auth*/ false))
                     .collect();
             }
             Err(err) => {
                 warn!("failed to load app auth state for plugin/read: {err:#}");
                 return plugin_connectors
                     .into_iter()
-                    .map(AppSummary::from)
+                    .map(|connector| app_summary_from_catalog(connector, /*needs_auth*/ false))
                     .collect();
             }
         };
@@ -1824,13 +1859,7 @@ async fn load_plugin_app_summaries(
         .into_iter()
         .map(|connector| {
             let needs_auth = !accessible_ids.contains(connector.id.as_str());
-            AppSummary {
-                id: connector.id,
-                name: connector.name,
-                description: connector.description,
-                install_url: connector.install_url,
-                needs_auth,
-            }
+            app_summary_from_catalog(connector, needs_auth)
         })
         .collect()
 }
@@ -1861,13 +1890,7 @@ fn plugin_apps_needing_auth(
                 && !accessible_ids.contains(connector.id.as_str())
         })
         .cloned()
-        .map(|connector| AppSummary {
-            id: connector.id,
-            name: connector.name,
-            description: connector.description,
-            install_url: connector.install_url,
-            needs_auth: true,
-        })
+        .map(|connector| app_summary_from_catalog(connector, /*needs_auth*/ true))
         .collect()
 }
 

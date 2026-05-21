@@ -7,6 +7,7 @@ use crate::turn_diff_tracker::TurnDiffTracker;
 use codex_extension_api::ExtensionData;
 use codex_extension_api::ExtensionRegistry;
 use codex_extension_api::ExtensionRegistryBuilder;
+use codex_extension_api::ExtensionToolExecutor;
 use codex_extension_api::ResponsesApiTool;
 use codex_extension_api::ToolCall as ExtensionToolCall;
 use codex_extension_api::ToolExecutor;
@@ -36,7 +37,7 @@ impl codex_extension_api::ToolContributor for ExtensionEchoContributor {
         &self,
         _session_store: &ExtensionData,
         _thread_store: &ExtensionData,
-    ) -> Vec<Arc<dyn ToolExecutor<ExtensionToolCall>>> {
+    ) -> Vec<Arc<dyn ExtensionToolExecutor>> {
         vec![Arc::new(ExtensionEchoExecutor)]
     }
 }
@@ -44,6 +45,8 @@ impl codex_extension_api::ToolContributor for ExtensionEchoContributor {
 struct ExtensionEchoExecutor;
 
 impl ToolExecutor<ExtensionToolCall> for ExtensionEchoExecutor {
+    type Output = Box<dyn codex_tools::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         ToolName::namespaced("extension/", "echo")
     }

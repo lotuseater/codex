@@ -31,6 +31,8 @@ struct WriteStdinArgs {
 pub struct WriteStdinHandler;
 
 impl ToolExecutor<ToolInvocation> for WriteStdinHandler {
+    type Output = Box<dyn crate::tools::context::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         ToolName::plain("write_stdin")
     }

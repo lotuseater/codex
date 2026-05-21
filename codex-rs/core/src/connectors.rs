@@ -7,9 +7,9 @@ use std::time::Duration;
 use std::time::Instant;
 
 use async_channel::unbounded;
-pub use codex_app_server_protocol::AppBranding;
-pub use codex_app_server_protocol::AppInfo;
-pub use codex_app_server_protocol::AppMetadata;
+pub use codex_app_catalog_types::AppBranding;
+pub use codex_app_catalog_types::AppInfo;
+pub use codex_app_catalog_types::AppMetadata;
 use codex_connectors::ConnectorDirectoryCacheContext;
 use codex_connectors::ConnectorDirectoryCacheKey;
 use codex_exec_server::EnvironmentManager;

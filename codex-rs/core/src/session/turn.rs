@@ -506,6 +506,7 @@ pub(crate) async fn run_turn(
                 can_drain_pending_input = true;
                 let has_pending_input = sess.has_pending_input().await;
                 let needs_follow_up = model_needs_follow_up || has_pending_input;
+                sess.record_model_move_finished_for_semantic_compact().await;
                 let total_usage_tokens = sess.get_total_token_usage().await;
                 let visible_context_percent_used = sess.visible_context_percent_used().await;
                 let token_limit_reached = total_usage_tokens >= auto_compact_limit;
@@ -1087,7 +1088,7 @@ fn format_compaction_reason(reason: CompactionReason) -> &'static str {
         CompactionReason::ContextLimit => "context limit reached",
         CompactionReason::ModelDownshift => "model context window is smaller",
         CompactionReason::SemanticCheckpoint => "semantic checkpoint threshold reached",
-        CompactionReason::EarlyContextPressure => "20% context compaction threshold reached",
+        CompactionReason::EarlyContextPressure => "context compaction threshold reached",
         CompactionReason::RestoredSession => "restored session history is large",
     }
 }
@@ -2343,7 +2344,7 @@ async fn try_run_sampling_request(
     let mut assistant_message_stream_parsers = AssistantMessageStreamParsers::new(plan_mode);
     let mut plan_mode_state = plan_mode.then(|| PlanModeStreamState::new(&turn_context.sub_id));
     let receiving_span = trace_span!("receiving_stream");
-    let mut completed_response_id: Option<String> = None;
+    let mut terminal_response_id: Option<String> = None;
     let outcome: CodexResult<SamplingRequestResult> = loop {
         let handle_responses = trace_span!(
             parent: &receiving_span,
@@ -2590,11 +2591,39 @@ async fn try_run_sampling_request(
                 if let Some(false) = end_turn {
                     needs_follow_up = true;
                 }
-                completed_response_id = Some(response_id);
+                terminal_response_id = Some(response_id);
                 break Ok(SamplingRequestResult {
                     needs_follow_up,
                     last_agent_message,
                 });
+            }
+            ResponseEvent::Incomplete {
+                response_id,
+                token_usage,
+                reason,
+            } => {
+                flush_assistant_text_segments_all(
+                    &sess,
+                    &turn_context,
+                    plan_mode_state.as_mut(),
+                    &mut assistant_message_stream_parsers,
+                )
+                .await;
+                sess.record_token_usage_info(&turn_context, token_usage.as_ref())
+                    .await;
+                should_emit_token_count = true;
+                should_emit_turn_diff = true;
+                terminal_response_id = Some(response_id);
+                if reason == "max_output_tokens" {
+                    break Ok(SamplingRequestResult {
+                        needs_follow_up: true,
+                        last_agent_message,
+                    });
+                }
+                break Err(CodexErr::Stream(
+                    format!("Incomplete response returned, reason: {reason}"),
+                    None,
+                ));
             }
             ResponseEvent::OutputTextDelta(delta) => {
                 // In review child threads, suppress assistant text deltas; the
@@ -2706,7 +2735,7 @@ async fn try_run_sampling_request(
         .features
         .enabled(Feature::ResponsesWebsocketResponseProcessed)
         && outcome.is_ok()
-        && let Some(response_id) = completed_response_id.as_deref()
+        && let Some(response_id) = terminal_response_id.as_deref()
     {
         client_session.send_response_processed(response_id).await;
     }

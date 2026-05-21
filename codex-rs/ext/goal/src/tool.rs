@@ -109,6 +109,8 @@ impl GoalToolExecutor {
 
 #[async_trait]
 impl ToolExecutor<ToolCall> for GoalToolExecutor {
+    type Output = Box<dyn ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         ToolName::plain(match self.kind {
             GoalToolKind::Get => GET_GOAL_TOOL_NAME,

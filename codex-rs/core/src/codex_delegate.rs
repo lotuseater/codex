@@ -99,6 +99,8 @@ pub(crate) async fn run_codex_thread_interactive(
         environment_selections: parent_ctx.environments.clone(),
         analytics_events_client: Some(parent_session.services.analytics_events_client.clone()),
         thread_store: Arc::clone(&parent_session.services.thread_store),
+        live_thread_factory: Arc::clone(&parent_session.services.live_thread_factory),
+        state_db: parent_session.services.state_db.clone(),
         attestation_provider: parent_session.services.attestation_provider.clone(),
     }))
     .or_cancel(&cancel_token)

@@ -36,7 +36,7 @@ use codex_external_agent_sessions::prepare_validated_session_imports;
 use codex_external_agent_sessions::record_imported_session;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::InitialHistory;
-use codex_thread_store::ThreadMetadataPatch;
+use codex_thread_store_api::ThreadMetadataPatch;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use tokio::sync::Semaphore;

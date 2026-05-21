@@ -8,7 +8,7 @@ use crate::tools::handlers::McpHandler;
 use crate::tools::registry::ToolRegistryBuilder;
 use crate::tools::router::ToolRouterParams;
 use crate::tools::spec_plan::build_tool_registry_builder_from_executors;
-use codex_app_server_protocol::AppInfo;
+use codex_app_catalog_types::AppInfo;
 use codex_features::Feature;
 use codex_features::Features;
 use codex_mcp::CODEX_APPS_MCP_SERVER_NAME;

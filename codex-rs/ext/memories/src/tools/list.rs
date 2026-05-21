@@ -39,6 +39,8 @@ impl<B> ToolExecutor<ToolCall> for ListTool<B>
 where
     B: MemoriesBackend,
 {
+    type Output = Box<dyn codex_extension_api::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         memory_tool_name(LIST_TOOL_NAME)
     }

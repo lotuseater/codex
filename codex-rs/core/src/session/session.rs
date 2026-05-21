@@ -38,6 +38,41 @@ pub(crate) struct Session {
     pub(super) next_internal_sub_id: AtomicU64,
 }
 
+struct LiveThreadInitGuard {
+    live_thread: Option<Arc<dyn LiveThreadHandle>>,
+}
+
+impl LiveThreadInitGuard {
+    fn new(live_thread: Option<Arc<dyn LiveThreadHandle>>) -> Self {
+        Self { live_thread }
+    }
+
+    fn as_ref(&self) -> Option<&Arc<dyn LiveThreadHandle>> {
+        self.live_thread.as_ref()
+    }
+
+    fn commit(&mut self) {
+        self.live_thread.take();
+    }
+
+    async fn discard(&mut self) {
+        let Some(live_thread) = self.live_thread.take() else {
+            return;
+        };
+        if let Err(err) = live_thread.discard().await {
+            warn!("failed to discard live thread during session init cleanup: {err}");
+        }
+    }
+}
+
+impl Drop for LiveThreadInitGuard {
+    fn drop(&mut self) {
+        if self.live_thread.is_some() {
+            warn!("live thread init guard dropped before commit or discard");
+        }
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct SessionConfiguration {
     /// Provider identifier ("openai", "openrouter", ...).
@@ -376,6 +411,8 @@ impl Session {
         environment_manager: Arc<EnvironmentManager>,
         analytics_events_client: Option<AnalyticsEventsClient>,
         thread_store: Arc<dyn ThreadStore>,
+        live_thread_factory: Arc<dyn LiveThreadFactory>,
+        state_db: Option<StateDbHandle>,
         parent_rollout_thread_trace: ThreadTraceContext,
         attestation_provider: Option<Arc<dyn AttestationProvider>>,
     ) -> anyhow::Result<Arc<Self>> {
@@ -419,52 +456,54 @@ impl Session {
             } else {
                 let live_thread = match &initial_history {
                     InitialHistory::New | InitialHistory::Cleared | InitialHistory::Forked(_) => {
-                        LiveThread::create(
-                            Arc::clone(&thread_store),
-                            CreateThreadParams {
-                                thread_id,
-                                forked_from_id,
-                                source: session_source,
-                                thread_source: session_configuration.thread_source,
-                                base_instructions: BaseInstructions {
-                                    text: session_configuration.base_instructions.clone(),
-                                },
-                                dynamic_tools: session_configuration.dynamic_tools.clone(),
-                                metadata: ThreadPersistenceMetadata {
-                                    cwd: Some(config.cwd.to_path_buf()),
-                                    model_provider: config.model_provider_id.clone(),
-                                    memory_mode: if config.memories.generate_memories {
-                                        ThreadMemoryMode::Enabled
-                                    } else {
-                                        ThreadMemoryMode::Disabled
+                        live_thread_factory
+                            .create(
+                                Arc::clone(&thread_store),
+                                CreateThreadParams {
+                                    thread_id,
+                                    forked_from_id,
+                                    source: session_source,
+                                    thread_source: session_configuration.thread_source,
+                                    base_instructions: BaseInstructions {
+                                        text: session_configuration.base_instructions.clone(),
                                     },
+                                    dynamic_tools: session_configuration.dynamic_tools.clone(),
+                                    metadata: ThreadPersistenceMetadata {
+                                        cwd: Some(config.cwd.to_path_buf()),
+                                        model_provider: config.model_provider_id.clone(),
+                                        memory_mode: if config.memories.generate_memories {
+                                            ThreadMemoryMode::Enabled
+                                        } else {
+                                            ThreadMemoryMode::Disabled
+                                        },
+                                    },
+                                    event_persistence_mode,
                                 },
-                                event_persistence_mode,
-                            },
-                        )
-                        .await?
+                            )
+                            .await?
                     }
                     InitialHistory::Resumed(resumed_history) => {
-                        LiveThread::resume(
-                            Arc::clone(&thread_store),
-                            ResumeThreadParams {
-                                thread_id: resumed_history.conversation_id,
-                                rollout_path: resumed_history.rollout_path.clone(),
-                                history: Some(resumed_history.history.clone()),
-                                include_archived: true,
-                                metadata: ThreadPersistenceMetadata {
-                                    cwd: Some(config.cwd.to_path_buf()),
-                                    model_provider: config.model_provider_id.clone(),
-                                    memory_mode: if config.memories.generate_memories {
-                                        ThreadMemoryMode::Enabled
-                                    } else {
-                                        ThreadMemoryMode::Disabled
+                        live_thread_factory
+                            .resume(
+                                Arc::clone(&thread_store),
+                                ResumeThreadParams {
+                                    thread_id: resumed_history.conversation_id,
+                                    rollout_path: resumed_history.rollout_path.clone(),
+                                    history: Some(resumed_history.history.clone()),
+                                    include_archived: true,
+                                    metadata: ThreadPersistenceMetadata {
+                                        cwd: Some(config.cwd.to_path_buf()),
+                                        model_provider: config.model_provider_id.clone(),
+                                        memory_mode: if config.memories.generate_memories {
+                                            ThreadMemoryMode::Enabled
+                                        } else {
+                                            ThreadMemoryMode::Disabled
+                                        },
                                     },
+                                    event_persistence_mode,
                                 },
-                                event_persistence_mode,
-                            },
-                        )
-                        .await?
+                            )
+                            .await?
                     }
                 };
                 Ok(Some(live_thread))
@@ -478,12 +517,8 @@ impl Session {
         let state_db_fut = async {
             if config.ephemeral {
                 None
-            } else if let Some(local_store) =
-                thread_store.as_any().downcast_ref::<LocalThreadStore>()
-            {
-                local_store.state_db().await
             } else {
-                None
+                state_db.clone()
             }
         }
         .instrument(info_span!(
@@ -890,6 +925,7 @@ impl Session {
                 state_db: state_db_ctx.clone(),
                 live_thread: live_thread_init.as_ref().cloned(),
                 thread_store: Arc::clone(&thread_store),
+                live_thread_factory: Arc::clone(&live_thread_factory),
                 attestation_provider: attestation_provider.clone(),
                 model_client: ModelClient::new(
                     Some(Arc::clone(&auth_manager)),

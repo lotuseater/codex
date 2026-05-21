@@ -43,7 +43,7 @@ pub use codex_tools::ToolExposure;
 ///
 /// Implementers provide the shared `ToolExecutor` behavior plus optional
 /// core-owned metadata for hooks, telemetry, tool search, and argument diffs.
-pub(crate) trait CoreToolRuntime: ToolExecutor<ToolInvocation> {
+pub(crate) trait CoreToolRuntime: Send + Sync {
     fn search_info(&self) -> Option<ToolSearchInfo> {
         None
     }
@@ -94,6 +94,8 @@ pub(crate) trait CoreToolRuntime: ToolExecutor<ToolInvocation> {
     }
 }
 
+pub(crate) use CoreToolRuntime as ToolHandler;
+
 /// Consumes streamed argument diffs for a tool call and emits protocol events
 /// derived from partial tool input.
 pub(crate) trait ToolArgumentDiffConsumer: Send {
@@ -104,6 +106,121 @@ pub(crate) trait ToolArgumentDiffConsumer: Send {
     /// Finish consuming argument diffs before the tool call completes.
     fn finish(&mut self) -> Result<Option<EventMsg>, FunctionCallError> {
         Ok(None)
+    }
+}
+
+/// Object-safe runtime for tools registered with the core router.
+///
+/// Implementations are type-erased from `ToolExecutor` plus the core-owned
+/// hook and telemetry metadata supplied by `CoreToolRuntime`.
+pub(crate) trait RegisteredTool: Send + Sync {
+    fn tool_name(&self) -> ToolName;
+
+    fn spec(&self) -> Option<ToolSpec>;
+
+    fn exposure(&self) -> ToolExposure;
+
+    fn supports_parallel_tool_calls(&self) -> bool;
+
+    fn search_info(&self) -> Option<ToolSearchInfo>;
+
+    fn matches_kind(&self, payload: &ToolPayload) -> bool;
+
+    fn telemetry_tags<'a>(
+        &'a self,
+        invocation: &'a ToolInvocation,
+    ) -> BoxFuture<'a, ToolTelemetryTags>;
+
+    fn post_tool_use_payload(
+        &self,
+        invocation: &ToolInvocation,
+        result: &dyn ToolOutput,
+    ) -> Option<PostToolUsePayload>;
+
+    fn pre_tool_use_payload(&self, invocation: &ToolInvocation) -> Option<PreToolUsePayload>;
+
+    fn with_updated_hook_input(
+        &self,
+        invocation: ToolInvocation,
+        updated_input: Value,
+    ) -> Result<ToolInvocation, FunctionCallError>;
+
+    fn create_diff_consumer(&self) -> Option<Box<dyn ToolArgumentDiffConsumer>>;
+
+    fn handle(
+        &self,
+        invocation: ToolInvocation,
+    ) -> BoxFuture<'_, Result<Box<dyn ToolOutput>, FunctionCallError>>;
+}
+
+impl<T> RegisteredTool for T
+where
+    T: CoreToolRuntime + ToolExecutor<ToolInvocation>,
+    T::Output: ToolOutput + 'static,
+{
+    fn tool_name(&self) -> ToolName {
+        ToolExecutor::tool_name(self)
+    }
+
+    fn spec(&self) -> Option<ToolSpec> {
+        ToolExecutor::spec(self)
+    }
+
+    fn exposure(&self) -> ToolExposure {
+        ToolExecutor::exposure(self)
+    }
+
+    fn supports_parallel_tool_calls(&self) -> bool {
+        ToolExecutor::supports_parallel_tool_calls(self)
+    }
+
+    fn search_info(&self) -> Option<ToolSearchInfo> {
+        CoreToolRuntime::search_info(self)
+    }
+
+    fn matches_kind(&self, payload: &ToolPayload) -> bool {
+        CoreToolRuntime::matches_kind(self, payload)
+    }
+
+    fn telemetry_tags<'a>(
+        &'a self,
+        invocation: &'a ToolInvocation,
+    ) -> BoxFuture<'a, ToolTelemetryTags> {
+        CoreToolRuntime::telemetry_tags(self, invocation)
+    }
+
+    fn post_tool_use_payload(
+        &self,
+        invocation: &ToolInvocation,
+        result: &dyn ToolOutput,
+    ) -> Option<PostToolUsePayload> {
+        CoreToolRuntime::post_tool_use_payload(self, invocation, result)
+    }
+
+    fn pre_tool_use_payload(&self, invocation: &ToolInvocation) -> Option<PreToolUsePayload> {
+        CoreToolRuntime::pre_tool_use_payload(self, invocation)
+    }
+
+    fn with_updated_hook_input(
+        &self,
+        invocation: ToolInvocation,
+        updated_input: Value,
+    ) -> Result<ToolInvocation, FunctionCallError> {
+        CoreToolRuntime::with_updated_hook_input(self, invocation, updated_input)
+    }
+
+    fn create_diff_consumer(&self) -> Option<Box<dyn ToolArgumentDiffConsumer>> {
+        CoreToolRuntime::create_diff_consumer(self)
+    }
+
+    fn handle(
+        &self,
+        invocation: ToolInvocation,
+    ) -> BoxFuture<'_, Result<Box<dyn ToolOutput>, FunctionCallError>> {
+        Box::pin(async move {
+            let output = ToolExecutor::handle(self, invocation).await?;
+            Ok(Box::new(output) as Box<dyn ToolOutput>)
+        })
     }
 }
 
@@ -163,9 +280,9 @@ pub(crate) struct PostToolUsePayload {
 }
 
 pub(crate) fn override_tool_exposure(
-    handler: Arc<dyn CoreToolRuntime>,
+    handler: Arc<dyn RegisteredTool>,
     exposure: ToolExposure,
-) -> Arc<dyn CoreToolRuntime> {
+) -> Arc<dyn RegisteredTool> {
     if handler.exposure() == exposure {
         return handler;
     }
@@ -174,12 +291,13 @@ pub(crate) fn override_tool_exposure(
 }
 
 struct ExposureOverride {
-    handler: Arc<dyn CoreToolRuntime>,
+    handler: Arc<dyn RegisteredTool>,
     exposure: ToolExposure,
 }
 
-#[async_trait::async_trait]
 impl ToolExecutor<ToolInvocation> for ExposureOverride {
+    type Output = Box<dyn ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         self.handler.tool_name()
     }
@@ -246,16 +364,50 @@ impl CoreToolRuntime for ExposureOverride {
     }
 }
 
+#[derive(Default)]
+pub(crate) struct ToolRegistryBuilder {
+    model_visible_specs: Vec<ToolSpec>,
+    tools: Vec<Arc<dyn RegisteredTool>>,
+}
+
+impl ToolRegistryBuilder {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn push_spec(&mut self, spec: ToolSpec) {
+        self.model_visible_specs.push(spec);
+    }
+
+    pub(crate) fn register_tool(&mut self, tool: Arc<dyn RegisteredTool>) {
+        if let Some(spec) = tool.spec() {
+            self.push_spec(spec);
+        }
+        self.register_tool_without_spec(tool);
+    }
+
+    pub(crate) fn register_tool_without_spec(&mut self, tool: Arc<dyn RegisteredTool>) {
+        self.tools.push(tool);
+    }
+
+    pub(crate) fn build(self) -> (Vec<ToolSpec>, ToolRegistry) {
+        (
+            self.model_visible_specs,
+            ToolRegistry::from_tools(self.tools),
+        )
+    }
+}
+
 pub struct ToolRegistry {
-    tools: HashMap<ToolName, Arc<dyn CoreToolRuntime>>,
+    tools: HashMap<ToolName, Arc<dyn RegisteredTool>>,
 }
 
 impl ToolRegistry {
-    fn new(tools: HashMap<ToolName, Arc<dyn CoreToolRuntime>>) -> Self {
+    fn new(tools: HashMap<ToolName, Arc<dyn RegisteredTool>>) -> Self {
         Self { tools }
     }
 
-    pub(crate) fn from_tools(tools: impl IntoIterator<Item = Arc<dyn CoreToolRuntime>>) -> Self {
+    pub(crate) fn from_tools(tools: impl IntoIterator<Item = Arc<dyn RegisteredTool>>) -> Self {
         let mut tools_by_name = HashMap::new();
         for tool in tools {
             let name = tool.tool_name();
@@ -276,14 +428,19 @@ impl ToolRegistry {
     #[cfg(test)]
     pub(crate) fn with_handler_for_test<T>(handler: Arc<T>) -> Self
     where
-        T: CoreToolRuntime + 'static,
+        T: RegisteredTool + 'static,
     {
         let name = handler.tool_name();
-        Self::new(HashMap::from([(name, handler as Arc<dyn CoreToolRuntime>)]))
+        Self::new(HashMap::from([(name, handler as Arc<dyn RegisteredTool>)]))
     }
 
-    fn tool(&self, name: &ToolName) -> Option<Arc<dyn CoreToolRuntime>> {
+    fn tool(&self, name: &ToolName) -> Option<Arc<dyn RegisteredTool>> {
         self.tools.get(name).map(Arc::clone)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_handler(&self, name: &ToolName) -> bool {
+        self.tools.contains_key(name)
     }
 
     #[cfg(test)]
@@ -602,14 +759,13 @@ impl ToolRegistry {
 }
 
 async fn handle_any_tool(
-    tool: &dyn CoreToolRuntime,
+    tool: &dyn RegisteredTool,
     invocation: ToolInvocation,
 ) -> Result<AnyToolResult, FunctionCallError> {
     let call_id = invocation.call_id.clone();
     let payload = invocation.payload.clone();
     let output = tool.handle(invocation.clone()).await?;
-    let post_tool_use_payload =
-        CoreToolRuntime::post_tool_use_payload(tool, &invocation, output.as_ref());
+    let post_tool_use_payload = tool.post_tool_use_payload(&invocation, output.as_ref());
     Ok(AnyToolResult {
         call_id,
         payload,

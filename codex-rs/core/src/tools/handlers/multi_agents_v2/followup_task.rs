@@ -9,6 +9,8 @@ use codex_tools::ToolSpec;
 pub(crate) struct Handler;
 
 impl ToolExecutor<ToolInvocation> for Handler {
+    type Output = Box<dyn crate::tools::context::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         ToolName::plain("followup_task")
     }
