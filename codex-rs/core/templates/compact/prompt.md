@@ -1,4 +1,6 @@
-Here is the context left by another LLM model. Reduce it for the next model that will continue the same task.
+Here is the context left by another LLM model. Reduce it for the next model that will continue the same task. 
+
+Remove from the context all not needed for further task implementation by the model. Preserve all that may be useful.
 
 Preserve everything needed to continue implementation without rediscovery:
 - The user's goal and any explicit constraints, preferences, or requested workflow.
