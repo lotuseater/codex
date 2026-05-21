@@ -104,6 +104,14 @@ Particularly when introducing a new concept/feature/API, before adding to `codex
 
 Likewise, when reviewing code, do not hesitate to push back on PRs that would unnecessarily add code to `codex-core`.
 
+### Core dependency and test refactoring principles
+
+- Prefer dependency inversion for `codex-core`: high-level orchestration should depend on small boundary traits, domain types, and narrowly scoped policy objects instead of concrete low-level implementations.
+- Do not repair refactor fallout by adding broad compatibility imports, catch-all re-exports, or new direct/transitive dependencies back into `codex-core`. Fix the ownership boundary first.
+- When a test helper can be expressed in terms of protocol/domain fixtures, keep it in a small support crate that does not depend on `codex-core`; reserve `codex-core` test harness dependencies for integration tests that genuinely instantiate core runtime behavior.
+- Split large core test families into smaller crates or harness crates when that reduces dependency fan-in, compile scope, or fixture coupling. Keep shared fixtures below the harness layer.
+- Before broad build or lint runs after a dependency refactor, use source inspection and dependency-graph checks to confirm that the intended crate boundary is in place; then run the narrowest release-profile verification that covers the changed boundary.
+
 ## TUI style conventions
 
 See `codex-rs/tui/styles.md`.
