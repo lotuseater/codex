@@ -95,7 +95,50 @@ Still pending from wave 3:
     unless that process exits without a handoff or is intentionally stopped and
     relaunched visibly.
 
-## Active Visible Wave 4
+## Current Worker State
+
+- No `cargo`, `rustc`, `link`, or `cl` processes are currently running.
+- `solid_refactor_review_handoffs_worker` was stopped by root before handoff
+  because it over-expanded a read-only review into broad source scanning. Treat
+  its visible log as partial evidence only, not as a completed review result.
+- `solid_refactor_commit_grouping_worker.prompt.md` exists locally as a possible
+  read-only grouping prompt, but it has not been launched. Do not launch it
+  until the blocking source-review questions below are handled.
+- Durable orchestration/docs slice was committed and pushed:
+  `55cbc90c48 Document SOLID refactor handoff rules`.
+- Review findings doc: `.codex/workflow/solid-refactor-review-findings.md`.
+- Active scoped visible review workers launched with
+  `codex-workers -Pattern "solid_refactor_area_review_*.prompt.md"`:
+  - `solid_refactor_area_review_agent_tools_worker`: PowerShell PID `31384`;
+    handoff target
+    `.codex/workflow/agents/solid_refactor_area_review_agent_tools_worker.handoff.md`.
+  - `solid_refactor_area_review_context_ops_worker`: PowerShell PID `5040`,
+    Codex PID `16288`; handoff target
+    `.codex/workflow/agents/solid_refactor_area_review_context_ops_worker.handoff.md`.
+  - `solid_refactor_area_review_core_api_worker`: PowerShell PID `11100`;
+    handoff target
+    `.codex/workflow/agents/solid_refactor_area_review_core_api_worker.handoff.md`.
+  - `solid_refactor_area_review_session_settings_worker`: PowerShell PID
+    `20848`, Codex PID `22108`; handoff target
+    `.codex/workflow/agents/solid_refactor_area_review_session_settings_worker.handoff.md`.
+  - `solid_refactor_area_review_tests_schema_worker`: PowerShell PID `31500`,
+    Codex PID `21512`; handoff target
+    `.codex/workflow/agents/solid_refactor_area_review_tests_schema_worker.handoff.md`.
+
+Blocking source-review questions before committing Rust/schema groups:
+
+- `CodexThreadSettingsOverrides.workspace_roots` and
+  `profile_workspace_roots` are still public override fields, but the current
+  dirty `CodexThread::thread_settings_update` destructures and drops them while
+  `SessionSettingsUpdate` no longer carries them. Confirm whether this is an
+  intentional API removal or repair the data flow before committing the
+  session/thread slice.
+- Verify `replacement_shadow.rs` deletion against module/manifests and later
+  remove any now-dead `codex-context-ops-impl` /
+  `codex-replacement-shadow` dependencies only after source references are
+  clean.
+
+## Historical Wave 4 Launch Record (Superseded)
 
 Launched with:
 
@@ -133,11 +176,10 @@ Last observed status:
 
 ## Root Next Actions
 
-1. After compaction, check:
-   - wave-4 handoffs
-   - manifest-planner handoff
+1. Check no build/link processes are running before verification:
    - `Get-Process cargo,rustc,link,cl -ErrorAction SilentlyContinue`
-2. Do not start verification until source/refactor workers are done.
+2. Resolve or explicitly classify the workspace-root override drop before
+   committing the session/thread settings slice.
 3. Integrate completed source slices by ownership.
 4. Use dependency-scout and manifest-planner handoffs to decide the smallest
    manifest/Bazel/lock/schema follow-up.
