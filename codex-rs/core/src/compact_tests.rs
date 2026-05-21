@@ -30,6 +30,27 @@ fn default_compaction_prompt_uses_prune_nudge_prompt() {
     assert_eq!(SUMMARIZATION_PROMPT.trim_end(), PRUNE_NUDGE_PROMPT);
 }
 
+#[test]
+fn default_compaction_prompt_preserves_current_work_state() {
+    for required_text in [
+        "active plan",
+        "current implementation stage",
+        "next concrete actions",
+        "file paths",
+        "commands",
+        "tests",
+        "dirty or user-owned worktree changes",
+        "must not be overwritten",
+        "Do not omit unresolved work",
+        "exact remaining steps",
+    ] {
+        assert!(
+            SUMMARIZATION_PROMPT.contains(required_text),
+            "summarization prompt must mention {required_text:?}"
+        );
+    }
+}
+
 fn user_message(text: &str) -> ResponseItem {
     ResponseItem::Message {
         id: None,

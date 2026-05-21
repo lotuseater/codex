@@ -17,7 +17,19 @@ const TOOL_CHECKPOINT_CALLS: u64 = 12;
 const TOOL_CHECKPOINT_MIN_TOTAL_TOKENS: i64 = 40_000;
 const SEMANTIC_COOLDOWN_TURNS: u32 = 4;
 
-pub const PRUNE_NUDGE_PROMPT: &str = "here is the context of other llm model. Please remove from the context all not needed for further task implementation by the model. preserve all that may be useful\n\nReturn only the reduced context. Do not explain your method.";
+pub const PRUNE_NUDGE_PROMPT: &str = "\
+Here is the context left by another LLM model. Reduce it for the next model that will continue the same task.
+
+Preserve everything needed to continue implementation without rediscovery:
+- The user's goal and any explicit constraints, preferences, or requested workflow.
+- The active plan, its current implementation stage, which items are completed, which item is in progress, and which items are not started.
+- The next concrete actions to take, including file paths, commands, tests, artifacts, or logs needed to resume.
+- Important decisions, assumptions, blockers, risks, verification results, and dirty or user-owned worktree changes that must not be overwritten.
+- Any important code/session details that would be costly or unsafe to rediscover.
+
+Remove obsolete exploration, repeated tool output, dead ends, and low-signal narration. Do not omit unresolved work or collapse it into vague phrases such as \"continue the plan\"; name the exact remaining steps.
+
+Return only the reduced context. Do not explain your method.";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ContextReductionPolicy {
@@ -396,10 +408,20 @@ mod tests {
 
     #[test]
     fn prune_nudge_prompt_uses_custom_reduction_prompt() {
-        assert_eq!(
-            PRUNE_NUDGE_PROMPT,
-            "here is the context of other llm model. Please remove from the context all not needed for further task implementation by the model. preserve all that may be useful\n\nReturn only the reduced context. Do not explain your method."
-        );
+        for required_text in [
+            "Reduce it for the next model",
+            "active plan",
+            "current implementation stage",
+            "next concrete actions",
+            "dirty or user-owned worktree changes",
+            "Do not omit unresolved work",
+            "exact remaining steps",
+        ] {
+            assert!(
+                PRUNE_NUDGE_PROMPT.contains(required_text),
+                "prune nudge prompt must mention {required_text:?}"
+            );
+        }
     }
 
     #[test]
