@@ -181,6 +181,14 @@ the overseer into a second director. Instead:
 - The checkpoint reads only the director session tail, not the whole transcript,
   and reports the latest context-token percentage so the overseer can compact
   the director in time.
+- When the checkpoint reports the director is at or above 30% context, do not
+  merely ask the director to compact "when safe" and then wait indefinitely. Use
+  the last few director messages from the checkpoint to judge whether the moment
+  is good enough; it usually is. Then send `/compact` directly with:
+  `powershell -ExecutionPolicy Bypass -File .codex\workflow\agents\compact-solid-refactor-director.ps1`.
+  That script sends Esc first, then `/compact`; sending `/compact` while the
+  director is still mid-action often does not work. It then waits for the
+  session log to become quiet and sends the post-compaction reminder.
 - Prefer repo artifacts over terminal streaming: read only fresh worker handoffs,
   the director handoff, prompt files, marker files, and recent director talk that
   the checkpoint points to.
@@ -194,6 +202,10 @@ the overseer into a second director. Instead:
   one concise follow-up. Avoid ad hoc `Get-Process`, whole-session transcript
   reads/searches, broad git status, or source/doc exploration unless a checkpoint
   exposes a concrete problem.
+- If recent director talk suggests it launched only one or two workers for broad
+  remaining work, treat that as possible under-delegation. Include a brief note:
+  "maybe you spawned too few sessions for current broad work; think of more
+  possible subtasks and spawn more sessions according to your handoff."
 - If the director drifts, send Esc with
   `.codex\workflow\agents\interrupt-solid-refactor-director.ps1`, then send one
   concise redirect follow-up. Do not start reading every line.
@@ -321,6 +333,17 @@ to forget:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .codex\workflow\agents\send-solid-refactor-director-followup.ps1 -Message "Post-compaction reminder: reread .codex\\workflow\\solid-refactor-handoff.md, docs\\current-project-architecture-solid-refactor-plan.md, docs\\current-project-architecture-solid-review.md, and fresh worker handoffs under .codex\\workflow\\agents\\. Continue as director only. Spawn real separate visible Codex worker windows via codex-workers as described in the handoff; do not do broad review or source edits yourself. Refactor and clear architecture boundaries first. Until the SOLID architecture refactor is genuinely complete, avoid broad builds/tests/schema generation/formatters/Bazel/lock refresh/release builds. Allowed checks are source/static checks such as rg, git diff --check, PowerShell parser checks for changed ps1, and scripts/check-cargo-dependency-boundaries.ps1 -SolidRefactor -Json. Keep worker prompts scoped, require short handoffs, and update your handoff before compacting again."
 ```
+
+When compaction is triggered from the checkpoint, prefer the wrapper instead of
+manual separate messages:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .codex\workflow\agents\compact-solid-refactor-director.ps1
+```
+
+The wrapper sends Esc first, then `/compact`, waits for the director session log
+to become quiet, then sends a short post-compaction reminder that also warns
+about spawning too few sessions for broad work.
 
 If a new operational problem appears while overseeing, it is acceptable for the
 overseer to change or add scripts and update this memo, then verify only that

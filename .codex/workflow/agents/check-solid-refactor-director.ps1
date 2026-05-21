@@ -343,9 +343,11 @@ if ($session -and (Test-Path -LiteralPath $session.Path)) {
 
 $tokenSnapshot = Get-TokenSnapshot $sessionTail
 $recentTalk = Get-RecentDirectorTalk $sessionTail $RecentTalkItems $MaxTalkChars
+$recentTalkText = (($recentTalk | ForEach-Object { $_.Text }) -join " ")
+$possibleUnderDelegation = $recentTalkText -match '(?i)\b(single|one|two|2)\s+(follow-up\s+)?(worker|session)s?\b|\bonly\s+\d+\s+(worker|session)s?\b'
 
 if ($tokenSnapshot -and $null -ne $tokenSnapshot.Percent -and $tokenSnapshot.Percent -ge $CompactNowPercent) {
-    $action = "director context >= $CompactNowPercent%; send one follow-up: update handoff, compact now, then reread memo/handoffs"
+    $action = "director context >= $CompactNowPercent%; run .codex\workflow\agents\compact-solid-refactor-director.ps1"
 } elseif ($tokenSnapshot -and $null -ne $tokenSnapshot.Percent -and $tokenSnapshot.Percent -ge $CompactWarnPercent) {
     $action = "director context >= $CompactWarnPercent%; ask director to compact at the next safe handoff checkpoint"
 } elseif ($recentHandoffCount -gt 0) {
@@ -376,6 +378,11 @@ if ($recentTalk.Count -gt 0) {
     }
 } else {
     "recent director talk: (none in tail)"
+}
+if ($possibleUnderDelegation) {
+    "parallelism: recent director talk suggests possible under-delegation; include broader-wave note in the next reminder"
+} else {
+    "parallelism: no under-delegation signal in recent talk"
 }
 "worker logs: {0}" -f (Format-Items $workerLogs)
 "worker handoffs: {0}" -f (Format-Items $workerHandoffs)
