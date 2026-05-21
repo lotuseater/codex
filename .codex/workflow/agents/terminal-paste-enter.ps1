@@ -25,9 +25,18 @@ public static class SolidTerminalWindowNative
 
     [DllImport("user32.dll")]
     public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out int lpdwProcessId);
+
+    [DllImport("user32.dll")]
+    public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
 }
 "@
 }
+
+$script:SolidKeyEventUp = 0x0002
+$script:SolidVkControl = 0x11
+$script:SolidVkV = 0x56
+$script:SolidVkReturn = 0x0D
+$script:SolidVkEscape = 0x1B
 
 function Get-SolidVisibleWindows {
     $windows = [System.Collections.Generic.List[object]]::new()
@@ -243,6 +252,84 @@ function Wait-SolidTerminalActivation {
     throw "Timed out waiting for terminal window activation. Title='$Title' RootPid=$RootPid"
 }
 
+function Send-SolidNativeKeyDown {
+    param([byte]$VirtualKey)
+
+    [SolidTerminalWindowNative]::keybd_event($VirtualKey, 0, 0, [UIntPtr]::Zero)
+}
+
+function Send-SolidNativeKeyUp {
+    param([byte]$VirtualKey)
+
+    [SolidTerminalWindowNative]::keybd_event($VirtualKey, 0, $script:SolidKeyEventUp, [UIntPtr]::Zero)
+}
+
+function Send-SolidNativeKey {
+    param(
+        [byte]$VirtualKey,
+        [int]$HoldMs = 35
+    )
+
+    Send-SolidNativeKeyDown -VirtualKey $VirtualKey
+    Start-Sleep -Milliseconds $HoldMs
+    Send-SolidNativeKeyUp -VirtualKey $VirtualKey
+}
+
+function Send-SolidNativeChord {
+    param(
+        [Parameter(Mandatory = $true)]
+        [byte[]]$VirtualKeys,
+        [int]$HoldMs = 35
+    )
+
+    foreach ($key in $VirtualKeys) {
+        Send-SolidNativeKeyDown -VirtualKey $key
+        Start-Sleep -Milliseconds 20
+    }
+
+    Start-Sleep -Milliseconds $HoldMs
+
+    for ($i = $VirtualKeys.Count - 1; $i -ge 0; $i--) {
+        Send-SolidNativeKeyUp -VirtualKey $VirtualKeys[$i]
+        Start-Sleep -Milliseconds 20
+    }
+}
+
+function Send-SolidTerminalKeyInput {
+    param([Parameter(Mandatory = $true)][string]$Keys)
+
+    switch ($Keys) {
+        "{ENTER}" {
+            Send-SolidNativeKey -VirtualKey $script:SolidVkReturn
+            return
+        }
+        "~" {
+            Send-SolidNativeKey -VirtualKey $script:SolidVkReturn
+            return
+        }
+        "{ESC}" {
+            Send-SolidNativeKey -VirtualKey $script:SolidVkEscape
+            return
+        }
+        default {
+            $shell = New-Object -ComObject WScript.Shell
+            $shell.SendKeys($Keys)
+        }
+    }
+}
+
+function Get-SolidPasteSettledDelayMs {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Message,
+        [int]$MinimumMs
+    )
+
+    $lengthDelay = [int][Math]::Ceiling($Message.Length / 2.0)
+    $boundedLengthDelay = [Math]::Min(5000, $lengthDelay)
+    [Math]::Max($MinimumMs, $boundedLengthDelay)
+}
+
 function Invoke-SolidTerminalPasteEnter {
     param(
         [Parameter(Mandatory = $true)]
@@ -254,19 +341,20 @@ function Invoke-SolidTerminalPasteEnter {
         [int]$WaitMs = 5000,
         [int]$PasteDelayMs = 250,
         [string]$SubmitKey = "{ENTER}",
-        [int]$SubmitRepeat = 1,
-        [int]$SubmitDelayMs = 250
+        [int]$SubmitRepeat = 3,
+        [int]$SubmitDelayMs = 750
     )
 
     $activation = Wait-SolidTerminalActivation -Title $Title -RootPid $RootPid -WindowHandle $WindowHandle -WaitMs $WaitMs
     Set-Clipboard -Value $Message
     Start-Sleep -Milliseconds $PasteDelayMs
 
-    $shell = New-Object -ComObject WScript.Shell
-    $shell.SendKeys("^v")
-    Start-Sleep -Milliseconds $PasteDelayMs
+    Send-SolidNativeChord -VirtualKeys @($script:SolidVkControl, $script:SolidVkV)
+    $effectiveSubmitDelayMs = Get-SolidPasteSettledDelayMs -Message $Message -MinimumMs $SubmitDelayMs
+    Start-Sleep -Milliseconds $effectiveSubmitDelayMs
+
     for ($i = 0; $i -lt $SubmitRepeat; $i++) {
-        $shell.SendKeys($SubmitKey)
+        Send-SolidTerminalKeyInput -Keys $SubmitKey
         Start-Sleep -Milliseconds $SubmitDelayMs
     }
 
@@ -279,6 +367,7 @@ function Invoke-SolidTerminalPasteEnter {
         Title = $activation.Title
         SubmitKey = $SubmitKey
         SubmitRepeat = $SubmitRepeat
+        SubmitDelayMs = $effectiveSubmitDelayMs
         MessageLength = $Message.Length
     }
 }
@@ -297,9 +386,8 @@ function Invoke-SolidTerminalSendKeys {
     )
 
     $activation = Wait-SolidTerminalActivation -Title $Title -RootPid $RootPid -WindowHandle $WindowHandle -WaitMs $WaitMs
-    $shell = New-Object -ComObject WScript.Shell
     for ($i = 0; $i -lt $Repeat; $i++) {
-        $shell.SendKeys($Keys)
+        Send-SolidTerminalKeyInput -Keys $Keys
         if ($DelayMs -gt 0 -and $i -lt ($Repeat - 1)) {
             Start-Sleep -Milliseconds $DelayMs
         }

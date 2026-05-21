@@ -10,7 +10,8 @@ param(
     [string]$Mode = "Start",
     [int]$InitialPromptDelaySeconds = 6,
     [int]$InitialPromptWaitMs = 10000,
-    [int]$InitialPromptSubmitDelayMs = 300,
+    [int]$InitialPromptSubmitDelayMs = 750,
+    [int]$InitialPromptSubmitRepeat = 3,
     [switch]$DryRun,
     [switch]$NoStopExisting
 )
@@ -98,6 +99,7 @@ if ($DryRun) {
         InitialPromptDelaySeconds = $InitialPromptDelaySeconds
         InitialPromptWaitMs = $InitialPromptWaitMs
         InitialPromptSubmitDelayMs = $InitialPromptSubmitDelayMs
+        InitialPromptSubmitRepeat = $InitialPromptSubmitRepeat
     } | Format-List
     exit 0
 }
@@ -150,7 +152,7 @@ if ($Mode -eq "Start") {
     }
 
     $prompt = Get-Content -LiteralPath $PromptPath -Raw
-    Invoke-SolidTerminalPasteEnter -Message $prompt -Title $directorTitle -RootPid $process.Id -WindowHandle $windowHandle -WaitMs $InitialPromptWaitMs -SubmitDelayMs $InitialPromptSubmitDelayMs | Out-Null
+    Invoke-SolidTerminalPasteEnter -Message $prompt -Title $directorTitle -RootPid $process.Id -WindowHandle $windowHandle -WaitMs $InitialPromptWaitMs -SubmitDelayMs $InitialPromptSubmitDelayMs -SubmitRepeat $InitialPromptSubmitRepeat | Out-Null
 }
 
 [pscustomobject]@{

@@ -1,12 +1,9 @@
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$Message,
-
     [string]$StatePath = (Join-Path $PSScriptRoot "solid_refactor_director.state.json"),
     [string]$WindowTitle = "SOLID refactor director - Codex",
-    [int]$WaitMs = 5000,
-    [int]$SubmitDelayMs = 750,
-    [int]$SubmitRepeat = 3
+    [int]$WaitMs = 800,
+    [int]$Repeat = 3,
+    [int]$DelayMs = 120
 )
 
 $ErrorActionPreference = "Stop"
@@ -24,27 +21,20 @@ if ($state.windowTitle) {
 } elseif ($state.title) {
     $WindowTitle = [string]$state.title
 }
+
 $windowHandle = 0
 if ($state.windowHandle) {
     $windowHandle = [long]$state.windowHandle
 }
 
-$processAlive = $false
-if ($rootPid -gt 0) {
-    $processAlive = [bool](Get-Process -Id $rootPid -ErrorAction SilentlyContinue)
-}
-
-$send = Invoke-SolidTerminalPasteEnter -Message $Message -Title $WindowTitle -RootPid $rootPid -WindowHandle $windowHandle -WaitMs $WaitMs -SubmitDelayMs $SubmitDelayMs -SubmitRepeat $SubmitRepeat
+$send = Invoke-SolidTerminalSendKeys -Keys "{ENTER}" -Title $WindowTitle -RootPid $rootPid -WindowHandle $windowHandle -WaitMs $WaitMs -Repeat $Repeat -DelayMs $DelayMs
 
 [pscustomobject]@{
-    Sent = $true
+    Submitted = $true
     RootPid = $rootPid
-    RootProcessAlive = $processAlive
     WindowTitle = $WindowTitle
     WindowHandle = $send.WindowHandle
     Activation = $send.Method
-    SubmitKey = $send.SubmitKey
-    SubmitRepeat = $send.SubmitRepeat
-    SubmitDelayMs = $send.SubmitDelayMs
-    MessageLength = $Message.Length
+    Key = "Enter"
+    Repeat = $Repeat
 } | Format-List

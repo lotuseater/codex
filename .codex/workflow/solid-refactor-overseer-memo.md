@@ -241,6 +241,10 @@ powershell -ExecutionPolicy Bypass -File .codex\workflow\agents\stop-solid-refac
 # Fast interrupt the remembered director's current action with Esc.
 powershell -ExecutionPolicy Bypass -File .codex\workflow\agents\interrupt-solid-refactor-director.ps1
 
+# Submit already-pasted text in the remembered director with a few Enter keys.
+# Use this only as one scripted recovery action, not as manual key juggling.
+powershell -ExecutionPolicy Bypass -File .codex\workflow\agents\submit-solid-refactor-director.ps1 -Repeat 3
+
 # Recreate state if a live director was started manually and its root PID is known.
 powershell -ExecutionPolicy Bypass -File .codex\workflow\agents\remember-solid-refactor-director.ps1 -RootPid <pid>
 ```
@@ -250,6 +254,10 @@ After the canary passes, send follow-ups with:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .codex\workflow\agents\send-solid-refactor-director-followup.ps1 -Message "go on, please continue refactoring; keep only source/static checks until the architecture refactor is complete"
 ```
+
+The paste helpers use native `Ctrl+V`, then wait for the paste to settle based
+on message length, then send Enter three times by default. Treat paste+Enter as
+one atomic scripted action; do not paste first and manually submit later.
 
 If Codex startup is slow, increase the initial prompt delay instead of sending
 manual input into the window:
