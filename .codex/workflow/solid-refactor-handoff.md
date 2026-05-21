@@ -119,6 +119,23 @@ Still pending from wave 3:
     `.codex/workflow/agents/solid_refactor_area_review_retry_session_settings_worker.handoff.md`.
   - `solid_refactor_area_review_retry_tests_schema_worker.prompt.md` ->
     `.codex/workflow/agents/solid_refactor_area_review_retry_tests_schema_worker.handoff.md`.
+- The broader core-api retry was still running without a handoff, so a narrower
+  visible fallback was launched:
+  - `solid_refactor_area_review_core_api_quick_worker.prompt.md` ->
+    `.codex/workflow/agents/solid_refactor_area_review_core_api_quick_worker.handoff.md`.
+- Core-api root fallback review was completed while visible core-api workers
+  were still running:
+  - `.codex/workflow/agents/solid_refactor_area_review_core_api_root_review.handoff.md`.
+  - Result: no direct source consumer fallout found; keep core-api/domain source
+    plus `Cargo.lock` separate from app-server schema JSON and run required
+    release/Bazel lock verification after source blockers are fixed.
+- Visible implementation workers launched for scoped fixes:
+  - `solid_refactor_fix_session_workspace_roots_worker.prompt.md`, PowerShell
+    PID `26904`; owns workspace-root/session settings propagation.
+  - `solid_refactor_fix_agent_depth_policy_worker.prompt.md`, PowerShell PID
+    `25236`; owns resume-descendant depth policy routing.
+  - `solid_refactor_fix_replacement_shadow_dep_worker.prompt.md`, PowerShell
+    PID `23324`; owns dead `codex-replacement-shadow` dependency cleanup.
 - `solid_refactor_commit_grouping_worker.prompt.md` exists locally as a possible
   read-only grouping prompt, but it has not been launched. Do not launch it
   until the blocking source-review questions below are handled.

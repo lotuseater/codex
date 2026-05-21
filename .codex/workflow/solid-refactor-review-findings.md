@@ -58,4 +58,10 @@ Root-owned next action: commit orchestration docs/prompts separately; commit tes
 
 ## Scoped Reviews Still Outstanding
 
-- Core-api identifier export move and consumer fallout. A retry visible worker is active with handoff target `.codex/workflow/agents/solid_refactor_area_review_retry_core_api_worker.handoff.md`.
+Core-api visible retry workers were still running without a handoff, so root performed a narrow source review and wrote `.codex/workflow/agents/solid_refactor_area_review_core_api_root_review.handoff.md`.
+
+### P2 - Core-api identifier boundary looks coherent, but lock/Bazel verification remains required
+
+Root found no direct source consumer of `codex_core_api::ThreadId`, `codex_core_api::{... ThreadId ...}`, or `codex_core_api::identifiers` outside the core-api boundary. `ProtocolThreadId` appears only in the core-api export layer, which matches the intended split between protocol and domain identifiers.
+
+Root-owned next action: keep the core-api source slice separate from app-server schema JSON, then run focused release verification plus `just bazel-lock-update` / `just bazel-lock-check` after the source blockers in other areas are fixed.
