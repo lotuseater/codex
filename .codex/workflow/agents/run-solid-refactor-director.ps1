@@ -15,7 +15,9 @@ param(
     [string]$StatePath,
 
     [ValidateSet("Start", "Resume")]
-    [string]$Mode = "Start"
+    [string]$Mode = "Start",
+
+    [string]$ResumeSessionId
 )
 
 $ErrorActionPreference = "Stop"
@@ -31,6 +33,7 @@ $state = [pscustomobject]@{
     promptPath = $PromptPath
     logPath = $LogPath
     markerPath = (Join-Path (Split-Path -Parent $StatePath) "solid_refactor_director.exec.marker.txt")
+    sessionId = $(if ($ResumeSessionId) { $ResumeSessionId } else { $null })
     runnerStartedAt = (Get-Date).ToString("o")
 }
 $state | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $StatePath -Encoding UTF8
@@ -50,9 +53,13 @@ try {
     Write-Host "Prompt: $PromptPath"
 
     if ($Mode -eq "Resume") {
-        & $CodexCommand --cd $Repo --ask-for-approval never --sandbox danger-full-access resume --last
+        if ($ResumeSessionId) {
+            & $CodexCommand --loop --cd $Repo --ask-for-approval never --sandbox danger-full-access resume $ResumeSessionId
+        } else {
+            & $CodexCommand --loop --cd $Repo --ask-for-approval never --sandbox danger-full-access resume --last
+        }
     } else {
-        & $CodexCommand --cd $Repo --ask-for-approval never --sandbox danger-full-access
+        & $CodexCommand --loop --cd $Repo --ask-for-approval never --sandbox danger-full-access
     }
 } finally {
     "ended $(Get-Date -Format o) pid=$PID exit=$LASTEXITCODE" | Add-Content -LiteralPath $LogPath -Encoding UTF8

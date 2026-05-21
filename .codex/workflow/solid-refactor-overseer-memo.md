@@ -98,6 +98,13 @@ Use the visible interactive director launcher:
 powershell -ExecutionPolicy Bypass -File .codex\workflow\agents\start-solid-refactor-director.ps1
 ```
 
+The launcher always invokes Codex with `--loop`. Resume must target the recorded
+director session id when possible; do not rely on `resume --last` after the
+overseer has been active, because that can resume the overseer instead of the
+director. A resumed director is stale by default, so the launcher sends the
+usual resume/post-compaction reminder automatically unless
+`-NoResumeReminder` is explicitly passed.
+
 Singleton rule: always use the launcher above. It stops the remembered director
 process tree first, then launches one new visible director and records its root
 PID in `solid_refactor_director.state.json`. Do not launch raw Codex director
@@ -202,6 +209,9 @@ the overseer into a second director. Instead:
   one concise follow-up. Avoid ad hoc `Get-Process`, whole-session transcript
   reads/searches, broad git status, or source/doc exploration unless a checkpoint
   exposes a concrete problem.
+- After every director interaction, run the checkpoint once and check the actual
+  result. For compaction, verify that context-token percentage dropped
+  substantially; quiet logs or a submitted prompt are not sufficient evidence.
 - If recent director talk suggests it launched only one or two workers for broad
   remaining work, treat that as possible under-delegation. Include a brief note:
   "maybe you spawned too few sessions for current broad work; think of more

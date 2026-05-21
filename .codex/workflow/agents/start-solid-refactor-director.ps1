@@ -12,6 +12,9 @@ param(
     [int]$InitialPromptWaitMs = 10000,
     [int]$InitialPromptSubmitDelayMs = 750,
     [int]$InitialPromptSubmitRepeat = 3,
+    [string]$ResumeSessionId,
+    [string]$ResumeReminder = "Resume reminder: reread .codex\workflow\solid-refactor-overseer-memo.md, .codex\workflow\solid-refactor-handoff.md, docs\current-project-architecture-solid-refactor-plan.md, docs\current-project-architecture-solid-review.md, and fresh worker handoffs. Continue as director only: spawn real separate visible worker windows via codex-workers, no broad builds/tests/schema/formatters/Bazel/lock/release until architecture refactor is complete, and no broad self-review. Maybe you spawned too few sessions for current broad work; think of more possible subtasks and spawn a broader worker wave according to your handoff.",
+    [switch]$NoResumeReminder,
     [switch]$DryRun,
     [switch]$NoStopExisting
 )
@@ -79,6 +82,22 @@ $PowerShellCommand = Resolve-ExecutablePath $PowerShellCommand "powershell.exe"
 $runScript = Resolve-FullPath (Join-Path $PSScriptRoot "run-solid-refactor-director.ps1")
 $stopScript = Resolve-FullPath (Join-Path $PSScriptRoot "stop-solid-refactor-director.ps1")
 
+if ($Mode -eq "Resume" -and -not $ResumeSessionId -and (Test-Path -LiteralPath $StatePath)) {
+    try {
+        $existingState = Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json
+        if ($existingState.sessionId) {
+            $ResumeSessionId = [string]$existingState.sessionId
+        } elseif ($existingState.sessionPath) {
+            $name = [IO.Path]::GetFileNameWithoutExtension([string]$existingState.sessionPath)
+            if ($name -match '^rollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-(.+)$') {
+                $ResumeSessionId = $Matches[1]
+            }
+        }
+    } catch {
+        $ResumeSessionId = $null
+    }
+}
+
 if (-not (Test-Path -LiteralPath $PromptPath)) {
     throw "Director prompt not found: $PromptPath"
 }
@@ -100,6 +119,8 @@ if ($DryRun) {
         InitialPromptWaitMs = $InitialPromptWaitMs
         InitialPromptSubmitDelayMs = $InitialPromptSubmitDelayMs
         InitialPromptSubmitRepeat = $InitialPromptSubmitRepeat
+        ResumeSessionId = $ResumeSessionId
+        ResumeReminder = (-not $NoResumeReminder)
     } | Format-List
     exit 0
 }
@@ -125,6 +146,10 @@ $argumentList = @(
     "-Mode", $Mode
 )
 
+if ($Mode -eq "Resume" -and $ResumeSessionId) {
+    $argumentList += @("-ResumeSessionId", $ResumeSessionId)
+}
+
 $process = Start-Process -FilePath $PowerShellCommand -ArgumentList $argumentList -PassThru -WindowStyle Normal
 
 [pscustomobject]@{
@@ -135,6 +160,7 @@ $process = Start-Process -FilePath $PowerShellCommand -ArgumentList $argumentLis
     promptPath = $PromptPath
     logPath = $LogPath
     markerPath = $MarkerPath
+    sessionId = $(if ($ResumeSessionId) { $ResumeSessionId } else { $null })
     startedAt = (Get-Date).ToString("o")
 } | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $StatePath -Encoding UTF8
 
@@ -142,7 +168,7 @@ $process = Start-Process -FilePath $PowerShellCommand -ArgumentList $argumentLis
     Set-Content -LiteralPath $MarkerPath -Encoding UTF8
 
 $targetWindow = $null
-if ($Mode -eq "Start") {
+if ($Mode -eq "Start" -or ($Mode -eq "Resume" -and -not $NoResumeReminder)) {
     Start-Sleep -Seconds $InitialPromptDelaySeconds
     $targetWindow = Wait-SolidTerminalWindow -Title $directorTitle -RootPid $process.Id -BaselineHandles $baselineHandles -WaitMs $InitialPromptWaitMs
     $windowHandle = 0
@@ -151,7 +177,11 @@ if ($Mode -eq "Start") {
         Update-DirectorWindowState -Path $StatePath -Window $targetWindow
     }
 
-    $prompt = Get-Content -LiteralPath $PromptPath -Raw
+    if ($Mode -eq "Start") {
+        $prompt = Get-Content -LiteralPath $PromptPath -Raw
+    } else {
+        $prompt = $ResumeReminder
+    }
     Invoke-SolidTerminalPasteEnter -Message $prompt -Title $directorTitle -RootPid $process.Id -WindowHandle $windowHandle -WaitMs $InitialPromptWaitMs -SubmitDelayMs $InitialPromptSubmitDelayMs -SubmitRepeat $InitialPromptSubmitRepeat | Out-Null
 }
 

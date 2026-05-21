@@ -8,6 +8,8 @@ param(
     [int]$InterruptDelayMs = 700,
     [switch]$NoInterrupt,
     [switch]$WaitAndRemindOnly,
+    [switch]$NoPostCheck,
+    [double]$MinContextReductionPercent = 5.0,
     [string]$Reminder = "Post-compaction reminder: reread .codex\workflow\solid-refactor-overseer-memo.md, .codex\workflow\solid-refactor-handoff.md, docs\current-project-architecture-solid-refactor-plan.md, docs\current-project-architecture-solid-review.md, and fresh worker handoffs. Continue as director only: spawn real separate visible worker windows via codex-workers, no broad builds/tests/schema/formatters/Bazel/lock/release until architecture refactor is complete, and no broad self-review. Maybe you spawned too few sessions for current broad work; think of more possible subtasks and spawn a broader worker wave according to your handoff."
 )
 
@@ -103,6 +105,15 @@ function Resolve-SessionPath {
         return [string]$State.sessionPath
     }
 
+    if ($State -and ($State.PSObject.Properties.Name -contains "sessionId") -and $State.sessionId) {
+        $root = Join-Path $env:USERPROFILE ".codex\sessions"
+        $matches = @(Get-ChildItem -LiteralPath $root -Recurse -Filter "*$($State.sessionId).jsonl" -File -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending)
+        if ($matches.Count -gt 0) {
+            return $matches[0].FullName
+        }
+    }
+
     return Find-DirectorSession $State
 }
 
@@ -134,6 +145,36 @@ function Wait-ForSessionQuiet {
     return "max wait reached after $MaxWaitSeconds seconds"
 }
 
+function Get-Checkpoint {
+    param([string]$Path)
+
+    $checkScript = Join-Path $PSScriptRoot "check-solid-refactor-director.ps1"
+    if ($Path) {
+        return @(& $checkScript -SessionPath $Path -SessionTailLines 240 -RecentTalkItems 2 -MaxItems 2)
+    }
+
+    return @(& $checkScript -SessionTailLines 240 -RecentTalkItems 2 -MaxItems 2)
+}
+
+function Get-ContextPercent {
+    param([string[]]$Checkpoint)
+
+    $line = @($Checkpoint | Where-Object { $_ -match '^context:' } | Select-Object -First 1)
+    if ($line.Count -eq 0 -or $line[0] -notmatch 'context:\s*([\d\.,]+)%') {
+        return $null
+    }
+
+    $raw = $Matches[1].Replace(',', '.')
+    $style = [Globalization.NumberStyles]::Float
+    $culture = [Globalization.CultureInfo]::InvariantCulture
+    $value = 0.0
+    if ([double]::TryParse($raw, $style, $culture, [ref]$value)) {
+        return $value
+    }
+
+    return $null
+}
+
 $state = $null
 if (Test-Path -LiteralPath $StatePath) {
     $state = Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json
@@ -142,6 +183,12 @@ if (Test-Path -LiteralPath $StatePath) {
 $session = Resolve-SessionPath $state
 $sendScript = Join-Path $PSScriptRoot "send-solid-refactor-director-followup.ps1"
 $interruptScript = Join-Path $PSScriptRoot "interrupt-solid-refactor-director.ps1"
+$baselineCheck = $null
+$baselinePercent = $null
+if (-not $WaitAndRemindOnly -and -not $NoPostCheck) {
+    $baselineCheck = Get-Checkpoint $session
+    $baselinePercent = Get-ContextPercent $baselineCheck
+}
 
 if (-not $WaitAndRemindOnly) {
     if (-not $NoInterrupt) {
@@ -155,6 +202,18 @@ if (-not $WaitAndRemindOnly) {
 $waitResult = Wait-ForSessionQuiet $session
 & $sendScript -Message $Reminder | Out-Null
 
+$postCheck = $null
+$postPercent = $null
+$verifiedContextReduction = $null
+if (-not $NoPostCheck) {
+    Start-Sleep -Seconds 3
+    $postCheck = Get-Checkpoint $session
+    $postPercent = Get-ContextPercent $postCheck
+    if (-not $WaitAndRemindOnly -and $null -ne $baselinePercent -and $null -ne $postPercent) {
+        $verifiedContextReduction = ($postPercent -le ($baselinePercent - $MinContextReductionPercent))
+    }
+}
+
 [pscustomobject]@{
     InterruptSent = (-not $WaitAndRemindOnly -and -not $NoInterrupt)
     CompactSent = (-not $WaitAndRemindOnly)
@@ -162,4 +221,23 @@ $waitResult = Wait-ForSessionQuiet $session
     WaitResult = $waitResult
     ReminderSent = $true
     ReminderLength = $Reminder.Length
+    BaselineContextPercent = $baselinePercent
+    PostContextPercent = $postPercent
+    VerifiedContextReduction = $verifiedContextReduction
 } | Format-List
+
+if ($postCheck) {
+    ""
+    "Post-check:"
+    $postCheck
+}
+
+if (-not $WaitAndRemindOnly -and -not $NoPostCheck) {
+    if ($null -eq $baselinePercent -or $null -eq $postPercent) {
+        throw "Unable to verify compaction: missing baseline or post-check context percentage."
+    }
+
+    if (-not $verifiedContextReduction) {
+        throw "Compaction did not reduce context by at least $MinContextReductionPercent percentage points: before=$baselinePercent after=$postPercent."
+    }
+}

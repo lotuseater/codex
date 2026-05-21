@@ -199,6 +199,15 @@ function Resolve-DirectorSession {
         return [pscustomobject]@{ Path = [string]$State.sessionPath; Source = "state" }
     }
 
+    if ($State -and ($State.PSObject.Properties.Name -contains "sessionId") -and $State.sessionId) {
+        $root = Join-Path $env:USERPROFILE ".codex\sessions"
+        $matches = @(Get-ChildItem -LiteralPath $root -Recurse -Filter "*$($State.sessionId).jsonl" -File -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending)
+        if ($matches.Count -gt 0) {
+            return [pscustomobject]@{ Path = $matches[0].FullName; Source = "state sessionId" }
+        }
+    }
+
     return Find-DirectorSessionFromState $State $TailLines
 }
 
