@@ -9,5 +9,8 @@ doctest = false
 name = "codex_prompt_context"
 path = "src/lib.rs"
 
+[dependencies]
+codex-utils-absolute-path = { workspace = true }
+
 [lints]
 workspace = true
