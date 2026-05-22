@@ -1,5 +1,5 @@
-use codex_config::config_toml::ConfigToml;
 use codex_config::ConfigEditsBuilder;
+use codex_config::config_toml::ConfigToml;
 use codex_protocol::config_types::Personality;
 use codex_thread_store_api::ListThreadsParams;
 use codex_thread_store_api::ThreadSortKey;

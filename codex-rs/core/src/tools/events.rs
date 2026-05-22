@@ -1,4 +1,3 @@
-use codex_tool_execution_api::FunctionCallError;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use crate::tools::context::SharedTurnDiffTracker;
@@ -20,6 +19,7 @@ use codex_protocol::protocol::FileChange;
 use codex_protocol::protocol::PatchApplyStatus;
 use codex_protocol::protocol::TurnDiffEvent;
 use codex_shell_command::parse_command::parse_command;
+use codex_tool_execution_api::FunctionCallError;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use std::collections::HashMap;
 use std::path::PathBuf;

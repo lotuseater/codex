@@ -17,7 +17,6 @@ use codex_protocol::models::ResponseInputItem;
 use serde_json::Value as JsonValue;
 use tokio_util::sync::CancellationToken;
 
-use codex_tool_execution_api::FunctionCallError;
 use crate::original_image_detail::can_request_original_image_detail;
 use crate::original_image_detail::sanitize_original_image_detail as sanitize_image_detail_items;
 use crate::session::session::Session;
@@ -30,6 +29,7 @@ use crate::tools::parallel::ToolCallRuntime;
 use crate::tools::router::ToolCall;
 use crate::unified_exec::resolve_max_tokens;
 use codex_features::Feature;
+use codex_tool_execution_api::FunctionCallError;
 use codex_tool_execution_api::ToolCallSource;
 use codex_tool_execution_api::ToolName;
 use codex_utils_output_truncation::TruncationPolicy;

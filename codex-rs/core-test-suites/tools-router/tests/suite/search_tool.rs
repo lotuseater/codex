@@ -50,9 +50,10 @@ async fn search_tool_enabled_by_default_adds_tool_search() -> Result<()> {
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "Search query for deferred tools."},
-                    "limit": {"type": "number", "description": "Maximum number of tools to return (defaults to 8)."},
+                    "limit": {"type": ["number", "null"], "description": "Maximum number of tools to return (defaults to 8)."},
+                    "source": {"type": ["string", "null"], "description": "Optional source filter. Available sources:\n- Calendar: Plan events and manage your calendar."},
                 },
-                "required": ["query"],
+                "required": ["query", "limit", "source"],
                 "additionalProperties": false,
             }
         })

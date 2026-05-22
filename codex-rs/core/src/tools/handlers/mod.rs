@@ -43,7 +43,6 @@ use serde_json::Map;
 use serde_json::Value;
 use std::path::Path;
 
-use codex_tool_execution_api::FunctionCallError;
 use crate::sandboxing::SandboxPermissions;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
@@ -53,6 +52,7 @@ pub(crate) use crate::tools::code_mode::CodeModeWaitHandler;
 pub use apply_patch::ApplyPatchHandler;
 use codex_protocol::models::AdditionalPermissionProfile;
 use codex_protocol::protocol::AskForApproval;
+use codex_tool_execution_api::FunctionCallError;
 pub use context_ops::ContextOpsHandler;
 pub(crate) use desktop_automation::DesktopAutomationHandler;
 pub use dynamic::DynamicToolHandler;

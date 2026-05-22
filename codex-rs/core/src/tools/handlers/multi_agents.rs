@@ -7,7 +7,6 @@
 
 use crate::agent::AgentStatus;
 use crate::agent::exceeds_thread_spawn_depth_limit;
-use codex_tool_execution_api::FunctionCallError;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use crate::tools::context::ToolInvocation;
@@ -34,6 +33,7 @@ use codex_protocol::protocol::CollabResumeEndEvent;
 use codex_protocol::protocol::CollabWaitingBeginEvent;
 use codex_protocol::protocol::CollabWaitingEndEvent;
 use codex_protocol::user_input::UserInput;
+use codex_tool_execution_api::FunctionCallError;
 use codex_tool_execution_api::ToolName;
 use codex_tool_execution_api::ToolOutputPayload;
 use codex_tool_registry_api::ToolSearchSourceInfo;

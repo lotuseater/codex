@@ -1,4 +1,5 @@
 use super::*;
+use crate::request_user_input_available_modes;
 use codex_features::Feature;
 use codex_features::Features;
 use codex_protocol::config_types::WebSearchMode;

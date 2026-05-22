@@ -2,7 +2,6 @@
 
 use crate::agent::AgentStatus;
 use crate::agent::agent_resolver::resolve_agent_target;
-use codex_tool_execution_api::FunctionCallError;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
@@ -29,6 +28,7 @@ use codex_protocol::protocol::CollabResumeEndEvent;
 use codex_protocol::protocol::CollabWaitingBeginEvent;
 use codex_protocol::protocol::CollabWaitingEndEvent;
 use codex_protocol::user_input::UserInput;
+use codex_tool_execution_api::FunctionCallError;
 use codex_tool_execution_api::ToolName;
 use codex_tool_execution_api::ToolOutputPayload;
 use serde::Deserialize;

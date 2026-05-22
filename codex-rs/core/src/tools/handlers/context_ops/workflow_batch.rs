@@ -2,10 +2,10 @@ use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
 
-use codex_tool_execution_api::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::handlers::parse_arguments;
+use codex_tool_execution_api::FunctionCallError;
 
 use super::execution;
 
@@ -138,13 +138,13 @@ mod tests {
     use tokio::sync::Mutex;
 
     use super::super::ContextOpsHandler;
-    use codex_tool_execution_api::FunctionCallError;
     use crate::session::tests::make_session_and_context;
     use crate::tools::context::FunctionToolOutput;
     use crate::tools::context::ToolInvocation;
     use crate::tools::context::ToolPayload;
     use crate::tools::registry::ToolExecutor;
     use crate::turn_diff_tracker::TurnDiffTracker;
+    use codex_tool_execution_api::FunctionCallError;
     use codex_tool_execution_api::ToolCallSource;
 
     async fn invocation_for_arguments(arguments: String) -> ToolInvocation {

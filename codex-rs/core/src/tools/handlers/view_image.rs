@@ -11,7 +11,6 @@ use codex_utils_image::PromptImageMode;
 use codex_utils_image::load_for_prompt_bytes;
 use serde::Deserialize;
 
-use codex_tool_execution_api::FunctionCallError;
 use crate::original_image_detail::can_request_original_image_detail;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
@@ -23,6 +22,7 @@ use crate::tools::handlers::view_image_spec::ViewImageToolOptions;
 use crate::tools::handlers::view_image_spec::create_view_image_tool;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
+use codex_tool_execution_api::FunctionCallError;
 use codex_tool_execution_api::ToolName;
 use codex_tool_execution_api::ToolOutputPayload;
 use codex_tool_registry_api::ToolSpec;

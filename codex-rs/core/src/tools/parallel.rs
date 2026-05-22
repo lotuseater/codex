@@ -12,7 +12,6 @@ use tracing::Instrument;
 use tracing::instrument;
 use tracing::trace_span;
 
-use codex_tool_execution_api::FunctionCallError;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use crate::tools::context::AbortedToolOutput;
@@ -25,6 +24,7 @@ use crate::tools::router::ToolCall;
 use crate::tools::router::ToolRouter;
 use codex_protocol::error::CodexErr;
 use codex_protocol::models::ResponseInputItem;
+use codex_tool_execution_api::FunctionCallError;
 use codex_tool_execution_api::ToolCallSource;
 
 #[derive(Clone)]

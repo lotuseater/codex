@@ -11,7 +11,6 @@ use tokio_util::sync::CancellationToken;
 
 use crate::context::ContextualUserFragment;
 use crate::context::ImageGenerationInstructions;
-use codex_tool_execution_api::FunctionCallError;
 use crate::parse_turn_item;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
@@ -28,6 +27,7 @@ use codex_protocol::models::MessagePhase;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
 use codex_rollout::state_db;
+use codex_tool_execution_api::FunctionCallError;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_stream_parser::strip_proposed_plan_blocks;
 use futures::Future;

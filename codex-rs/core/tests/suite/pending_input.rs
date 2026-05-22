@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
 use codex_core::CodexThread;
-use codex_test_support_responses::context_snapshot;
-use codex_test_support_responses::context_snapshot::ContextSnapshotOptions;
 use codex_core_test_runtime::responses;
 use codex_core_test_runtime::responses::ev_completed;
 use codex_core_test_runtime::responses::ev_completed_with_tokens;
@@ -27,6 +25,8 @@ use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::Op;
 use codex_protocol::user_input::UserInput;
+use codex_test_support_responses::context_snapshot;
+use codex_test_support_responses::context_snapshot::ContextSnapshotOptions;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
 use serde_json::from_slice;

@@ -11,7 +11,6 @@ use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 
-use codex_tool_execution_api::FunctionCallError;
 use crate::session::session::Session;
 use crate::session::tests::make_session_and_context;
 use crate::session::turn_context::TurnContext;
@@ -24,6 +23,7 @@ use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
 use crate::tools::registry::ToolRegistry;
 use crate::turn_diff_tracker::TurnDiffTracker;
+use codex_tool_execution_api::FunctionCallError;
 use codex_tool_execution_api::ToolCallSource;
 
 struct TestHandler {

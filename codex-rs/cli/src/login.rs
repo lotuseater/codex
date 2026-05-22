@@ -113,6 +113,13 @@ fn print_login_server_start(actual_port: u16, auth_url: &str) {
     );
 }
 
+fn forced_chatgpt_workspace_ids(config: &Config) -> Option<Vec<String>> {
+    config
+        .forced_chatgpt_workspace_id
+        .clone()
+        .map(|workspace_id| vec![workspace_id])
+}
+
 pub async fn login_with_chatgpt(
     codex_home: PathBuf,
     forced_chatgpt_workspace_id: Option<Vec<String>>,
@@ -141,7 +148,7 @@ pub async fn run_login_with_chatgpt(cli_config_overrides: CliConfigOverrides) ->
         std::process::exit(1);
     }
 
-    let forced_chatgpt_workspace_id = config.forced_chatgpt_workspace_id.clone();
+    let forced_chatgpt_workspace_id = forced_chatgpt_workspace_ids(&config);
 
     match login_with_chatgpt(
         config.codex_home.to_path_buf(),
@@ -276,7 +283,7 @@ pub async fn run_login_with_device_code(
         eprintln!("{CHATGPT_LOGIN_DISABLED_MESSAGE}");
         std::process::exit(1);
     }
-    let forced_chatgpt_workspace_id = config.forced_chatgpt_workspace_id.clone();
+    let forced_chatgpt_workspace_id = forced_chatgpt_workspace_ids(&config);
     let mut opts = ServerOptions::new(
         config.codex_home.to_path_buf(),
         client_id.unwrap_or(CLIENT_ID.to_string()),
@@ -315,7 +322,7 @@ pub async fn run_login_with_device_code_fallback_to_browser(
         std::process::exit(1);
     }
 
-    let forced_chatgpt_workspace_id = config.forced_chatgpt_workspace_id.clone();
+    let forced_chatgpt_workspace_id = forced_chatgpt_workspace_ids(&config);
     let mut opts = ServerOptions::new(
         config.codex_home.to_path_buf(),
         client_id.unwrap_or(CLIENT_ID.to_string()),

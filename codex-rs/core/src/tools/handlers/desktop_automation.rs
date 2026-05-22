@@ -7,7 +7,6 @@ use codex_tool_execution_api::ToolName;
 use codex_tool_registry_api::ToolSpec;
 use serde_json::Value;
 
-use codex_tool_execution_api::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
@@ -18,6 +17,7 @@ use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::PostToolUsePayload;
 use crate::tools::registry::PreToolUsePayload;
 use crate::tools::registry::ToolExecutor;
+use codex_tool_execution_api::FunctionCallError;
 
 pub struct DesktopAutomationHandler {
     spec: ToolSpec,

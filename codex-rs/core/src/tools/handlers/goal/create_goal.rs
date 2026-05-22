@@ -1,4 +1,3 @@
-use codex_tool_execution_api::FunctionCallError;
 use crate::goals::CreateGoalRequest;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
@@ -8,6 +7,7 @@ use crate::tools::handlers::goal_spec::create_create_goal_tool;
 use crate::tools::handlers::parse_arguments;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
+use codex_tool_execution_api::FunctionCallError;
 use codex_tool_execution_api::ToolName;
 use codex_tool_registry_api::ToolSpec;
 

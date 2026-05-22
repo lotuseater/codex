@@ -9,12 +9,12 @@ use codex_tool_registry_api::SEARCH_TEXT_TOOL_NAME;
 use codex_tool_registry_api::ToolSpec;
 use codex_tool_registry_api::WORKFLOW_BATCH_TOOL_NAME;
 
-use codex_tool_execution_api::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::registry::ToolExecutor;
 use crate::tools::registry::ToolHandler;
+use codex_tool_execution_api::FunctionCallError;
 
 pub struct ContextOpsHandler {
     spec: ToolSpec,

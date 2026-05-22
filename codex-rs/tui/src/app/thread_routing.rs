@@ -5,6 +5,7 @@
 //! when the visible thread changes.
 
 use super::*;
+use crate::app_server_session::TurnPermissionsOverride;
 use crate::session_resume::read_session_model;
 
 impl App {
@@ -510,7 +511,7 @@ impl App {
                 cwd,
                 approval_policy,
                 approvals_reviewer,
-                permission_profile,
+                active_permission_profile,
                 model,
                 effort,
                 summary,
@@ -589,12 +590,15 @@ impl App {
                     let config = self.chat_widget.config_ref();
                     let approvals_reviewer =
                         approvals_reviewer.unwrap_or(config.approvals_reviewer);
-                    let active_permission_profile =
-                        if config.permissions.permission_profile() == permission_profile.clone() {
-                            config.permissions.active_permission_profile()
-                        } else {
-                            None
-                        };
+                    let permissions_override = active_permission_profile
+                        .clone()
+                        .map(TurnPermissionsOverride::ActiveProfile)
+                        .unwrap_or(TurnPermissionsOverride::Preserve);
+                    let workspace_roots = self
+                        .primary_session_configured
+                        .as_ref()
+                        .map(|session| session.runtime_workspace_roots.as_slice())
+                        .unwrap_or(&[]);
                     app_server
                         .turn_start(
                             thread_id,
@@ -602,8 +606,8 @@ impl App {
                             cwd.clone(),
                             *approval_policy,
                             approvals_reviewer,
-                            permission_profile.clone(),
-                            active_permission_profile,
+                            permissions_override,
+                            workspace_roots,
                             model.to_string(),
                             *effort,
                             *summary,

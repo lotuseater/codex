@@ -2916,14 +2916,13 @@ impl Session {
                 state.token_info()
             };
             if let Some(token_info) = token_info.as_ref() {
-                let to_extension_usage =
-                    |usage: &TokenUsage| codex_extension_api::TokenUsage {
-                        input_tokens: usage.input_tokens,
-                        cached_input_tokens: usage.cached_input_tokens,
-                        output_tokens: usage.output_tokens,
-                        reasoning_output_tokens: usage.reasoning_output_tokens,
-                        total_tokens: usage.total_tokens,
-                    };
+                let to_extension_usage = |usage: &TokenUsage| codex_extension_api::TokenUsage {
+                    input_tokens: usage.input_tokens,
+                    cached_input_tokens: usage.cached_input_tokens,
+                    output_tokens: usage.output_tokens,
+                    reasoning_output_tokens: usage.reasoning_output_tokens,
+                    total_tokens: usage.total_tokens,
+                };
                 let extension_token_info = codex_extension_api::TokenUsageInfo {
                     total_token_usage: to_extension_usage(&token_info.total_token_usage),
                     last_token_usage: to_extension_usage(&token_info.last_token_usage),

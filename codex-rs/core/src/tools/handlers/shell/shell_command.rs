@@ -7,7 +7,6 @@ use std::path::Path;
 use crate::exec::ExecCapturePolicy;
 use crate::exec::ExecParams;
 use crate::exec_env::create_env;
-use codex_tool_execution_api::FunctionCallError;
 use crate::maybe_emit_implicit_skill_invocation;
 use crate::session::turn_context::TurnContext;
 use crate::shell::Shell;
@@ -25,6 +24,7 @@ use crate::tools::registry::PostToolUsePayload;
 use crate::tools::registry::PreToolUsePayload;
 use crate::tools::registry::ToolExecutor;
 use crate::tools::runtimes::shell::ShellRuntimeBackend;
+use codex_tool_execution_api::FunctionCallError;
 use codex_tool_registry_api::ToolSpec;
 
 use super::super::shell_spec::CommandToolOptions;

@@ -67,7 +67,7 @@ fn reset_elapsed_percent(window: &RateLimitWindowDisplay, now: DateTime<Local>) 
         .clamp(0, total_seconds);
     let reset_percent = ((elapsed_seconds as f64 / total_seconds as f64) * 100.0).round() as i64;
     let used_percent = window.used_percent.clamp(0.0, 100.0).round() as i64;
-    let label = get_limits_duration(window_minutes);
+    let label = get_limits_duration(window_minutes).unwrap_or_else(|| format!("{window_minutes}m"));
     Some(format!(
         "{label} {used_percent}% used {reset_percent}% reset"
     ))

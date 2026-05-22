@@ -1190,7 +1190,7 @@ async fn rejects_escalated_permissions_when_policy_not_on_request() {
             cancellation_token: CancellationToken::new(),
             tracker: Arc::clone(&turn_diff_tracker),
             call_id,
-        tool_name: plain_tool_name(tool_name),
+            tool_name: plain_tool_name(tool_name),
             source: crate::tools::context::ToolCallSource::Direct,
             payload: ToolPayload::Function {
                 arguments: serde_json::json!({
@@ -1266,7 +1266,7 @@ async fn unified_exec_rejects_escalated_permissions_when_policy_not_on_request()
             cancellation_token: CancellationToken::new(),
             tracker: Arc::clone(&tracker),
             call_id: "exec-call".to_string(),
-        tool_name: plain_tool_name("exec_command"),
+            tool_name: plain_tool_name("exec_command"),
             source: crate::tools::context::ToolCallSource::Direct,
             payload: ToolPayload::Function {
                 arguments: serde_json::json!({

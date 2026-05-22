@@ -110,4 +110,3 @@ pub(crate) fn tool_search_output_has_namespace_child(
     });
     namespace_child_tool(&output, namespace, tool_name).is_some()
 }
-

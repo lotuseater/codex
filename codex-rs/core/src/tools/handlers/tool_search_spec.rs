@@ -1,4 +1,6 @@
 use codex_tool_registry_api::JsonSchema;
+use codex_tool_registry_api::JsonSchemaPrimitiveType;
+use codex_tool_registry_api::JsonSchemaType;
 use codex_tool_registry_api::TOOL_SEARCH_TOOL_NAME;
 use codex_tool_registry_api::ToolSearchSourceInfo;
 use codex_tool_registry_api::ToolSpec;
@@ -8,18 +10,27 @@ pub(crate) fn create_tool_search_tool(
     searchable_sources: &[ToolSearchSourceInfo],
     default_limit: usize,
 ) -> ToolSpec {
-    let properties = BTreeMap::from([
+    let mut properties = BTreeMap::from([
         (
             "query".to_string(),
             JsonSchema::string(Some("Search query for deferred tools.".to_string())),
         ),
         (
             "limit".to_string(),
-            JsonSchema::number(Some(format!(
-                "Maximum number of tools to return (defaults to {default_limit})."
-            ))),
+            JsonSchema {
+                schema_type: Some(JsonSchemaType::Multiple(vec![
+                    JsonSchemaPrimitiveType::Number,
+                    JsonSchemaPrimitiveType::Null,
+                ])),
+                description: Some(format!(
+                    "Maximum number of tools to return (defaults to {default_limit})."
+                )),
+                ..Default::default()
+            },
         ),
     ]);
+
+    let mut required = vec!["query".to_string(), "limit".to_string()];
 
     let mut source_descriptions = BTreeMap::new();
     for source in searchable_sources {
@@ -33,7 +44,8 @@ pub(crate) fn create_tool_search_tool(
             .or_insert(source.description.clone());
     }
 
-    let source_descriptions = if source_descriptions.is_empty() {
+    let has_sources = !source_descriptions.is_empty();
+    let source_descriptions = if !has_sources {
         "None currently enabled.".to_string()
     } else {
         source_descriptions
@@ -46,6 +58,23 @@ pub(crate) fn create_tool_search_tool(
             .join("\n")
     };
 
+    if has_sources {
+        properties.insert(
+            "source".to_string(),
+            JsonSchema {
+                schema_type: Some(JsonSchemaType::Multiple(vec![
+                    JsonSchemaPrimitiveType::String,
+                    JsonSchemaPrimitiveType::Null,
+                ])),
+                description: Some(format!(
+                    "Optional source filter. Available sources:\n{source_descriptions}"
+                )),
+                ..Default::default()
+            },
+        );
+        required.push("source".to_string());
+    }
+
     let description = format!(
         "# Tool discovery\n\nSearches over deferred tool metadata with BM25 and exposes matching tools for the next model call.\n\nYou have access to tools from the following sources:\n{source_descriptions}\nSome of the tools may not have been provided to you upfront, and you should use this tool (`{TOOL_SEARCH_TOOL_NAME}`) to search for the required tools. For MCP tool discovery, always use `{TOOL_SEARCH_TOOL_NAME}` instead of `list_mcp_resources` or `list_mcp_resource_templates`."
     );
@@ -53,11 +82,7 @@ pub(crate) fn create_tool_search_tool(
     ToolSpec::ToolSearch {
         execution: "client".to_string(),
         description,
-        parameters: JsonSchema::object(
-            properties,
-            Some(vec!["query".to_string()]),
-            Some(false.into()),
-        ),
+        parameters: JsonSchema::object(properties, Some(required), Some(false.into())),
     }
 }
 
@@ -97,16 +122,37 @@ mod tests {
                 parameters: JsonSchema::object(BTreeMap::from([
                         (
                             "limit".to_string(),
-                            JsonSchema::number(Some(
+                            JsonSchema {
+                                schema_type: Some(JsonSchemaType::Multiple(vec![
+                                    JsonSchemaPrimitiveType::Number,
+                                    JsonSchemaPrimitiveType::Null,
+                                ])),
+                                description: Some(
                                     "Maximum number of tools to return (defaults to 8)."
                                         .to_string(),
-                                ),),
+                                ),
+                                ..Default::default()
+                            },
                         ),
-                        (
-                            "query".to_string(),
-                            JsonSchema::string(Some("Search query for deferred tools.".to_string()),),
-                        ),
-                    ]), Some(vec!["query".to_string()]), Some(false.into())),
+                    (
+                        "query".to_string(),
+                        JsonSchema::string(Some("Search query for deferred tools.".to_string()),),
+                    ),
+                    (
+                        "source".to_string(),
+                        JsonSchema {
+                            schema_type: Some(JsonSchemaType::Multiple(vec![
+                                JsonSchemaPrimitiveType::String,
+                                JsonSchemaPrimitiveType::Null,
+                            ])),
+                            description: Some(
+                                "Optional source filter. Available sources:\n- Google Drive: Use Google Drive as the single entrypoint for Drive, Docs, Sheets, and Slides work.\n- docs"
+                                    .to_string(),
+                            ),
+                            ..Default::default()
+                        },
+                    ),
+                ]), Some(vec!["query".to_string(), "limit".to_string(), "source".to_string()]), Some(false.into())),
             }
         );
     }

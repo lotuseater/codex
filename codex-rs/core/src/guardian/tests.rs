@@ -19,7 +19,6 @@ use codex_config::RequirementSource;
 use codex_config::Sourced;
 use codex_config::config_toml::ConfigToml;
 use codex_config::types::McpServerConfig;
-use codex_test_support_responses::context_snapshot;
 use codex_core_test_runtime::skip_if_no_network;
 use codex_exec_server::LOCAL_FS;
 use codex_features::Feature;
@@ -49,6 +48,7 @@ use codex_test_support_context_fixtures::context_snapshot::ContextSnapshotOption
 use codex_test_support_lightweight::PathBufExt;
 use codex_test_support_lightweight::TempDirExt;
 use codex_test_support_lightweight::test_path_buf;
+use codex_test_support_responses::context_snapshot;
 use codex_test_support_responses::responses::ev_assistant_message;
 use codex_test_support_responses::responses::ev_completed;
 use codex_test_support_responses::responses::ev_response_created;

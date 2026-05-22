@@ -424,6 +424,9 @@ impl App {
             AppEvent::RefreshConnectors { force_refetch } => {
                 self.chat_widget.refresh_connectors(force_refetch);
             }
+            AppEvent::FetchConnectorsList { force_refetch } => {
+                self.fetch_connectors_list(app_server, force_refetch);
+            }
             AppEvent::PluginInstallAuthAdvance { refresh_connectors } => {
                 if refresh_connectors {
                     self.chat_widget.refresh_connectors(/*force_refetch*/ true);
@@ -1160,9 +1163,10 @@ impl App {
                                 self.app_event_tx.send(AppEvent::UpdateAskForApprovalPolicy(
                                     AskForApproval::from(preset.approval),
                                 ));
-                                self.app_event_tx.send(AppEvent::UpdateActivePermissionProfile(
-                                    preset.active_permission_profile.clone(),
-                                ));
+                                self.app_event_tx
+                                    .send(AppEvent::UpdateActivePermissionProfile(
+                                        preset.active_permission_profile.clone(),
+                                    ));
                                 let _ = mode;
                                 self.chat_widget.add_plain_history_lines(vec![
                                     Line::from(vec!["• ".dim(), "Sandbox ready".into()]),
@@ -1453,12 +1457,14 @@ impl App {
             }
             AppEvent::UpdateActivePermissionProfile(active_permission_profile) => {
                 let mut config = self.config.clone();
-                let Some(permission_profile) = self.try_set_builtin_active_permission_profile_on_config(
-                    &mut config,
-                    active_permission_profile.clone(),
-                    "Failed to set permission profile",
-                    "failed to set permission profile on app config",
-                ) else {
+                let Some(permission_profile) = self
+                    .try_set_builtin_active_permission_profile_on_config(
+                        &mut config,
+                        active_permission_profile.clone(),
+                        "Failed to set permission profile",
+                        "failed to set permission profile on app config",
+                    )
+                else {
                     return Ok(AppRunControl::Continue);
                 };
                 #[cfg(target_os = "windows")]
@@ -1468,13 +1474,10 @@ impl App {
                 let permission_profile_for_persist = permission_profile.clone();
 
                 self.config = config;
-                if let Err(err) = self
-                    .chat_widget
-                    .set_permission_profile_with_active_profile(
-                        permission_profile_for_chat,
-                        Some(active_permission_profile),
-                    )
-                {
+                if let Err(err) = self.chat_widget.set_permission_profile_with_active_profile(
+                    permission_profile_for_chat,
+                    Some(active_permission_profile),
+                ) {
                     tracing::warn!(%err, "failed to set permission profile on chat config");
                     self.chat_widget
                         .add_error_message(format!("Failed to set permission profile: {err}"));

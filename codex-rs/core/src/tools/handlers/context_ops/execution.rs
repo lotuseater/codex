@@ -17,9 +17,9 @@ use crate::exec::ExecParams;
 use crate::exec::process_exec_tool_call;
 use crate::exec_env::CODEX_THREAD_ID_ENV_VAR;
 use crate::exec_env::create_env;
-use codex_tool_execution_api::FunctionCallError;
 use crate::session::turn_context::TurnEnvironment;
 use crate::tools::context::ToolInvocation;
+use codex_tool_execution_api::FunctionCallError;
 
 const CONTEXT_COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
 const REMOTE_READ_WAIT: Duration = Duration::from_millis(100);

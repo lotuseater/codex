@@ -149,7 +149,10 @@ impl App {
         user_message_prefix: &str,
         log_message: &str,
     ) -> bool {
-        if let Err(err) = config.permissions.set_permission_profile(permission_profile) {
+        if let Err(err) = config
+            .permissions
+            .set_permission_profile(permission_profile)
+        {
             tracing::warn!(error = %err, "{log_message}");
             self.chat_widget
                 .add_error_message(format!("{user_message_prefix}: {err}"));
@@ -401,12 +404,10 @@ impl App {
             .is_some()
             .then(|| self.config.permissions.permission_profile().clone());
         if let Some(permission_profile) = permission_profile_override_value.as_ref()
-            && let Err(err) = self
-                .chat_widget
-                .set_permission_profile_with_active_profile(
-                    permission_profile.clone(),
-                    active_permission_profile_override.clone(),
-                )
+            && let Err(err) = self.chat_widget.set_permission_profile_with_active_profile(
+                permission_profile.clone(),
+                active_permission_profile_override.clone(),
+            )
         {
             tracing::error!(
                 error = %err,

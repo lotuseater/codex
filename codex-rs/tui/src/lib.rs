@@ -19,6 +19,7 @@ use app::App;
 pub use app::AppExitInfo;
 pub use app::ExitReason;
 use app_server_session::AppServerSession;
+use app_server_session::ThreadParamsMode;
 use codex_app_server_client::AppServerClient;
 use codex_app_server_client::DEFAULT_IN_PROCESS_CHANNEL_CAPACITY;
 use codex_app_server_client::InProcessAppServerClient;
@@ -110,6 +111,7 @@ mod clipboard_copy;
 mod clipboard_paste;
 mod collaboration_modes;
 mod color;
+mod connector_labels;
 pub(crate) mod custom_terminal;
 mod pets;
 pub use custom_terminal::Terminal;
@@ -467,7 +469,7 @@ async fn start_app_server(
             arg0_paths,
             config,
             cli_kv_overrides,
-            loader_overrides,
+            loader_overrides.clone(),
             strict_config,
             cloud_requirements,
             feedback,
@@ -501,7 +503,10 @@ pub(crate) async fn start_app_server_for_picker(
         environment_manager,
     )
     .await?;
-    Ok(AppServerSession::new(app_server))
+    Ok(AppServerSession::new(
+        app_server,
+        ThreadParamsMode::Embedded,
+    ))
 }
 
 #[cfg(test)]
@@ -835,9 +840,9 @@ pub async fn run_main(
     )?;
     let environment_manager =
         if should_load_configured_environments(&loader_overrides, &app_server_target) {
-            EnvironmentManager::from_codex_home(codex_home.clone(), local_runtime_paths).await
+            EnvironmentManager::from_codex_home(codex_home.clone(), Some(local_runtime_paths)).await
         } else {
-            EnvironmentManager::from_env(local_runtime_paths).await
+            EnvironmentManager::from_env(Some(local_runtime_paths)).await
         }
         .map(Arc::new)
         .map_err(std::io::Error::other)?;
@@ -989,43 +994,6 @@ pub async fn run_main(
         AppServerTarget::Remote { .. } => state_db::get_state_db(&config).await,
     };
 
-    let effective_toml = config.config_layer_stack.effective_config();
-    match effective_toml.try_into() {
-        Ok(config_toml) => {
-            match crate::legacy_core::personality_migration::maybe_migrate_personality(
-                &config.codex_home,
-                &config_toml,
-                state_db.clone(),
-            )
-            .await
-            {
-                Ok(
-                    crate::legacy_core::personality_migration::PersonalityMigrationStatus::Applied,
-                ) => {
-                    config = load_config_or_exit(
-                        cli_kv_overrides.clone(),
-                        overrides.clone(),
-                        cloud_requirements.clone(),
-                        loader_overrides.clone(),
-                        strict_config,
-                    )
-                    .await;
-                }
-                Ok(
-                    crate::legacy_core::personality_migration::PersonalityMigrationStatus::SkippedMarker
-                    | crate::legacy_core::personality_migration::PersonalityMigrationStatus::SkippedExplicitPersonality
-                    | crate::legacy_core::personality_migration::PersonalityMigrationStatus::SkippedNoSessions,
-                ) => {}
-                Err(err) => {
-                    tracing::warn!(error = %err, "failed to run personality migration");
-                }
-            }
-        }
-        Err(err) => {
-            tracing::warn!(error = %err, "failed to deserialize config for personality migration");
-        }
-    }
-
     #[allow(clippy::print_stderr)]
     match check_execpolicy_for_warnings(&config.config_layer_stack).await {
         Ok(None) => {}
@@ -1058,7 +1026,10 @@ pub async fn run_main(
             codex_home: config.codex_home.to_path_buf(),
             auth_credentials_store_mode: config.cli_auth_credentials_store_mode,
             forced_login_method: config.forced_login_method,
-            forced_chatgpt_workspace_id: config.forced_chatgpt_workspace_id.clone(),
+            forced_chatgpt_workspace_id: config
+                .forced_chatgpt_workspace_id
+                .clone()
+                .map(|workspace_id| vec![workspace_id]),
             chatgpt_base_url: Some(config.chatgpt_base_url.clone()),
         })
         .await
@@ -1200,9 +1171,10 @@ async fn run_ratatui_app(
         prev_hook(info);
     }));
     let mut terminal = tui::init()?;
-    terminal.clear()?;
+    terminal.terminal.clear()?;
+    let enhanced_keys_supported = terminal.enhanced_keys_supported;
 
-    let mut tui = Tui::new(terminal);
+    let mut tui = Tui::new(terminal.terminal, enhanced_keys_supported);
     let mut terminal_restore_guard = TerminalRestoreGuard::new();
 
     #[cfg(not(debug_assertions))]
@@ -1245,7 +1217,13 @@ async fn run_ratatui_app(
     )
     .await
     {
-        Ok(app_server) => AppServerSession::new(app_server),
+        Ok(app_server) => AppServerSession::new(
+            app_server,
+            match &app_server_target {
+                AppServerTarget::Embedded => ThreadParamsMode::Embedded,
+                AppServerTarget::Remote { .. } => ThreadParamsMode::Remote,
+            },
+        ),
         Err(err) => {
             terminal_restore_guard.restore_silently();
             session_log::log_session_end();
@@ -1584,7 +1562,7 @@ async fn run_ratatui_app(
             arg0_paths,
             config.clone(),
             cli_kv_overrides.clone(),
-            loader_overrides,
+            loader_overrides.clone(),
             strict_config,
             cloud_requirements.clone(),
             feedback.clone(),
@@ -1594,8 +1572,14 @@ async fn run_ratatui_app(
         )
         .await
         {
-            Ok(app_server) => AppServerSession::new(app_server)
-                .with_remote_cwd_override(remote_cwd_override.clone()),
+            Ok(app_server) => AppServerSession::new(
+                app_server,
+                match &app_server_target {
+                    AppServerTarget::Embedded => ThreadParamsMode::Embedded,
+                    AppServerTarget::Remote { .. } => ThreadParamsMode::Remote,
+                },
+            )
+            .with_remote_cwd_override(remote_cwd_override.clone()),
             Err(err) => {
                 terminal_restore_guard.restore_silently();
                 session_log::log_session_end();
@@ -2172,10 +2156,12 @@ mod tests {
             &other_cwd,
         )?;
 
-        let mut app_server =
-            AppServerSession::new(codex_app_server_client::AppServerClient::InProcess(
+        let mut app_server = AppServerSession::new(
+            codex_app_server_client::AppServerClient::InProcess(
                 start_test_embedded_app_server(config.clone()).await?,
-            ));
+            ),
+            ThreadParamsMode::Embedded,
+        );
         let filter_cwd = latest_session_cwd_filter(
             /*remote_mode*/ false, /*remote_cwd_override*/ None, &config,
             /*show_all*/ false,
@@ -2371,10 +2357,12 @@ mod tests {
                 .await
                 .map_err(std::io::Error::other)?;
 
-            let mut app_server =
-                AppServerSession::new(codex_app_server_client::AppServerClient::InProcess(
+            let mut app_server = AppServerSession::new(
+                codex_app_server_client::AppServerClient::InProcess(
                     start_test_embedded_app_server(config).await?,
-                ));
+                ),
+                ThreadParamsMode::Embedded,
+            );
             let target =
                 lookup_session_target_by_name_with_app_server(&mut app_server, "saved-session")
                     .await?;

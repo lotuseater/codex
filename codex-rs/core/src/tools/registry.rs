@@ -4,7 +4,6 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use codex_tool_execution_api::FunctionCallError;
 use crate::goals::GoalRuntimeEvent;
 use crate::hook_runtime::PreToolUseHookResult;
 use crate::hook_runtime::record_additional_contexts;
@@ -28,6 +27,7 @@ use crate::util::error_or_panic;
 use codex_extension_api::ToolCallOutcome;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::protocol::EventMsg;
+use codex_tool_execution_api::FunctionCallError;
 use codex_tool_execution_api::ToolName;
 use codex_tool_registry_api::ToolSpec;
 use futures::future::BoxFuture;

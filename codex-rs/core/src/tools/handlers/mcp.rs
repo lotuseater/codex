@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use codex_tool_execution_api::FunctionCallError;
 use crate::mcp_tool_call::handle_mcp_tool_call;
 use crate::original_image_detail::can_request_original_image_detail;
 use crate::tools::context::McpToolOutput;
@@ -18,6 +17,7 @@ use crate::tools::registry::ToolExposure;
 use crate::tools::registry::ToolTelemetryTags;
 use crate::tools::tool_search_entry::ToolSearchInfo;
 use codex_mcp::ToolInfo;
+use codex_tool_execution_api::FunctionCallError;
 use codex_tool_execution_api::ToolName;
 use codex_tool_registry_api::ResponsesApiNamespace;
 use codex_tool_registry_api::ResponsesApiNamespaceTool;

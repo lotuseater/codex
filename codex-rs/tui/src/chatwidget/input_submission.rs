@@ -2,6 +2,7 @@
 
 use super::plan_implementation::PLAN_IMPLEMENTATION_VIEW_ID;
 use super::*;
+use crate::connector_labels::connector_mention_slug;
 
 impl ChatWidget {
     pub(super) fn user_message_from_submission(
@@ -274,7 +275,7 @@ impl ChatWidget {
 
             let app_mentions = find_app_mentions(&mentions, apps, &skill_names_lower);
             for app in app_mentions {
-                let slug = codex_connectors::metadata::connector_mention_slug(&app);
+                let slug = connector_mention_slug(&app);
                 if bound_names.contains(&slug) || !selected_app_ids.insert(app.id.clone()) {
                     continue;
                 }

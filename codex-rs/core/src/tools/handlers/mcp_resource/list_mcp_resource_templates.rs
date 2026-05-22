@@ -1,6 +1,5 @@
 use std::time::Instant;
 
-use codex_tool_execution_api::FunctionCallError;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::context::boxed_tool_output;
@@ -9,6 +8,7 @@ use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
 use codex_protocol::models::function_call_output_content_items_to_text;
 use codex_protocol::protocol::McpInvocation;
+use codex_tool_execution_api::FunctionCallError;
 use codex_tool_execution_api::ToolName;
 use codex_tool_registry_api::ToolSpec;
 

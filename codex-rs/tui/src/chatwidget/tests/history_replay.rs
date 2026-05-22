@@ -286,7 +286,7 @@ async fn session_configured_syncs_widget_config_permissions_and_cwd() {
     let actual_sandbox = SandboxPolicy::from(chat.config_ref().legacy_sandbox_policy());
     assert_eq!(&actual_sandbox, &expected_sandbox);
     assert_eq!(
-        chat.config_ref().permissions.effective_permission_profile(),
+        chat.config_ref().permissions.permission_profile(),
         expected_app_server_permission_profile
     );
     assert_eq!(&chat.config_ref().cwd, &expected_cwd);
@@ -302,7 +302,7 @@ async fn session_configured_syncs_widget_config_permissions_and_cwd() {
         "local permission changes should replace SessionConfigured canonical permissions"
     );
     assert_eq!(
-        chat.config_ref().permissions.effective_permission_profile(),
+        chat.config_ref().permissions.permission_profile(),
         updated_profile
             .materialize_project_roots_with_workspace_roots(std::slice::from_ref(&expected_cwd,)),
         "effective permissions should still use the current thread runtime workspace roots"
@@ -356,7 +356,7 @@ async fn session_configured_preserves_profile_workspace_roots() {
         session_runtime_workspace_roots.as_slice()
     );
     assert_eq!(
-        chat.config_ref().permissions.effective_permission_profile(),
+        chat.config_ref().permissions.permission_profile(),
         session_permission_profile
     );
 }
@@ -398,7 +398,7 @@ async fn session_configured_external_sandbox_keeps_external_runtime_policy() {
     let actual_sandbox = SandboxPolicy::from(chat.config_ref().legacy_sandbox_policy());
     assert_eq!(&actual_sandbox, &expected_sandbox);
     assert_eq!(
-        chat.config_ref().permissions.effective_permission_profile(),
+        chat.config_ref().permissions.permission_profile(),
         expected_app_server_permission_profile
     );
 }

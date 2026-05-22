@@ -3,6 +3,7 @@
 use super::*;
 use codex_input_queue::NextQueuedInput;
 use codex_input_queue::pop_next_or_rejected_batch;
+use codex_protocol::models::local_image_label_text;
 
 impl ChatWidget {
     pub(crate) fn set_initial_user_message_submit_suppressed(&mut self, suppressed: bool) {
@@ -139,7 +140,7 @@ impl ChatWidget {
         let existing_message = UserMessage {
             text: composer.text,
             text_elements: composer.text_elements,
-            local_images: composer.local_images,
+            local_images: local_image_attachments_from_paths(composer.local_images),
             remote_image_urls: composer.remote_image_urls,
             mention_bindings: composer.mention_bindings,
         };
@@ -209,7 +210,7 @@ impl ChatWidget {
         let composer = ThreadComposerState {
             text: draft.text,
             text_elements: draft.text_elements,
-            local_images: draft.local_images,
+            local_images: local_image_attachments_from_paths(draft.local_images),
             remote_image_urls: draft.remote_image_urls,
             mention_bindings: draft.mention_bindings,
             pending_pastes: draft.pending_pastes,
@@ -330,4 +331,17 @@ impl ChatWidget {
     pub(crate) fn set_queue_autosend_suppressed(&mut self, suppressed: bool) {
         self.input_queue.suppress_queue_autosend = suppressed;
     }
+}
+
+fn local_image_attachments_from_paths(
+    local_image_paths: Vec<PathBuf>,
+) -> Vec<LocalImageAttachment> {
+    local_image_paths
+        .into_iter()
+        .enumerate()
+        .map(|(idx, path)| LocalImageAttachment {
+            placeholder: local_image_label_text(idx + 1),
+            path,
+        })
+        .collect()
 }

@@ -1,4 +1,3 @@
-use codex_tool_execution_api::FunctionCallError;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use crate::tools::context::FunctionToolOutput;
@@ -17,6 +16,7 @@ use codex_protocol::dynamic_tools::DynamicToolSpec;
 use codex_protocol::models::FunctionCallOutputContentItem;
 use codex_protocol::protocol::DynamicToolCallResponseEvent;
 use codex_protocol::protocol::EventMsg;
+use codex_tool_execution_api::FunctionCallError;
 use codex_tool_execution_api::ToolName;
 use codex_tool_registry_api::ResponsesApiNamespace;
 use codex_tool_registry_api::ResponsesApiNamespaceTool;

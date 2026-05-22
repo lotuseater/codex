@@ -1,4 +1,3 @@
-use codex_tool_execution_api::FunctionCallError;
 use crate::safety::SafetyCheck;
 use crate::safety::assess_patch_safety;
 use crate::session::turn_context::TurnContext;
@@ -7,6 +6,7 @@ use codex_apply_patch::ApplyPatchAction;
 use codex_apply_patch::ApplyPatchFileChange;
 use codex_protocol::protocol::FileChange;
 use codex_protocol::protocol::FileSystemSandboxPolicy;
+use codex_tool_execution_api::FunctionCallError;
 use std::collections::HashMap;
 use std::path::PathBuf;
 

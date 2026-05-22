@@ -93,7 +93,7 @@ impl App {
                 permission_profile: permission_profile.clone(),
                 active_permission_profile: active_permission_profile.clone(),
                 cwd: thread.cwd.clone(),
-                runtime_workspace_roots: self.config.workspace_roots.clone(),
+                runtime_workspace_roots: Vec::new(),
                 instruction_source_paths: Vec::new(),
                 reasoning_effort: self.chat_widget.current_reasoning_effort(),
                 message_history: None,

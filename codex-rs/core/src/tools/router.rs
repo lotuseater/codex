@@ -1,4 +1,3 @@
-use codex_tool_execution_api::FunctionCallError;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use crate::tools::context::SharedTurnDiffTracker;
@@ -14,6 +13,7 @@ use codex_mcp::ToolInfo;
 use codex_protocol::dynamic_tools::DynamicToolSpec;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::models::SearchToolCallParams;
+use codex_tool_execution_api::FunctionCallError;
 use codex_tool_execution_api::ToolName;
 use codex_tool_registry_api::DiscoverableTool;
 use codex_tool_registry_api::ToolSpec;

@@ -1,4 +1,3 @@
-use codex_tool_execution_api::FunctionCallError;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
@@ -11,6 +10,7 @@ use codex_protocol::models::FunctionCallOutputPayload;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::plan_tool::UpdatePlanArgs;
 use codex_protocol::protocol::EventMsg;
+use codex_tool_execution_api::FunctionCallError;
 use codex_tool_execution_api::ToolName;
 use codex_tool_execution_api::ToolOutputPayload;
 use codex_tool_registry_api::ToolSpec;

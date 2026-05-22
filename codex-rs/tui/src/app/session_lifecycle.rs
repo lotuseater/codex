@@ -517,7 +517,7 @@ impl App {
                     if let Some(usage_line) = summary.usage_line {
                         lines.push(usage_line.into());
                     }
-                    if let Some(command) = summary.resume_hint {
+                    if let Some(command) = summary.resume_command {
                         let spans = vec!["To continue this session, run ".into(), command.cyan()];
                         lines.push(spans.into());
                     }
@@ -677,7 +677,10 @@ impl App {
         }
 
         let current_cwd = self.config.cwd.to_path_buf();
-        let resume_cwd = if self.app_server_target.uses_remote_workspace() {
+        let resume_cwd = if matches!(
+            &self.app_server_target,
+            crate::AppServerTarget::Remote { .. }
+        ) {
             current_cwd.clone()
         } else {
             match crate::session_resume::resolve_cwd_for_resume_or_fork(
@@ -745,7 +748,7 @@ impl App {
                             if let Some(usage_line) = summary.usage_line {
                                 lines.push(usage_line.into());
                             }
-                            if let Some(command) = summary.resume_hint {
+                            if let Some(command) = summary.resume_command {
                                 let spans =
                                     vec!["To continue this session, run ".into(), command.cyan()];
                                 lines.push(spans.into());

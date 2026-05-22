@@ -1,11 +1,11 @@
-use super::ResponsesApiNamespace;
-use super::ResponsesApiWebSearchFilters;
-use super::ResponsesApiWebSearchUserLocation;
-use super::ToolSpec;
 use crate::FreeformTool;
 use crate::FreeformToolFormat;
+use crate::ResponsesApiNamespace;
 use crate::ResponsesApiNamespaceTool;
 use crate::ResponsesApiTool;
+use crate::ResponsesApiWebSearchFilters;
+use crate::ResponsesApiWebSearchUserLocation;
+use crate::ToolSpec;
 use crate::create_tools_json_for_responses_api;
 use codex_protocol::config_types::WebSearchContextSize;
 use codex_protocol::config_types::WebSearchFilters as ConfigWebSearchFilters;

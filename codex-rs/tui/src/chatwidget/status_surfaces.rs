@@ -993,8 +993,9 @@ fn permissions_display(config: &Config) -> String {
         return active_permission_profile.id.clone();
     }
 
-    let permission_profile = config.permissions.effective_permission_profile();
-    let workspace_roots = config.effective_workspace_roots();
+    let permission_profile = config.permissions.permission_profile();
+    let workspace_roots =
+        crate::status::workspace_roots_for_status(&permission_profile, &config.cwd);
     let summary =
         summarize_permission_profile(&permission_profile, &config.cwd, workspace_roots.as_slice());
     if let Some(details) = summary.strip_prefix("read-only")

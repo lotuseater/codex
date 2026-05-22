@@ -206,6 +206,10 @@ impl AppServerSession {
         matches!(self.thread_params_mode, ThreadParamsMode::Remote)
     }
 
+    pub(crate) fn is_remote(&self) -> bool {
+        self.uses_remote_workspace()
+    }
+
     pub(crate) async fn bootstrap(&mut self, config: &Config) -> Result<AppServerBootstrap> {
         let account = self.read_account().await?;
         let model_request_id = self.next_request_id();
@@ -1241,7 +1245,7 @@ fn thread_start_params_from_config(
         .is_none()
         .then(|| {
             sandbox_mode_from_permission_profile(
-                &config.permissions.effective_permission_profile(),
+                &config.permissions.permission_profile(),
                 config.cwd.as_path(),
             )
         })
@@ -1251,13 +1255,7 @@ fn thread_start_params_from_config(
         model_provider: thread_params_mode.model_provider_from_config(config),
         service_tier: service_tier_override_from_config(config),
         cwd: thread_cwd_from_config(config, thread_params_mode, remote_cwd_override),
-        runtime_workspace_roots: Some(
-            config
-                .workspace_roots
-                .iter()
-                .map(AbsolutePathBuf::to_path_buf)
-                .collect(),
-        ),
+        runtime_workspace_roots: None,
         approval_policy: Some(config.permissions.approval_policy.value().into()),
         approvals_reviewer: approvals_reviewer_override_from_config(config),
         sandbox,
@@ -1282,7 +1280,7 @@ fn thread_resume_params_from_config(
         .is_none()
         .then(|| {
             sandbox_mode_from_permission_profile(
-                &config.permissions.effective_permission_profile(),
+                &config.permissions.permission_profile(),
                 config.cwd.as_path(),
             )
         })
@@ -1293,13 +1291,7 @@ fn thread_resume_params_from_config(
         model_provider: thread_params_mode.model_provider_from_config(&config),
         service_tier: service_tier_override_from_config(&config),
         cwd: thread_cwd_from_config(&config, thread_params_mode, remote_cwd_override),
-        runtime_workspace_roots: Some(
-            config
-                .workspace_roots
-                .iter()
-                .map(AbsolutePathBuf::to_path_buf)
-                .collect(),
-        ),
+        runtime_workspace_roots: None,
         approval_policy: Some(config.permissions.approval_policy.value().into()),
         approvals_reviewer: approvals_reviewer_override_from_config(&config),
         sandbox,
@@ -1321,7 +1313,7 @@ fn thread_fork_params_from_config(
         .is_none()
         .then(|| {
             sandbox_mode_from_permission_profile(
-                &config.permissions.effective_permission_profile(),
+                &config.permissions.permission_profile(),
                 config.cwd.as_path(),
             )
         })
@@ -1332,13 +1324,7 @@ fn thread_fork_params_from_config(
         model_provider: thread_params_mode.model_provider_from_config(&config),
         service_tier: service_tier_override_from_config(&config),
         cwd: thread_cwd_from_config(&config, thread_params_mode, remote_cwd_override),
-        runtime_workspace_roots: Some(
-            config
-                .workspace_roots
-                .iter()
-                .map(AbsolutePathBuf::to_path_buf)
-                .collect(),
-        ),
+        runtime_workspace_roots: None,
         approval_policy: Some(config.permissions.approval_policy.value().into()),
         approvals_reviewer: approvals_reviewer_override_from_config(&config),
         sandbox,
@@ -1523,7 +1509,7 @@ fn display_permission_profile_from_thread_response(
     thread_params_mode: ThreadParamsMode,
 ) -> PermissionProfile {
     match thread_params_mode {
-        ThreadParamsMode::Embedded => config.permissions.effective_permission_profile(),
+        ThreadParamsMode::Embedded => config.permissions.permission_profile(),
         ThreadParamsMode::Remote => {
             PermissionProfile::from_legacy_sandbox_policy_for_cwd(&sandbox.to_core(), cwd)
         }
@@ -1859,7 +1845,7 @@ mod tests {
         let config = build_config(&temp_dir).await;
         let thread_id = ThreadId::new();
         let expected_sandbox = sandbox_mode_from_permission_profile(
-            &config.permissions.effective_permission_profile(),
+            &config.permissions.permission_profile(),
             config.cwd.as_path(),
         );
         let expected_runtime_workspace_roots = Some(
@@ -1983,7 +1969,7 @@ mod tests {
         let thread_id = ThreadId::new();
         let remote_cwd = PathBuf::from("repo/on/server");
         let expected_sandbox = sandbox_mode_from_permission_profile(
-            &config.permissions.effective_permission_profile(),
+            &config.permissions.permission_profile(),
             config.cwd.as_path(),
         );
 

@@ -3,6 +3,7 @@
 //! This module owns the `App` struct, shared imports, and the high-level run loop that coordinates
 //! the focused app submodules.
 
+use crate::AppServerTarget;
 use crate::app_backtrack::BacktrackState;
 use crate::app_command::AppCommand;
 use crate::app_event::AppEvent;
@@ -124,11 +125,11 @@ use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnError as AppServerTurnError;
 use codex_app_server_protocol::TurnStatus;
 use codex_config::ConfigLayerStackOrdering;
+use codex_config::LoaderOverrides;
 use codex_config::edit::ConfigEdit;
 use codex_config::edit::ConfigEditsBuilder;
 use codex_config::types::ApprovalsReviewer;
 use codex_config::types::ModelAvailabilityNuxConfig;
-use codex_config::LoaderOverrides;
 use codex_exec_server::EnvironmentManager;
 use codex_features::Feature;
 use codex_model_provider::create_model_provider;
@@ -141,10 +142,10 @@ use codex_protocol::config_types::Personality;
 #[cfg(target_os = "windows")]
 use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::models::ActivePermissionProfile;
-use codex_protocol::models::PermissionProfile;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_READ_ONLY;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
+use codex_protocol::models::PermissionProfile;
 use codex_protocol::openai_models::ModelAvailabilityNux;
 use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ModelUpgrade;
@@ -655,7 +656,6 @@ impl App {
     ) -> crate::chatwidget::ChatWidgetInit {
         crate::chatwidget::ChatWidgetInit {
             config: cfg,
-            environment_manager: self.environment_manager.clone(),
             frame_requester: tui.frame_requester(),
             app_event_tx: self.app_event_tx.clone(),
             workspace_command_runner: self.workspace_command_runner.clone(),
@@ -824,7 +824,6 @@ impl App {
                         .await;
                 let init = crate::chatwidget::ChatWidgetInit {
                     config: config.clone(),
-                    environment_manager: environment_manager.clone(),
                     frame_requester: tui.frame_requester(),
                     app_event_tx: app_event_tx.clone(),
                     workspace_command_runner: Some(workspace_command_runner.clone()),
@@ -861,7 +860,6 @@ impl App {
                     })?;
                 let init = crate::chatwidget::ChatWidgetInit {
                     config: config.clone(),
-                    environment_manager: environment_manager.clone(),
                     frame_requester: tui.frame_requester(),
                     app_event_tx: app_event_tx.clone(),
                     workspace_command_runner: Some(workspace_command_runner.clone()),
@@ -903,7 +901,6 @@ impl App {
                     })?;
                 let init = crate::chatwidget::ChatWidgetInit {
                     config: config.clone(),
-                    environment_manager: environment_manager.clone(),
                     frame_requester: tui.frame_requester(),
                     app_event_tx: app_event_tx.clone(),
                     workspace_command_runner: Some(workspace_command_runner.clone()),

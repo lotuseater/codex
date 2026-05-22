@@ -452,6 +452,16 @@ struct ComposerDraft {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct ComposerDraftSnapshot {
+    pub(crate) text: String,
+    pub(crate) text_elements: Vec<TextElement>,
+    pub(crate) local_images: Vec<PathBuf>,
+    pub(crate) remote_image_urls: Vec<String>,
+    pub(crate) mention_bindings: Vec<MentionBinding>,
+    pub(crate) pending_pastes: Vec<(String, String)>,
+}
+
+#[derive(Clone, Debug)]
 struct ComposerMentionBinding {
     mention: String,
     path: String,
@@ -1389,6 +1399,22 @@ impl ChatComposer {
             pending_pastes: self.pending_pastes.clone(),
             cursor: self.current_cursor(),
         }
+    }
+
+    pub(crate) fn draft_snapshot(&self) -> ComposerDraftSnapshot {
+        let draft = self.snapshot_draft();
+        ComposerDraftSnapshot {
+            text: draft.text,
+            text_elements: draft.text_elements,
+            local_images: draft.local_image_paths,
+            remote_image_urls: draft.remote_image_urls,
+            mention_bindings: draft.mention_bindings,
+            pending_pastes: draft.pending_pastes,
+        }
+    }
+
+    pub(crate) fn show_shutdown_in_progress(&mut self) {
+        self.set_input_enabled(false, Some("Shutting down...".to_string()));
     }
 
     fn restore_draft(&mut self, draft: ComposerDraft) {
@@ -4280,9 +4306,9 @@ impl ChatComposer {
                 if !connector.is_accessible || !connector.is_enabled {
                     continue;
                 }
-                let display_name = codex_connectors::metadata::connector_display_label(connector);
+                let display_name = crate::connector_labels::connector_display_label(connector);
                 let description = Some(Self::connector_brief_description(connector));
-                let slug = codex_connectors::metadata::connector_mention_slug(connector);
+                let slug = crate::connector_labels::connector_mention_slug(connector);
                 let search_terms = vec![display_name.clone(), connector.id.clone(), slug.clone()];
                 let connector_id = connector.id.as_str();
                 mentions.push(MentionItem {

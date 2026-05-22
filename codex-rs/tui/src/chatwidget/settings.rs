@@ -25,7 +25,10 @@ impl ChatWidget {
     ) -> ConstraintResult<()> {
         self.config
             .permissions
-            .set_permission_profile_with_active_profile(permission_profile, active_permission_profile)?;
+            .set_permission_profile_with_active_profile(
+                permission_profile,
+                active_permission_profile,
+            )?;
         self.refresh_status_surfaces();
         Ok(())
     }

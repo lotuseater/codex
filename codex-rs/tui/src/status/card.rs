@@ -256,8 +256,8 @@ impl StatusHistoryCell {
         refreshing_rate_limits: bool,
     ) -> (Self, StatusHistoryHandle) {
         let approval_policy = AskForApproval::from(config.permissions.approval_policy.value());
-        let permission_profile = config.permissions.effective_permission_profile();
-        let workspace_roots = config.effective_workspace_roots();
+        let permission_profile = config.permissions.permission_profile();
+        let workspace_roots = workspace_roots_for_status(&permission_profile, &config.cwd);
         let mut config_entries = vec![
             ("workdir", config.cwd.display().to_string()),
             ("model", model_name.to_string()),
@@ -574,6 +574,18 @@ fn status_permission_summary(
         return "custom permissions with network access".to_string();
     }
     summary
+}
+
+pub(crate) fn workspace_roots_for_status(
+    permission_profile: &PermissionProfile,
+    cwd: &AbsolutePathBuf,
+) -> Vec<AbsolutePathBuf> {
+    permission_profile
+        .file_system_sandbox_policy()
+        .get_writable_roots_with_cwd(cwd.as_path())
+        .into_iter()
+        .map(|root| root.root)
+        .collect()
 }
 
 fn workspace_root_suffix(

@@ -5,6 +5,8 @@ use serde::Serialize;
 use crate::DiscoverableTool;
 use crate::DiscoverableToolType;
 use crate::JsonSchema;
+use crate::JsonSchemaPrimitiveType;
+use crate::JsonSchemaType;
 use crate::LoadableToolSpec;
 use crate::ResponsesApiNamespaceTool;
 use crate::ResponsesApiTool;
@@ -123,11 +125,20 @@ pub fn create_tool_search_tool(
         ),
         (
             "limit".to_string(),
-            JsonSchema::number(Some(format!(
-                "Maximum number of tools to return (defaults to {default_limit})."
-            ))),
+            JsonSchema {
+                schema_type: Some(JsonSchemaType::Multiple(vec![
+                    JsonSchemaPrimitiveType::Number,
+                    JsonSchemaPrimitiveType::Null,
+                ])),
+                description: Some(format!(
+                    "Maximum number of tools to return (defaults to {default_limit})."
+                )),
+                ..Default::default()
+            },
         ),
     ]);
+
+    let mut required = vec!["query".to_string(), "limit".to_string()];
 
     let mut source_descriptions = BTreeMap::new();
     for source in searchable_sources {
@@ -149,10 +160,18 @@ pub fn create_tool_search_tool(
             .join("\n");
         properties.insert(
             "source".to_string(),
-            JsonSchema::string(Some(format!(
-                "Optional source filter. Available sources:\n{source_text}"
-            ))),
+            JsonSchema {
+                schema_type: Some(JsonSchemaType::Multiple(vec![
+                    JsonSchemaPrimitiveType::String,
+                    JsonSchemaPrimitiveType::Null,
+                ])),
+                description: Some(format!(
+                    "Optional source filter. Available sources:\n{source_text}"
+                )),
+                ..Default::default()
+            },
         );
+        required.push("source".to_string());
     }
 
     ToolSpec::Function(ResponsesApiTool {
@@ -160,11 +179,7 @@ pub fn create_tool_search_tool(
         description: "Search deferred tools by name or description.".to_string(),
         strict: true,
         defer_loading: None,
-        parameters: JsonSchema::object(
-            properties,
-            Some(vec!["query".to_string()]),
-            Some(false.into()),
-        ),
+        parameters: JsonSchema::object(properties, Some(required), Some(false.into())),
         output_schema: None,
     })
 }
@@ -307,5 +322,45 @@ pub fn loadable_namespace_tools(spec: &LoadableToolSpec) -> Option<&[ResponsesAp
     match spec {
         LoadableToolSpec::Namespace(namespace) => Some(namespace.tools.as_slice()),
         LoadableToolSpec::Function(_) => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn tool_search_tool_spec_requires_nullable_optional_fields() {
+        let tool = create_tool_search_tool(
+            &[ToolSearchSourceInfo {
+                name: "Google Drive".to_string(),
+                description: None,
+            }],
+            TOOL_SEARCH_DEFAULT_LIMIT,
+        );
+        let value = serde_json::to_value(tool).expect("serialize tool_search tool");
+        let parameters = value
+            .get("parameters")
+            .expect("tool_search should have parameters");
+
+        assert_eq!(
+            parameters
+                .pointer("/properties/limit/type")
+                .expect("limit should have a type"),
+            &json!(["number", "null"])
+        );
+        assert_eq!(
+            parameters
+                .pointer("/properties/source/type")
+                .expect("source should have a type"),
+            &json!(["string", "null"])
+        );
+        assert_eq!(
+            parameters
+                .get("required")
+                .expect("tool_search should declare required properties"),
+            &json!(["query", "limit", "source"])
+        );
     }
 }

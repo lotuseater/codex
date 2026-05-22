@@ -33,7 +33,6 @@ use tracing::warn;
 use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
 use crate::connectors;
-use codex_tool_execution_api::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
@@ -41,6 +40,7 @@ use crate::tools::context::boxed_tool_output;
 use crate::tools::handlers::parse_arguments;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
+use codex_tool_execution_api::FunctionCallError;
 use codex_tool_registry_api::create_request_plugin_install_tool;
 
 pub struct RequestPluginInstallHandler {

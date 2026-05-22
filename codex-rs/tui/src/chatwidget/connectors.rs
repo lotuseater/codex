@@ -2,6 +2,9 @@
 
 use super::*;
 use crate::app_event::ConnectorsSnapshot;
+use crate::connector_labels::connector_display_label;
+use crate::connector_labels::connector_mention_slug;
+use codex_app_server_protocol::AppInfo;
 
 #[derive(Debug, Clone, Default)]
 pub(super) enum ConnectorsCacheState {
@@ -164,7 +167,7 @@ impl ChatWidget {
         });
         let mut items: Vec<SelectionItem> = Vec::with_capacity(connectors.len());
         for connector in connectors {
-            let connector_label = codex_connectors::metadata::connector_display_label(connector);
+            let connector_label = connector_display_label(connector);
             let connector_title = connector_label.clone();
             let link_description = Self::connector_description(connector);
             let description = Self::connector_brief_description(connector);
@@ -303,13 +306,6 @@ impl ChatWidget {
 
         match result {
             Ok(mut snapshot) => {
-                if !is_final {
-                    snapshot.connectors = chatgpt_connectors::merge_connectors_with_accessible(
-                        Vec::new(),
-                        snapshot.connectors,
-                        /*all_connectors_loaded*/ false,
-                    );
-                }
                 if let ConnectorsCacheState::Ready(existing_snapshot) = &self.connectors.cache {
                     let enabled_by_id: HashMap<&str, bool> = existing_snapshot
                         .connectors

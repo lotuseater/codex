@@ -195,7 +195,7 @@ pub(crate) fn compose_rate_limit_data_many(
             .map(|window| {
                 window
                     .window_minutes
-                    .map(get_limits_duration)
+                    .and_then(get_limits_duration)
                     .unwrap_or_else(|| "5h".to_string())
             })
             .map(|label| capitalize_first(&label));
@@ -205,7 +205,7 @@ pub(crate) fn compose_rate_limit_data_many(
             .map(|window| {
                 window
                     .window_minutes
-                    .map(get_limits_duration)
+                    .and_then(get_limits_duration)
                     .unwrap_or_else(|| "weekly".to_string())
             })
             .map(|label| capitalize_first(&label));

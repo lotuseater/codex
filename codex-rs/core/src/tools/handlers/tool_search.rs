@@ -1,4 +1,3 @@
-use codex_tool_execution_api::FunctionCallError;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::context::ToolSearchOutput;
@@ -11,6 +10,7 @@ use bm25::Document;
 use bm25::Language;
 use bm25::SearchEngine;
 use bm25::SearchEngineBuilder;
+use codex_tool_execution_api::FunctionCallError;
 use codex_tool_execution_api::ToolName;
 use codex_tool_registry_api::LoadableToolSpec;
 use codex_tool_registry_api::TOOL_SEARCH_DEFAULT_LIMIT;

@@ -1,7 +1,6 @@
 use codex_protocol::request_permissions::RequestPermissionsArgs;
 use codex_sandboxing::policy_transforms::normalize_additional_permissions;
 
-use codex_tool_execution_api::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
@@ -11,6 +10,7 @@ use crate::tools::handlers::shell_spec::create_request_permissions_tool;
 use crate::tools::handlers::shell_spec::request_permissions_tool_description;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
+use codex_tool_execution_api::FunctionCallError;
 use codex_tool_execution_api::ToolName;
 use codex_tool_registry_api::ToolSpec;
 
