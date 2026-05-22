@@ -1,3 +1,8 @@
+mod approval_policy;
+
+pub use approval_policy::ApprovalGate;
+pub use approval_policy::ApprovalPolicyRejection;
+
 use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::io;
