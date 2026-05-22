@@ -6,12 +6,16 @@
 
 #![deny(private_bounds, private_interfaces, unreachable_pub)]
 
+use std::sync::Arc;
+use std::sync::Mutex;
+
 use codex_session_api::SessionIdentity;
 use codex_session_events::SessionEvent;
 use codex_session_runtime_api::SessionRuntime;
 use codex_session_runtime_api::SessionRuntimeCommand;
 use codex_session_runtime_api::SessionRuntimeError;
 use codex_session_runtime_api::SessionRuntimeFuture;
+use codex_session_runtime_api::SessionRuntimeLifecycle;
 use codex_session_runtime_api::SessionRuntimeResult;
 use codex_session_runtime_api::SessionRuntimeStatus;
 
@@ -22,12 +26,23 @@ pub const UNSUPPORTED_SESSION_RUNTIME: &str = "session runtime is not wired";
 #[derive(Clone, Debug)]
 pub struct UnsupportedSessionRuntime {
     identity: SessionIdentity,
+    lifecycle: Arc<Mutex<SessionRuntimeLifecycle>>,
 }
 
 impl UnsupportedSessionRuntime {
     /// Creates an unsupported runtime for the given identity.
     pub fn new(identity: SessionIdentity) -> Self {
-        Self { identity }
+        Self {
+            identity,
+            lifecycle: Arc::new(Mutex::new(SessionRuntimeLifecycle::created())),
+        }
+    }
+
+    fn lifecycle(&self) -> SessionRuntimeLifecycle {
+        self.lifecycle
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 }
 
@@ -40,20 +55,34 @@ impl SessionRuntime for UnsupportedSessionRuntime {
         &'a self,
     ) -> SessionRuntimeFuture<'a, SessionRuntimeResult<SessionRuntimeStatus>> {
         Box::pin(async move {
-            Err(SessionRuntimeError::Unavailable(
-                UNSUPPORTED_SESSION_RUNTIME.to_string(),
+            Ok(SessionRuntimeStatus::new(
+                self.identity.clone(),
+                self.lifecycle().current(),
             ))
         })
     }
 
     fn handle_command<'a>(
         &'a self,
-        _command: SessionRuntimeCommand,
+        command: SessionRuntimeCommand,
     ) -> SessionRuntimeFuture<'a, SessionRuntimeResult<()>> {
         Box::pin(async move {
-            Err(SessionRuntimeError::Unavailable(
-                UNSUPPORTED_SESSION_RUNTIME.to_string(),
-            ))
+            match command {
+                SessionRuntimeCommand::Shutdown => {
+                    let mut lifecycle = self
+                        .lifecycle
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    lifecycle.request_shutdown();
+                    lifecycle.mark_completed();
+                    Ok(())
+                }
+                SessionRuntimeCommand::SubmitInput { .. } => {
+                    Err(SessionRuntimeError::Unavailable(
+                        UNSUPPORTED_SESSION_RUNTIME.to_string(),
+                    ))
+                }
+            }
         })
     }
 
