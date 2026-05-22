@@ -26,6 +26,30 @@ name = "config"
 path = "tests/config.rs"
 
 [[test]]
+name = "config_code_mode_apps"
+path = "tests/config_code_mode_apps.rs"
+
+[[test]]
+name = "config_code_mode_async"
+path = "tests/config_code_mode_async.rs"
+
+[[test]]
+name = "config_code_mode_config"
+path = "tests/config_code_mode_config.rs"
+
+[[test]]
+name = "config_code_mode_execution"
+path = "tests/config_code_mode_execution.rs"
+
+[[test]]
+name = "config_code_mode_mcp"
+path = "tests/config_code_mode_mcp.rs"
+
+[[test]]
+name = "config_code_mode_media"
+path = "tests/config_code_mode_media.rs"
+
+[[test]]
 name = "exec"
 path = "tests/exec.rs"
 
