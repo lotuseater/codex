@@ -4,6 +4,9 @@
 //! that block on user decisions.
 
 use super::*;
+use crate::approval_events::ApplyPatchApprovalRequestEvent;
+use crate::approval_events::ExecApprovalRequestEvent;
+use codex_protocol::request_permissions::RequestPermissionsEvent;
 
 impl ChatWidget {
     pub(super) fn on_exec_approval_request(&mut self, _id: String, ev: ExecApprovalRequestEvent) {
