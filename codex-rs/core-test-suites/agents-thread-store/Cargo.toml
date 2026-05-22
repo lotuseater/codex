@@ -1,0 +1,94 @@
+[package]
+name = "codex-core-test-suite-agents-thread-store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+autotests = false
+
+[[test]]
+name = "agents"
+path = "tests/agents.rs"
+
+[[test]]
+name = "agents_collaboration"
+path = "tests/agents_collaboration.rs"
+
+[[test]]
+name = "agents_delegate"
+path = "tests/agents_delegate.rs"
+
+[[test]]
+name = "agents_hierarchy"
+path = "tests/agents_hierarchy.rs"
+
+[[test]]
+name = "agents_jobs"
+path = "tests/agents_jobs.rs"
+
+[[test]]
+name = "agents_notifications"
+path = "tests/agents_notifications.rs"
+
+[[test]]
+name = "agents_tool_parallelism"
+path = "tests/agents_tool_parallelism.rs"
+
+[[test]]
+name = "agents_transport"
+path = "tests/agents_transport.rs"
+
+[[test]]
+name = "compact_resume_fork_thread"
+path = "tests/compact_resume_fork_thread.rs"
+
+[[test]]
+name = "state"
+path = "tests/state.rs"
+
+[[test]]
+name = "state_conversation_request_compression"
+path = "tests/state_conversation_request_compression.rs"
+
+[[test]]
+name = "state_conversation_turn_state"
+path = "tests/state_conversation_turn_state.rs"
+
+[[test]]
+name = "state_conversation_user_notification"
+path = "tests/state_conversation_user_notification.rs"
+
+[[test]]
+name = "state_items"
+path = "tests/state_items.rs"
+
+[[test]]
+name = "state_truncation"
+path = "tests/state_truncation.rs"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+anyhow = { workspace = true }
+codex-apply-patch = { workspace = true }
+codex-config = { workspace = true }
+codex-core = { workspace = true }
+codex-core-test-runtime = { workspace = true }
+codex-exec-server = { workspace = true }
+codex-features = { workspace = true }
+codex-login = { workspace = true }
+codex-models-manager = { workspace = true }
+codex-protocol = { workspace = true }
+codex-sandboxing = { workspace = true }
+codex-test-binary-support = { workspace = true }
+codex-utils-absolute-path = { workspace = true }
+ctor = { workspace = true }
+pretty_assertions = { workspace = true }
+regex-lite = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+tracing-subscriber = { workspace = true }
+uuid = { workspace = true }
+wiremock = { workspace = true }
