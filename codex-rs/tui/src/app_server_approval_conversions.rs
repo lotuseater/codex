@@ -5,14 +5,23 @@
 //! model or needs to translate a granted permission response for outbound
 //! submission.
 
-use crate::diff_model::FileChange;
 use codex_app_server_protocol::AdditionalNetworkPermissions;
+use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
+use codex_app_server_protocol::FileChangeRequestApprovalParams;
 use codex_app_server_protocol::FileUpdateChange;
 use codex_app_server_protocol::GrantedPermissionProfile;
 use codex_app_server_protocol::PatchChangeKind;
+use codex_app_server_protocol::PermissionsRequestApprovalParams;
 use codex_protocol::request_permissions::RequestPermissionProfile as CoreRequestPermissionProfile;
+use codex_protocol::request_permissions::RequestPermissionsEvent;
+use codex_utils_absolute_path::AbsolutePathBuf;
 use std::collections::HashMap;
 use std::path::PathBuf;
+
+use crate::approval_events::ApplyPatchApprovalRequestEvent;
+use crate::approval_events::ExecApprovalRequestEvent;
+use crate::diff_model::FileChange;
+use crate::exec_command::split_command_string;
 
 pub(crate) fn granted_permission_profile_from_request(
     value: CoreRequestPermissionProfile,
@@ -47,6 +56,54 @@ pub(crate) fn file_update_changes_to_display(
             (path, file_change)
         })
         .collect()
+}
+
+pub(crate) fn exec_approval_request_from_params(
+    params: CommandExecutionRequestApprovalParams,
+    fallback_cwd: &AbsolutePathBuf,
+) -> ExecApprovalRequestEvent {
+    ExecApprovalRequestEvent {
+        call_id: params.item_id,
+        command: params
+            .command
+            .as_deref()
+            .map(split_command_string)
+            .unwrap_or_default(),
+        cwd: params.cwd.unwrap_or_else(|| fallback_cwd.clone()),
+        reason: params.reason,
+        network_approval_context: params.network_approval_context,
+        additional_permissions: params.additional_permissions,
+        turn_id: params.turn_id,
+        approval_id: params.approval_id,
+        proposed_execpolicy_amendment: params.proposed_execpolicy_amendment,
+        proposed_network_policy_amendments: params.proposed_network_policy_amendments,
+        available_decisions: params.available_decisions,
+    }
+}
+
+pub(crate) fn patch_approval_request_from_params(
+    params: FileChangeRequestApprovalParams,
+) -> ApplyPatchApprovalRequestEvent {
+    ApplyPatchApprovalRequestEvent {
+        call_id: params.item_id,
+        turn_id: params.turn_id,
+        changes: HashMap::new(),
+        reason: params.reason,
+        grant_root: params.grant_root,
+    }
+}
+
+pub(crate) fn request_permissions_from_params(
+    params: PermissionsRequestApprovalParams,
+) -> RequestPermissionsEvent {
+    RequestPermissionsEvent {
+        turn_id: params.turn_id,
+        call_id: params.item_id,
+        started_at_ms: params.started_at_ms,
+        reason: params.reason,
+        permissions: params.permissions.into(),
+        cwd: Some(params.cwd),
+    }
 }
 
 #[cfg(test)]

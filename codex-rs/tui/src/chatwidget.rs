@@ -44,9 +44,10 @@ use crate::app::app_server_requests::ResolvedAppServerRequest;
 use crate::app_command::AppCommand;
 use crate::app_event::HistoryLookupResponse;
 use crate::app_event::RealtimeAudioDeviceKind;
+use crate::app_server_approval_conversions::exec_approval_request_from_params;
 use crate::app_server_approval_conversions::file_update_changes_to_display;
-use crate::approval_events::ApplyPatchApprovalRequestEvent;
-use crate::approval_events::ExecApprovalRequestEvent;
+use crate::app_server_approval_conversions::patch_approval_request_from_params;
+use crate::app_server_approval_conversions::request_permissions_from_params;
 #[cfg(not(target_os = "linux"))]
 use crate::audio_device::list_realtime_audio_device_names;
 use crate::bottom_pane::StatusLineItem;
@@ -92,11 +93,9 @@ use codex_app_server_protocol::AppSummary;
 use codex_app_server_protocol::CodexErrorInfo as AppServerCodexErrorInfo;
 use codex_app_server_protocol::CollabAgentTool;
 use codex_app_server_protocol::CollabAgentToolCallStatus;
-use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
 use codex_app_server_protocol::ConfigLayerSource;
 use codex_app_server_protocol::CreditsSnapshot;
 use codex_app_server_protocol::ErrorNotification;
-use codex_app_server_protocol::FileChangeRequestApprovalParams;
 use codex_app_server_protocol::GuardianApprovalReviewAction;
 use codex_app_server_protocol::ItemCompletedNotification;
 use codex_app_server_protocol::ItemStartedNotification;
@@ -157,7 +156,6 @@ use codex_protocol::items::AgentMessageItem;
 use codex_protocol::models::MessagePhase;
 use codex_protocol::plan_tool::PlanItemArg as UpdatePlanItemArg;
 use codex_protocol::plan_tool::StepStatus as UpdatePlanItemStatus;
-use codex_protocol::request_permissions::RequestPermissionsEvent;
 use codex_protocol::user_input::ByteRange;
 use codex_protocol::user_input::TextElement;
 use codex_terminal_detection::Multiplexer;
@@ -288,7 +286,6 @@ use crate::diff_render::display_path_for;
 use crate::exec_cell::CommandOutput;
 use crate::exec_cell::ExecCell;
 use crate::exec_cell::new_active_exec_command;
-use crate::exec_command::split_command_string;
 use crate::exec_command::strip_bash_lc_and_escape;
 use crate::get_git_diff::get_git_diff;
 use crate::history_cell;
@@ -816,54 +813,6 @@ impl ThreadItemRenderSource {
             Self::Live => None,
             Self::Replay(replay_kind) => Some(replay_kind),
         }
-    }
-}
-
-fn exec_approval_request_from_params(
-    params: CommandExecutionRequestApprovalParams,
-    fallback_cwd: &AbsolutePathBuf,
-) -> ExecApprovalRequestEvent {
-    ExecApprovalRequestEvent {
-        call_id: params.item_id,
-        command: params
-            .command
-            .as_deref()
-            .map(split_command_string)
-            .unwrap_or_default(),
-        cwd: params.cwd.unwrap_or_else(|| fallback_cwd.clone()),
-        reason: params.reason,
-        network_approval_context: params.network_approval_context,
-        additional_permissions: params.additional_permissions,
-        turn_id: params.turn_id,
-        approval_id: params.approval_id,
-        proposed_execpolicy_amendment: params.proposed_execpolicy_amendment,
-        proposed_network_policy_amendments: params.proposed_network_policy_amendments,
-        available_decisions: params.available_decisions,
-    }
-}
-
-fn patch_approval_request_from_params(
-    params: FileChangeRequestApprovalParams,
-) -> ApplyPatchApprovalRequestEvent {
-    ApplyPatchApprovalRequestEvent {
-        call_id: params.item_id,
-        turn_id: params.turn_id,
-        changes: HashMap::new(),
-        reason: params.reason,
-        grant_root: params.grant_root,
-    }
-}
-
-fn request_permissions_from_params(
-    params: codex_app_server_protocol::PermissionsRequestApprovalParams,
-) -> RequestPermissionsEvent {
-    RequestPermissionsEvent {
-        turn_id: params.turn_id,
-        call_id: params.item_id,
-        started_at_ms: params.started_at_ms,
-        reason: params.reason,
-        permissions: params.permissions.into(),
-        cwd: Some(params.cwd),
     }
 }
 
