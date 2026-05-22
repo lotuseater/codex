@@ -128,6 +128,7 @@ use codex_config::edit::ConfigEdit;
 use codex_config::edit::ConfigEditsBuilder;
 use codex_config::types::ApprovalsReviewer;
 use codex_config::types::ModelAvailabilityNuxConfig;
+use codex_config::LoaderOverrides;
 use codex_exec_server::EnvironmentManager;
 use codex_features::Feature;
 use codex_model_provider::create_model_provider;
@@ -139,7 +140,11 @@ use codex_protocol::ThreadId;
 use codex_protocol::config_types::Personality;
 #[cfg(target_os = "windows")]
 use codex_protocol::config_types::WindowsSandboxLevel;
+use codex_protocol::models::ActivePermissionProfile;
 use codex_protocol::models::PermissionProfile;
+use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
+use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_READ_ONLY;
+use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
 use codex_protocol::openai_models::ModelAvailabilityNux;
 use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ModelUpgrade;
@@ -361,6 +366,7 @@ struct AutoReviewMode {
     approval_policy: AskForApproval,
     approvals_reviewer: ApprovalsReviewer,
     permission_profile: PermissionProfile,
+    active_permission_profile: ActivePermissionProfile,
 }
 
 /// Enabling the Auto-review experiment in the TUI should also switch the
@@ -372,6 +378,20 @@ fn auto_review_mode() -> AutoReviewMode {
         approval_policy: AskForApproval::OnRequest,
         approvals_reviewer: ApprovalsReviewer::AutoReview,
         permission_profile: PermissionProfile::workspace_write(),
+        active_permission_profile: ActivePermissionProfile::new(
+            BUILT_IN_PERMISSION_PROFILE_WORKSPACE,
+        ),
+    }
+}
+
+fn builtin_permission_profile_for_active_permission_profile(
+    active_permission_profile: &ActivePermissionProfile,
+) -> Option<PermissionProfile> {
+    match active_permission_profile.id.as_str() {
+        BUILT_IN_PERMISSION_PROFILE_READ_ONLY => Some(PermissionProfile::read_only()),
+        BUILT_IN_PERMISSION_PROFILE_WORKSPACE => Some(PermissionProfile::workspace_write()),
+        BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS => Some(PermissionProfile::Disabled),
+        _ => None,
     }
 }
 
@@ -500,6 +520,7 @@ pub(crate) struct App {
     pub(crate) active_profile: Option<String>,
     cli_kv_overrides: Vec<(String, TomlValue)>,
     harness_overrides: ConfigOverrides,
+    loader_overrides: LoaderOverrides,
     runtime_approval_policy_override: Option<AskForApproval>,
     runtime_permission_profile_override: Option<PermissionProfile>,
 
@@ -534,6 +555,7 @@ pub(crate) struct App {
     pub(crate) feedback: codex_feedback::CodexFeedback,
     feedback_audience: FeedbackAudience,
     environment_manager: Arc<EnvironmentManager>,
+    app_server_target: AppServerTarget,
     remote_app_server_endpoint: Option<RemoteAppServerEndpoint>,
     /// Set when the user confirms an update; propagated on exit.
     pub(crate) pending_update_action: Option<UpdateAction>,
@@ -665,6 +687,7 @@ impl App {
         mut config: Config,
         cli_kv_overrides: Vec<(String, TomlValue)>,
         harness_overrides: ConfigOverrides,
+        loader_overrides: LoaderOverrides,
         active_profile: Option<String>,
         initial_prompt: Option<String>,
         initial_images: Vec<PathBuf>,
@@ -673,6 +696,7 @@ impl App {
         is_first_run: bool,
         entered_trust_nux: bool,
         should_prompt_windows_sandbox_nux_at_startup: bool,
+        app_server_target: AppServerTarget,
         remote_app_server_endpoint: Option<RemoteAppServerEndpoint>,
         state_db: Option<StateDbHandle>,
         environment_manager: Arc<EnvironmentManager>,
@@ -937,6 +961,7 @@ See the Codex keymap documentation for supported actions and examples."
             active_profile,
             cli_kv_overrides,
             harness_overrides,
+            loader_overrides,
             runtime_approval_policy_override: None,
             runtime_permission_profile_override: None,
             file_search,
@@ -956,6 +981,7 @@ See the Codex keymap documentation for supported actions and examples."
             feedback: feedback.clone(),
             feedback_audience,
             environment_manager,
+            app_server_target,
             remote_app_server_endpoint,
             pending_update_action: None,
             pending_shutdown_exit_thread_id: None,

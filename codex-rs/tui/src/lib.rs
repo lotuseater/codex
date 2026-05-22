@@ -1616,6 +1616,7 @@ async fn run_ratatui_app(
         config,
         cli_kv_overrides.clone(),
         overrides.clone(),
+        loader_overrides.clone(),
         active_profile,
         prompt,
         images,
@@ -1624,6 +1625,7 @@ async fn run_ratatui_app(
         should_show_trust_screen, // Proxy to: is it a first run in this directory?
         should_show_trust_screen_flag, // Preserve the startup-time trust NUX signal before onboarding
         should_prompt_windows_sandbox_nux_at_startup,
+        app_server_target.clone(),
         remote_endpoint,
         state_db,
         environment_manager,

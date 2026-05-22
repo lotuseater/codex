@@ -212,7 +212,7 @@ pub(super) async fn prepare_startup_tooltip_override(
     let mut updated_shown_count = config.model_availability_nux.shown_count.clone();
     updated_shown_count.insert(tooltip_override.model_slug.clone(), next_count);
 
-    if let Err(err) = ConfigEditsBuilder::for_config(config)
+    if let Err(err) = ConfigEditsBuilder::new(&config.codex_home)
         .set_model_availability_nux_count(&updated_shown_count)
         .apply()
         .await

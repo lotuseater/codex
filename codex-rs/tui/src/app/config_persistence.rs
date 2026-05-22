@@ -128,10 +128,10 @@ impl App {
 
         if let Err(err) = config
             .permissions
-            .set_permission_profile_from_session_snapshot(PermissionProfileSnapshot::active(
+            .set_permission_profile_with_active_profile(
                 permission_profile.clone(),
-                active_permission_profile,
-            ))
+                Some(active_permission_profile),
+            )
         {
             tracing::warn!(error = %err, "{log_message}");
             self.chat_widget
@@ -140,6 +140,23 @@ impl App {
         }
 
         Some(permission_profile)
+    }
+
+    pub(super) fn try_set_permission_profile_on_config(
+        &mut self,
+        config: &mut Config,
+        permission_profile: PermissionProfile,
+        user_message_prefix: &str,
+        log_message: &str,
+    ) -> bool {
+        if let Err(err) = config.permissions.set_permission_profile(permission_profile) {
+            tracing::warn!(error = %err, "{log_message}");
+            self.chat_widget
+                .add_error_message(format!("{user_message_prefix}: {err}"));
+            return false;
+        }
+
+        true
     }
 
     pub(super) fn scoped_config_segments(&self, key: &str) -> Vec<String> {
@@ -248,7 +265,7 @@ impl App {
             (root_blocks_disable, profile_configured)
         };
         let mut permissions_history_label: Option<&'static str> = None;
-        let mut builder = ConfigEditsBuilder::for_config(&self.config)
+        let mut builder = ConfigEditsBuilder::new(&self.config.codex_home)
             .with_profile(self.active_profile.as_deref());
 
         for (feature, enabled) in updates {
@@ -386,11 +403,9 @@ impl App {
         if let Some(permission_profile) = permission_profile_override_value.as_ref()
             && let Err(err) = self
                 .chat_widget
-                .set_permission_profile_from_session_snapshot(
-                    PermissionProfileSnapshot::from_session_snapshot(
-                        permission_profile.clone(),
-                        active_permission_profile_override.clone(),
-                    ),
+                .set_permission_profile_with_active_profile(
+                    permission_profile.clone(),
+                    active_permission_profile_override.clone(),
                 )
         {
             tracing::error!(
@@ -498,7 +513,8 @@ impl App {
             },
         ];
 
-        if let Err(err) = ConfigEditsBuilder::for_config(&self.config)
+        if let Err(err) = ConfigEditsBuilder::new(&self.config.codex_home)
+            .with_profile(self.active_profile.as_deref())
             .with_edits(edits)
             .apply()
             .await
@@ -707,7 +723,7 @@ mod tests {
 
         assert_eq!(app_enabled_in_effective_config(&app.config, &app_id), None);
 
-        ConfigEditsBuilder::for_config(&app.config)
+        ConfigEditsBuilder::new(&app.config.codex_home)
             .with_edits([
                 ConfigEdit::SetPath {
                     segments: vec!["apps".to_string(), app_id.clone(), "enabled".to_string()],
