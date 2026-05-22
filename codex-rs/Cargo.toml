@@ -61,6 +61,7 @@ members = [
     "skills",
     "core",
     "core-api",
+    "core-test-suites/*/",
     "core-domain/types",
     "core-plugins",
     "core-skills",
@@ -152,6 +153,10 @@ members = [
     "task-memory",
     "terminal-detection",
     "test-binary-support",
+    "test-support/context-fixtures",
+    "test-support/core-runtime",
+    "test-support/lightweight",
+    "test-support/responses",
     "thread-config-remote",
     "thread-manager-sample",
     "thread/thread-api",
@@ -318,6 +323,10 @@ codex-telemetry-api = { path = "runtime-domain/telemetry-api" }
 codex-stdio-to-uds = { path = "stdio-to-uds" }
 codex-terminal-detection = { path = "terminal-detection" }
 codex-test-binary-support = { path = "test-binary-support" }
+codex-test-support-context-fixtures = { path = "test-support/context-fixtures" }
+codex-core-test-runtime = { path = "test-support/core-runtime" }
+codex-test-support-lightweight = { path = "test-support/lightweight" }
+codex-test-support-responses = { path = "test-support/responses" }
 codex-thread-config-remote = { path = "thread-config-remote" }
 codex-thread-api = { path = "thread/thread-api" }
 codex-thread-handle-api = { path = "thread/thread-handle-api" }

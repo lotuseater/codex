@@ -408,12 +408,14 @@ dependencies = [
  "codex-app-server-protocol",
  "codex-config",
  "codex-core",
+ "codex-core-test-runtime",
  "codex-features",
  "codex-login",
  "codex-models-manager",
  "codex-protocol",
+ "codex-test-support-lightweight",
+ "codex-test-support-responses",
  "codex-utils-cargo-bin",
- "core_test_support",
  "serde",
  "serde_json",
  "shlex",
@@ -1958,6 +1960,7 @@ dependencies = [
  "codex-cloud-requirements",
  "codex-config",
  "codex-core",
+ "codex-core-domain-types",
  "codex-core-plugins",
  "codex-exec-server",
  "codex-extension-api",
@@ -2036,7 +2039,6 @@ dependencies = [
  "codex-core",
  "codex-exec-server",
  "codex-feedback",
- "codex-protocol",
  "codex-thread-config-remote",
  "codex-uds",
  "codex-utils-absolute-path",
@@ -2111,7 +2113,6 @@ dependencies = [
  "codex-app-server-protocol",
  "codex-core",
  "codex-otel",
- "codex-protocol",
  "codex-utils-cli",
  "serde",
  "serde_json",
@@ -2288,7 +2289,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap",
- "codex-app-server-protocol",
+ "codex-app-catalog-types",
  "codex-connectors",
  "codex-core",
  "codex-core-plugins",
@@ -2655,10 +2656,12 @@ dependencies = [
  "codex-app-catalog-types",
  "codex-apply-patch",
  "codex-async-utils",
+ "codex-auth-api",
  "codex-blackboard",
  "codex-build-policy",
  "codex-code-mode",
  "codex-cognos-ops",
+ "codex-compaction-policy",
  "codex-config",
  "codex-connectors",
  "codex-context-ops-impl",
@@ -2666,6 +2669,7 @@ dependencies = [
  "codex-context-reduction",
  "codex-core-plugins",
  "codex-core-skills",
+ "codex-core-test-runtime",
  "codex-desktop-automation",
  "codex-exec-server",
  "codex-execpolicy",
@@ -2687,6 +2691,7 @@ dependencies = [
  "codex-operation-cache",
  "codex-otel",
  "codex-plugin",
+ "codex-prompt-context",
  "codex-prompt-reducer",
  "codex-protocol",
  "codex-repo-context-scout",
@@ -2695,16 +2700,22 @@ dependencies = [
  "codex-rollout",
  "codex-rollout-trace",
  "codex-sandboxing",
- "codex-self-review",
+ "codex-session-api",
  "codex-shell-command",
  "codex-shell-escalation",
  "codex-state",
  "codex-task-memory",
  "codex-terminal-detection",
  "codex-test-binary-support",
+ "codex-test-support-context-fixtures",
+ "codex-test-support-lightweight",
+ "codex-test-support-responses",
+ "codex-thread-manager-api",
+ "codex-thread-store",
  "codex-thread-store-api",
+ "codex-tool-execution-api",
+ "codex-tool-registry-api",
  "codex-tool-schema",
- "codex-tools",
  "codex-turn-diff",
  "codex-utils-absolute-path",
  "codex-utils-cache",
@@ -2720,7 +2731,6 @@ dependencies = [
  "codex-utils-template",
  "codex-windows-sandbox",
  "codex-workflow-batch",
- "core_test_support",
  "csv",
  "ctor",
  "dirs",
@@ -2766,11 +2776,9 @@ dependencies = [
  "tracing-test",
  "url",
  "uuid",
- "walkdir",
  "which 8.0.2",
  "whoami 2.1.2",
  "wiremock",
- "zstd 0.13.3",
 ]
 
 [[package]]
@@ -2778,10 +2786,10 @@ name = "codex-core-api"
 version = "0.0.0"
 dependencies = [
  "codex-analytics",
- "codex-app-server-protocol",
  "codex-arg0",
  "codex-config",
- "codex-exec-server",
+ "codex-config-types",
+ "codex-core-domain-types",
  "codex-extension-api",
  "codex-features",
  "codex-login",
@@ -2794,6 +2802,9 @@ dependencies = [
 [[package]]
 name = "codex-core-domain-types"
 version = "0.0.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "codex-core-plugins"
@@ -2863,6 +2874,268 @@ dependencies = [
  "toml 1.1.2+spec-1.1.0",
  "tracing",
  "zip 2.4.2",
+]
+
+[[package]]
+name = "codex-core-test-runtime"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "assert_cmd",
+ "codex-arg0",
+ "codex-config",
+ "codex-core",
+ "codex-exec-server",
+ "codex-extension-api",
+ "codex-features",
+ "codex-hooks",
+ "codex-login",
+ "codex-model-provider-info",
+ "codex-models-manager",
+ "codex-protocol",
+ "codex-test-support-context-fixtures",
+ "codex-test-support-lightweight",
+ "codex-test-support-responses",
+ "codex-thread-store-api",
+ "codex-utils-absolute-path",
+ "codex-utils-cargo-bin",
+ "ctor",
+ "futures",
+ "pretty_assertions",
+ "serde_json",
+ "shlex",
+ "tempfile",
+ "tokio",
+ "wiremock",
+]
+
+[[package]]
+name = "codex-core-test-suite-agents-thread-store"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "codex-apply-patch",
+ "codex-config",
+ "codex-core",
+ "codex-core-test-runtime",
+ "codex-exec-server",
+ "codex-features",
+ "codex-login",
+ "codex-models-manager",
+ "codex-protocol",
+ "codex-sandboxing",
+ "codex-test-binary-support",
+ "codex-utils-absolute-path",
+ "ctor",
+ "pretty_assertions",
+ "regex-lite",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing-subscriber",
+ "uuid",
+ "wiremock",
+]
+
+[[package]]
+name = "codex-core-test-suite-approvals-permissions"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "codex-config",
+ "codex-core",
+ "codex-core-test-runtime",
+ "codex-features",
+ "codex-protocol",
+ "codex-utils-absolute-path",
+ "pretty_assertions",
+ "regex-lite",
+ "serde_json",
+ "tempfile",
+ "test-case",
+ "tokio",
+ "wiremock",
+]
+
+[[package]]
+name = "codex-core-test-suite-client-transport"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "assert_cmd",
+ "codex-api",
+ "codex-config",
+ "codex-core",
+ "codex-core-test-runtime",
+ "codex-exec-server",
+ "codex-extension-api",
+ "codex-features",
+ "codex-git-utils",
+ "codex-login",
+ "codex-model-provider-info",
+ "codex-models-manager",
+ "codex-otel",
+ "codex-protocol",
+ "codex-rollout-trace",
+ "codex-thread-store",
+ "codex-thread-store-api",
+ "codex-utils-absolute-path",
+ "codex-utils-cargo-bin",
+ "dunce",
+ "futures",
+ "opentelemetry_sdk",
+ "pretty_assertions",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "toml 1.1.2+spec-1.1.0",
+ "tracing",
+ "tracing-test",
+ "uuid",
+ "wiremock",
+]
+
+[[package]]
+name = "codex-core-test-suite-compact"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "codex-apply-patch",
+ "codex-core",
+ "codex-core-test-runtime",
+ "codex-exec-server",
+ "codex-features",
+ "codex-login",
+ "codex-model-provider-info",
+ "codex-models-manager",
+ "codex-protocol",
+ "codex-sandboxing",
+ "codex-test-binary-support",
+ "codex-test-support-responses",
+ "ctor",
+ "insta",
+ "pretty_assertions",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "wiremock",
+]
+
+[[package]]
+name = "codex-core-test-suite-config-items"
+version = "0.0.0"
+dependencies = [
+ "codex-config",
+ "codex-core",
+ "codex-protocol",
+ "codex-rollout",
+ "codex-thread-store",
+ "codex-thread-store-api",
+ "pretty_assertions",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "toml 1.1.2+spec-1.1.0",
+]
+
+[[package]]
+name = "codex-core-test-suite-exec-shell"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "codex-apply-patch",
+ "codex-config",
+ "codex-core",
+ "codex-core-test-runtime",
+ "codex-exec-server",
+ "codex-features",
+ "codex-protocol",
+ "codex-sandboxing",
+ "codex-test-binary-support",
+ "codex-utils-cargo-bin",
+ "ctor",
+ "pretty_assertions",
+ "regex-lite",
+ "serde_json",
+ "serial_test",
+ "tempfile",
+ "test-case",
+ "tokio",
+]
+
+[[package]]
+name = "codex-core-test-suite-hooks"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "codex-config",
+ "codex-core",
+ "codex-core-test-runtime",
+ "codex-features",
+ "codex-hooks",
+ "codex-plugin",
+ "codex-protocol",
+ "codex-utils-absolute-path",
+ "pretty_assertions",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "codex-core-test-suite-realtime-code-mode"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "chrono",
+ "codex-apply-patch",
+ "codex-config",
+ "codex-core",
+ "codex-core-test-runtime",
+ "codex-exec-server",
+ "codex-features",
+ "codex-login",
+ "codex-models-manager",
+ "codex-network-proxy",
+ "codex-protocol",
+ "codex-sandboxing",
+ "codex-state",
+ "codex-test-binary-support",
+ "codex-test-support-responses",
+ "codex-utils-output-truncation",
+ "ctor",
+ "insta",
+ "pretty_assertions",
+ "serde_json",
+ "shlex",
+ "time",
+ "tokio",
+ "whoami 2.1.2",
+ "wiremock",
+]
+
+[[package]]
+name = "codex-core-test-suite-tools-router"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "assert_matches",
+ "codex-apply-patch",
+ "codex-config",
+ "codex-core",
+ "codex-core-test-runtime",
+ "codex-exec-server",
+ "codex-features",
+ "codex-login",
+ "codex-protocol",
+ "codex-sandboxing",
+ "codex-test-binary-support",
+ "ctor",
+ "pretty_assertions",
+ "regex-lite",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -3031,8 +3304,10 @@ name = "codex-extension-api"
 version = "0.0.0"
 dependencies = [
  "async-trait",
+ "codex-core-domain-types",
  "codex-protocol",
- "codex-tools",
+ "codex-tool-execution-api",
+ "codex-tool-registry-api",
 ]
 
 [[package]]
@@ -3714,6 +3989,9 @@ dependencies = [
 [[package]]
 name = "codex-prompt-context"
 version = "0.0.0"
+dependencies = [
+ "codex-utils-absolute-path",
+]
 
 [[package]]
 name = "codex-prompt-reducer"
@@ -4174,6 +4452,58 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-test-support-context-fixtures"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "codex-protocol",
+ "codex-tool-execution-api",
+ "codex-tool-registry-api",
+ "codex-utils-absolute-path",
+ "codex-utils-cargo-bin",
+ "pretty_assertions",
+ "regex-lite",
+ "serde_json",
+ "similar 3.1.0",
+ "tempfile",
+]
+
+[[package]]
+name = "codex-test-support-lightweight"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "codex-utils-absolute-path",
+ "notify",
+ "opentelemetry",
+ "opentelemetry_sdk",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "walkdir",
+]
+
+[[package]]
+name = "codex-test-support-responses"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "codex-protocol",
+ "codex-test-support-context-fixtures",
+ "futures",
+ "pretty_assertions",
+ "reqwest",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite 0.28.0",
+ "wiremock",
+ "zstd 0.13.3",
+]
+
+[[package]]
 name = "codex-thread-api"
 version = "0.0.0"
 dependencies = [
@@ -4211,7 +4541,10 @@ dependencies = [
 name = "codex-thread-manager-api"
 version = "0.0.0"
 dependencies = [
+ "codex-protocol",
+ "codex-sandboxing",
  "codex-thread-api",
+ "codex-utils-absolute-path",
  "thiserror 2.0.18",
 ]
 
@@ -4221,8 +4554,10 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap",
+ "codex-app-server-protocol",
  "codex-core",
  "codex-core-api",
+ "codex-exec-server",
  "codex-thread-store",
  "serde_json",
  "tracing",
@@ -4273,6 +4608,16 @@ dependencies = [
 [[package]]
 name = "codex-tool-execution-api"
 version = "0.0.0"
+dependencies = [
+ "codex-features",
+ "codex-protocol",
+ "codex-tool-registry-api",
+ "codex-utils-absolute-path",
+ "codex-utils-pty",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+]
 
 [[package]]
 name = "codex-tool-handler-api"
@@ -4281,6 +4626,14 @@ version = "0.0.0"
 [[package]]
 name = "codex-tool-registry-api"
 version = "0.0.0"
+dependencies = [
+ "codex-app-catalog-types",
+ "codex-code-mode-spec",
+ "codex-protocol",
+ "codex-tool-schema",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "codex-tool-schema"
@@ -4301,15 +4654,15 @@ dependencies = [
  "codex-code-mode-spec",
  "codex-features",
  "codex-protocol",
+ "codex-tool-execution-api",
+ "codex-tool-registry-api",
  "codex-tool-schema",
  "codex-utils-absolute-path",
  "codex-utils-pty",
- "codex-utils-string",
  "pretty_assertions",
  "rmcp",
  "serde",
  "serde_json",
- "thiserror 2.0.18",
  "tracing",
 ]
 
@@ -5041,41 +5394,20 @@ name = "core_test_support"
 version = "0.0.0"
 dependencies = [
  "anyhow",
- "assert_cmd",
- "base64 0.22.1",
  "codex-arg0",
  "codex-config",
  "codex-core",
- "codex-exec-server",
- "codex-extension-api",
- "codex-features",
- "codex-hooks",
- "codex-login",
- "codex-model-provider-info",
  "codex-models-manager",
  "codex-protocol",
- "codex-utils-absolute-path",
+ "codex-test-support-context-fixtures",
+ "codex-test-support-lightweight",
+ "codex-test-support-responses",
  "codex-utils-cargo-bin",
  "ctor",
- "futures",
- "notify",
- "opentelemetry",
- "opentelemetry_sdk",
- "pretty_assertions",
- "regex-lite",
- "reqwest",
  "serde_json",
  "shlex",
- "similar 3.1.0",
  "tempfile",
  "tokio",
- "tokio-tungstenite 0.28.0",
- "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
- "walkdir",
- "wiremock",
- "zstd 0.13.3",
 ]
 
 [[package]]
@@ -9197,6 +9529,7 @@ dependencies = [
  "codex-login",
  "codex-mcp-server",
  "codex-terminal-detection",
+ "codex-test-support-responses",
  "codex-utils-cargo-bin",
  "core_test_support",
  "os_info",
