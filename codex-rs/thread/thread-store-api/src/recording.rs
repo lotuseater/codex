@@ -29,6 +29,7 @@ use crate::StoredThread;
 use crate::StoredThreadHistory;
 use crate::ThreadMetadataPatch;
 use crate::ThreadPage;
+use crate::ThreadPersistenceServices;
 use crate::ThreadPersistenceMetadata;
 use crate::ThreadStore;
 use crate::ThreadStoreError;
@@ -435,6 +436,16 @@ pub struct RecordingLiveThreadFactory;
 impl RecordingLiveThreadFactory {
     pub fn new() -> Self {
         Self
+    }
+}
+
+impl ThreadPersistenceServices {
+    /// Build in-memory recording persistence services for manager tests.
+    pub fn recording() -> Self {
+        Self::new(
+            Arc::new(RecordingThreadStore::default()),
+            Arc::new(RecordingLiveThreadFactory::new()),
+        )
     }
 }
 

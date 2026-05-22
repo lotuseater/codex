@@ -17,6 +17,7 @@ pub use error::ThreadStoreResult;
 pub use live_thread::LiveThreadFactory;
 pub use live_thread::LiveThreadHandle;
 pub use live_thread::ThreadStoreFuture;
+pub use live_thread::ThreadPersistenceServices;
 pub use live_thread::UnsupportedLiveThreadFactory;
 pub use recording::RecordingLiveThreadFactory;
 pub use recording::RecordingThreadStore;

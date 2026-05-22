@@ -4,6 +4,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use codex_protocol::protocol::RolloutItem;
+use codex_protocol::protocol::ThreadMemoryMode;
 
 use crate::CreateThreadParams;
 use crate::ResumeThreadParams;
@@ -16,6 +17,33 @@ use crate::ThreadStoreResult;
 
 /// Boxed future returned by object-safe thread-store API traits.
 pub type ThreadStoreFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+/// Persistence services required by thread manager implementations.
+///
+/// Implementations should pass concrete stores and live-thread factories through
+/// this bundle so orchestration code does not need to know which storage
+/// implementation backs active threads.
+#[derive(Clone)]
+pub struct ThreadPersistenceServices {
+    /// Storage backend used for persisted thread records.
+    pub thread_store: Arc<dyn ThreadStore>,
+
+    /// Factory used to create and resume per-thread live persistence handles.
+    pub live_thread_factory: Arc<dyn LiveThreadFactory>,
+}
+
+impl ThreadPersistenceServices {
+    /// Create a persistence services bundle from storage-neutral trait objects.
+    pub fn new(
+        thread_store: Arc<dyn ThreadStore>,
+        live_thread_factory: Arc<dyn LiveThreadFactory>,
+    ) -> Self {
+        Self {
+            thread_store,
+            live_thread_factory,
+        }
+    }
+}
 
 /// Live per-thread persistence handle used by sessions while a thread is active.
 ///
@@ -59,6 +87,39 @@ pub trait LiveThreadHandle: Send + Sync {
         patch: ThreadMetadataPatch,
         include_archived: bool,
     ) -> ThreadStoreFuture<'_, ThreadStoreResult<StoredThread>>;
+
+    /// Update the persisted thread-level memory behavior.
+    fn update_memory_mode<'a>(
+        &'a self,
+        mode: ThreadMemoryMode,
+        include_archived: bool,
+    ) -> ThreadStoreFuture<'a, ThreadStoreResult<()>> {
+        Box::pin(async move {
+            self.update_metadata(
+                ThreadMetadataPatch {
+                    memory_mode: Some(mode),
+                    ..Default::default()
+                },
+                include_archived,
+            )
+            .await?;
+            Ok(())
+        })
+    }
+
+    /// Persist the active thread and update its thread-level memory behavior.
+    fn persist_memory_mode<'a>(
+        &'a self,
+        mode: ThreadMemoryMode,
+    ) -> ThreadStoreFuture<'a, ThreadStoreResult<()>> {
+        Box::pin(async move {
+            self.persist().await?;
+            self.flush().await?;
+            self.update_memory_mode(mode, /*include_archived*/ false)
+                .await?;
+            self.flush().await
+        })
+    }
 
     /// Return the local rollout path when the implementation has one.
     fn local_rollout_path(&self) -> ThreadStoreFuture<'_, ThreadStoreResult<Option<PathBuf>>>;
