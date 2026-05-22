@@ -1227,3 +1227,11 @@ This checkpoint supersedes older duplicate "missing handoff" notes above.
     owns only the duplicate `stream_error_allows_next_turn` include repair in
     `codex-rs/core/tests/client_stream.rs` plus its focused wrapper/suite
     references.
+- Launch check:
+  - `codex-workers -List -Pattern "solid_refactor_wave21_stream_error_duplicate_repair_worker.prompt.md"`
+    found the prompt.
+  - `git diff --check -- .codex/workflow/agents/solid_refactor_wave21_stream_error_duplicate_repair_worker.prompt.md`
+    passed.
+  - `codex-workers -DryRun -Pattern "solid_refactor_wave21_stream_error_duplicate_repair_worker.prompt.md"`
+    exited 0.
+  - Launched visible worker with PID `10164`.
