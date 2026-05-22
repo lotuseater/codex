@@ -74,20 +74,22 @@ fn stale_reduction_notices(
     let mut text_slot_zero = 0usize;
     for item in items {
         match item {
-            ResponseItem::Message { content, .. } => {
+            ResponseItem::Message { role, content, .. } => {
                 for content_item in content {
                     let text = match content_item {
                         ContentItem::InputText { text } | ContentItem::OutputText { text } => text,
                         ContentItem::InputImage { .. } => continue,
                     };
                     text_slot_zero += 1;
-                    push_stale_notice(
-                        &mut notices,
-                        text_slot_zero,
-                        text_slot_zero - 1,
-                        recent_text_start,
-                        text,
-                    );
+                    if role == "assistant" {
+                        push_stale_notice(
+                            &mut notices,
+                            text_slot_zero,
+                            text_slot_zero - 1,
+                            recent_text_start,
+                            text,
+                        );
+                    }
                 }
             }
             ResponseItem::FunctionCallOutput { output, .. }
@@ -504,6 +506,33 @@ mod tests {
         assert!(std::fs::read_dir(temp.path()).unwrap().next().is_none());
     }
 
+    #[test]
+    fn preserves_user_developer_and_system_message_notices() {
+        let developer_notice = notice("source_read_digest", "developer-instruction");
+        let old_source = notice("source_read_digest", "old-source");
+        let old_search = notice("search_result_digest", "old-search");
+        let mut items = vec![
+            message("developer", developer_notice.clone()),
+            output("old-source", old_source.clone()),
+            output("old-search", old_search.clone()),
+        ];
+        let temp = TempDir::new().unwrap();
+        let mut stats = stats_for_current_items(&items);
+
+        bundle_stale_reduction_notices(&mut items, temp.path(), 3, &mut stats).unwrap();
+
+        let texts = all_texts(&items);
+        assert_eq!(developer_notice, texts[0]);
+        assert!(texts[1].contains("[prompt reduction: stale_reduction_notice_bundle]"));
+        assert_eq!("", texts[2]);
+
+        let artifact = only_artifact(temp.path());
+        let artifact_text = std::fs::read_to_string(artifact).unwrap();
+        assert!(!artifact_text.contains("developer-instruction"));
+        assert!(artifact_text.contains(&old_source));
+        assert!(artifact_text.contains(&old_search));
+    }
+
     fn notice(reason: &str, marker: &str) -> String {
         format!(
             "[prompt reduction: {reason}]\n\
@@ -521,6 +550,33 @@ mod tests {
             call_id: call_id.to_string(),
             output: FunctionCallOutputPayload::from_text(text),
         }
+    }
+
+    fn message(role: &str, text: String) -> ResponseItem {
+        ResponseItem::Message {
+            role: role.to_string(),
+            content: vec![ContentItem::InputText { text }],
+            phase: None,
+            id: None,
+        }
+    }
+
+    fn all_texts(items: &[ResponseItem]) -> Vec<String> {
+        items
+            .iter()
+            .filter_map(|item| match item {
+                ResponseItem::Message { content, .. } => content.first().and_then(|content_item| {
+                    let ContentItem::InputText { text } = content_item else {
+                        return None;
+                    };
+                    Some(text.clone())
+                }),
+                ResponseItem::FunctionCallOutput { output, .. } => {
+                    output.text_content().map(ToString::to_string)
+                }
+                _ => None,
+            })
+            .collect()
     }
 
     fn output_texts(items: &[ResponseItem]) -> Vec<String> {
