@@ -5,6 +5,8 @@ Classification: completed
 ## Commit Created
 
 - `6cb2dddfed06` - `Record wave19 SOLID refactor handoffs`
+- `2f510a537180` - `Record wave20 commit steward follow-up`
+- `5f95b495bfc0` - `Record wave20 SOLID refactor handoffs`
 
 ## Files Committed
 
@@ -15,6 +17,9 @@ Classification: completed
 - `.codex/workflow/agents/solid_refactor_wave19_rmcp_client_tests_split_worker.handoff.md`
 - `.codex/workflow/agents/solid_refactor_wave19_search_tool_tests_split_worker.handoff.md`
 - `.codex/workflow/agents/solid_refactor_wave19_shell_unified_exec_boundary_worker.handoff.md`
+- `.codex/workflow/agents/solid_refactor_wave20_client_goals_boundary_status_scout.handoff.md`
+- `.codex/workflow/agents/solid_refactor_wave20_compact_resume_streaming_split_worker.handoff.md`
+- `.codex/workflow/agents/solid_refactor_wave20_remaining_mcp_tooling_split_worker.handoff.md`
 
 ## Checks Run
 
@@ -27,10 +32,17 @@ Classification: completed
 
 All checks completed with exit code 0. The dependency boundary checker printed no violations.
 
+During the wave20 handoff pass, another worker committed `e374d2dd8abf` (`Add wave19 split test binaries`). That commit was not created by this worker.
+
 ## Skipped
 
-- No wave20 completed handoff files were present. Only wave20 prompt, marker, and inspect report files were visible, so they were treated as active orchestration artifacts and left unstaged.
+- At the first commit pass, no wave20 completed handoff files were present. Only wave20 prompt, marker, and inspect report files were visible, so they were treated as active orchestration artifacts and left unstaged.
+- New wave20 handoffs appeared after that pass:
+  - `.codex/workflow/agents/solid_refactor_wave20_client_goals_boundary_status_scout.handoff.md`
+  - `.codex/workflow/agents/solid_refactor_wave20_compact_resume_streaming_split_worker.handoff.md`
+  - `.codex/workflow/agents/solid_refactor_wave20_remaining_mcp_tooling_split_worker.handoff.md`
 - Wave19 source slices were left unstaged because the current dirty tree still mixes their changes with shared `codex-rs/core/Cargo.toml`, `codex-rs/core/tests/common/*`, or other active source-worker files.
+- Wave20 source slices were left unstaged because `compact/resume/streaming` touches shared `codex-rs/core/Cargo.toml`, `remaining_mcp_tooling` is classified `root-wiring-needed`, and `client_goals_boundary_status_scout` is read-only.
 - Active/mixed source and generated work was left untouched, including `codex-rs/Cargo.toml`, `codex-rs/Cargo.lock`, app-server schema JSON, `codex-rs/core/Cargo.toml`, and source files under active wave20 prompt ownership.
 
 ## Remaining Fallout
