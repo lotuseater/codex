@@ -2414,7 +2414,7 @@ fn search_result_digest(source: &str, text: &str, threshold: usize) -> Option<St
         if samples.len() < 12 {
             samples.push(format!(
                 "{}:{line_number}:{}",
-                compact_source_label(path),
+                compact_source_label(&path),
                 truncate(&body, 120)
             ));
         }
