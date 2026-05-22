@@ -1,0 +1,4 @@
+mod support;
+
+#[path = "suite/search_tool_dynamic.rs"]
+mod search_tool_dynamic;

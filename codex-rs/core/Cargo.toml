@@ -14,6 +14,22 @@ name = "agents"
 path = "tests/agents.rs"
 
 [[test]]
+name = "agents_jobs"
+path = "tests/agents_jobs.rs"
+
+[[test]]
+name = "agents_delegate"
+path = "tests/agents_delegate.rs"
+
+[[test]]
+name = "agents_hierarchy"
+path = "tests/agents_hierarchy.rs"
+
+[[test]]
+name = "agents_tool_parallelism"
+path = "tests/agents_tool_parallelism.rs"
+
+[[test]]
 name = "client"
 path = "tests/client.rs"
 
@@ -62,6 +78,22 @@ name = "responses_headers"
 path = "tests/responses_headers.rs"
 
 [[test]]
+name = "rmcp_client_connection"
+path = "tests/rmcp_client_connection.rs"
+
+[[test]]
+name = "rmcp_client_responses"
+path = "tests/rmcp_client_responses.rs"
+
+[[test]]
+name = "rmcp_client_streamable_http"
+path = "tests/rmcp_client_streamable_http.rs"
+
+[[test]]
+name = "rmcp_client_tool_calls"
+path = "tests/rmcp_client_tool_calls.rs"
+
+[[test]]
 name = "state"
 path = "tests/state.rs"
 
@@ -72,6 +104,22 @@ path = "tests/telemetry.rs"
 [[test]]
 name = "tools"
 path = "tests/tools.rs"
+
+[[test]]
+name = "search_tool_deferred"
+path = "tests/search_tool_deferred.rs"
+
+[[test]]
+name = "search_tool_dynamic"
+path = "tests/search_tool_dynamic.rs"
+
+[[test]]
+name = "search_tool_matching"
+path = "tests/search_tool_matching.rs"
+
+[[test]]
+name = "search_tool_mcp"
+path = "tests/search_tool_mcp.rs"
 
 [lints]
 workspace = true
