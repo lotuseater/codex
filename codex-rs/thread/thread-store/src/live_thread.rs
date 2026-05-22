@@ -313,6 +313,14 @@ impl LiveThreadHandle for LiveThread {
         Box::pin(async move { LiveThread::update_metadata(self, patch, include_archived).await })
     }
 
+    fn update_memory_mode(
+        &self,
+        mode: ThreadMemoryMode,
+        include_archived: bool,
+    ) -> ThreadStoreFuture<'_, ThreadStoreResult<()>> {
+        Box::pin(async move { LiveThread::update_memory_mode(self, mode, include_archived).await })
+    }
+
     fn local_rollout_path(&self) -> ThreadStoreFuture<'_, ThreadStoreResult<Option<PathBuf>>> {
         Box::pin(async move { LiveThread::local_rollout_path(self).await })
     }
@@ -348,5 +356,97 @@ fn event_persistence_mode(mode: ThreadEventPersistenceMode) -> EventPersistenceM
     match mode {
         ThreadEventPersistenceMode::Limited => EventPersistenceMode::Limited,
         ThreadEventPersistenceMode::Extended => EventPersistenceMode::Extended,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use codex_protocol::models::BaseInstructions;
+    use codex_protocol::protocol::EventMsg;
+    use codex_protocol::protocol::SessionSource;
+    use codex_protocol::protocol::UserMessageEvent;
+    use codex_thread_store_api::CreateThreadParams;
+    use codex_thread_store_api::ReadThreadParams;
+    use codex_thread_store_api::RecordingThreadStore;
+    use codex_thread_store_api::StoredThread;
+    use codex_thread_store_api::ThreadPersistenceMetadata;
+    use codex_thread_store_api::ThreadStore;
+    use pretty_assertions::assert_eq;
+
+    #[tokio::test]
+    async fn flush_applies_rollout_derived_preview_through_store_port() {
+        let store = Arc::new(RecordingThreadStore::new());
+        let thread_id = ThreadId::default();
+        let live_thread = LiveThread::create(store.clone(), create_thread_params(thread_id))
+            .await
+            .expect("create live thread");
+        let user_message = RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
+            message: "first user message".to_string(),
+            images: None,
+            local_images: Vec::new(),
+            text_elements: Vec::new(),
+            ..Default::default()
+        }));
+
+        live_thread
+            .append_items(&[user_message.clone()])
+            .await
+            .expect("append rollout item");
+        live_thread.flush().await.expect("flush live thread");
+
+        let stored = read_stored_thread(store.as_ref(), thread_id).await;
+        assert_eq!(stored.preview, "first user message");
+        assert_eq!(
+            stored.history.expect("stored history").items,
+            vec![user_message]
+        );
+        assert_eq!(store.calls().append_items, 1);
+        assert_eq!(store.calls().update_thread_metadata, 1);
+    }
+
+    #[tokio::test]
+    async fn update_memory_mode_routes_thread_state_through_store_port() {
+        let store = Arc::new(RecordingThreadStore::new());
+        let thread_id = ThreadId::default();
+        let live_thread = LiveThread::create(store.clone(), create_thread_params(thread_id))
+            .await
+            .expect("create live thread");
+
+        live_thread
+            .update_memory_mode(ThreadMemoryMode::Disabled, /*include_archived*/ false)
+            .await
+            .expect("update memory mode");
+
+        assert_eq!(store.calls().update_thread_metadata, 2);
+    }
+
+    fn create_thread_params(thread_id: ThreadId) -> CreateThreadParams {
+        CreateThreadParams {
+            thread_id,
+            forked_from_id: None,
+            source: SessionSource::Exec,
+            thread_source: None,
+            base_instructions: BaseInstructions::default(),
+            dynamic_tools: Vec::new(),
+            metadata: ThreadPersistenceMetadata {
+                cwd: Some(PathBuf::from("workspace")),
+                model_provider: "test-provider".to_string(),
+                memory_mode: ThreadMemoryMode::Enabled,
+            },
+            event_persistence_mode: ThreadEventPersistenceMode::Extended,
+        }
+    }
+
+    async fn read_stored_thread(store: &RecordingThreadStore, thread_id: ThreadId) -> StoredThread {
+        store
+            .read_thread(ReadThreadParams {
+                thread_id,
+                include_archived: true,
+                include_history: true,
+            })
+            .await
+            .expect("read stored thread")
     }
 }
