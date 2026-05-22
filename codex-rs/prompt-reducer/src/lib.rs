@@ -13,6 +13,10 @@ use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 
+mod source_label;
+
+use source_label::compact_source_label;
+
 const DEFAULT_MIN_REDUCE_CHARS: usize = 2_000;
 const DEFAULT_PATH_LIST_THRESHOLD: usize = 12;
 const DEFAULT_MIN_SAVED_TOKENS: usize = 128;
@@ -2120,7 +2124,11 @@ fn looks_like_inventory_path(text: &str) -> bool {
 }
 
 fn render_compact_path_list(operation: &str, paths: &BTreeSet<String>, limit: usize) -> String {
-    let selected_paths = paths.iter().take(limit).cloned().collect::<Vec<_>>();
+    let selected_paths = paths
+        .iter()
+        .take(limit)
+        .map(|path| compact_source_label(path))
+        .collect::<Vec<_>>();
     let omitted = paths.len().saturating_sub(selected_paths.len());
     let mut extension_counts = BTreeMap::<String, usize>::new();
     for path in paths {
@@ -2382,7 +2390,7 @@ fn recoverable_prior_context_digest(source: &str, text: &str) -> Option<String> 
 
     Some(format!(
         "recoverable_prior_context_digest\nsource: {}\nlines_total: {}\nchars_total: {}\nsafety: recoverable artifact for prior non-user context unlikely to be needed next\nexcerpt:\n{}",
-        truncate(source, 160),
+        compact_source_label(source),
         text.lines().count(),
         text.chars().count(),
         excerpt(text)
@@ -2404,7 +2412,11 @@ fn search_result_digest(source: &str, text: &str, threshold: usize) -> Option<St
         paths.insert(path.clone());
         matches_total += 1;
         if samples.len() < 12 {
-            samples.push(format!("{path}:{line_number}:{}", truncate(&body, 120)));
+            samples.push(format!(
+                "{}:{line_number}:{}",
+                compact_source_label(path),
+                truncate(&body, 120)
+            ));
         }
     }
     if matches_total < threshold || (!source_suggests_search && paths.len() < threshold) {
@@ -2421,7 +2433,7 @@ fn search_result_digest(source: &str, text: &str, threshold: usize) -> Option<St
         *extension_counts.entry(extension).or_default() += 1;
     }
     Some(format!(
-        "search_result_digest\nmatches_total: {}\npaths_total: {}\nextensions: {}\nsamples: {}\nexcerpt:\n{}",
+        "search_result_digest\nmatches_total: {}\npaths_total: {}\nextensions: {}\nsamples: {}\ncontent: omitted; recover exact search output from artifact",
         matches_total,
         paths.len(),
         render_counts(&extension_counts),
@@ -2429,8 +2441,7 @@ fn search_result_digest(source: &str, text: &str, threshold: usize) -> Option<St
             "(none)".to_string()
         } else {
             samples.join(" | ")
-        },
-        excerpt(text)
+        }
     ))
 }
 
@@ -2463,7 +2474,7 @@ fn source_read_digest(source: &str, text: &str) -> String {
     };
     format!(
         "source_read_digest\nsource: {}\nlines_total: {}\nchars_total: {}\npaths: {}\nexcerpt:\n{}",
-        truncate(source, 220),
+        compact_source_label(source),
         text.lines().count(),
         text.chars().count(),
         path_summary,
@@ -2640,6 +2651,38 @@ mod tests {
             panic!("expected output");
         };
         assert!(output.text_content().unwrap().contains("duplicate_block"));
+    }
+
+    #[test]
+    fn compacts_path_inventory_display_paths() {
+        let paths = BTreeSet::from([
+            "C:/Users/Oleh/.codex/sessions/2026/05/22/rollout-a.jsonl".to_string(),
+            "C:/Users/Oleh/.codex/sessions/2026/05/22/rollout-b.jsonl".to_string(),
+        ]);
+
+        let digest = render_compact_path_list("path_inventory_digest", &paths, 24);
+
+        assert!(digest.contains("C:/.../05/22/rollout-a.jsonl"));
+        assert!(digest.contains("C:/.../05/22/rollout-b.jsonl"));
+        assert!(!digest.contains("C:/Users/Oleh/.codex"));
+    }
+
+    #[test]
+    fn search_result_digest_omits_bulky_redundant_excerpt() {
+        let text = (0..20)
+            .map(|index| {
+                format!(
+                    "C:/Users/Oleh/Documents/GitHub/open_ai/codex/codex-rs/core/src/file_{index}.rs:10:match body {index}"
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let digest = search_result_digest("shell_output:rg -n match", &text, 8).unwrap();
+
+        assert!(digest.contains("content: omitted; recover exact search output from artifact"));
+        assert!(digest.contains("C:/.../core/src/file_0.rs:10:match body 0"));
+        assert!(!digest.contains("match body 19"));
     }
 
     #[test]
