@@ -1205,3 +1205,25 @@ This checkpoint supersedes older duplicate "missing handoff" notes above.
 - The next source-boundary cleanup wave should be selected from the active
   non-shell handoff, then followed by a root-supervised manifest/staging pass
   for root-wiring-needed split-test slices.
+
+## Wave 20 Non-Shell Handoff Update - 2026-05-22 06:11 Europe/Kyiv
+
+- New handoff present:
+  - accepted/root-wiring-needed:
+    `solid_refactor_wave20_non_shell_handler_specs_boundary_worker.handoff.md`.
+    - Worker removed direct `codex_tools` imports from the movable non-shell
+      handler/spec surface and added narrow registry-domain exports.
+    - Worker reports scoped `rg` now leaves only `plan_spec.rs`
+      (`root-wiring-needed`) and `shell_spec.rs` (`wave19-owned`) in that
+      handler/spec surface.
+    - Solid refactor dependency boundary check passed with
+      `violation_count = 0`.
+    - Source files and handoff are intentionally left unstaged for a later
+      source-owner or integration-steward pass.
+- Current `rg -n "codex_tools" codex-rs/core/src codex-rs/core/tests` still
+  reports 93 matching lines across session code/tests and tool spec tests.
+- Queued next worker:
+  - `solid_refactor_wave21_stream_error_duplicate_repair_worker.prompt.md`
+    owns only the duplicate `stream_error_allows_next_turn` include repair in
+    `codex-rs/core/tests/client_stream.rs` plus its focused wrapper/suite
+    references.
