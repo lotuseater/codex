@@ -19,7 +19,7 @@ pub struct TurnLoopRequest {
 impl TurnLoopRequest {
     /// Builds a loop request from turn input.
     #[must_use]
-    pub const fn new(input: TurnInput) -> Self {
+    pub fn new(input: TurnInput) -> Self {
         Self { input }
     }
 
@@ -80,4 +80,39 @@ impl TurnLoopResult {
 /// emission, and tool invocation should stay behind their dedicated crates.
 pub trait TurnLoop {
     fn run_turn(&mut self, request: TurnLoopRequest) -> TurnLoopResult;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use codex_turn_api::TurnId;
+    use codex_turn_api::TurnStatus;
+    use codex_turn_events::TurnEventKind;
+
+    fn turn_id(value: u64) -> TurnId {
+        TurnId::new(format!("turn-{value}"))
+    }
+
+    #[test]
+    fn loop_request_preserves_and_releases_input() {
+        let input = TurnInput::new(turn_id(47), "run loop");
+        let request = TurnLoopRequest::new(input.clone());
+
+        assert_eq!(&input, request.input());
+        assert_eq!(input, request.into_input());
+    }
+
+    #[test]
+    fn loop_result_preserves_output_final_state_and_events() {
+        let turn_id = turn_id(53);
+        let output = TurnOutput::new(turn_id.clone(), TurnStatus::Succeeded, "complete");
+        let final_state = TurnState::new(turn_id.clone());
+        let events = vec![TurnEvent::new(turn_id, TurnEventKind::Started)];
+
+        let result = TurnLoopResult::new(output.clone(), final_state.clone(), events.clone());
+
+        assert_eq!(&output, result.output());
+        assert_eq!(&final_state, result.final_state());
+        assert_eq!(events.as_slice(), result.events());
+    }
 }
