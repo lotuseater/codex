@@ -322,6 +322,9 @@ pub struct ConfigToml {
     /// Base URL for requests to ChatGPT (as opposed to the OpenAI API).
     pub chatgpt_base_url: Option<String>,
 
+    /// Optional product SKU forwarded to the host-owned apps MCP server.
+    pub apps_mcp_product_sku: Option<String>,
+
     /// Base URL override for the built-in `openai` model provider.
     pub openai_base_url: Option<String>,
 
