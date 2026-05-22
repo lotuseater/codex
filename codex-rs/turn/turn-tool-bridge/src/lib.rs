@@ -33,8 +33,8 @@ impl ToolRequest {
 
     /// Returns the id of the turn that requested this tool.
     #[must_use]
-    pub const fn turn_id(&self) -> TurnId {
-        self.turn_id
+    pub const fn turn_id(&self) -> &TurnId {
+        &self.turn_id
     }
 
     /// Returns the requested tool name.
@@ -80,8 +80,8 @@ impl ToolResult {
 
     /// Returns the id of the turn that received this result.
     #[must_use]
-    pub const fn turn_id(&self) -> TurnId {
-        self.turn_id
+    pub const fn turn_id(&self) -> &TurnId {
+        &self.turn_id
     }
 
     /// Returns the tool output content.
@@ -129,4 +129,71 @@ pub type ToolBridgeResult = Result<ToolResult, ToolBridgeError>;
 /// runtime and return output that can be recorded as turn events.
 pub trait TurnToolBridge {
     fn invoke(&mut self, request: ToolRequest) -> ToolBridgeResult;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use codex_turn_events::TurnEventKind;
+
+    fn turn_id(value: u64) -> TurnId {
+        TurnId::new(format!("turn-{value}"))
+    }
+
+    #[test]
+    fn tool_request_preserves_payload_and_converts_to_event() {
+        let turn_id = turn_id(41);
+        let request = ToolRequest::new(turn_id.clone(), "shell", "{\"cmd\":\"pwd\"}");
+
+        assert_eq!(&turn_id, request.turn_id());
+        assert_eq!("shell", request.name());
+        assert_eq!("{\"cmd\":\"pwd\"}", request.arguments());
+
+        let event = request.into_event();
+
+        assert_eq!(&turn_id, event.turn_id());
+        assert_eq!(
+            &TurnEventKind::ToolRequested {
+                tool_name: "shell".to_string(),
+            },
+            event.kind()
+        );
+    }
+
+    #[test]
+    fn tool_result_preserves_content_and_converts_to_message_event() {
+        let turn_id = turn_id(43);
+        let result = ToolResult::new(turn_id.clone(), "stdout");
+
+        assert_eq!(&turn_id, result.turn_id());
+        assert_eq!("stdout", result.content());
+
+        let event = result.into_event();
+
+        assert_eq!(&turn_id, event.turn_id());
+        assert_eq!(
+            &TurnEventKind::Message {
+                content: "stdout".to_string(),
+            },
+            event.kind()
+        );
+    }
+
+    #[test]
+    fn tool_bridge_errors_have_stable_messages() {
+        assert_eq!(
+            "tool `shell` is unavailable",
+            ToolBridgeError::Unavailable {
+                tool_name: "shell".to_string(),
+            }
+            .to_string()
+        );
+        assert_eq!(
+            "tool request rejected: policy blocked",
+            ToolBridgeError::Rejected {
+                reason: "policy blocked".to_string(),
+            }
+            .to_string()
+        );
+    }
 }
