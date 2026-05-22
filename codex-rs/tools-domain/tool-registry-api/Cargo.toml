@@ -9,5 +9,13 @@ doctest = false
 name = "codex_tool_registry_api"
 path = "src/lib.rs"
 
+[dependencies]
+codex-app-catalog-types = { workspace = true }
+codex-code-mode-spec = { workspace = true }
+codex-protocol = { workspace = true }
+codex-tool-schema = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
 [lints]
 workspace = true

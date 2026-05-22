@@ -4,8 +4,12 @@
 
 mod agent_tool;
 mod cognos_ops;
+mod code_mode;
 mod context_ops;
+mod desktop_automation;
 mod first_moves;
+mod mcp_tool;
+mod plan_tool;
 mod repo_context_scout;
 mod request_plugin_install;
 mod tool_discovery;
@@ -33,14 +37,21 @@ pub use cognos_ops::MISSION_TRACE_EXPORT_TOOL_NAME;
 pub use cognos_ops::OPERATION_CACHE_STATS_TOOL_NAME;
 pub use cognos_ops::PROBLEM_MEMORY_LOOKUP_TOOL_NAME;
 pub use cognos_ops::create_cognos_ops_tools;
+pub use code_mode::augment_tool_spec_for_code_mode;
+pub use code_mode::code_mode_name_for_tool_name;
+pub use code_mode::collect_code_mode_exec_prompt_tool_definitions;
+pub use code_mode::collect_code_mode_tool_definitions;
 pub use context_ops::FILE_OUTLINE_TOOL_NAME;
 pub use context_ops::SEARCH_TEXT_TOOL_NAME;
 pub use context_ops::WORKFLOW_BATCH_TOOL_NAME;
 pub use context_ops::create_context_ops_tools;
 pub use context_ops::create_workflow_batch_tool;
+pub use desktop_automation::create_desktop_automation_tools;
 pub use first_moves::FIRST_MOVES_PREDICT_TOOL_NAME;
 pub use first_moves::FIRST_MOVES_STATS_TOOL_NAME;
 pub use first_moves::create_first_moves_tools;
+pub use mcp_tool::mcp_call_tool_result_output_schema;
+pub use plan_tool::create_update_plan_tool_with_delegation_policy;
 pub use repo_context_scout::REPO_CONTEXT_SCOUT_TOOL_NAME;
 pub use repo_context_scout::create_repo_context_scout_tool;
 pub use request_plugin_install::REQUEST_PLUGIN_INSTALL_APPROVAL_KIND_VALUE;
@@ -271,6 +282,25 @@ pub struct ResponsesApiNamespace {
     pub name: String,
     pub description: String,
     pub tools: Vec<ResponsesApiNamespaceTool>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConfiguredToolSpec {
+    pub spec: ToolSpec,
+    pub supports_parallel_tool_calls: bool,
+}
+
+impl ConfiguredToolSpec {
+    pub fn new(spec: ToolSpec, supports_parallel_tool_calls: bool) -> Self {
+        Self {
+            spec,
+            supports_parallel_tool_calls,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        self.spec.name()
+    }
 }
 
 pub fn default_namespace_description(namespace_name: &str) -> String {
