@@ -1,0 +1,70 @@
+[package]
+name = "codex-core-test-suite-approvals-permissions"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+autotests = false
+
+[[test]]
+name = "approvals_exec_policy"
+path = "tests/approvals_exec_policy.rs"
+
+[[test]]
+name = "approvals_network"
+path = "tests/approvals_network.rs"
+
+[[test]]
+name = "approvals_patch"
+path = "tests/approvals_patch.rs"
+
+[[test]]
+name = "approvals_request_flow"
+path = "tests/approvals_request_flow.rs"
+
+[[test]]
+name = "permissions_messages"
+path = "tests/permissions_messages.rs"
+
+[[test]]
+name = "request_permissions_additional_approvals"
+path = "tests/request_permissions_additional_approvals.rs"
+
+[[test]]
+name = "request_permissions_additional_paths"
+path = "tests/request_permissions_additional_paths.rs"
+
+[[test]]
+name = "request_permissions_grant_scope"
+path = "tests/request_permissions_grant_scope.rs"
+
+[[test]]
+name = "request_permissions_grants"
+path = "tests/request_permissions_grants.rs"
+
+[[test]]
+name = "request_permissions_preapprovals"
+path = "tests/request_permissions_preapprovals.rs"
+
+[[test]]
+name = "request_permissions_tool"
+path = "tests/request_permissions_tool.rs"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+anyhow = { workspace = true }
+codex-config = { workspace = true }
+codex-core = { workspace = true }
+codex-core-test-runtime = { workspace = true }
+codex-features = { workspace = true }
+codex-protocol = { workspace = true }
+codex-utils-absolute-path = { workspace = true }
+pretty_assertions = { workspace = true }
+regex-lite = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+test-case = "3.3.1"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+wiremock = { workspace = true }
