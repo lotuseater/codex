@@ -1287,3 +1287,20 @@ This checkpoint supersedes older duplicate "missing handoff" notes above.
   - `codex-workers -DryRun -Pattern "solid_refactor_wave21_tool_registry_api_repair_worker.prompt.md"`
     exited 0.
   - Launched visible worker with PID `26208`.
+
+## Wave 21 Tool Registry API Repair Handoff - 2026-05-22 06:43 Europe/Kyiv
+
+- accepted:
+  `solid_refactor_wave21_tool_registry_api_repair_worker.handoff.md`.
+  - Worker repaired the `codex-tool-registry-api` fallout by removing stale
+    re-exports from `lib.rs` and adding `defer_loading: None` to
+    `tool_discovery.rs`.
+  - Worker reports `rg` and `git diff --check` passed.
+  - Worker ran
+    `cargo check --manifest-path codex-rs\Cargo.toml --release -p codex-tool-registry-api`
+    and saved `logs/wave21-tool-registry-api-repair.log`.
+  - Latest log shows the registry crate release check finished successfully.
+  - Source commit/staging remains deferred because these files are part of the
+    active wave20 registry-api source slice.
+- Next verification is the core-lib release check after registry repair:
+  `logs/wave21-codex-core-lib-after-registry-repair.log`.
