@@ -14,8 +14,10 @@ use std::path::Path;
 use std::path::PathBuf;
 
 mod source_label;
+mod stale_notice_bundle;
 
 use source_label::compact_source_label;
+use stale_notice_bundle::bundle_stale_reduction_notices;
 
 const DEFAULT_MIN_REDUCE_CHARS: usize = 2_000;
 const DEFAULT_PATH_LIST_THRESHOLD: usize = 12;
@@ -143,7 +145,7 @@ pub fn reduce_prompt_items(
         stats.artifacts += 1;
     }
 
-    for item in items {
+    for item in items.iter_mut() {
         match item {
             ResponseItem::FunctionCall {
                 name,
@@ -224,6 +226,7 @@ pub fn reduce_prompt_items(
         }
     }
 
+    bundle_stale_reduction_notices(items, &config.artifact_dir, recent_text_start, &mut stats)?;
     stats.saved_tokens = stats.original_tokens.saturating_sub(stats.reduced_tokens);
     Ok(stats)
 }
@@ -1442,14 +1445,19 @@ fn render_replacement(
     )
 }
 
-fn artifact_path_for(artifact_dir: &Path, index: usize, reason: &str, sha1: &str) -> PathBuf {
+pub(crate) fn artifact_path_for(
+    artifact_dir: &Path,
+    index: usize,
+    reason: &str,
+    sha1: &str,
+) -> PathBuf {
     artifact_dir.join(format!(
         "prompt-item-{index:04}-{reason}-{}.txt",
         &sha1[..12]
     ))
 }
 
-fn write_artifact(path: &Path, text: &str) -> std::io::Result<()> {
+pub(crate) fn write_artifact(path: &Path, text: &str) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -1471,7 +1479,7 @@ fn safe_label(label: &str) -> String {
         .to_string()
 }
 
-fn sha1_hex(text: &str) -> String {
+pub(crate) fn sha1_hex(text: &str) -> String {
     let digest = Sha1::digest(text.as_bytes());
     let mut hex = String::with_capacity(40);
     for byte in digest {
@@ -1480,7 +1488,7 @@ fn sha1_hex(text: &str) -> String {
     hex
 }
 
-fn approx_tokens(text: &str) -> usize {
+pub(crate) fn approx_tokens(text: &str) -> usize {
     text.chars().count().max(1).div_ceil(4)
 }
 
