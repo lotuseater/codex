@@ -89,6 +89,13 @@ impl RuleMatch {
         }
     }
 
+    pub fn is_policy_match(&self) -> bool {
+        match self {
+            Self::PrefixRuleMatch { .. } => true,
+            Self::HeuristicsRuleMatch { .. } => false,
+        }
+    }
+
     pub fn with_resolved_program(self, resolved_program: &AbsolutePathBuf) -> Self {
         match self {
             Self::PrefixRuleMatch {
@@ -104,6 +111,33 @@ impl RuleMatch {
             },
             other => other,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prefix_rule_match_is_a_policy_match() {
+        let rule_match = RuleMatch::PrefixRuleMatch {
+            matched_prefix: vec!["rm".to_string()],
+            decision: Decision::Forbidden,
+            resolved_program: None,
+            justification: None,
+        };
+
+        assert!(rule_match.is_policy_match());
+    }
+
+    #[test]
+    fn heuristics_rule_match_is_not_a_policy_match() {
+        let rule_match = RuleMatch::HeuristicsRuleMatch {
+            command: vec!["rm".to_string()],
+            decision: Decision::Forbidden,
+        };
+
+        assert!(!rule_match.is_policy_match());
     }
 }
 
