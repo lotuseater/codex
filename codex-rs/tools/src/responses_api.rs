@@ -3,67 +3,13 @@ use crate::ToolName;
 use crate::parse_dynamic_tool;
 use crate::parse_mcp_tool;
 use codex_protocol::dynamic_tools::DynamicToolSpec;
-use codex_tool_schema::JsonSchema;
-use serde::Deserialize;
-use serde::Serialize;
-use serde_json::Value;
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct FreeformTool {
-    pub name: String,
-    pub description: String,
-    pub format: FreeformToolFormat,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct FreeformToolFormat {
-    pub r#type: String,
-    pub syntax: String,
-    pub definition: String,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq)]
-pub struct ResponsesApiTool {
-    pub name: String,
-    pub description: String,
-    /// TODO: Validation. When strict is set to true, the JSON schema,
-    /// `required` and `additional_properties` must be present. All fields in
-    /// `properties` must be present in `required`.
-    pub strict: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub defer_loading: Option<bool>,
-    pub parameters: JsonSchema,
-    #[serde(skip)]
-    pub output_schema: Option<Value>,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq)]
-#[serde(tag = "type")]
-#[allow(clippy::large_enum_variant)]
-pub enum LoadableToolSpec {
-    #[allow(dead_code)]
-    #[serde(rename = "function")]
-    Function(ResponsesApiTool),
-    #[serde(rename = "namespace")]
-    Namespace(ResponsesApiNamespace),
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq)]
-pub struct ResponsesApiNamespace {
-    pub name: String,
-    pub description: String,
-    pub tools: Vec<ResponsesApiNamespaceTool>,
-}
+use codex_tool_registry_api::LoadableToolSpec;
+use codex_tool_registry_api::ResponsesApiNamespace;
+use codex_tool_registry_api::ResponsesApiNamespaceTool;
+use codex_tool_registry_api::ResponsesApiTool;
 
 pub fn default_namespace_description(namespace_name: &str) -> String {
     format!("Tools in the {namespace_name} namespace.")
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq)]
-#[serde(tag = "type")]
-pub enum ResponsesApiNamespaceTool {
-    #[serde(rename = "function")]
-    Function(ResponsesApiTool),
 }
 
 pub fn dynamic_tool_to_responses_api_tool(
