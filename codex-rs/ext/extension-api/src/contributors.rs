@@ -1,22 +1,25 @@
-use std::future::Future;
 use std::sync::Arc;
 
 use crate::ExtensionData;
-use codex_protocol::items::TurnItem;
-use codex_protocol::protocol::ReviewDecision;
-use codex_protocol::protocol::TokenUsageInfo;
 
+mod approval_review;
 mod prompt;
 mod thread_lifecycle;
+mod token_usage;
 mod tool_lifecycle;
 mod tools;
+mod turn_item;
 mod turn_lifecycle;
 
+pub use approval_review::ApprovalReviewContributor;
+pub use approval_review::ApprovalReviewFuture;
 pub use prompt::PromptFragment;
 pub use prompt::PromptSlot;
 pub use thread_lifecycle::ThreadResumeInput;
 pub use thread_lifecycle::ThreadStartInput;
 pub use thread_lifecycle::ThreadStopInput;
+pub use token_usage::TokenUsage;
+pub use token_usage::TokenUsageInfo;
 pub use tool_lifecycle::ToolCallOutcome;
 pub use tool_lifecycle::ToolCallSource;
 pub use tool_lifecycle::ToolFinishInput;
@@ -25,9 +28,12 @@ pub use tool_lifecycle::ToolStartInput;
 pub use tools::ExtensionToolExecutor;
 pub use tools::ExtensionToolFuture;
 pub use tools::ExtensionToolOutput;
+pub use turn_lifecycle::TurnAbortReason;
 pub use turn_lifecycle::TurnAbortInput;
 pub use turn_lifecycle::TurnStartInput;
 pub use turn_lifecycle::TurnStopInput;
+pub use turn_item::TurnItemContributionFuture;
+pub use turn_item::TurnItemContributor;
 
 /// Extension contribution that adds prompt fragments during prompt assembly.
 pub trait ContextContributor: Send + Sync {
@@ -133,36 +139,4 @@ pub trait ToolLifecycleContributor: Send + Sync {
     fn on_tool_finish<'a>(&'a self, _input: ToolFinishInput<'a>) -> ToolLifecycleFuture<'a> {
         Box::pin(std::future::ready(()))
     }
-}
-
-/// Future returned by one claimed approval-review contribution.
-pub type ApprovalReviewFuture<'a> =
-    std::pin::Pin<Box<dyn Future<Output = ReviewDecision> + Send + 'a>>;
-
-/// Extension contribution that can claim rendered approval-review prompts.
-pub trait ApprovalReviewContributor: Send + Sync {
-    fn contribute<'a>(
-        &'a self,
-        session_store: &'a ExtensionData,
-        thread_store: &'a ExtensionData,
-        prompt: &'a str,
-    ) -> Option<ApprovalReviewFuture<'a>>;
-}
-
-/// Future returned by one ordered turn-item contribution.
-pub type TurnItemContributionFuture<'a> =
-    std::pin::Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>>;
-
-/// Ordered post-processing contribution for one parsed turn item.
-///
-/// Implementations may mutate the item before it is emitted and may use the
-/// explicitly exposed thread- and turn-lifetime stores when they need durable
-/// extension-private state.
-pub trait TurnItemContributor: Send + Sync {
-    fn contribute<'a>(
-        &'a self,
-        thread_store: &'a ExtensionData,
-        turn_store: &'a ExtensionData,
-        item: &'a mut TurnItem,
-    ) -> TurnItemContributionFuture<'a>;
 }

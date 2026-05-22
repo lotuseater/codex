@@ -1,13 +1,13 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use codex_tools::FunctionCallError;
-use codex_tools::ToolCall;
-use codex_tools::ToolExecutor;
-use codex_tools::ToolExposure;
-use codex_tools::ToolName;
-use codex_tools::ToolOutput;
-use codex_tools::ToolSpec;
+use codex_tool_execution_api::FunctionCallError;
+use codex_tool_execution_api::ToolCall;
+use codex_tool_execution_api::ToolExecutor;
+use codex_tool_execution_api::ToolName;
+use codex_tool_execution_api::ToolOutput;
+use codex_tool_registry_api::ToolExposure;
+use codex_tool_registry_api::ToolSpec;
 
 /// Model-facing output returned by extension-owned tools.
 pub type ExtensionToolOutput = Box<dyn ToolOutput>;

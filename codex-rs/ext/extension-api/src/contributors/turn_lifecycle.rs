@@ -1,5 +1,3 @@
-use codex_protocol::protocol::TurnAbortReason;
-
 use crate::ExtensionData;
 
 /// Input supplied when the host starts a turn.
@@ -20,6 +18,15 @@ pub struct TurnStopInput<'a> {
     pub thread_store: &'a ExtensionData,
     /// Store scoped to this turn runtime.
     pub turn_store: &'a ExtensionData,
+}
+
+/// Host-independent reason a turn was aborted before normal completion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnAbortReason {
+    Interrupted,
+    Replaced,
+    ReviewEnded,
+    BudgetLimited,
 }
 
 /// Input supplied when the host aborts a turn.

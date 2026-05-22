@@ -1,26 +1,14 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use codex_tools::ToolName;
+pub use codex_tool_execution_api::ToolCallSource;
+
+use codex_tool_execution_api::ToolName;
 
 use crate::ExtensionData;
 
 /// Future returned by one tool-lifecycle callback.
 pub type ToolLifecycleFuture<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
-
-/// Host-visible source for a model tool call.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ToolCallSource {
-    /// The model invoked the tool directly.
-    Direct,
-    /// Code mode invoked the tool while executing a runtime cell.
-    CodeMode {
-        /// Runtime cell that issued the nested tool request.
-        cell_id: String,
-        /// Code-mode's per-cell tool invocation id.
-        runtime_tool_call_id: String,
-    },
-}
 
 /// Extension-facing outcome for a finished tool call.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
