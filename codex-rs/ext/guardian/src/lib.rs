@@ -5,7 +5,7 @@ use codex_extension_api::AgentSpawner;
 use codex_extension_api::ExtensionRegistryBuilder;
 use codex_extension_api::ThreadLifecycleContributor;
 use codex_extension_api::ThreadStartInput;
-use codex_protocol::ThreadId;
+use codex_extension_api::ThreadId;
 
 /// Guardian extension dependencies supplied by the host at construction time.
 #[derive(Clone, Debug)]
@@ -34,7 +34,7 @@ impl<S> GuardianExtension<S> {
 }
 
 /// Thread-local guardian state captured when the host starts a thread.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct GuardianThreadContext {
     forked_from_thread_id: ThreadId,
 }
@@ -42,7 +42,7 @@ pub struct GuardianThreadContext {
 impl GuardianThreadContext {
     /// Returns the thread that future guardian subagents should fork from by default.
     pub fn forked_from_thread_id(&self) -> ThreadId {
-        self.forked_from_thread_id
+        self.forked_from_thread_id.clone()
     }
 }
 
@@ -53,9 +53,7 @@ where
     C: Sync,
 {
     async fn on_thread_start(&self, input: ThreadStartInput<'_, C>) {
-        let Ok(forked_from_thread_id) = ThreadId::from_string(input.thread_store.level_id()) else {
-            return;
-        };
+        let forked_from_thread_id = ThreadId::new(input.thread_store.level_id());
         input.thread_store.insert(GuardianThreadContext {
             forked_from_thread_id,
         });
