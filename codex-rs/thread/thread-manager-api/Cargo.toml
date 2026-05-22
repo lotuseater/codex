@@ -14,5 +14,8 @@ test = false
 workspace = true
 
 [dependencies]
+codex-protocol = { workspace = true }
+codex-sandboxing = { workspace = true }
 codex-thread-api = { workspace = true }
+codex-utils-absolute-path = { workspace = true }
 thiserror = { workspace = true }
