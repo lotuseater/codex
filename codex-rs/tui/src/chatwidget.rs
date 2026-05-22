@@ -62,7 +62,6 @@ use crate::legacy_core::DEFAULT_AGENTS_MD_FILENAME;
 use crate::legacy_core::config::Config;
 use crate::legacy_core::config::Constrained;
 use crate::legacy_core::config::ConstraintResult;
-use crate::legacy_core::config::PermissionProfileSnapshot;
 #[cfg(target_os = "windows")]
 use crate::legacy_core::windows_sandbox::WindowsSandboxLevelExt;
 use crate::mention_codec::LinkedMention;
@@ -371,6 +370,7 @@ mod permission_popups;
 mod protocol;
 mod protocol_requests;
 mod rate_limits;
+pub(crate) use self::rate_limits::get_limits_duration;
 use self::rate_limits::RateLimitErrorKind;
 use self::rate_limits::RateLimitSwitchPromptState;
 use self::rate_limits::RateLimitWarningState;

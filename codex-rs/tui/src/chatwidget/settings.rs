@@ -18,15 +18,27 @@ impl ChatWidget {
     }
 
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-    pub(crate) fn set_permission_profile_from_session_snapshot(
+    pub(crate) fn set_permission_profile_with_active_profile(
         &mut self,
-        snapshot: PermissionProfileSnapshot,
+        permission_profile: PermissionProfile,
+        active_permission_profile: Option<ActivePermissionProfile>,
     ) -> ConstraintResult<()> {
         self.config
             .permissions
-            .set_permission_profile_from_session_snapshot(snapshot)?;
+            .set_permission_profile_with_active_profile(permission_profile, active_permission_profile)?;
         self.refresh_status_surfaces();
         Ok(())
+    }
+
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    pub(crate) fn set_permission_profile(
+        &mut self,
+        permission_profile: PermissionProfile,
+    ) -> ConstraintResult<()> {
+        self.set_permission_profile_with_active_profile(
+            permission_profile,
+            /*active_permission_profile*/ None,
+        )
     }
 
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
