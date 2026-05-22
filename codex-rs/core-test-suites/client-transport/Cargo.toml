@@ -1,0 +1,92 @@
+[package]
+name = "codex-core-test-suite-client-transport"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+autotests = false
+
+[[test]]
+name = "cli_stream"
+path = "tests/cli_stream.rs"
+
+[[test]]
+name = "client"
+path = "tests/client.rs"
+
+[[test]]
+name = "client_usage_errors"
+path = "tests/client_usage_errors.rs"
+
+[[test]]
+name = "client_websocket_auth_headers"
+path = "tests/client_websocket_auth_headers.rs"
+
+[[test]]
+name = "client_websocket_connection_lifecycle"
+path = "tests/client_websocket_connection_lifecycle.rs"
+
+[[test]]
+name = "client_websocket_errors"
+path = "tests/client_websocket_errors.rs"
+
+[[test]]
+name = "client_websocket_event_delivery"
+path = "tests/client_websocket_event_delivery.rs"
+
+[[test]]
+name = "client_websocket_incremental_create"
+path = "tests/client_websocket_incremental_create.rs"
+
+[[test]]
+name = "stream_error_allows_next_turn"
+path = "tests/stream_error_allows_next_turn.rs"
+
+[[test]]
+name = "stream_no_completed"
+path = "tests/stream_no_completed.rs"
+
+[[test]]
+name = "websocket_fallback_sticky"
+path = "tests/websocket_fallback_sticky.rs"
+
+[[test]]
+name = "websocket_fallback_switch"
+path = "tests/websocket_fallback_switch.rs"
+
+[dev-dependencies]
+anyhow = { workspace = true }
+assert_cmd = { workspace = true }
+codex-api = { workspace = true }
+codex-config = { workspace = true }
+codex-core = { workspace = true }
+codex-core-test-runtime = { workspace = true }
+codex-exec-server = { workspace = true }
+codex-extension-api = { workspace = true }
+codex-features = { workspace = true }
+codex-git-utils = { workspace = true }
+codex-login = { workspace = true }
+codex-model-provider-info = { workspace = true, features = ["runtime"] }
+codex-models-manager = { workspace = true }
+codex-otel = { workspace = true }
+codex-protocol = { workspace = true }
+codex-rollout-trace = { workspace = true }
+codex-thread-store = { workspace = true }
+codex-thread-store-api = { workspace = true }
+codex-utils-absolute-path = { workspace = true }
+codex-utils-cargo-bin = { workspace = true }
+dunce = { workspace = true }
+futures = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = [
+    "experimental_metrics_custom_reader",
+    "metrics",
+] }
+pretty_assertions = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }
+toml = { workspace = true }
+tracing = { workspace = true }
+tracing-test = { workspace = true }
+uuid = { workspace = true }
+wiremock = { workspace = true }
