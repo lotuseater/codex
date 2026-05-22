@@ -1,8 +1,8 @@
-use codex_tools::LIST_AVAILABLE_PLUGINS_TO_INSTALL_TOOL_NAME;
-use codex_tools::ListAvailablePluginsToInstallResult;
-use codex_tools::RequestPluginInstallEntry;
-use codex_tools::ToolName;
-use codex_tools::ToolSpec;
+use codex_tool_execution_api::ToolName;
+use codex_tool_registry_api::LIST_AVAILABLE_PLUGINS_TO_INSTALL_TOOL_NAME;
+use codex_tool_registry_api::ListAvailablePluginsToInstallResult;
+use codex_tool_registry_api::RequestPluginInstallEntry;
+use codex_tool_registry_api::ToolSpec;
 
 use crate::function_tool::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
@@ -108,7 +108,7 @@ fn truncate_to_char_boundary(value: &str, max_chars: usize) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use codex_tools::DiscoverableToolType;
+    use codex_tool_registry_api::DiscoverableToolType;
     use pretty_assertions::assert_eq;
 
     #[test]

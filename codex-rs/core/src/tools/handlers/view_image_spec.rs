@@ -1,7 +1,7 @@
 use codex_protocol::models::VIEW_IMAGE_TOOL_NAME;
-use codex_tools::JsonSchema;
-use codex_tools::ResponsesApiTool;
-use codex_tools::ToolSpec;
+use codex_tool_registry_api::JsonSchema;
+use codex_tool_registry_api::ResponsesApiTool;
+use codex_tool_registry_api::ToolSpec;
 use serde_json::Value;
 use serde_json::json;
 use std::collections::BTreeMap;

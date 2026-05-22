@@ -12,13 +12,13 @@ use bm25::Document;
 use bm25::Language;
 use bm25::SearchEngine;
 use bm25::SearchEngineBuilder;
-use codex_tools::LoadableToolSpec;
-use codex_tools::TOOL_SEARCH_DEFAULT_LIMIT;
-use codex_tools::TOOL_SEARCH_TOOL_NAME;
-use codex_tools::ToolName;
-use codex_tools::ToolSearchSourceInfo;
-use codex_tools::ToolSpec;
-use codex_tools::coalesce_loadable_tool_specs;
+use codex_tool_execution_api::ToolName;
+use codex_tool_registry_api::LoadableToolSpec;
+use codex_tool_registry_api::TOOL_SEARCH_DEFAULT_LIMIT;
+use codex_tool_registry_api::TOOL_SEARCH_TOOL_NAME;
+use codex_tool_registry_api::ToolSpec;
+use codex_tool_registry_api::ToolSearchSourceInfo;
+use codex_tool_registry_api::coalesce_loadable_tool_specs;
 
 pub struct ToolSearchHandler {
     entries: Vec<ToolSearchEntry>,
@@ -144,9 +144,10 @@ mod tests {
     use crate::tools::handlers::McpHandler;
     use codex_mcp::ToolInfo;
     use codex_protocol::dynamic_tools::DynamicToolSpec;
-    use codex_tools::ResponsesApiNamespace;
-    use codex_tools::ResponsesApiNamespaceTool;
-    use codex_tools::ResponsesApiTool;
+    use codex_tool_registry_api::JsonSchema;
+    use codex_tool_registry_api::ResponsesApiNamespace;
+    use codex_tool_registry_api::ResponsesApiNamespaceTool;
+    use codex_tool_registry_api::ResponsesApiTool;
     use pretty_assertions::assert_eq;
     use rmcp::model::Tool;
     use std::sync::Arc;
@@ -208,7 +209,7 @@ mod tests {
                             description: "Create events desktop tool".to_string(),
                             strict: false,
                             defer_loading: Some(true),
-                            parameters: codex_tools::JsonSchema::object(
+                            parameters: JsonSchema::object(
                                 Default::default(),
                                 /*required*/ None,
                                 Some(false.into()),
@@ -220,7 +221,7 @@ mod tests {
                             description: "List events desktop tool".to_string(),
                             strict: false,
                             defer_loading: Some(true),
-                            parameters: codex_tools::JsonSchema::object(
+                            parameters: JsonSchema::object(
                                 Default::default(),
                                 /*required*/ None,
                                 Some(false.into()),
@@ -238,10 +239,10 @@ mod tests {
                             .to_string(),
                         strict: false,
                         defer_loading: Some(true),
-                        parameters: codex_tools::JsonSchema::object(
+                        parameters: JsonSchema::object(
                             std::collections::BTreeMap::from([(
                                 "mode".to_string(),
-                                codex_tools::JsonSchema::string(/*description*/ None),
+                                JsonSchema::string(/*description*/ None),
                             )]),
                             Some(vec!["mode".to_string()]),
                             Some(false.into()),

@@ -15,7 +15,6 @@ use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
 use crate::tools::context::boxed_tool_output;
 pub(crate) use crate::tools::handlers::multi_agents_common::*;
-use crate::tools::handlers::multi_agents_spec::MULTI_AGENT_V1_NAMESPACE;
 use crate::tools::handlers::parse_arguments;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
@@ -35,14 +34,15 @@ use codex_protocol::protocol::CollabResumeEndEvent;
 use codex_protocol::protocol::CollabWaitingBeginEvent;
 use codex_protocol::protocol::CollabWaitingEndEvent;
 use codex_protocol::user_input::UserInput;
-use codex_tools::ToolName;
-use codex_tools::ToolSearchSourceInfo;
+use codex_tool_execution_api::ToolName;
+use codex_tool_registry_api::ToolSearchSourceInfo;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
 const MULTI_AGENT_TOOL_SEARCH_SOURCE_NAME: &str = "Multi-agent tools";
 const MULTI_AGENT_TOOL_SEARCH_SOURCE_DESCRIPTION: &str = "Spawn and manage sub-agents.";
+pub(crate) const MULTI_AGENT_V1_NAMESPACE: &str = "multi_agent_v1";
 
 pub(crate) fn parse_agent_id_target(target: &str) -> Result<ThreadId, FunctionCallError> {
     ThreadId::from_string(target).map_err(|err| {
@@ -67,7 +67,7 @@ pub(crate) fn parse_agent_id_targets(
 
 fn multi_agent_tool_search_info(
     search_text: &str,
-    spec: codex_tools::ToolSpec,
+    spec: codex_tool_registry_api::ToolSpec,
 ) -> Option<ToolSearchInfo> {
     ToolSearchInfo::from_spec(
         search_text.to_string(),

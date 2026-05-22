@@ -1,7 +1,7 @@
-use codex_tools::JsonSchema;
-use codex_tools::TOOL_SEARCH_TOOL_NAME;
-use codex_tools::ToolSearchSourceInfo;
-use codex_tools::ToolSpec;
+use codex_tool_registry_api::JsonSchema;
+use codex_tool_registry_api::TOOL_SEARCH_TOOL_NAME;
+use codex_tool_registry_api::ToolSpec;
+use codex_tool_registry_api::ToolSearchSourceInfo;
 use std::collections::BTreeMap;
 
 pub(crate) fn create_tool_search_tool(
@@ -64,7 +64,7 @@ pub(crate) fn create_tool_search_tool(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use codex_tools::JsonSchema;
+    use codex_tool_registry_api::JsonSchema;
     use pretty_assertions::assert_eq;
     use std::collections::BTreeMap;
 

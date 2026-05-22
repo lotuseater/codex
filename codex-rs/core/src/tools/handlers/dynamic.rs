@@ -17,17 +17,34 @@ use codex_protocol::dynamic_tools::DynamicToolSpec;
 use codex_protocol::models::FunctionCallOutputContentItem;
 use codex_protocol::protocol::DynamicToolCallResponseEvent;
 use codex_protocol::protocol::EventMsg;
-use codex_tools::ResponsesApiNamespace;
-use codex_tools::ResponsesApiNamespaceTool;
-use codex_tools::ToolName;
-use codex_tools::ToolSearchSourceInfo;
-use codex_tools::ToolSpec;
-use codex_tools::default_namespace_description;
-use codex_tools::dynamic_tool_to_responses_api_tool;
+use codex_tool_execution_api::ToolName;
+use codex_tool_registry_api::ResponsesApiNamespace;
+use codex_tool_registry_api::ResponsesApiNamespaceTool;
+use codex_tool_registry_api::ResponsesApiTool;
+use codex_tool_registry_api::ToolSearchSourceInfo;
+use codex_tool_registry_api::ToolSpec;
+use codex_tool_registry_api::parse_tool_input_schema;
 use serde_json::Value;
 use std::time::Instant;
 use tokio::sync::oneshot;
 use tracing::warn;
+
+fn default_namespace_description(namespace_name: &str) -> String {
+    format!("Tools in the {namespace_name} namespace.")
+}
+
+fn dynamic_tool_to_responses_api_tool(
+    tool: &DynamicToolSpec,
+) -> Result<ResponsesApiTool, serde_json::Error> {
+    Ok(ResponsesApiTool {
+        name: tool.name.clone(),
+        description: tool.description.clone(),
+        strict: false,
+        defer_loading: tool.defer_loading.then_some(true),
+        parameters: parse_tool_input_schema(&tool.input_schema)?,
+        output_schema: None,
+    })
+}
 
 pub struct DynamicToolHandler {
     tool_name: ToolName,

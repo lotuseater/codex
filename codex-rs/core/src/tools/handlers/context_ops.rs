@@ -3,11 +3,11 @@ pub(crate) mod file_outline;
 pub(crate) mod search_text;
 pub(crate) mod workflow_batch;
 
-use codex_tools::FILE_OUTLINE_TOOL_NAME;
-use codex_tools::SEARCH_TEXT_TOOL_NAME;
-use codex_tools::ToolName;
-use codex_tools::ToolSpec;
-use codex_tools::WORKFLOW_BATCH_TOOL_NAME;
+use codex_tool_execution_api::ToolName;
+use codex_tool_registry_api::FILE_OUTLINE_TOOL_NAME;
+use codex_tool_registry_api::SEARCH_TEXT_TOOL_NAME;
+use codex_tool_registry_api::ToolSpec;
+use codex_tool_registry_api::WORKFLOW_BATCH_TOOL_NAME;
 
 use crate::function_tool::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;

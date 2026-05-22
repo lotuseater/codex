@@ -1,6 +1,6 @@
 use super::*;
-use codex_tools::LoadableToolSpec;
-use codex_tools::ToolSearchSourceInfo;
+use codex_tool_registry_api::LoadableToolSpec;
+use codex_tool_registry_api::ToolSearchSourceInfo;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 

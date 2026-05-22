@@ -1,28 +1,33 @@
 use std::collections::HashSet;
 
 use codex_app_catalog_types::AppInfo;
+use codex_app_server_protocol::McpElicitationObjectType;
+use codex_app_server_protocol::McpElicitationSchema;
+use codex_app_server_protocol::McpServerElicitationRequest;
+use codex_app_server_protocol::McpServerElicitationRequestParams;
 use codex_config::types::ToolSuggestDisabledTool;
 use codex_mcp::CODEX_APPS_MCP_SERVER_NAME;
 use codex_rmcp_client::ElicitationAction;
 use codex_rmcp_client::ElicitationResponse;
-use codex_tools::DiscoverableTool;
-use codex_tools::DiscoverableToolAction;
-use codex_tools::DiscoverableToolType;
-use codex_tools::REQUEST_PLUGIN_INSTALL_PERSIST_ALWAYS_VALUE;
-use codex_tools::REQUEST_PLUGIN_INSTALL_PERSIST_KEY;
-use codex_tools::REQUEST_PLUGIN_INSTALL_TOOL_NAME;
-use codex_tools::RequestPluginInstallArgs;
-use codex_tools::RequestPluginInstallEntry;
-use codex_tools::RequestPluginInstallResult;
-use codex_tools::ToolName;
-use codex_tools::ToolSpec;
-use codex_tools::all_requested_connectors_picked_up;
-use codex_tools::build_request_plugin_install_elicitation_request;
-use codex_tools::collect_request_plugin_install_entries;
-use codex_tools::create_request_plugin_install_tool;
-use codex_tools::filter_request_plugin_install_discoverable_tools_for_client;
-use codex_tools::verified_connector_install_completed;
+use codex_tool_execution_api::ToolName;
+use codex_tool_registry_api::DiscoverableTool;
+use codex_tool_registry_api::DiscoverableToolAction;
+use codex_tool_registry_api::DiscoverableToolType;
+use codex_tool_registry_api::ToolSpec;
+use codex_tool_registry_api::REQUEST_PLUGIN_INSTALL_PERSIST_ALWAYS_VALUE;
+use codex_tool_registry_api::REQUEST_PLUGIN_INSTALL_PERSIST_KEY;
+use codex_tool_registry_api::REQUEST_PLUGIN_INSTALL_TOOL_NAME;
+use codex_tool_registry_api::DiscoverableTool;
+use codex_tool_registry_api::RequestPluginInstallArgs;
+use codex_tool_registry_api::RequestPluginInstallEntry;
+use codex_tool_registry_api::RequestPluginInstallResult;
+use codex_tool_registry_api::all_requested_connectors_picked_up;
+use codex_tool_registry_api::build_request_plugin_install_meta;
+use codex_tool_registry_api::collect_request_plugin_install_entries;
+use codex_tool_registry_api::filter_request_plugin_install_discoverable_tools_for_client;
+use codex_tool_registry_api::verified_connector_install_completed;
 use rmcp::model::RequestId;
+use serde_json::json;
 use serde_json::Value;
 use tracing::warn;
 
@@ -35,11 +40,44 @@ use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::context::boxed_tool_output;
 use crate::tools::handlers::parse_arguments;
+use crate::tools::handlers::request_plugin_install_spec::create_request_plugin_install_tool;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
 
 pub struct RequestPluginInstallHandler {
     request_plugin_install_entries: Vec<RequestPluginInstallEntry>,
+}
+
+fn build_request_plugin_install_elicitation_request(
+    server_name: &str,
+    thread_id: String,
+    turn_id: String,
+    args: &RequestPluginInstallArgs,
+    suggest_reason: &str,
+    tool: &DiscoverableTool,
+) -> McpServerElicitationRequestParams {
+    let message = suggest_reason.to_string();
+
+    McpServerElicitationRequestParams {
+        thread_id,
+        turn_id: Some(turn_id),
+        server_name: server_name.to_string(),
+        request: McpServerElicitationRequest::Form {
+            meta: Some(json!(build_request_plugin_install_meta(
+                args.tool_type,
+                args.action_type,
+                suggest_reason,
+                tool,
+            ))),
+            message,
+            requested_schema: McpElicitationSchema {
+                schema_uri: None,
+                type_: McpElicitationObjectType::Object,
+                properties: Default::default(),
+                required: None,
+            },
+        },
+    }
 }
 
 impl RequestPluginInstallHandler {
@@ -159,6 +197,13 @@ impl ToolExecutor<ToolInvocation> for RequestPluginInstallHandler {
             suggest_reason,
             &tool,
         );
+        let params = serde_json::to_value(params)
+            .and_then(serde_json::from_value)
+            .map_err(|err| {
+                FunctionCallError::RespondToModel(format!(
+                    "failed to build request_plugin_install elicitation request: {err}"
+                ))
+            })?;
         let elicitation = session
             .request_mcp_server_elicitation(turn.as_ref(), request_id, params)
             .await;

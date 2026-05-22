@@ -1,5 +1,5 @@
 use super::*;
-use codex_tools::JsonSchema;
+use codex_tool_registry_api::JsonSchema;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 

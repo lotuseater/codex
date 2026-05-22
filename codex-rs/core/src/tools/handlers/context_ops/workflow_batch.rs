@@ -141,11 +141,11 @@ mod tests {
     use crate::function_tool::FunctionCallError;
     use crate::session::tests::make_session_and_context;
     use crate::tools::context::FunctionToolOutput;
-    use crate::tools::context::ToolCallSource;
     use crate::tools::context::ToolInvocation;
     use crate::tools::context::ToolPayload;
     use crate::tools::registry::ToolExecutor;
     use crate::turn_diff_tracker::TurnDiffTracker;
+    use codex_tool_execution_api::ToolCallSource;
 
     async fn invocation_for_arguments(arguments: String) -> ToolInvocation {
         let (session, turn) = make_session_and_context().await;
@@ -155,7 +155,9 @@ mod tests {
             cancellation_token: tokio_util::sync::CancellationToken::new(),
             tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
             call_id: "call-workflow-batch".to_string(),
-            tool_name: codex_tools::ToolName::plain(codex_tools::WORKFLOW_BATCH_TOOL_NAME),
+            tool_name: codex_tool_execution_api::ToolName::plain(
+                codex_tool_registry_api::WORKFLOW_BATCH_TOOL_NAME,
+            ),
             source: ToolCallSource::Direct,
             payload: ToolPayload::Function { arguments },
         }
@@ -169,7 +171,7 @@ mod tests {
     }
 
     fn workflow_batch_handler() -> ContextOpsHandler {
-        ContextOpsHandler::new(codex_tools::create_workflow_batch_tool())
+        ContextOpsHandler::new(codex_tool_registry_api::create_workflow_batch_tool())
     }
 
     #[tokio::test]

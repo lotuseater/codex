@@ -3,8 +3,8 @@ use codex_repo_context_scout::ScoutCommandMode;
 use codex_repo_context_scout::ScoutRequest;
 use codex_repo_context_scout::ScoutTrigger;
 use codex_repo_context_scout::run_scout;
-use codex_tools::REPO_CONTEXT_SCOUT_TOOL_NAME;
-use codex_tools::ToolName;
+use codex_tool_execution_api::ToolName;
+use codex_tool_registry_api::REPO_CONTEXT_SCOUT_TOOL_NAME;
 use serde::Deserialize;
 use serde_json::Value;
 

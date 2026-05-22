@@ -1,0 +1,181 @@
+use crate::ResponsesApiTool;
+use crate::ToolSpec;
+use codex_tool_schema::AdditionalProperties;
+use codex_tool_schema::JsonSchema;
+use std::collections::BTreeMap;
+
+pub const FILE_OUTLINE_TOOL_NAME: &str = "file_outline";
+pub const SEARCH_TEXT_TOOL_NAME: &str = "search_text";
+pub const WORKFLOW_BATCH_TOOL_NAME: &str = "workflow_batch";
+
+pub fn create_context_ops_tools() -> Vec<ToolSpec> {
+    vec![
+        create_tool(
+            FILE_OUTLINE_TOOL_NAME,
+            "Read a compact structural outline of a source file. Use before reading a large file when names and signatures may be enough.",
+            object_schema(
+                [
+                    (
+                        "path",
+                        JsonSchema::string(Some("File path to outline.".to_string())),
+                    ),
+                    (
+                        "workdir",
+                        JsonSchema::string(Some(
+                            "Base directory for relative paths. Defaults to the current working directory."
+                                .to_string(),
+                        )),
+                    ),
+                    (
+                        "max_items",
+                        JsonSchema::integer(Some(
+                            "Maximum definition items to return. Defaults to 200 and is capped at 1000."
+                                .to_string(),
+                        )),
+                    ),
+                ],
+                Some(vec!["path".to_string()]),
+            ),
+        ),
+        create_tool(
+            SEARCH_TEXT_TOOL_NAME,
+            "Search text with capped grouped results. Use instead of broad raw rg output when finding likely files or examples.",
+            object_schema(
+                [
+                    (
+                        "pattern",
+                        JsonSchema::string(Some("Text or regex pattern to search for.".to_string())),
+                    ),
+                    (
+                        "workdir",
+                        JsonSchema::string(Some(
+                            "Base directory to search. Defaults to the current working directory."
+                                .to_string(),
+                        )),
+                    ),
+                    (
+                        "glob",
+                        JsonSchema::string(Some(
+                            "Optional rg glob filter, for example '*.rs' or 'codex-rs/core/**'."
+                                .to_string(),
+                        )),
+                    ),
+                    (
+                        "globs",
+                        JsonSchema::array(
+                            JsonSchema::string(/*description*/ None),
+                            Some(
+                                "Optional additional rg glob filters, preserving repeated --glob filters."
+                                    .to_string(),
+                            ),
+                        ),
+                    ),
+                    (
+                        "paths",
+                        JsonSchema::array(
+                            JsonSchema::string(/*description*/ None),
+                            Some(
+                                "Optional path filters searched relative to workdir, passed after the pattern."
+                                    .to_string(),
+                            ),
+                        ),
+                    ),
+                    (
+                        "max_files",
+                        JsonSchema::integer(Some(
+                            "Maximum matching files to return. Defaults to 50 and is capped at 500."
+                                .to_string(),
+                        )),
+                    ),
+                    (
+                        "max_matches_per_file",
+                        JsonSchema::integer(Some(
+                            "Maximum matches per file. Defaults to 5 and is capped at 50."
+                                .to_string(),
+                        )),
+                    ),
+                ],
+                Some(vec!["pattern".to_string()]),
+            ),
+        ),
+    ]
+}
+
+pub fn create_workflow_batch_tool() -> ToolSpec {
+    create_tool(
+        WORKFLOW_BATCH_TOOL_NAME,
+        "Run a root-confined local workflow-batch spec for dependent deterministic file/JSON/edit/assert/control-flow work and return a compact execution summary. Use inline `spec` for one-shot dependent batches; alternatively pass `spec_path`. Top-level arguments are exactly one of `spec` or `spec_path`, plus optional `workdir`, `report_path`, and `log_path`; do not include `response_length`. Prefer this over shell commands for repeated file IO, JSON transforms, map/filter/reduce/scan operations, assertions, bounded recursive conditional scans, stat_path/list_files/ensure_dir checks, and safe PowerShell-like substitutions. Use Python for richer algorithms/data structures/libraries, cmd only for cmd/batch-specific Windows behavior, and shell/rg for single read-only probes, one-off searches, and unbounded repo-wide scans. Command execution is not exposed through this tool.",
+        object_schema(
+            [
+                (
+                    "spec_path",
+                    JsonSchema::string(Some(
+                        "Path to the workflow-batch JSON spec file. Must stay inside workdir. Provide exactly one of spec_path or spec."
+                            .to_string(),
+                    )),
+                ),
+                ("spec", inline_spec_schema()),
+                (
+                    "report_path",
+                    JsonSchema::string(Some(
+                        "Optional path inside workdir where the workflow JSON report should be written. Defaults under .codex/workflow-batch."
+                            .to_string(),
+                    )),
+                ),
+                (
+                    "log_path",
+                    JsonSchema::string(Some(
+                        "Optional path inside workdir where the workflow JSONL event log should be written. Defaults under .codex/workflow-batch."
+                            .to_string(),
+                    )),
+                ),
+                (
+                    "workdir",
+                    JsonSchema::string(Some(
+                        "Base directory for relative paths. Defaults to the current working directory."
+                            .to_string(),
+                    )),
+                ),
+            ],
+            /*required*/ None,
+        ),
+    )
+}
+
+fn create_tool(name: &str, description: &str, parameters: JsonSchema) -> ToolSpec {
+    ToolSpec::Function(ResponsesApiTool {
+        name: name.to_string(),
+        description: description.to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters,
+        output_schema: None,
+    })
+}
+
+fn object_schema<const N: usize>(
+    fields: [(&'static str, JsonSchema); N],
+    required: Option<Vec<String>>,
+) -> JsonSchema {
+    JsonSchema::object(
+        BTreeMap::from_iter(
+            fields
+                .into_iter()
+                .map(|(name, schema)| (name.to_string(), schema)),
+        ),
+        required,
+        Some(AdditionalProperties::Boolean(false)),
+    )
+}
+
+fn inline_spec_schema() -> JsonSchema {
+    let mut schema = JsonSchema::object(
+        BTreeMap::new(),
+        /*required*/ None,
+        Some(AdditionalProperties::Boolean(true)),
+    );
+    schema.description = Some(
+        "Inline workflow-batch JSON spec. Provide exactly one of spec_path or spec. Shape: {\"steps\":[...]}. Step payloads are objects such as {\"read_json\":{\"path\":\"data.json\"}}, not bare path strings. Step keywords include set/set_vars, ensure_dir, stat_path, list_files, read_file, read_json, write_file, append_file, write_json, copy_file, edit_file, assert, for_each, while, and branch steps with if/then/else. Expressions are JSON values and support scalars, arrays, object records via literal, refs, functional operators such as map/filter/reduce/scan, object operators such as keys/values/entries/from_entries/merge/pick/omit, comparisons eq/ne/lt/lte/gt/gte, and string/set helpers.".to_string(),
+    );
+    schema
+}

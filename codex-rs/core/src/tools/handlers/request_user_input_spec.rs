@@ -1,11 +1,25 @@
+use codex_features::Feature;
+use codex_features::Features;
 use codex_protocol::config_types::ModeKind;
+use codex_protocol::config_types::TUI_VISIBLE_COLLABORATION_MODES;
 use codex_protocol::request_user_input::RequestUserInputArgs;
-use codex_tools::JsonSchema;
-use codex_tools::ResponsesApiTool;
-use codex_tools::ToolSpec;
+use codex_tool_registry_api::JsonSchema;
+use codex_tool_registry_api::ResponsesApiTool;
+use codex_tool_registry_api::ToolSpec;
 use std::collections::BTreeMap;
 
 pub const REQUEST_USER_INPUT_TOOL_NAME: &str = "request_user_input";
+
+pub fn request_user_input_available_modes(features: &Features) -> Vec<ModeKind> {
+    TUI_VISIBLE_COLLABORATION_MODES
+        .into_iter()
+        .filter(|mode| {
+            mode.allows_request_user_input()
+                || (features.enabled(Feature::DefaultModeRequestUserInput)
+                    && *mode == ModeKind::Default)
+        })
+        .collect()
+}
 
 pub fn create_request_user_input_tool(description: String) -> ToolSpec {
     let option_props = BTreeMap::from([

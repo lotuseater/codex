@@ -1,8 +1,8 @@
-use codex_tools::JsonSchema;
-use codex_tools::REQUEST_PLUGIN_INSTALL_TOOL_NAME;
-use codex_tools::ResponsesApiTool;
-use codex_tools::TOOL_SEARCH_TOOL_NAME;
-use codex_tools::ToolSpec;
+use codex_tool_registry_api::JsonSchema;
+use codex_tool_registry_api::REQUEST_PLUGIN_INSTALL_TOOL_NAME;
+use codex_tool_registry_api::ResponsesApiTool;
+use codex_tool_registry_api::TOOL_SEARCH_TOOL_NAME;
+use codex_tool_registry_api::ToolSpec;
 use std::collections::BTreeMap;
 
 pub(crate) fn create_request_plugin_install_tool() -> ToolSpec {
@@ -57,7 +57,7 @@ pub(crate) fn create_request_plugin_install_tool() -> ToolSpec {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use codex_tools::JsonSchema;
+    use codex_tool_registry_api::JsonSchema;
     use pretty_assertions::assert_eq;
     use std::collections::BTreeMap;
 

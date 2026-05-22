@@ -18,14 +18,64 @@ use crate::tools::registry::ToolExposure;
 use crate::tools::registry::ToolTelemetryTags;
 use crate::tools::tool_search_entry::ToolSearchInfo;
 use codex_mcp::ToolInfo;
-use codex_tools::ResponsesApiNamespace;
-use codex_tools::ResponsesApiNamespaceTool;
-use codex_tools::ToolName;
-use codex_tools::ToolSearchSourceInfo;
-use codex_tools::ToolSpec;
-use codex_tools::mcp_tool_to_responses_api_tool;
+use codex_tool_execution_api::ToolName;
+use codex_tool_registry_api::ResponsesApiTool;
+use codex_tool_registry_api::ResponsesApiNamespace;
+use codex_tool_registry_api::ResponsesApiNamespaceTool;
+use codex_tool_registry_api::ToolSearchSourceInfo;
+use codex_tool_registry_api::ToolSpec;
+use codex_tool_registry_api::parse_tool_input_schema;
 use serde_json::Map;
 use serde_json::Value;
+use serde_json::json;
+
+fn mcp_tool_to_responses_api_tool(
+    tool_name: &ToolName,
+    tool: &rmcp::model::Tool,
+) -> Result<ResponsesApiTool, serde_json::Error> {
+    let mut serialized_input_schema = Value::Object(tool.input_schema.as_ref().clone());
+
+    if let Value::Object(obj) = &mut serialized_input_schema
+        && obj.get("properties").is_none_or(Value::is_null)
+    {
+        obj.insert("properties".to_string(), Value::Object(Map::new()));
+    }
+
+    let input_schema = parse_tool_input_schema(&serialized_input_schema)?;
+    let structured_content_schema = tool
+        .output_schema
+        .as_ref()
+        .map(|output_schema| Value::Object(output_schema.as_ref().clone()))
+        .unwrap_or_else(|| Value::Object(Map::new()));
+
+    Ok(ResponsesApiTool {
+        name: tool_name.name.clone(),
+        description: tool.description.clone().map(Into::into).unwrap_or_default(),
+        strict: false,
+        defer_loading: None,
+        parameters: input_schema,
+        output_schema: Some(json!({
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "array",
+                    "items": {
+                        "type": "object"
+                    }
+                },
+                "structuredContent": structured_content_schema,
+                "isError": {
+                    "type": "boolean"
+                },
+                "_meta": {
+                    "type": "object"
+                }
+            },
+            "required": ["content"],
+            "additionalProperties": false
+        })),
+    })
+}
 
 pub struct McpHandler {
     tool_info: ToolInfo,
@@ -288,8 +338,8 @@ mod search_tests;
 mod tests {
     use super::*;
     use crate::session::tests::make_session_and_context;
-    use crate::tools::context::ToolCallSource;
     use crate::turn_diff_tracker::TurnDiffTracker;
+    use codex_tool_execution_api::ToolCallSource;
     use pretty_assertions::assert_eq;
     use serde_json::json;
     use std::time::Duration;
@@ -315,7 +365,10 @@ mod tests {
                 cancellation_token: tokio_util::sync::CancellationToken::new(),
                 tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
                 call_id: "call-mcp-pre".to_string(),
-                tool_name: codex_tools::ToolName::namespaced("mcp__memory__", "create_entities"),
+                tool_name: codex_tool_execution_api::ToolName::namespaced(
+                    "mcp__memory__",
+                    "create_entities"
+                ),
                 source: ToolCallSource::Direct,
                 payload,
             }),
@@ -346,7 +399,10 @@ mod tests {
                 cancellation_token: tokio_util::sync::CancellationToken::new(),
                 tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
                 call_id: "call-mcp-pre-builtin-like".to_string(),
-                tool_name: codex_tools::ToolName::namespaced("mcp__foo__", "exec_command"),
+                tool_name: codex_tool_execution_api::ToolName::namespaced(
+                    "mcp__foo__",
+                    "exec_command"
+                ),
                 source: ToolCallSource::Direct,
                 payload,
             }),
@@ -373,7 +429,10 @@ mod tests {
                     cancellation_token: tokio_util::sync::CancellationToken::new(),
                     tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
                     call_id: "call-mcp-rewrite-builtin-like".to_string(),
-                    tool_name: codex_tools::ToolName::namespaced("mcp__foo__", "exec_command"),
+                    tool_name: codex_tool_execution_api::ToolName::namespaced(
+                        "mcp__foo__",
+                        "exec_command",
+                    ),
                     source: ToolCallSource::Direct,
                     payload,
                 },
@@ -419,7 +478,10 @@ mod tests {
             cancellation_token: tokio_util::sync::CancellationToken::new(),
             tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
             call_id: "call-mcp-post".to_string(),
-            tool_name: codex_tools::ToolName::namespaced("mcp__filesystem__", "read_file"),
+            tool_name: codex_tool_execution_api::ToolName::namespaced(
+                "mcp__filesystem__",
+                "read_file",
+            ),
             source: ToolCallSource::Direct,
             payload,
         };
