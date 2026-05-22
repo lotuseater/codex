@@ -22,7 +22,7 @@ use codex_app_server_protocol::ThreadResumeParams;
 use codex_app_server_protocol::ThreadResumeResponse;
 use codex_app_server_protocol::TurnStartParams;
 use codex_app_server_protocol::UserInput;
-use core_test_support::responses;
+use app_test_support::responses;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 use tempfile::TempDir;

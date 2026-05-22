@@ -133,7 +133,7 @@ Example with notification opt-out:
 - `thread/start` — create a new thread; emits `thread/started` (including the current `thread.status`) and auto-subscribes you to turn/item events for that thread. When the request includes a `cwd` and the resolved sandbox is `workspace-write` or full access, app-server also marks that project as trusted in the user `config.toml`. Pass `sessionStartSource: "clear"` when starting a replacement thread after clearing the current session so `SessionStart` hooks receive `source: "clear"` instead of the default `"startup"`. For permissions, prefer experimental `permissions` profile selection; the legacy `sandbox` shorthand is still accepted but cannot be combined with `permissions`. Experimental `environments` selects the sticky execution environments for turns on the thread; omit it to use the server default, pass `[]` to disable environments, or pass explicit environment ids with per-environment `cwd`.
 - `thread/resume` — reopen an existing thread by id so subsequent `turn/start` calls append to it. Accepts the same permission override rules as `thread/start`.
 - `thread/fork` — fork an existing thread into a new thread id by copying the stored history; if the source thread is currently mid-turn, the fork records the same interruption marker as `turn/interrupt` instead of inheriting an unmarked partial turn suffix. The returned `thread.forkedFromId` points at the source thread when known. Accepts `ephemeral: true` for an in-memory temporary fork, emits `thread/started` (including the current `thread.status`), and auto-subscribes you to turn/item events for the new thread. Experimental clients can pass `excludeTurns: true` when they plan to page fork history via `thread/turns/list` instead of receiving the full turn array immediately. Accepts the same permission override rules as `thread/start`.
-- `thread/start`, `thread/resume`, and `thread/fork` responses include the legacy `sandbox` compatibility projection. Experimental clients can read response `permissionProfile` for the exact active runtime permissions and `activePermissionProfile` for the named or implicit built-in profile identity/provenance when known.
+- `thread/start`, `thread/resume`, and `thread/fork` responses include the legacy `sandbox` compatibility projection. Experimental clients can read response `activePermissionProfile` for the named or implicit built-in profile identity/provenance when known. Its `modifications` array carries runtime additions such as `additionalWritableRoot` entries that are not part of the base profile.
 - `thread/list` — page through stored rollouts; supports cursor-based pagination and optional `modelProviders`, `sourceKinds`, `archived`, `cwd`, and `searchTerm` filters. Each returned `thread` includes `status` (`ThreadStatus`), defaulting to `notLoaded` when the thread is not currently loaded.
 - `thread/loaded/list` — list the thread ids currently loaded in memory.
 - `thread/read` — read a stored thread by id without resuming it; optionally include turns via `includeTurns`. The returned `thread` includes `status` (`ThreadStatus`), defaulting to `notLoaded` when the thread is not currently loaded.
@@ -238,7 +238,7 @@ Start a fresh thread when you need a new Codex conversation.
     "approvalPolicy": "never",
     "sandbox": "workspaceWrite",
     // Prefer experimental profile selection:
-    // "permissions": { "type": "profile", "id": ":workspace" }
+    // "permissions": ":workspace"
     // Do not send both "sandbox" and "permissions".
     "personality": "friendly",
     "serviceName": "my_app_server_client", // optional metrics tag (`service_name`)
@@ -689,7 +689,7 @@ You can optionally specify config overrides on the new turn. If specified, these
         "networkAccess": true
     },
     // Prefer experimental profile selection:
-    // "permissions": { "type": "profile", "id": ":workspace" }
+    // "permissions": ":workspace"
     // Do not send both "sandboxPolicy" and "permissions".
     "model": "gpt-5.1-codex",
     "effort": "medium",
@@ -961,14 +961,7 @@ Run a standalone command (argv vector) in the server’s sandbox without creatin
     "cwd": "/Users/me/project",                    // optional; defaults to server cwd
     "env": { "FOO": "override" },                  // optional; merges into the server env and overrides matching names
     "size": { "rows": 40, "cols": 120 },           // optional; PTY size in character cells, only valid with tty=true
-    "permissionProfile": {                         // optional; defaults to user config
-        "type": "managed",
-        "fileSystem": { "type": "restricted", "entries": [
-            { "path": { "type": "special", "value": { "kind": "root" } }, "access": "read" },
-            { "path": { "type": "special", "value": { "kind": "project_roots", "subpath": null } }, "access": "write" }
-        ] },
-        "network": { "enabled": false }
-    },
+    "permissionProfile": ":workspace",             // optional named profile id; defaults to user config
     "outputBytesCap": 1048576,                     // optional; per-stream capture cap
     "disableOutputCap": false,                     // optional; cannot be combined with outputBytesCap
     "timeoutMs": 10000,                            // optional; ms timeout; defaults to server timeout
@@ -987,7 +980,7 @@ Run a standalone command (argv vector) in the server’s sandbox without creatin
 Notes:
 
 - Empty `command` arrays are rejected.
-- Prefer `permissionProfile` for command permission overrides. The legacy `sandboxPolicy` field accepts the same shape used by `turn/start` (e.g., `dangerFullAccess`, `readOnly`, `workspaceWrite` with flags, `externalSandbox` with `networkAccess` `restricted|enabled`), but cannot be combined with `permissionProfile`.
+- Use `permissionProfile` with a named permissions profile id for command permission overrides. The legacy `sandboxPolicy` field accepts the same shape used by `turn/start` (e.g., `dangerFullAccess`, `readOnly`, `workspaceWrite` with flags, `externalSandbox` with `networkAccess` `restricted|enabled`), but cannot be combined with `permissionProfile`.
 - `env` merges into the environment produced by the server's shell environment policy. Matching names are overridden; unspecified variables are left intact.
 - When omitted, `timeoutMs` falls back to the server default.
 - When omitted, `outputBytesCap` falls back to the server default of 1 MiB per stream.
@@ -1395,6 +1388,8 @@ the client can offer session-scoped and/or persistent approval choices.
 
 The built-in `request_permissions` tool sends an `item/permissions/requestApproval` JSON-RPC request to the client with the requested permission profile. This v2 payload mirrors the command-execution `additionalPermissions` shape: it can request network access and additional filesystem access. The `cwd` field identifies the directory used to resolve project-root permissions and relative deny globs.
 
+Prefer `permissions.fileSystem.entries` for filesystem grants. Legacy `read` and `write` arrays still deserialize, but `entries` is the forward-compatible form. Each entry has a `path` and an `access` value of `read`, `write`, `deny`, or `none`; glob-pattern paths currently support `none` only.
+
 ```json
 {
   "method": "item/permissions/requestApproval",
@@ -1407,7 +1402,11 @@ The built-in `request_permissions` tool sends an `item/permissions/requestApprov
     "reason": "Select a workspace root",
     "permissions": {
       "fileSystem": {
-        "write": ["/Users/me/project", "/Users/me/shared"]
+        "entries": [
+          { "path": { "type": "path", "path": "/Users/me/project" }, "access": "write" },
+          { "path": { "type": "path", "path": "/Users/me/shared" }, "access": "write" },
+          { "path": { "type": "glob_pattern", "pattern": "/Users/me/project/private/**" }, "access": "none" }
+        ]
       }
     }
   }
@@ -1423,7 +1422,10 @@ The client responds with `result.permissions`, which should be the granted subse
     "scope": "session",
     "permissions": {
       "fileSystem": {
-        "write": ["/Users/me/project"]
+        "entries": [
+          { "path": { "type": "path", "path": "/Users/me/project" }, "access": "write" },
+          { "path": { "type": "glob_pattern", "pattern": "/Users/me/project/private/**" }, "access": "none" }
+        ]
       }
     }
   }

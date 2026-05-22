@@ -323,7 +323,10 @@ impl AccountRequestProcessor {
             ..LoginServerOptions::new(
                 config.codex_home.to_path_buf(),
                 CLIENT_ID.to_string(),
-                config.forced_chatgpt_workspace_id.clone(),
+                config
+                    .forced_chatgpt_workspace_id
+                    .clone()
+                    .map(|workspace_id| vec![workspace_id]),
                 config.cli_auth_credentials_store_mode,
             )
         };

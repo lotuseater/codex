@@ -226,7 +226,7 @@ impl CommandExecRequestProcessor {
                 )));
             }
             (
-                config.permissions.effective_permission_profile(),
+                config.permissions.permission_profile(),
                 config.permissions.network.clone(),
                 config.permissions.permission_profile().clone(),
                 config.managed_network_requirements_enabled(),
@@ -246,10 +246,6 @@ impl CommandExecRequestProcessor {
                     &file_system_sandbox_policy,
                     network_sandbox_policy,
                 );
-            self.config
-                .permissions
-                .can_set_permission_profile(&permission_profile)
-                .map_err(|err| invalid_request(format!("invalid sandbox policy: {err}")))?;
             (
                 permission_profile,
                 self.config.permissions.network.clone(),
@@ -258,7 +254,7 @@ impl CommandExecRequestProcessor {
             )
         } else {
             (
-                self.config.permissions.effective_permission_profile(),
+                self.config.permissions.permission_profile(),
                 self.config.permissions.network.clone(),
                 self.config.permissions.permission_profile().clone(),
                 self.config.managed_network_requirements_enabled(),

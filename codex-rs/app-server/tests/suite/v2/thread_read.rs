@@ -63,7 +63,7 @@ use codex_thread_store_api::ThreadMetadataPatch;
 use codex_thread_store_api::ThreadPersistenceMetadata;
 use codex_thread_store_api::ThreadStore;
 use codex_thread_store_api::UpdateThreadMetadataParams;
-use core_test_support::responses;
+use app_test_support::responses;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
 use serde_json::json;

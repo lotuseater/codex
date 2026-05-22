@@ -10,7 +10,6 @@ use crate::outgoing_message::OutgoingMessageSender;
 use codex_analytics::AnalyticsEventsClient;
 use codex_app_server_protocol::AppListUpdatedNotification;
 use codex_app_server_protocol::ClientResponsePayload;
-use codex_app_server_protocol::ComputerUseRequirements;
 use codex_app_server_protocol::ConfigBatchWriteParams;
 use codex_app_server_protocol::ConfigReadParams;
 use codex_app_server_protocol::ConfigReadResponse;
@@ -433,9 +432,6 @@ fn map_requirements_toml_to_api(requirements: ConfigRequirementsToml) -> ConfigR
             normalized
         }),
         allow_managed_hooks_only: requirements.allow_managed_hooks_only,
-        computer_use: requirements
-            .computer_use
-            .map(map_computer_use_requirements_to_api),
         feature_requirements: requirements
             .feature_requirements
             .map(|requirements| requirements.entries),
@@ -444,14 +440,6 @@ fn map_requirements_toml_to_api(requirements: ConfigRequirementsToml) -> ConfigR
             .enforce_residency
             .map(map_residency_requirement_to_api),
         network: requirements.network.map(map_network_requirements_to_api),
-    }
-}
-
-fn map_computer_use_requirements_to_api(
-    computer_use: codex_config::ComputerUseRequirementsToml,
-) -> ComputerUseRequirements {
-    ComputerUseRequirements {
-        allow_locked_computer_use: computer_use.allow_locked_computer_use,
     }
 }
 
@@ -469,8 +457,8 @@ fn map_hooks_requirements_to_api(hooks: ManagedHooksRequirementsToml) -> Managed
         post_compact,
         session_start,
         user_prompt_submit,
-        subagent_start,
         stop,
+        ..
     } = hooks;
 
     ManagedHooksRequirements {
@@ -483,7 +471,6 @@ fn map_hooks_requirements_to_api(hooks: ManagedHooksRequirementsToml) -> Managed
         post_compact: map_hook_matcher_groups_to_api(post_compact),
         session_start: map_hook_matcher_groups_to_api(session_start),
         user_prompt_submit: map_hook_matcher_groups_to_api(user_prompt_submit),
-        subagent_start: map_hook_matcher_groups_to_api(subagent_start),
         stop: map_hook_matcher_groups_to_api(stop),
     }
 }

@@ -67,8 +67,8 @@ use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
 use codex_protocol::models::ImageDetail;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::user_input::MAX_USER_INPUT_TEXT_CHARS;
-use core_test_support::responses;
-use core_test_support::skip_if_no_network;
+use app_test_support::responses;
+use app_test_support::skip_if_no_network;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
 use serde_json::json;
@@ -2386,7 +2386,7 @@ stream_max_retries = 0
     let requests = response_mock.requests();
     assert_eq!(requests.len(), 2, "expected two Responses API requests");
     let latest_permissions_instructions =
-        |request: &core_test_support::responses::ResponsesRequest| {
+        |request: &app_test_support::responses::ResponsesRequest| {
             request
                 .message_input_texts("developer")
                 .into_iter()

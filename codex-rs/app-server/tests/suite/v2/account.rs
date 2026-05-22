@@ -36,7 +36,7 @@ use codex_config::types::AuthCredentialsStoreMode;
 use codex_login::REFRESH_TOKEN_URL_OVERRIDE_ENV_VAR;
 use codex_login::login_with_api_key;
 use codex_protocol::account::PlanType as AccountPlanType;
-use core_test_support::responses;
+use app_test_support::responses;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use serial_test::serial;

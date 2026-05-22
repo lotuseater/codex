@@ -4,6 +4,7 @@ use codex_config::CloudRequirementsLoader;
 use codex_config::ConfigLayerStack;
 use codex_config::LoaderOverrides;
 use codex_config::ThreadConfigLoader;
+use codex_config::UserConfigLayerSource;
 use codex_config::loader::load_config_layers_state;
 use codex_core::config::Config;
 use codex_core::config::ConfigOverrides;
@@ -172,11 +173,13 @@ impl ConfigManager {
             || self.loader_overrides.user_config_profile.is_some()
         {
             let user_config_path = self.loader_overrides.user_config_path(self.codex_home())?;
-            config.config_layer_stack = config.config_layer_stack.with_user_config_profile(
-                &user_config_path,
-                self.loader_overrides.user_config_profile.as_ref(),
-                TomlValue::Table(toml::map::Map::new()),
-            );
+            let user_config_source = match self.loader_overrides.user_config_profile.clone() {
+                Some(profile) => UserConfigLayerSource::profiled(user_config_path, profile),
+                None => UserConfigLayerSource::unprofiled(user_config_path),
+            };
+            config.config_layer_stack = config
+                .config_layer_stack
+                .with_user_config_layer(user_config_source, TomlValue::Table(toml::map::Map::new()));
         }
         self.apply_runtime_feature_enablement(&mut config);
         self.apply_arg0_paths(&mut config);

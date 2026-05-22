@@ -30,7 +30,7 @@ use codex_app_server_protocol::TurnStartParams;
 use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::UserInput as V2UserInput;
 use codex_utils_pty::DEFAULT_OUTPUT_BYTES_CAP;
-use core_test_support::responses;
+use app_test_support::responses;
 use pretty_assertions::assert_eq;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::BooleanSchema;

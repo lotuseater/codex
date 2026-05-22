@@ -32,8 +32,8 @@ use codex_app_server_protocol::TurnStatus;
 use codex_app_server_protocol::UserInput as V2UserInput;
 use codex_features::FEATURES;
 use codex_features::Feature;
-use core_test_support::responses;
-use core_test_support::skip_if_no_network;
+use app_test_support::responses;
+use app_test_support::skip_if_no_network;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -804,7 +804,7 @@ fn find_test_zsh_path() -> Result<Option<std::path::PathBuf>> {
         );
         return Ok(None);
     }
-    match core_test_support::fetch_dotslash_file(&dotslash_zsh, /*dotslash_cache*/ None) {
+    match app_test_support::fetch_dotslash_file(&dotslash_zsh, /*dotslash_cache*/ None) {
         Ok(path) => return Ok(Some(path)),
         Err(error) => {
             eprintln!("failed to fetch vendored zsh via dotslash: {error:#}");

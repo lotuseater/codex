@@ -10,8 +10,8 @@ use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::TurnSteerParams;
 use codex_app_server_protocol::TurnSteerResponse;
 use codex_app_server_protocol::UserInput as V2UserInput;
-use core_test_support::responses;
-use core_test_support::skip_if_no_network;
+use app_test_support::responses;
+use app_test_support::skip_if_no_network;
 use pretty_assertions::assert_eq;
 use std::collections::HashMap;
 use std::path::Path;
@@ -352,7 +352,7 @@ fn parse_json_header(value: &str) -> serde_json::Value {
 }
 
 async fn wait_for_request_count(
-    request_log: &core_test_support::responses::ResponseMock,
+    request_log: &app_test_support::responses::ResponseMock,
     expected: usize,
 ) -> Result<()> {
     timeout(DEFAULT_READ_TIMEOUT, async {

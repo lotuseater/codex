@@ -2,6 +2,7 @@ use super::*;
 use crate::app_catalog_protocol::app_infos_to_v2;
 use codex_app_catalog_types::AppInfo;
 use codex_app_server_protocol::AppListUpdatedNotification;
+use codex_core::connectors::AccessibleConnectorsStatus;
 use codex_app_server_protocol::AppsListParams;
 use codex_app_server_protocol::AppsListResponse;
 

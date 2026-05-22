@@ -16,7 +16,7 @@ use codex_app_server_protocol::ThreadStartParams;
 use codex_app_server_protocol::ThreadStartResponse;
 use codex_app_server_protocol::TurnStartParams;
 use codex_app_server_protocol::UserInput as V2UserInput;
-use core_test_support::responses;
+use app_test_support::responses;
 use futures::SinkExt;
 use futures::StreamExt;
 use std::process::Command as StdCommand;

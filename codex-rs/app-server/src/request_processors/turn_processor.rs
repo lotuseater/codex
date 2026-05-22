@@ -357,6 +357,7 @@ impl TurnRequestProcessor {
         let turn_has_input = !mapped_items.is_empty();
 
         let has_any_overrides = params.cwd.is_some()
+            || params.runtime_workspace_roots.is_some()
             || params.approval_policy.is_some()
             || params.approvals_reviewer.is_some()
             || params.sandbox_policy.is_some()
@@ -376,6 +377,25 @@ impl TurnRequestProcessor {
         }
 
         let cwd = params.cwd;
+        let runtime_workspace_roots = if let Some(requested_runtime_workspace_roots) =
+            params.runtime_workspace_roots
+        {
+            let snapshot = thread.config_snapshot().await;
+            let base_cwd = cwd
+                .as_deref()
+                .map(|cwd| AbsolutePathBuf::resolve_path_against_base(cwd, snapshot.cwd.as_path()))
+                .unwrap_or_else(|| snapshot.cwd.clone());
+            Some(
+                requested_runtime_workspace_roots
+                    .into_iter()
+                    .map(|path| {
+                        AbsolutePathBuf::resolve_path_against_base(path, base_cwd.as_path())
+                    })
+                    .collect(),
+            )
+        } else {
+            None
+        };
         let approval_policy = params.approval_policy.map(AskForApproval::to_core);
         let approvals_reviewer = params
             .approvals_reviewer
@@ -390,10 +410,7 @@ impl TurnRequestProcessor {
                     main_execve_wrapper_exe: self.arg0_paths.main_execve_wrapper_exe.clone(),
                     ..Default::default()
                 };
-                apply_permission_profile_selection_to_config_overrides(
-                    &mut overrides,
-                    Some(permissions),
-                );
+                overrides.default_permissions = Some(permissions);
                 let config = self
                     .config_manager
                     .load_for_cwd(
@@ -434,6 +451,8 @@ impl TurnRequestProcessor {
             thread
                 .validate_turn_context_overrides(CodexThreadTurnContextOverrides {
                     cwd: cwd.clone(),
+                    workspace_roots: runtime_workspace_roots.clone(),
+                    profile_workspace_roots: None,
                     approval_policy,
                     approvals_reviewer,
                     sandbox_policy: sandbox_policy.clone(),
@@ -460,6 +479,8 @@ impl TurnRequestProcessor {
                 final_output_json_schema: params.output_schema,
                 responsesapi_client_metadata: params.responsesapi_client_metadata,
                 cwd,
+                workspace_roots: runtime_workspace_roots,
+                profile_workspace_roots: None,
                 approval_policy,
                 approvals_reviewer,
                 sandbox_policy,

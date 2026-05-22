@@ -25,7 +25,7 @@ use codex_app_server_protocol::UserInput as V2UserInput;
 use codex_core::config::set_project_trust_level;
 use codex_protocol::config_types::TrustLevel;
 use codex_utils_absolute_path::AbsolutePathBuf;
-use core_test_support::skip_if_windows;
+use app_test_support::skip_if_windows;
 use pretty_assertions::assert_eq;
 use serde::Serialize;
 use tempfile::TempDir;

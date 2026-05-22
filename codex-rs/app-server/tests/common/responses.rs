@@ -1,4 +1,5 @@
-use core_test_support::responses;
+pub use codex_test_support_responses::responses::*;
+use codex_test_support_responses::responses;
 use serde_json::json;
 use std::path::Path;
 

@@ -1,7 +1,7 @@
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
-use core_test_support::responses;
+use codex_test_support_responses::responses;
 use wiremock::Mock;
 use wiremock::MockServer;
 use wiremock::Respond;

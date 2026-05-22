@@ -76,6 +76,7 @@ use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::Result;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
+use codex_app_server_protocol::SessionSource;
 use codex_arg0::Arg0DispatchPaths;
 use codex_config::CloudRequirementsLoader;
 use codex_config::LoaderOverrides;
@@ -85,7 +86,6 @@ use codex_core::resolve_installation_id;
 use codex_exec_server::EnvironmentManager;
 use codex_feedback::CodexFeedback;
 use codex_login::AuthManager;
-use codex_protocol::protocol::SessionSource;
 pub use codex_rollout::StateDbHandle;
 pub use codex_state::log_db::LogDbLayer;
 use tokio::sync::mpsc;
@@ -371,6 +371,11 @@ async fn start_uninitialized(args: InProcessStartArgs) -> IoResult<InProcessClie
     let installation_id = resolve_installation_id(&args.config.codex_home).await?;
     let (client_tx, mut client_rx) = mpsc::channel::<InProcessClientMessage>(channel_capacity);
     let (event_tx, event_rx) = mpsc::channel::<InProcessServerEvent>(channel_capacity);
+    let session_source = args
+        .session_source
+        .clone()
+        .try_into()
+        .map_err(|message| IoError::new(ErrorKind::InvalidInput, message))?;
 
     let runtime_handle = tokio::spawn(async move {
         let (outgoing_tx, mut outgoing_rx) = mpsc::channel::<OutgoingEnvelope>(channel_capacity);
@@ -429,7 +434,7 @@ async fn start_uninitialized(args: InProcessStartArgs) -> IoResult<InProcessClie
                 log_db: args.log_db,
                 state_db: args.state_db,
                 config_warnings: args.config_warnings,
-                session_source: args.session_source,
+                session_source,
                 auth_manager,
                 installation_id,
                 rpc_transport: AppServerRpcTransport::InProcess,

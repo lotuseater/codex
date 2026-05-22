@@ -216,7 +216,7 @@ impl ConfigManager {
             .load_thread_agnostic_config()
             .await
             .map_err(|err| ConfigManagerError::io("failed to load configuration", err))?;
-        let user_layer = match layers.get_active_user_layer() {
+        let user_layer = match layers.get_user_layer() {
             Some(layer) => Cow::Borrowed(layer),
             None => Cow::Owned(create_empty_user_layer(&allowed_path).await?),
         };
@@ -306,7 +306,12 @@ impl ConfigManager {
         })?;
 
         if !config_edits.is_empty() {
-            ConfigEditsBuilder::for_config_path(provided_path.as_path())
+            let user_config_profile = match &user_layer.name {
+                ConfigLayerSource::User { profile, .. } => profile.as_deref(),
+                _ => None,
+            };
+            ConfigEditsBuilder::new(self.codex_home())
+                .with_profile(user_config_profile)
                 .with_edits(config_edits)
                 .apply()
                 .await
@@ -322,7 +327,7 @@ impl ConfigManager {
         Ok(ConfigWriteResponse {
             status,
             version: updated_layers
-                .get_active_user_layer()
+                .get_user_layer()
                 .ok_or_else(|| {
                     ConfigManagerError::write(
                         ConfigWriteErrorCode::UserLayerNotFound,
@@ -633,7 +638,7 @@ fn compute_override_metadata(
     effective: &TomlValue,
     segments: &[String],
 ) -> Option<OverriddenMetadata> {
-    let user_value = match layers.get_active_user_layer() {
+    let user_value = match layers.get_user_layer() {
         Some(user_layer) => value_at_path(&user_layer.config, segments),
         None => return None,
     };

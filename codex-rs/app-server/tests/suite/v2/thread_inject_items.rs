@@ -15,7 +15,7 @@ use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::InitialHistory;
 use codex_protocol::protocol::RolloutItem;
-use core_test_support::responses;
+use app_test_support::responses;
 use serde_json::Value;
 use std::path::Path;
 use tempfile::TempDir;

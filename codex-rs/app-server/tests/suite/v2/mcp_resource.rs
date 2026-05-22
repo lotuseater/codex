@@ -27,7 +27,7 @@ use codex_core::config::ConfigBuilder;
 use codex_exec_server::EnvironmentManager;
 use codex_feedback::CodexFeedback;
 use codex_protocol::protocol::SessionSource;
-use core_test_support::responses;
+use app_test_support::responses;
 use pretty_assertions::assert_eq;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::ProtocolVersion;

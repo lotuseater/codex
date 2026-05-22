@@ -5,11 +5,11 @@ use codex_core::NewThread;
 use codex_core::StartThreadOptions;
 use codex_core::ThreadManager;
 use codex_core::config::Config;
+use codex_core_domain_types::ThreadId as ExtensionThreadId;
 use codex_extension_api::AgentSpawnFuture;
 use codex_extension_api::AgentSpawner;
 use codex_extension_api::ExtensionRegistry;
 use codex_extension_api::ExtensionRegistryBuilder;
-use codex_protocol::ThreadId;
 use codex_protocol::error::CodexErr;
 
 pub(crate) fn thread_extensions<S>(guardian_agent_spawner: S) -> Arc<ExtensionRegistry<Config>>
@@ -25,11 +25,19 @@ where
 pub(crate) fn guardian_agent_spawner(
     thread_manager: Weak<ThreadManager>,
 ) -> impl AgentSpawner<StartThreadOptions, Spawned = NewThread, Error = CodexErr> {
-    move |forked_from_thread_id: ThreadId,
+    move |forked_from_thread_id: ExtensionThreadId,
           options: StartThreadOptions|
           -> AgentSpawnFuture<'static, NewThread, CodexErr> {
         let thread_manager = thread_manager.clone();
         Box::pin(async move {
+            let forked_from_thread_id =
+                codex_protocol::ThreadId::from_string(forked_from_thread_id.as_str()).map_err(
+                    |err| {
+                        CodexErr::UnsupportedOperation(format!(
+                            "invalid fork source thread id: {err}"
+                        ))
+                    },
+                )?;
             let thread_manager = thread_manager.upgrade().ok_or_else(|| {
                 CodexErr::UnsupportedOperation("thread manager dropped".to_string())
             })?;

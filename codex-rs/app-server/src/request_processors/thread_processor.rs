@@ -1018,7 +1018,7 @@ impl ThreadRequestProcessor {
         let requested_permissions_trust_project =
             requested_permissions_trust_project(&typesafe_overrides, config.cwd.as_path());
         let effective_permissions_trust_project = permission_profile_trusts_project(
-            &config.permissions.effective_permission_profile(),
+            &config.permissions.permission_profile(),
             config.cwd.as_path(),
         );
 
@@ -1255,7 +1255,7 @@ impl ThreadRequestProcessor {
         model_provider: Option<String>,
         service_tier: Option<Option<String>>,
         cwd: Option<String>,
-        runtime_workspace_roots: Option<Vec<PathBuf>>,
+        _runtime_workspace_roots: Option<Vec<PathBuf>>,
         approval_policy: Option<codex_app_server_protocol::AskForApproval>,
         approvals_reviewer: Option<codex_app_server_protocol::ApprovalsReviewer>,
         sandbox: Option<SandboxMode>,
@@ -1269,7 +1269,6 @@ impl ThreadRequestProcessor {
             model_provider,
             service_tier,
             cwd: cwd.map(PathBuf::from),
-            workspace_roots: runtime_workspace_roots,
             default_permissions: permissions,
             approval_policy: approval_policy
                 .map(codex_app_server_protocol::AskForApproval::to_core),

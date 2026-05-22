@@ -1,4 +1,10 @@
 use super::*;
+use codex_app_server_protocol::PermissionProfileListParams;
+use codex_app_server_protocol::PermissionProfileListResponse;
+use codex_app_server_protocol::PermissionProfileSummary;
+use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
+use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_READ_ONLY;
+use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
 use codex_config::config_toml::ConfigToml;
 use futures::StreamExt;
 

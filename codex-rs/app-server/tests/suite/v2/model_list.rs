@@ -19,7 +19,7 @@ use codex_config::types::AuthCredentialsStoreMode;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ModelsResponse;
-use core_test_support::responses::mount_models_once;
+use app_test_support::responses::mount_models_once;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use tempfile::TempDir;
