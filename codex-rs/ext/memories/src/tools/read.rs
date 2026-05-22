@@ -51,22 +51,27 @@ where
         ))
     }
 
-    async fn handle(
+    fn handle(
         &self,
         call: ToolCall,
-    ) -> Result<Box<dyn codex_extension_api::ToolOutput>, codex_extension_api::FunctionCallError>
-    {
+    ) -> impl std::future::Future<
+        Output = Result<Self::Output, codex_extension_api::FunctionCallError>,
+    > + Send {
         let backend = self.backend.clone();
-        let args: ReadArgs = parse_args(&call)?;
-        let response = backend
-            .read(ReadMemoryRequest {
-                path: args.path,
-                line_offset: args.line_offset.unwrap_or(1),
-                max_lines: args.max_lines,
-                max_tokens: DEFAULT_READ_MAX_TOKENS,
-            })
-            .await
-            .map_err(backend_error_to_function_call)?;
-        Ok(Box::new(JsonToolOutput::new(json!(response))))
+        async move {
+            let args: ReadArgs = parse_args(&call)?;
+            let response = backend
+                .read(ReadMemoryRequest {
+                    path: args.path,
+                    line_offset: args.line_offset.unwrap_or(1),
+                    max_lines: args.max_lines,
+                    max_tokens: DEFAULT_READ_MAX_TOKENS,
+                })
+                .await
+                .map_err(backend_error_to_function_call)?;
+            let output: Box<dyn codex_extension_api::ToolOutput> =
+                Box::new(JsonToolOutput::new(json!(response)));
+            Ok(output)
+        }
     }
 }

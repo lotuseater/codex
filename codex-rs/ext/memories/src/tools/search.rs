@@ -42,7 +42,6 @@ pub(super) struct SearchTool<B> {
     pub(super) backend: B,
 }
 
-#[async_trait::async_trait]
 impl<B> ToolExecutor<ToolCall> for SearchTool<B>
 where
     B: MemoriesBackend,
@@ -60,18 +59,23 @@ where
         ))
     }
 
-    async fn handle(
+    fn handle(
         &self,
         call: ToolCall,
-    ) -> Result<Box<dyn codex_extension_api::ToolOutput>, codex_extension_api::FunctionCallError>
-    {
+    ) -> impl std::future::Future<
+        Output = Result<Self::Output, codex_extension_api::FunctionCallError>,
+    > + Send {
         let backend = self.backend.clone();
-        let args: SearchArgs = parse_args(&call)?;
-        let response = backend
-            .search(args.into_request())
-            .await
-            .map_err(backend_error_to_function_call)?;
-        Ok(Box::new(JsonToolOutput::new(json!(response))))
+        async move {
+            let args: SearchArgs = parse_args(&call)?;
+            let response = backend
+                .search(args.into_request())
+                .await
+                .map_err(backend_error_to_function_call)?;
+            let output: Box<dyn codex_extension_api::ToolOutput> =
+                Box::new(JsonToolOutput::new(json!(response)));
+            Ok(output)
+        }
     }
 }
 
