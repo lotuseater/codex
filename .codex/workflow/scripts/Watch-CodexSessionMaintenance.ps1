@@ -57,7 +57,9 @@ while ($true) {
     $now = Get-Date
     $effectivePipeName = $PipeName
     $managedPipe = $null
+    $didResolveManagedPipe = $false
     if (-not $effectivePipeName -and $ResolveManagedPipe) {
+        $didResolveManagedPipe = $true
         $managedPipe = Resolve-CodexWizardManagedPipe `
             -SessionPath $SessionPath `
             -SessionId $SessionId `
@@ -118,7 +120,7 @@ while ($true) {
         } else {
             $null
         }
-        resolveManagedPipe = [bool]$ResolveManagedPipe
+        resolveManagedPipe = $didResolveManagedPipe
         rootPid = $RootPid
         windowHandle = $WindowHandle
         managedPipeSource = if ($null -ne $managedPipe) { $managedPipe.SourcePath } else { $null }

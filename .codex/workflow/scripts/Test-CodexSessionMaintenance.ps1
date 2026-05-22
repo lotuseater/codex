@@ -394,6 +394,7 @@ Remove-Item -LiteralPath $watchLogPath -Force -ErrorAction SilentlyContinue
     -Profile Director `
     -SessionPath $sessionPath `
     -PipeName "fake-pipe-for-test" `
+    -ResolveManagedPipe `
     -PipeTimeoutMs 1234 `
     -DryRun `
     -Once `
