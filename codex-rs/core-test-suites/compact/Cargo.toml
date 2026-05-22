@@ -1,0 +1,93 @@
+[package]
+name = "codex-core-test-suite-compact"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+autotests = false
+
+[lib]
+path = "src/lib.rs"
+test = false
+doctest = false
+
+[[test]]
+name = "compact"
+path = "tests/compact.rs"
+
+[[test]]
+name = "compact_limits"
+path = "tests/compact_limits.rs"
+
+[[test]]
+name = "compact_local_history"
+path = "tests/compact_local_history.rs"
+
+[[test]]
+name = "compact_reasoning"
+path = "tests/compact_reasoning.rs"
+
+[[test]]
+name = "compact_remote"
+path = "tests/compact_remote.rs"
+
+[[test]]
+name = "compact_remote_auto"
+path = "tests/compact_remote_auto.rs"
+
+[[test]]
+name = "compact_remote_manual"
+path = "tests/compact_remote_manual.rs"
+
+[[test]]
+name = "compact_remote_parity"
+path = "tests/compact_remote_parity.rs"
+
+[[test]]
+name = "compact_remote_realtime"
+path = "tests/compact_remote_realtime.rs"
+
+[[test]]
+name = "compact_resume"
+path = "tests/compact_resume.rs"
+
+[[test]]
+name = "compact_resume_fork"
+path = "tests/compact_resume_fork.rs"
+
+[[test]]
+name = "compact_resume_limits"
+path = "tests/compact_resume_limits.rs"
+
+[[test]]
+name = "compact_resume_warning"
+path = "tests/compact_resume_warning.rs"
+
+[[test]]
+name = "compact_user_instructions"
+path = "tests/compact_user_instructions.rs"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+anyhow = { workspace = true }
+codex-apply-patch = { workspace = true }
+codex-core = { workspace = true }
+codex-core-test-runtime = { workspace = true }
+codex-exec-server = { workspace = true }
+codex-features = { workspace = true }
+codex-login = { workspace = true }
+codex-model-provider-info = { workspace = true }
+codex-models-manager = { workspace = true }
+codex-protocol = { workspace = true }
+codex-sandboxing = { workspace = true }
+codex-test-binary-support = { workspace = true }
+codex-test-support-responses = { workspace = true }
+ctor = { workspace = true }
+insta = { workspace = true }
+pretty_assertions = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "time"] }
+wiremock = { workspace = true }
