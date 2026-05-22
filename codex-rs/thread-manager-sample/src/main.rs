@@ -8,6 +8,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use anyhow::bail;
 use clap::Parser;
+use codex_app_server_protocol::item_event_to_server_notification;
 use codex_core::CodexThread;
 use codex_core::NewThread;
 use codex_core::ThreadManager;
@@ -28,11 +29,10 @@ use codex_core_api::Arg0DispatchPaths;
 use codex_core_api::AskForApproval;
 use codex_core_api::AuthCredentialsStoreMode;
 use codex_core_api::AuthManager;
-use codex_core_api::AutoCompactTokenLimitScope;
 use codex_core_api::ConfigLayerStack;
-use codex_core_api::EnvironmentManager;
+use codex_core_api::ContextBudgetMode;
 use codex_core_api::EventMsg;
-use codex_core_api::ExecServerRuntimePaths;
+use codex_core_api::Feature;
 use codex_core_api::Features;
 use codex_core_api::History;
 use codex_core_api::MemoriesConfig;
@@ -48,6 +48,7 @@ use codex_core_api::RealtimeAudioConfig;
 use codex_core_api::RealtimeConfig;
 use codex_core_api::SessionPickerViewMode;
 use codex_core_api::SessionSource;
+use codex_core_api::ShellEnvironmentPolicy;
 use codex_core_api::ToolSuggestConfig;
 use codex_core_api::TuiKeymap;
 use codex_core_api::TuiNotificationSettings;
@@ -58,11 +59,15 @@ use codex_core_api::WebSearchMode;
 use codex_core_api::arg0_dispatch_or_else;
 use codex_core_api::built_in_model_providers;
 use codex_core_api::empty_extension_registry;
-use codex_core_api::item_event_to_server_notification;
 use codex_core_api::set_default_originator;
+use codex_exec_server::EnvironmentManager;
+use codex_exec_server::ExecServerRuntimePaths;
 use codex_thread_store::StoreLiveThreadFactory;
 use codex_thread_store::ThreadStoreSelection;
 use codex_thread_store::thread_store_from_config;
+
+// The sample constructs Config directly, so keep its unset-config defaults explicit.
+const DEFAULT_MODEL_COMPACT_PERCENTAGE: u8 = 20;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -179,19 +184,25 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         bypass_hook_trust: false,
         model,
         service_tier: None,
+        context_budget_mode: ContextBudgetMode::Slow,
         review_model: None,
         model_context_window: None,
         model_auto_compact_token_limit: None,
-        model_auto_compact_token_limit_scope: AutoCompactTokenLimitScope::Total,
+        model_compact_percentage: DEFAULT_MODEL_COMPACT_PERCENTAGE,
+        prompt_reduction_mode: Default::default(),
         model_provider_id,
         model_provider,
         personality: None,
-        permissions: Permissions::from_approval_and_profile(
-            Constrained::allow_any(AskForApproval::Never),
-            Constrained::allow_any(PermissionProfile::read_only()),
-        )?,
-        explicit_permission_profile_mode: false,
-        custom_permission_profile_ids: Vec::new(),
+        permissions: Permissions {
+            approval_policy: Constrained::allow_any(AskForApproval::Never),
+            permission_profile: Constrained::allow_any(PermissionProfile::read_only()),
+            active_permission_profile: None,
+            network: None,
+            allow_login_shell: true,
+            shell_environment_policy: ShellEnvironmentPolicy::default(),
+            windows_sandbox_mode: None,
+            windows_sandbox_private_desktop: false,
+        },
         approvals_reviewer: ApprovalsReviewer::User,
         enforce_residency: Constrained::allow_any(/*initial_value*/ None),
         hide_agent_reasoning: false,
@@ -224,8 +235,6 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         tui_session_picker_view: SessionPickerViewMode::Dense,
         tui_vim_mode_default: false,
         cwd: cwd.clone(),
-        workspace_roots: vec![cwd],
-        workspace_roots_explicit: false,
         cli_auth_credentials_store_mode: AuthCredentialsStoreMode::File,
         mcp_servers: Constrained::allow_any(HashMap::new()),
         mcp_oauth_credentials_store_mode: OAuthCredentialsStoreMode::File,
@@ -241,6 +250,7 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         agent_max_depth: 1,
         agent_roles: BTreeMap::new(),
         memories: MemoriesConfig::default(),
+        blackboard: Default::default(),
         sqlite_home: codex_home.to_path_buf(),
         log_dir: codex_home.join("log").to_path_buf(),
         config_lock_export_dir: None,
@@ -273,6 +283,10 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         experimental_realtime_start_instructions: None,
         experimental_thread_config_endpoint: None,
         experimental_thread_store: ThreadStoreConfig::Local,
+        include_apply_patch_tool: false,
+        desktop_automation: Default::default(),
+        first_moves: Default::default(),
+        repo_context_scout: Default::default(),
         forced_chatgpt_workspace_id: None,
         forced_login_method: None,
         web_search_mode: Constrained::allow_any(WebSearchMode::Disabled),
@@ -285,6 +299,7 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         suppress_unstable_features_warning: false,
         active_profile: None,
         active_project: ProjectConfig { trust_level: None },
+        windows_wsl_setup_acknowledged: false,
         notices: Notice::default(),
         check_for_update_on_startup: false,
         disable_paste_burst: false,
@@ -297,6 +312,7 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         .features
         .set(Features::with_defaults())
         .context("configure default features")?;
+    config.include_apply_patch_tool = config.features.enabled(Feature::ApplyPatchFreeform);
     Ok(config)
 }
 
@@ -310,7 +326,6 @@ async fn run_turn(thread: &CodexThread, thread_id: &str, prompt: String) -> anyh
             environments: None,
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
-            thread_settings: Default::default(),
         })
         .await
         .context("submit user input")?;
