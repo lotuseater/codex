@@ -159,6 +159,7 @@ pub fn create_tool_search_tool(
         name: TOOL_SEARCH_TOOL_NAME.to_string(),
         description: "Search deferred tools by name or description.".to_string(),
         strict: true,
+        defer_loading: None,
         parameters: JsonSchema::object(
             properties,
             Some(vec!["query".to_string()]),
@@ -193,6 +194,7 @@ Known plugins/connectors available to install:\n\
 {discoverable_tools}"
         ),
         strict: true,
+        defer_loading: None,
         parameters: JsonSchema::object(
             BTreeMap::from([
                 (
