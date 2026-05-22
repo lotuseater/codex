@@ -1178,7 +1178,7 @@ Launch:
   - `solid_refactor_wave19_commit_integrity_worker.handoff.md`
 - Continue slow monitor cadence. If no new handoff appears, sleep rather than polling rapidly.
 
-## Current Root Checkpoint - 2026-05-22 05:56 Europe/Kyiv
+## Current Root Checkpoint - 2026-05-22 06:06 Europe/Kyiv
 
 This checkpoint supersedes older duplicate "missing handoff" notes above.
 
@@ -1189,13 +1189,13 @@ This checkpoint supersedes older duplicate "missing handoff" notes above.
   `solid_refactor_wave19_core_tools_client_goals_boundary_worker.handoff.md`.
 - Wave20 non-shell handler/spec worker still has no handoff and remains active
   at the latest local check, with PID `23356` and a growing visible log.
-  - 05:59 verification: handoff missing, PID alive, log length `4222085`
+  - 06:06 verification: handoff missing, PID alive, log length `5739656`
     bytes.
 - Latest cheap boundary checks:
   - `scripts/check-cargo-dependency-boundaries.ps1 -SolidRefactor -Json`
     returned `violation_count = 0`.
   - `rg -n "codex_tools" codex-rs/core/src codex-rs/core/tests` still
-    returned 96 matching lines while the non-shell worker was active.
+    returned 93 matching lines while the non-shell worker was active.
 - Do not launch overlapping source workers for non-shell handler/spec imports,
   multi-agent `ToolOutput` fallout, or remaining `codex_tools` handler/spec
   references until that worker hands off or is proven dead.
