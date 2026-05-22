@@ -1,0 +1,78 @@
+[package]
+name = "codex-core-test-suite-exec-shell"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+autotests = false
+
+[[test]]
+name = "exec"
+path = "tests/exec.rs"
+
+[[test]]
+name = "exec_sandbox"
+path = "tests/exec_sandbox.rs"
+
+[[test]]
+name = "exec_shell_command"
+path = "tests/exec_shell_command.rs"
+
+[[test]]
+name = "exec_shell_snapshot"
+path = "tests/exec_shell_snapshot.rs"
+
+[[test]]
+name = "exec_shell_serialization"
+path = "tests/exec_shell_serialization.rs"
+
+[[test]]
+name = "exec_user_shell_cmd"
+path = "tests/exec_user_shell_cmd.rs"
+
+[[test]]
+name = "exec_unified_output"
+path = "tests/exec_unified_output.rs"
+
+[[test]]
+name = "exec_unified_sandbox"
+path = "tests/exec_unified_sandbox.rs"
+
+[[test]]
+name = "exec_unified_sessions"
+path = "tests/exec_unified_sessions.rs"
+
+[[test]]
+name = "exec_unified_sessions_modes"
+path = "tests/exec_unified_sessions_modes.rs"
+
+[[test]]
+name = "exec_unified_sessions_reuse"
+path = "tests/exec_unified_sessions_reuse.rs"
+
+[[test]]
+name = "exec_unified_sessions_terminal"
+path = "tests/exec_unified_sessions_terminal.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+codex-apply-patch = { workspace = true }
+codex-config = { workspace = true }
+codex-core = { workspace = true }
+codex-core-test-runtime = { workspace = true }
+codex-exec-server = { workspace = true }
+codex-features = { workspace = true }
+codex-protocol = { workspace = true }
+codex-sandboxing = { workspace = true }
+codex-test-binary-support = { workspace = true }
+codex-utils-cargo-bin = { workspace = true }
+ctor = { workspace = true }
+pretty_assertions = { workspace = true }
+regex-lite = { workspace = true }
+serde_json = { workspace = true }
+serial_test = { workspace = true }
+tempfile = { workspace = true }
+test-case = "3.3.1"
+tokio = { workspace = true, features = ["fs", "macros", "rt-multi-thread", "time"] }
