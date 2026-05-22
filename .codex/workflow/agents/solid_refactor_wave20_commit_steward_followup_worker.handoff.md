@@ -7,6 +7,7 @@ Classification: completed
 - `6cb2dddfed06` - `Record wave19 SOLID refactor handoffs`
 - `2f510a537180` - `Record wave20 commit steward follow-up`
 - `5f95b495bfc0` - `Record wave20 SOLID refactor handoffs`
+- `c2cd34cb5681` - `Record additional wave20 SOLID handoffs`
 
 ## Files Committed
 
@@ -20,6 +21,10 @@ Classification: completed
 - `.codex/workflow/agents/solid_refactor_wave20_client_goals_boundary_status_scout.handoff.md`
 - `.codex/workflow/agents/solid_refactor_wave20_compact_resume_streaming_split_worker.handoff.md`
 - `.codex/workflow/agents/solid_refactor_wave20_remaining_mcp_tooling_split_worker.handoff.md`
+- `.codex/workflow/agents/solid_refactor_wave20_core_tests_support_responses_repair_worker.handoff.md`
+- `.codex/workflow/agents/solid_refactor_wave20_dependency_boundary_checker_scout.handoff.md`
+- `.codex/workflow/agents/solid_refactor_wave20_realtime_state_review_split_worker.handoff.md`
+- `.codex/workflow/agents/solid_refactor_wave20_unified_exec_sessions_test_split_worker.handoff.md`
 
 ## Checks Run
 
@@ -43,6 +48,7 @@ During the wave20 handoff pass, another worker committed `e374d2dd8abf` (`Add wa
   - `.codex/workflow/agents/solid_refactor_wave20_remaining_mcp_tooling_split_worker.handoff.md`
 - Wave19 source slices were left unstaged because the current dirty tree still mixes their changes with shared `codex-rs/core/Cargo.toml`, `codex-rs/core/tests/common/*`, or other active source-worker files.
 - Wave20 source slices were left unstaged because `compact/resume/streaming` touches shared `codex-rs/core/Cargo.toml`, `remaining_mcp_tooling` is classified `root-wiring-needed`, and `client_goals_boundary_status_scout` is read-only.
+- Additional wave20 source slices were left unstaged because `core_tests_support_responses_repair` sits on broad unstaged Wave 19 edits, `dependency_boundary_checker_scout` is read-only, and the realtime/state/review plus unified-exec sessions splits are classified `root-wiring-needed`.
 - Active/mixed source and generated work was left untouched, including `codex-rs/Cargo.toml`, `codex-rs/Cargo.lock`, app-server schema JSON, `codex-rs/core/Cargo.toml`, and source files under active wave20 prompt ownership.
 
 ## Remaining Fallout
