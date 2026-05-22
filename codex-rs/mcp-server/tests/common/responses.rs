@@ -1,6 +1,7 @@
 use std::path::Path;
 
-use core_test_support::responses;
+pub use codex_test_support_responses::responses::*;
+use codex_test_support_responses::responses;
 use serde_json::json;
 
 pub fn create_shell_command_sse_response(

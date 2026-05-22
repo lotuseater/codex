@@ -21,7 +21,7 @@ use tempfile::TempDir;
 use tokio::time::timeout;
 use wiremock::MockServer;
 
-use core_test_support::skip_if_no_network;
+use mcp_test_support::skip_if_no_network;
 use mcp_test_support::McpProcess;
 use mcp_test_support::create_apply_patch_sse_response;
 use mcp_test_support::create_final_assistant_message_sse_response;
