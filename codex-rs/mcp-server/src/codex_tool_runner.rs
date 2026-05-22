@@ -116,7 +116,6 @@ pub async fn run_codex_tool_session(
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
-            thread_settings: Default::default(),
         },
         trace: None,
     };
@@ -166,7 +165,6 @@ pub async fn run_codex_tool_session_reply(
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
-            thread_settings: Default::default(),
         })
         .await
     {
