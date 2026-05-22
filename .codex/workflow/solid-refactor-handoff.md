@@ -1263,3 +1263,27 @@ This checkpoint supersedes older duplicate "missing handoff" notes above.
     handoff-only commit.
 - `solid_refactor_wave21_core_lib_fallout_repair_worker` remains active with
   PID `21812`; handoff not present at this checkpoint.
+
+## Wave 21 Core Lib Fallout Handoff - 2026-05-22 06:33 Europe/Kyiv
+
+- root-wiring-needed:
+  `solid_refactor_wave21_core_lib_fallout_repair_worker.handoff.md`.
+  - Worker restored `ToolsConfig` / `ToolsConfigParams` imports in
+    `session/review.rs` and `session/turn_context.rs`.
+  - Worker updated multi-agent `ToolOutput` implementations to use
+    `ToolOutputPayload`.
+  - Cheap `rg` and `git diff --check` passed.
+  - Release check was run and logged to
+    `logs/wave21-codex-core-lib-fallout-repair.log`, but failed before
+    `codex-core` could be checked because `codex-tool-registry-api` has
+    unresolved re-exports and missing `ResponsesApiTool.defer_loading` fields.
+  - Worker left source commit/staging to root or a commit steward because
+    nearby multi-agent files already had concurrent dirty hunks and the release
+    check is not green.
+- Queued next repair worker:
+  - `solid_refactor_wave21_tool_registry_api_repair_worker.prompt.md` owns the
+    `codex-tool-registry-api` fallout from
+    `logs/wave21-codex-core-lib-fallout-repair.log`.
+  - `codex-workers -DryRun -Pattern "solid_refactor_wave21_tool_registry_api_repair_worker.prompt.md"`
+    exited 0.
+  - Launched visible worker with PID `26208`.
