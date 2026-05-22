@@ -103,6 +103,7 @@ __pycache__/
 # Codex workflow scratch
 .codex/workflow-batch/
 .codex/workflow/.tmp/
+.codex/workflow/agents/*.md
 .codex/workflow/agents/*.prompt.md
 .codex/workflow/agents/*.exec.marker.txt
 .codex/workflow/agents/*.marker.txt
@@ -120,3 +121,4 @@ __pycache__/
 .codex/workflow/*.report.json
 .codex/workflow/*-output.txt
 .codex/workflow/*-latest.txt
+.codex/workflow/tmp
