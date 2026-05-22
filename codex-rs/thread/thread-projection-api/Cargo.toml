@@ -8,7 +8,6 @@ version.workspace = true
 doctest = false
 name = "codex_thread_projection_api"
 path = "src/lib.rs"
-test = false
 
 [lints]
 workspace = true

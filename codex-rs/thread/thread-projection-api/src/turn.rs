@@ -60,3 +60,49 @@ pub struct ProjectedThread<TurnItem> {
 }
 
 pub type ThreadHistoryProjection<TurnItem> = Vec<ProjectedTurn<TurnItem>>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn thread_history_projection_preserves_turn_state() {
+        let projected_turn = ProjectedTurn {
+            id: "turn-1".to_string(),
+            items: vec!["summary".to_string()],
+            items_view: TurnItemsView::Summary,
+            status: TurnStatus::Failed,
+            error: Some(ProjectedTurnError {
+                message: "failed".to_string(),
+                codex_error_info: None,
+                additional_details: Some("details".to_string()),
+            }),
+            started_at: Some(10),
+            completed_at: Some(20),
+            duration_ms: Some(10_000),
+        };
+        let projection: ThreadHistoryProjection<String> = vec![projected_turn.clone()];
+        let projected_thread = ProjectedThread {
+            id: ThreadId::default(),
+            turns: projection,
+        };
+
+        assert_eq!(
+            projected_thread.turns,
+            vec![ProjectedTurn {
+                id: "turn-1".to_string(),
+                items: vec!["summary".to_string()],
+                items_view: TurnItemsView::Summary,
+                status: TurnStatus::Failed,
+                error: Some(ProjectedTurnError {
+                    message: "failed".to_string(),
+                    codex_error_info: None,
+                    additional_details: Some("details".to_string()),
+                }),
+                started_at: Some(10),
+                completed_at: Some(20),
+                duration_ms: Some(10_000),
+            }]
+        );
+    }
+}
