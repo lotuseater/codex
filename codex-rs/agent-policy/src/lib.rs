@@ -11,8 +11,50 @@ pub const AGENT_ROI_RUBRIC: &str = "new_agent_cost=3, reuse_cost=1, parallel_gai
 
 pub const MULTI_AGENT_V2_NESTED_SPAWN_REJECTION: &str = "Only the root agent can spawn MultiAgentV2 helpers; send a concise handoff to the root instead.";
 
-pub fn multi_agent_v2_root_can_spawn_child(parent_is_root: bool, child_depth: i32) -> bool {
-    parent_is_root && child_depth == 1
+/// Parent category used by the MultiAgentV2 spawn gate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MultiAgentV2SpawnParent {
+    Root,
+    Nested,
+}
+
+/// Parent/child depth relationship considered by the MultiAgentV2 spawn gate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MultiAgentV2SpawnLineage {
+    parent: MultiAgentV2SpawnParent,
+    child_depth: i32,
+}
+
+impl MultiAgentV2SpawnLineage {
+    pub const fn new(parent: MultiAgentV2SpawnParent, child_depth: i32) -> Self {
+        Self {
+            parent,
+            child_depth,
+        }
+    }
+
+    pub const fn parent(self) -> MultiAgentV2SpawnParent {
+        self.parent
+    }
+
+    pub const fn child_depth(self) -> i32 {
+        self.child_depth
+    }
+}
+
+pub const fn next_thread_spawn_depth(parent_depth: i32) -> i32 {
+    parent_depth.saturating_add(1)
+}
+
+pub const fn exceeds_thread_spawn_depth_limit(depth: i32, max_depth: i32) -> bool {
+    depth > max_depth
+}
+
+pub const fn multi_agent_v2_root_can_spawn_child(lineage: MultiAgentV2SpawnLineage) -> bool {
+    match lineage.parent {
+        MultiAgentV2SpawnParent::Root => lineage.child_depth == 1,
+        MultiAgentV2SpawnParent::Nested => false,
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -681,22 +723,35 @@ mod tests {
     #[test]
     fn multi_agent_v2_root_only_spawn_policy_allows_only_root_children() {
         assert!(!multi_agent_v2_root_can_spawn_child(
-            /*parent_is_root*/ true, 0
+            MultiAgentV2SpawnLineage::new(MultiAgentV2SpawnParent::Root, /*child_depth*/ 0)
         ));
         assert!(multi_agent_v2_root_can_spawn_child(
-            /*parent_is_root*/ true, 1
+            MultiAgentV2SpawnLineage::new(MultiAgentV2SpawnParent::Root, /*child_depth*/ 1)
         ));
         assert!(!multi_agent_v2_root_can_spawn_child(
-            /*parent_is_root*/ true, 2
+            MultiAgentV2SpawnLineage::new(MultiAgentV2SpawnParent::Root, /*child_depth*/ 2)
         ));
         assert!(!multi_agent_v2_root_can_spawn_child(
-            /*parent_is_root*/ false, 1
+            MultiAgentV2SpawnLineage::new(MultiAgentV2SpawnParent::Nested, /*child_depth*/ 1)
         ));
         assert!(!multi_agent_v2_root_can_spawn_child(
-            /*parent_is_root*/ false,
-            i32::MAX
+            MultiAgentV2SpawnLineage::new(MultiAgentV2SpawnParent::Nested, i32::MAX)
         ));
         assert!(MULTI_AGENT_V2_NESTED_SPAWN_REJECTION.contains("Only the root agent"));
+    }
+
+    #[test]
+    fn thread_spawn_depth_policy_saturates_and_checks_limit() {
+        assert_eq!(next_thread_spawn_depth(/*parent_depth*/ 0), 1);
+        assert_eq!(next_thread_spawn_depth(/*parent_depth*/ 7), 8);
+        assert_eq!(next_thread_spawn_depth(i32::MAX), i32::MAX);
+
+        assert!(!exceeds_thread_spawn_depth_limit(
+            /*depth*/ 2, /*max_depth*/ 2
+        ));
+        assert!(exceeds_thread_spawn_depth_limit(
+            /*depth*/ 3, /*max_depth*/ 2
+        ));
     }
 
     #[test]
