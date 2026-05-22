@@ -1,9 +1,6 @@
 use clap::Args;
-use clap::CommandFactory;
 use clap::FromArgMatches;
 use clap::Parser;
-use clap_complete::Shell;
-use clap_complete::generate;
 use codex_app_server_daemon::BootstrapOptions as AppServerBootstrapOptions;
 use codex_app_server_daemon::LifecycleCommand as AppServerLifecycleCommand;
 use codex_app_server_daemon::RemoteControlMode as AppServerRemoteControlMode;
@@ -51,12 +48,15 @@ const DEFAULT_AUTO_LOOP_MESSAGE: &str = "go on";
 mod app_cmd;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod desktop_app;
+mod completion;
 mod doctor;
 mod marketplace_cmd;
 mod mcp_cmd;
 #[cfg(not(windows))]
 mod wsl_paths;
 
+use crate::completion::CompletionCommand;
+use crate::completion::print_completion;
 use crate::marketplace_cmd::MarketplaceCli;
 use crate::mcp_cmd::McpCli;
 use doctor::DoctorCommand;
@@ -205,13 +205,6 @@ struct PluginCli {
 enum PluginSubcommand {
     /// Manage plugin marketplaces for Codex.
     Marketplace(MarketplaceCli),
-}
-
-#[derive(Debug, Parser)]
-struct CompletionCommand {
-    /// Shell to generate completions for
-    #[clap(value_enum, default_value_t = Shell::Bash)]
-    shell: Shell,
 }
 
 #[derive(Debug, Parser)]
@@ -2036,12 +2029,6 @@ fn merge_interactive_cli_flags(interactive: &mut TuiCli, subcommand_cli: TuiCli)
         .config_overrides
         .raw_overrides
         .extend(config_overrides.raw_overrides);
-}
-
-fn print_completion(cmd: CompletionCommand) {
-    let mut app = MultitoolCli::command();
-    let name = "codex";
-    generate(cmd.shell, &mut app, name, &mut std::io::stdout());
 }
 
 #[cfg(test)]
