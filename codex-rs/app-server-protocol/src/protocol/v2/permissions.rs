@@ -5,6 +5,7 @@ use codex_protocol::approvals::NetworkApprovalProtocol as CoreNetworkApprovalPro
 use codex_protocol::approvals::NetworkPolicyAmendment as CoreNetworkPolicyAmendment;
 use codex_protocol::approvals::NetworkPolicyRuleAction as CoreNetworkPolicyRuleAction;
 use codex_protocol::models::ActivePermissionProfile as CoreActivePermissionProfile;
+use codex_protocol::models::ActivePermissionProfileModification as CoreActivePermissionProfileModification;
 use codex_protocol::models::AdditionalPermissionProfile as CoreAdditionalPermissionProfile;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_READ_ONLY;
 use codex_protocol::models::FileSystemPermissions as CoreFileSystemPermissions;
@@ -335,6 +336,18 @@ pub struct ActivePermissionProfile {
     /// inheritance. This is currently always `null`.
     #[serde(default)]
     pub extends: Option<String>,
+    #[serde(default)]
+    pub modifications: Vec<ActivePermissionProfileModification>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(tag = "type", rename_all = "camelCase")]
+#[ts(tag = "type")]
+#[ts(export_to = "v2/")]
+pub enum ActivePermissionProfileModification {
+    #[serde(rename_all = "camelCase")]
+    #[ts(rename_all = "camelCase")]
+    AdditionalWritableRoot { path: AbsolutePathBuf },
 }
 
 impl ActivePermissionProfile {
@@ -342,6 +355,7 @@ impl ActivePermissionProfile {
         Self {
             id: id.into(),
             extends: None,
+            modifications: Vec::new(),
         }
     }
 
@@ -355,6 +369,7 @@ impl From<CoreActivePermissionProfile> for ActivePermissionProfile {
         Self {
             id: value.id,
             extends: value.extends,
+            modifications: value.modifications.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -364,7 +379,27 @@ impl From<ActivePermissionProfile> for CoreActivePermissionProfile {
         Self {
             id: value.id,
             extends: value.extends,
-            modifications: Vec::new(),
+            modifications: value.modifications.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<CoreActivePermissionProfileModification> for ActivePermissionProfileModification {
+    fn from(value: CoreActivePermissionProfileModification) -> Self {
+        match value {
+            CoreActivePermissionProfileModification::AdditionalWritableRoot { path } => {
+                Self::AdditionalWritableRoot { path }
+            }
+        }
+    }
+}
+
+impl From<ActivePermissionProfileModification> for CoreActivePermissionProfileModification {
+    fn from(value: ActivePermissionProfileModification) -> Self {
+        match value {
+            ActivePermissionProfileModification::AdditionalWritableRoot { path } => {
+                Self::AdditionalWritableRoot { path }
+            }
         }
     }
 }

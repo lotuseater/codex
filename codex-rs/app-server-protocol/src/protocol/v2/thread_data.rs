@@ -2,9 +2,12 @@ use super::CodexErrorInfo;
 use super::ThreadItem;
 use super::ThreadStatus;
 use super::TurnStatus;
-use codex_protocol::protocol::SessionSource as CoreSessionSource;
-use codex_protocol::protocol::SubAgentSource as CoreSubAgentSource;
-use codex_protocol::protocol::ThreadSource as CoreThreadSource;
+use codex_protocol::AgentPath;
+use codex_protocol::ThreadId;
+use codex_protocol::protocol::{
+    SessionSource as CoreSessionSource, SubAgentSource as CoreSubAgentSource,
+    ThreadSource as CoreThreadSource,
+};
 use codex_utils_absolute_path::AbsolutePathBuf;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -26,7 +29,7 @@ pub enum SessionSource {
     Exec,
     AppServer,
     Custom(String),
-    SubAgent(CoreSubAgentSource),
+    SubAgent(SubAgentSource),
     #[serde(other)]
     Unknown,
 }
@@ -41,22 +44,95 @@ impl From<CoreSessionSource> for SessionSource {
             CoreSessionSource::Custom(source) => SessionSource::Custom(source),
             // We do not want to render those at the app-server level.
             CoreSessionSource::Internal(_) => SessionSource::Unknown,
-            CoreSessionSource::SubAgent(sub) => SessionSource::SubAgent(sub),
+            CoreSessionSource::SubAgent(sub) => SessionSource::SubAgent(sub.into()),
             CoreSessionSource::Unknown => SessionSource::Unknown,
         }
     }
 }
 
-impl From<SessionSource> for CoreSessionSource {
-    fn from(value: SessionSource) -> Self {
+impl TryFrom<SessionSource> for CoreSessionSource {
+    type Error = String;
+
+    fn try_from(value: SessionSource) -> Result<Self, Self::Error> {
         match value {
-            SessionSource::Cli => CoreSessionSource::Cli,
-            SessionSource::VsCode => CoreSessionSource::VSCode,
-            SessionSource::Exec => CoreSessionSource::Exec,
-            SessionSource::AppServer => CoreSessionSource::Mcp,
-            SessionSource::Custom(source) => CoreSessionSource::Custom(source),
-            SessionSource::SubAgent(sub) => CoreSessionSource::SubAgent(sub),
-            SessionSource::Unknown => CoreSessionSource::Unknown,
+            SessionSource::Cli => Ok(CoreSessionSource::Cli),
+            SessionSource::VsCode => Ok(CoreSessionSource::VSCode),
+            SessionSource::Exec => Ok(CoreSessionSource::Exec),
+            SessionSource::AppServer => Ok(CoreSessionSource::Mcp),
+            SessionSource::Custom(source) => Ok(CoreSessionSource::Custom(source)),
+            SessionSource::SubAgent(sub) => Ok(CoreSessionSource::SubAgent(sub.try_into()?)),
+            SessionSource::Unknown => Ok(CoreSessionSource::Unknown),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(rename_all = "snake_case", export_to = "v2/")]
+pub enum SubAgentSource {
+    Review,
+    Compact,
+    MemoryConsolidation,
+    Other(String),
+    ThreadSpawn {
+        parent_thread_id: String,
+        depth: i32,
+        #[serde(default)]
+        agent_path: Option<String>,
+        #[serde(default)]
+        agent_nickname: Option<String>,
+        #[serde(default, alias = "agent_type")]
+        agent_role: Option<String>,
+    },
+}
+
+impl From<CoreSubAgentSource> for SubAgentSource {
+    fn from(value: CoreSubAgentSource) -> Self {
+        match value {
+            CoreSubAgentSource::Review => Self::Review,
+            CoreSubAgentSource::Compact => Self::Compact,
+            CoreSubAgentSource::MemoryConsolidation => Self::MemoryConsolidation,
+            CoreSubAgentSource::Other(value) => Self::Other(value),
+            CoreSubAgentSource::ThreadSpawn {
+                parent_thread_id,
+                depth,
+                agent_path,
+                agent_nickname,
+                agent_role,
+            } => Self::ThreadSpawn {
+                parent_thread_id: parent_thread_id.into(),
+                depth,
+                agent_path: agent_path.map(Into::into),
+                agent_nickname,
+                agent_role,
+            },
+        }
+    }
+}
+
+impl TryFrom<SubAgentSource> for CoreSubAgentSource {
+    type Error = String;
+
+    fn try_from(value: SubAgentSource) -> Result<Self, Self::Error> {
+        match value {
+            SubAgentSource::Review => Ok(Self::Review),
+            SubAgentSource::Compact => Ok(Self::Compact),
+            SubAgentSource::MemoryConsolidation => Ok(Self::MemoryConsolidation),
+            SubAgentSource::Other(value) => Ok(Self::Other(value)),
+            SubAgentSource::ThreadSpawn {
+                parent_thread_id,
+                depth,
+                agent_path,
+                agent_nickname,
+                agent_role,
+            } => Ok(Self::ThreadSpawn {
+                parent_thread_id: ThreadId::try_from(parent_thread_id)
+                    .map_err(|error| error.to_string())?,
+                depth,
+                agent_path: agent_path.map(AgentPath::try_from).transpose()?,
+                agent_nickname,
+                agent_role,
+            }),
         }
     }
 }

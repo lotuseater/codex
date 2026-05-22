@@ -1539,7 +1539,6 @@ fn config_granular_approval_policy_is_marked_experimental() {
         review_model: None,
         model_context_window: None,
         model_auto_compact_token_limit: None,
-        model_auto_compact_token_limit_scope: None,
         model_provider: None,
         approval_policy: Some(AskForApproval::Granular {
             sandbox_approval: false,
@@ -1566,7 +1565,6 @@ fn config_granular_approval_policy_is_marked_experimental() {
         service_tier: None,
         analytics: None,
         apps: None,
-        desktop: None,
         additional: HashMap::new(),
     });
 
@@ -1580,7 +1578,6 @@ fn config_approvals_reviewer_is_marked_experimental() {
         review_model: None,
         model_context_window: None,
         model_auto_compact_token_limit: None,
-        model_auto_compact_token_limit_scope: None,
         model_provider: None,
         approval_policy: None,
         approvals_reviewer: Some(ApprovalsReviewer::AutoReview),
@@ -1601,7 +1598,6 @@ fn config_approvals_reviewer_is_marked_experimental() {
         service_tier: None,
         analytics: None,
         apps: None,
-        desktop: None,
         additional: HashMap::new(),
     });
 
@@ -1615,7 +1611,6 @@ fn config_nested_profile_granular_approval_policy_is_marked_experimental() {
         review_model: None,
         model_context_window: None,
         model_auto_compact_token_limit: None,
-        model_auto_compact_token_limit_scope: None,
         model_provider: None,
         approval_policy: None,
         approvals_reviewer: None,
@@ -1658,7 +1653,6 @@ fn config_nested_profile_granular_approval_policy_is_marked_experimental() {
         service_tier: None,
         analytics: None,
         apps: None,
-        desktop: None,
         additional: HashMap::new(),
     });
 
@@ -1672,7 +1666,6 @@ fn config_nested_profile_approvals_reviewer_is_marked_experimental() {
         review_model: None,
         model_context_window: None,
         model_auto_compact_token_limit: None,
-        model_auto_compact_token_limit_scope: None,
         model_provider: None,
         approval_policy: None,
         approvals_reviewer: None,
@@ -1709,7 +1702,6 @@ fn config_nested_profile_approvals_reviewer_is_marked_experimental() {
         service_tier: None,
         analytics: None,
         apps: None,
-        desktop: None,
         additional: HashMap::new(),
     });
 
@@ -1731,7 +1723,6 @@ fn config_requirements_granular_allowed_approval_policy_is_marked_experimental()
             allowed_sandbox_modes: None,
             allowed_web_search_modes: None,
             allow_managed_hooks_only: None,
-            computer_use: None,
             feature_requirements: None,
             hooks: None,
             enforce_residency: None,

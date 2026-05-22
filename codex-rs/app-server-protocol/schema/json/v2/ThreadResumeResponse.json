@@ -18,12 +18,43 @@
         "id": {
           "description": "Identifier from `default_permissions` or the implicit built-in default, such as `:workspace` or a user-defined `[permissions.<id>]` profile.",
           "type": "string"
+        },
+        "modifications": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/ActivePermissionProfileModification"
+          },
+          "type": "array"
         }
       },
       "required": [
         "id"
       ],
       "type": "object"
+    },
+    "ActivePermissionProfileModification": {
+      "oneOf": [
+        {
+          "properties": {
+            "path": {
+              "$ref": "#/definitions/AbsolutePathBuf"
+            },
+            "type": {
+              "enum": [
+                "additionalWritableRoot"
+              ],
+              "title": "AdditionalWritableRootActivePermissionProfileModificationType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "type"
+          ],
+          "title": "AdditionalWritableRootActivePermissionProfileModification",
+          "type": "object"
+        }
+      ]
     },
     "AgentPath": {
       "type": "string"
@@ -531,6 +562,8 @@
     },
     "ImageDetail": {
       "enum": [
+        "auto",
+        "low",
         "high",
         "original"
       ],
@@ -2234,6 +2267,18 @@
     }
   },
   "properties": {
+    "activePermissionProfile": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ActivePermissionProfile"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Named or implicit built-in profile that produced the active permissions, when known."
+    },
     "approvalPolicy": {
       "$ref": "#/definitions/AskForApproval"
     },
@@ -2271,6 +2316,14 @@
           "type": "null"
         }
       ]
+    },
+    "runtimeWorkspaceRoots": {
+      "default": [],
+      "description": "Thread-scoped runtime workspace roots used to materialize `:workspace_roots`.",
+      "items": {
+        "$ref": "#/definitions/AbsolutePathBuf"
+      },
+      "type": "array"
     },
     "sandbox": {
       "allOf": [

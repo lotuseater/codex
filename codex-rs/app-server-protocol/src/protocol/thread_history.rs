@@ -2976,8 +2976,10 @@ mod tests {
             EventMsg::UserMessage(UserMessageEvent {
                 message: "supervise agent".into(),
                 images: None,
+                image_details: Vec::new(),
                 text_elements: Vec::new(),
                 local_images: Vec::new(),
+                local_image_details: Vec::new(),
             }),
             EventMsg::CollabCompactEnd(codex_protocol::protocol::CollabCompactEndEvent {
                 call_id: "compact-1".into(),

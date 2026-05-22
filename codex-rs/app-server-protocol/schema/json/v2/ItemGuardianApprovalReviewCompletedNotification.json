@@ -69,7 +69,8 @@
       "enum": [
         "read",
         "write",
-        "deny"
+        "deny",
+        "none"
       ],
       "type": "string"
     },
