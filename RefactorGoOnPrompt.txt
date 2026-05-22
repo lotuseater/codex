@@ -1,0 +1,11 @@
+ A reminder from previous run:
+ A. "1. reread .codex/workflow/solid-refactor-handoff.md , 2. look at docs\current-project-architecture-solid-refactor-plan.md, docs\current-project-architecture-solid-review.md
+  
+  "The plan is not “done” in the architectural sense. A lot of target crate folders now exist, and core tests have begun splitting into separate Cargo test binaries, but the static checks still show remaining high-value gaps: core-api still depends on app-server protocol, core still depends on broad concrete crates like codex-tools, and many large core/tests/suite/*.rs families remain behind core integration wrappers." 
+  
+  Same about tests split by topic, separate compilation entities with abstract and narrow dependencies. For fast compiling and running each topic."
+  
+B. Read fresh workers' handoffs, update your handoff, think of next wave of subtasks
+	
+	
+	
