@@ -1,0 +1,44 @@
+[package]
+name = "codex-core-test-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
+test = false
+doctest = false
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+assert_cmd = { workspace = true }
+codex-arg0 = { workspace = true }
+codex-config = { workspace = true }
+codex-core = { workspace = true }
+codex-exec-server = { workspace = true }
+codex-extension-api = { workspace = true }
+codex-features = { workspace = true }
+codex-hooks = { workspace = true }
+codex-login = { workspace = true }
+codex-model-provider-info = { workspace = true }
+codex-models-manager = { workspace = true }
+codex-protocol = { workspace = true }
+codex-test-support-context-fixtures = { workspace = true }
+codex-test-support-lightweight = { workspace = true, features = ["tracing"] }
+codex-test-support-responses = { workspace = true }
+codex-thread-store-api = { workspace = true }
+codex-utils-absolute-path = { workspace = true }
+codex-utils-cargo-bin = { workspace = true }
+ctor = { workspace = true }
+futures = { workspace = true }
+serde_json = { workspace = true }
+shlex = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["net", "time"] }
+wiremock = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
