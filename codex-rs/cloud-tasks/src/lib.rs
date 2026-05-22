@@ -805,7 +805,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
     app.status = "Loading tasks…".to_string();
     app.refresh_inflight = true;
     // New list generation; reset background enrichment coordination
-    app.list_generation = app.list_generation.saturating_add(1);
+    app.list_generation.begin();
     app.in_flight.clear();
     // reset any in-flight enrichment state
 
@@ -990,7 +990,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                     // Refresh tasks in background for current filter
                                     app.status = format!("Submitted as {} — refreshing…", created.id.0);
                                     app.refresh_inflight = true;
-                                    app.list_generation = app.list_generation.saturating_add(1);
+                                    app.list_generation.begin();
                                     needs_redraw = true;
                                     let backend = Arc::clone(&backend);
                                     let tx = tx.clone();
@@ -1060,7 +1060,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                     app.env_filter = Some(sel.id);
                                     app.status = "Loading tasks…".to_string();
                                     app.refresh_inflight = true;
-                                    app.list_generation = app.list_generation.saturating_add(1);
+                                    app.list_generation.begin();
                                     app.in_flight.clear();
                             // reset spinner state
                                     needs_redraw = true;
@@ -1769,7 +1769,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                         // Trigger tasks refresh with the selected filter
                                         app.status = "Loading tasks…".to_string();
                                         app.refresh_inflight = true;
-                                        app.list_generation = app.list_generation.saturating_add(1);
+                                        app.list_generation.begin();
                                         app.in_flight.clear();
                                         // reset spinner state
                                         needs_redraw = true;
@@ -1807,7 +1807,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                     ));
                                     app.status = "Refreshing…".to_string();
                                     app.refresh_inflight = true;
-                                    app.list_generation = app.list_generation.saturating_add(1);
+                                    app.list_generation.begin();
                                     app.in_flight.clear();
                                         // reset spinner state
                                     needs_redraw = true;

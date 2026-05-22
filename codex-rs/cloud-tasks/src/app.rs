@@ -43,6 +43,27 @@ use crate::scrollable_diff::ScrollableDiff;
 use codex_cloud_tasks_client::CloudBackend;
 use codex_cloud_tasks_client::TaskId;
 use codex_cloud_tasks_client::TaskSummary;
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct BackgroundLoadGeneration {
+    current: u64,
+}
+
+impl BackgroundLoadGeneration {
+    pub fn current(self) -> u64 {
+        self.current
+    }
+
+    pub fn begin(&mut self) -> u64 {
+        self.current = self.current.saturating_add(1);
+        self.current
+    }
+
+    pub fn matches(self, generation: u64) -> bool {
+        self.current == generation
+    }
+}
+
 #[derive(Default)]
 pub struct App {
     pub tasks: Vec<TaskSummary>,
@@ -69,7 +90,7 @@ pub struct App {
     // Apply action spinner state
     pub apply_inflight: bool,
     // Background enrichment coordination
-    pub list_generation: u64,
+    pub list_generation: BackgroundLoadGeneration,
     pub in_flight: std::collections::HashSet<String>,
     // Background enrichment caches were planned; currently unused.
 }
@@ -96,7 +117,7 @@ impl App {
             best_of_n: 1,
             apply_preflight_inflight: false,
             apply_inflight: false,
-            list_generation: 0,
+            list_generation: BackgroundLoadGeneration::default(),
             in_flight: std::collections::HashSet::new(),
         }
     }
@@ -355,6 +376,26 @@ mod tests {
     use super::*;
     use chrono::Utc;
     use codex_cloud_tasks_client::CloudTaskError;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn background_generation_advances_and_matches_current_load() {
+        let mut generation = BackgroundLoadGeneration::default();
+
+        assert_eq!(generation.current(), 0);
+        assert!(!generation.matches(1));
+        assert_eq!(generation.begin(), 1);
+        assert!(generation.matches(1));
+        assert!(!generation.matches(0));
+    }
+
+    #[test]
+    fn background_generation_saturates_at_max_value() {
+        let mut generation = BackgroundLoadGeneration { current: u64::MAX };
+
+        assert_eq!(generation.begin(), u64::MAX);
+        assert!(generation.matches(u64::MAX));
+    }
 
     struct FakeBackend {
         // maps env key to titles
