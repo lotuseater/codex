@@ -21,12 +21,10 @@ use crate::config_types::ModeKind;
 use crate::config_types::Personality;
 use crate::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use crate::config_types::WindowsSandboxLevel;
-use crate::dynamic_tools::DynamicToolCallOutputContentItem;
 use crate::dynamic_tools::DynamicToolCallRequest;
 use crate::dynamic_tools::DynamicToolResponse;
 use crate::dynamic_tools::DynamicToolSpec;
 use crate::items::TurnItem;
-use crate::mcp::CallToolResult;
 use crate::mcp::RequestId;
 use crate::memory_citation::MemoryCitation;
 use crate::models::ActivePermissionProfile;
@@ -38,10 +36,8 @@ use crate::models::PermissionProfile;
 use crate::models::ResponseInputItem;
 use crate::models::ResponseItem;
 use crate::models::SandboxEnforcement;
-use crate::models::WebSearchAction;
 use crate::num_format::format_with_separators;
 use crate::openai_models::ReasoningEffort as ReasoningEffortConfig;
-use crate::parse_command::ParsedCommand;
 use crate::plan_tool::UpdatePlanArgs;
 use crate::request_permissions::RequestPermissionsEvent;
 use crate::request_permissions::RequestPermissionsResponse;
@@ -52,7 +48,6 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
-use serde_with::serde_as;
 use strum_macros::Display;
 use ts_rs::TS;
 
@@ -72,6 +67,25 @@ pub use crate::approvals::NetworkApprovalContext;
 pub use crate::approvals::NetworkApprovalProtocol;
 pub use crate::approvals::NetworkPolicyAmendment;
 pub use crate::approvals::NetworkPolicyRuleAction;
+mod exec_command;
+mod mcp_tool;
+mod review;
+
+pub use exec_command::{
+    ExecCommandBeginEvent, ExecCommandEndEvent, ExecCommandOutputDeltaEvent, ExecCommandSource,
+    ExecCommandStatus, ExecOutputStream, TerminalInteractionEvent, ViewImageToolCallEvent,
+};
+pub use mcp_tool::{
+    DynamicToolCallResponseEvent, ImageGenerationBeginEvent, ImageGenerationEndEvent, McpAuthStatus,
+    McpInvocation, McpStartupCompleteEvent, McpStartupFailure, McpStartupStatus,
+    McpStartupUpdateEvent, McpToolCallBeginEvent, McpToolCallEndEvent, WebSearchBeginEvent,
+    WebSearchEndEvent,
+};
+pub use review::{
+    ReviewCodeLocation, ReviewDelivery, ReviewFinding, ReviewLineRange, ReviewOutputEvent,
+    ReviewRequest, ReviewTarget,
+};
+
 pub use crate::permissions::FileSystemAccessMode;
 pub use crate::permissions::FileSystemPath;
 pub use crate::permissions::FileSystemSandboxEntry;
@@ -357,6 +371,14 @@ pub enum Op {
         /// Updated `cwd` for sandbox/tool calls.
         #[serde(skip_serializing_if = "Option::is_none")]
         cwd: Option<PathBuf>,
+
+        /// Updated runtime workspace roots for sandbox/tool calls.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        workspace_roots: Option<Vec<AbsolutePathBuf>>,
+
+        /// Updated workspace roots contributed by the selected permission profile.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        profile_workspace_roots: Option<Vec<AbsolutePathBuf>>,
 
         /// Updated command approval policy.
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -1816,105 +1838,6 @@ pub struct AgentReasoningSectionBreakEvent {
     pub summary_index: i64,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS, PartialEq)]
-pub struct McpInvocation {
-    /// Name of the MCP server as defined in the config.
-    pub server: String,
-    /// Name of the tool as given by the MCP server.
-    pub tool: String,
-    /// Arguments to the tool call.
-    pub arguments: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS, PartialEq)]
-pub struct McpToolCallBeginEvent {
-    /// Identifier so this can be paired with the McpToolCallEnd event.
-    pub call_id: String,
-    pub invocation: McpInvocation,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub mcp_app_resource_uri: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS, PartialEq)]
-pub struct McpToolCallEndEvent {
-    /// Identifier for the corresponding McpToolCallBegin that finished.
-    pub call_id: String,
-    pub invocation: McpInvocation,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub mcp_app_resource_uri: Option<String>,
-    #[ts(type = "string")]
-    pub duration: Duration,
-    /// Result of the tool call. Note this could be an error.
-    pub result: Result<CallToolResult, String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS, PartialEq)]
-pub struct DynamicToolCallResponseEvent {
-    /// Identifier for the corresponding DynamicToolCallRequest.
-    pub call_id: String,
-    /// Turn ID that this dynamic tool call belongs to.
-    pub turn_id: String,
-    #[serde(default)]
-    pub completed_at_ms: i64,
-    /// Dynamic tool namespace, when one was provided.
-    #[serde(default)]
-    pub namespace: Option<String>,
-    /// Dynamic tool name.
-    pub tool: String,
-    /// Dynamic tool call arguments.
-    pub arguments: serde_json::Value,
-    /// Dynamic tool response content items.
-    pub content_items: Vec<DynamicToolCallOutputContentItem>,
-    /// Whether the tool call succeeded.
-    pub success: bool,
-    /// Optional error text when the tool call failed before producing a response.
-    pub error: Option<String>,
-    /// The duration of the dynamic tool call.
-    #[ts(type = "string")]
-    pub duration: Duration,
-}
-
-impl McpToolCallEndEvent {
-    pub fn is_success(&self) -> bool {
-        match &self.result {
-            Ok(result) => !result.is_error.unwrap_or(false),
-            Err(_) => false,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
-pub struct WebSearchBeginEvent {
-    pub call_id: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
-pub struct WebSearchEndEvent {
-    pub call_id: String,
-    pub query: String,
-    pub action: WebSearchAction,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
-pub struct ImageGenerationBeginEvent {
-    pub call_id: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
-pub struct ImageGenerationEndEvent {
-    pub call_id: String,
-    pub status: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub revised_prompt: Option<String>,
-    pub result: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub saved_path: Option<AbsolutePathBuf>,
-}
-
 // Conversation kept for backward compatibility.
 /// Response payload for `Op::GetHistory` containing the current session's
 /// in-memory transcript.
@@ -2495,222 +2418,6 @@ pub struct GitInfo {
     pub repository_url: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum ReviewDelivery {
-    Inline,
-    Detached,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, TS)]
-#[serde(tag = "type", rename_all = "camelCase")]
-#[ts(tag = "type")]
-pub enum ReviewTarget {
-    /// Review the working tree: staged, unstaged, and untracked files.
-    UncommittedChanges,
-
-    /// Review changes between the current branch and the given base branch.
-    #[serde(rename_all = "camelCase")]
-    #[ts(rename_all = "camelCase")]
-    BaseBranch { branch: String },
-
-    /// Review the changes introduced by a specific commit.
-    #[serde(rename_all = "camelCase")]
-    #[ts(rename_all = "camelCase")]
-    Commit {
-        sha: String,
-        /// Optional human-readable label (e.g., commit subject) for UIs.
-        title: Option<String>,
-    },
-
-    /// Arbitrary instructions provided by the user.
-    #[serde(rename_all = "camelCase")]
-    #[ts(rename_all = "camelCase")]
-    Custom { instructions: String },
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
-/// Review request sent to the review session.
-pub struct ReviewRequest {
-    pub target: ReviewTarget,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub user_facing_hint: Option<String>,
-}
-
-/// Structured review result produced by a child review session.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
-pub struct ReviewOutputEvent {
-    pub findings: Vec<ReviewFinding>,
-    pub overall_correctness: String,
-    pub overall_explanation: String,
-    pub overall_confidence_score: f32,
-}
-
-impl Default for ReviewOutputEvent {
-    fn default() -> Self {
-        Self {
-            findings: Vec::new(),
-            overall_correctness: String::default(),
-            overall_explanation: String::default(),
-            overall_confidence_score: 0.0,
-        }
-    }
-}
-
-/// A single review finding describing an observed issue or recommendation.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
-pub struct ReviewFinding {
-    pub title: String,
-    pub body: String,
-    pub confidence_score: f32,
-    pub priority: i32,
-    pub code_location: ReviewCodeLocation,
-}
-
-/// Location of the code related to a review finding.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
-pub struct ReviewCodeLocation {
-    pub absolute_file_path: PathBuf,
-    pub line_range: ReviewLineRange,
-}
-
-/// Inclusive line range in a file associated with the finding.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
-pub struct ReviewLineRange {
-    pub start: u32,
-    pub end: u32,
-}
-
-#[derive(
-    Debug, Clone, Copy, Display, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS, Default,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum ExecCommandSource {
-    #[default]
-    Agent,
-    UserShell,
-    UnifiedExecStartup,
-    UnifiedExecInteraction,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum ExecCommandStatus {
-    Completed,
-    Failed,
-    Declined,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
-pub struct ExecCommandBeginEvent {
-    /// Identifier so this can be paired with the ExecCommandEnd event.
-    pub call_id: String,
-    /// Identifier for the underlying PTY process (when available).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub process_id: Option<String>,
-    /// Turn ID that this command belongs to.
-    pub turn_id: String,
-    #[serde(default)]
-    pub started_at_ms: i64,
-    /// The command to be executed.
-    pub command: Vec<String>,
-    /// The command's working directory if not the default cwd for the agent.
-    pub cwd: AbsolutePathBuf,
-    pub parsed_cmd: Vec<ParsedCommand>,
-    /// Where the command originated. Defaults to Agent for backward compatibility.
-    #[serde(default)]
-    pub source: ExecCommandSource,
-    /// Raw input sent to a unified exec session (if this is an interaction event).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub interaction_input: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
-pub struct ExecCommandEndEvent {
-    /// Identifier for the ExecCommandBegin that finished.
-    pub call_id: String,
-    /// Identifier for the underlying PTY process (when available).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub process_id: Option<String>,
-    /// Turn ID that this command belongs to.
-    pub turn_id: String,
-    #[serde(default)]
-    pub completed_at_ms: i64,
-    /// The command that was executed.
-    pub command: Vec<String>,
-    /// The command's working directory if not the default cwd for the agent.
-    pub cwd: AbsolutePathBuf,
-    pub parsed_cmd: Vec<ParsedCommand>,
-    /// Where the command originated. Defaults to Agent for backward compatibility.
-    #[serde(default)]
-    pub source: ExecCommandSource,
-    /// Raw input sent to a unified exec session (if this is an interaction event).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub interaction_input: Option<String>,
-
-    /// Captured stdout
-    pub stdout: String,
-    /// Captured stderr
-    pub stderr: String,
-    /// Captured aggregated output
-    #[serde(default)]
-    pub aggregated_output: String,
-    /// The command's exit code.
-    pub exit_code: i32,
-    /// The duration of the command execution.
-    #[ts(type = "string")]
-    pub duration: Duration,
-    /// Formatted output from the command, as seen by the model.
-    pub formatted_output: String,
-    /// Completion status for this command execution.
-    pub status: ExecCommandStatus,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
-pub struct ViewImageToolCallEvent {
-    /// Identifier for the originating tool call.
-    pub call_id: String,
-    /// Local filesystem path provided to the tool.
-    pub path: AbsolutePathBuf,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum ExecOutputStream {
-    Stdout,
-    Stderr,
-}
-
-#[serde_as]
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
-pub struct ExecCommandOutputDeltaEvent {
-    /// Identifier for the ExecCommandBegin that produced this chunk.
-    pub call_id: String,
-    /// Which stream produced this chunk.
-    pub stream: ExecOutputStream,
-    /// Raw bytes from the stream (may not be valid UTF-8).
-    #[serde_as(as = "serde_with::base64::Base64")]
-    #[schemars(with = "String")]
-    #[ts(type = "string")]
-    pub chunk: Vec<u8>,
-}
-
-#[serde_as]
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
-pub struct TerminalInteractionEvent {
-    /// Identifier for the ExecCommandBegin that produced this chunk.
-    pub call_id: String,
-    /// Process id associated with the running command.
-    pub process_id: String,
-    /// Stdin sent to the running session.
-    pub stdin: String,
-}
-
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct DeprecationNoticeEvent {
     /// Concise summary of what is deprecated.
@@ -2797,59 +2504,6 @@ pub enum PatchApplyStatus {
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct TurnDiffEvent {
     pub unified_diff: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
-pub struct McpStartupUpdateEvent {
-    /// Server name being started.
-    pub server: String,
-    /// Current startup status.
-    pub status: McpStartupStatus,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
-#[serde(rename_all = "snake_case", tag = "state")]
-#[ts(rename_all = "snake_case", tag = "state")]
-pub enum McpStartupStatus {
-    Starting,
-    Ready,
-    Failed { error: String },
-    Cancelled,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS, Default)]
-pub struct McpStartupCompleteEvent {
-    pub ready: Vec<String>,
-    pub failed: Vec<McpStartupFailure>,
-    pub cancelled: Vec<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
-pub struct McpStartupFailure {
-    pub server: String,
-    pub error: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
-#[serde(rename_all = "snake_case")]
-#[ts(rename_all = "snake_case")]
-pub enum McpAuthStatus {
-    Unsupported,
-    NotLoggedIn,
-    BearerToken,
-    OAuth,
-}
-
-impl fmt::Display for McpAuthStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let text = match self {
-            McpAuthStatus::Unsupported => "Unsupported",
-            McpAuthStatus::NotLoggedIn => "Not logged in",
-            McpAuthStatus::BearerToken => "Bearer token",
-            McpAuthStatus::OAuth => "OAuth",
-        };
-        f.write_str(text)
-    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
@@ -3576,6 +3230,7 @@ mod tests {
     use crate::items::UserMessageItem;
     use crate::items::WebSearchItem;
     use crate::mcp::CallToolResult;
+    use crate::models::WebSearchAction;
     use crate::permissions::FileSystemAccessMode;
     use crate::permissions::FileSystemPath;
     use crate::permissions::FileSystemSandboxEntry;
