@@ -8,6 +8,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
+use codex_session_api::SessionDescriptor;
 use codex_session_api::SessionIdentity;
 use codex_session_api::SessionLifecycleState;
 use codex_session_events::SessionEvent;
@@ -15,6 +16,15 @@ use codex_session_input::SessionInput;
 use serde::Deserialize;
 use serde::Serialize;
 use thiserror::Error;
+
+mod lifecycle;
+
+pub use lifecycle::BackgroundTaskLifecycle;
+pub use lifecycle::BackgroundTaskState;
+pub use lifecycle::BackgroundTaskTransition;
+pub use lifecycle::SessionLifecycleTransition;
+pub use lifecycle::SessionRuntimeCommandDecision;
+pub use lifecycle::SessionRuntimeLifecycle;
 
 /// Boxed future returned by session runtime abstractions.
 pub type SessionRuntimeFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -44,6 +54,21 @@ impl SessionRuntimeStatus {
             identity,
             lifecycle,
         }
+    }
+
+    /// Returns this status as a session descriptor.
+    pub fn descriptor(&self) -> SessionDescriptor {
+        SessionDescriptor::new(self.identity.clone(), self.lifecycle)
+    }
+
+    /// Returns true when the runtime can accept new input.
+    pub fn accepts_input(&self) -> bool {
+        self.lifecycle.accepts_input()
+    }
+
+    /// Returns true when the runtime reached a terminal state.
+    pub fn is_terminal(&self) -> bool {
+        self.lifecycle.is_terminal()
     }
 }
 
