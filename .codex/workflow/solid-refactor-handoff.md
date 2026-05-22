@@ -1247,3 +1247,19 @@ This checkpoint supersedes older duplicate "missing handoff" notes above.
   - `codex-workers -DryRun -Pattern "solid_refactor_wave21_core_lib_fallout_repair_worker.prompt.md"`
     exited 0.
   - Launched visible worker with PID `21812`.
+
+## Wave 21 Stream Error Repair Handoff - 2026-05-22 06:17 Europe/Kyiv
+
+- accepted:
+  `solid_refactor_wave21_stream_error_duplicate_repair_worker.handoff.md`.
+  - Removed the duplicate `suite/stream_error_allows_next_turn.rs` include
+    from `codex-rs/core/tests/client_stream.rs`.
+  - `client_stream.rs` now only includes `suite/cli_stream.rs`.
+  - Focused wrapper `codex-rs/core/tests/stream_error_allows_next_turn.rs`
+    still owns `suite/stream_error_allows_next_turn.rs`.
+  - Worker reports `rg` and `git diff --check` passed.
+  - Source commit remains deferred because `client_stream.rs` is part of
+    existing untracked/mixed split-test work; root should not bundle it into a
+    handoff-only commit.
+- `solid_refactor_wave21_core_lib_fallout_repair_worker` remains active with
+  PID `21812`; handoff not present at this checkpoint.
