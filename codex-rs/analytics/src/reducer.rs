@@ -1230,7 +1230,10 @@ impl AnalyticsReducer {
         initialization_mode: ThreadInitializationMode,
         out: &mut Vec<TrackEventRequest>,
     ) {
-        let session_source: SessionSource = thread.source.into();
+        let session_source: SessionSource = thread
+            .source
+            .try_into()
+            .unwrap_or(SessionSource::Unknown);
         let thread_id = thread.id;
         let Some(connection_state) = self.connections.get(&connection_id) else {
             return;
