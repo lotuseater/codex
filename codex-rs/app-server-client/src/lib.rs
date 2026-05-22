@@ -15,7 +15,9 @@
 //! bridging async `mpsc` channels on both sides. Queues are bounded so overload
 //! surfaces as channel-full errors rather than unbounded memory growth.
 
+pub mod legacy_core;
 mod remote;
+mod request_method;
 
 use std::error::Error;
 use std::fmt;
@@ -42,6 +44,7 @@ use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::Result as JsonRpcResult;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
+use codex_app_server_protocol::SessionSource;
 use codex_arg0::Arg0DispatchPaths;
 use codex_config::CloudRequirementsLoader;
 use codex_config::LoaderOverrides;
@@ -51,7 +54,6 @@ use codex_core::config::Config;
 pub use codex_exec_server::EnvironmentManager;
 pub use codex_exec_server::ExecServerRuntimePaths;
 use codex_feedback::CodexFeedback;
-use codex_protocol::protocol::SessionSource;
 use codex_thread_config_remote::RemoteThreadConfigLoader;
 use serde::de::DeserializeOwned;
 use tokio::sync::mpsc;
@@ -63,61 +65,7 @@ use tracing::warn;
 pub use crate::remote::RemoteAppServerClient;
 pub use crate::remote::RemoteAppServerConnectArgs;
 pub use crate::remote::RemoteAppServerEndpoint;
-
-/// Transitional access to core-only embedded app-server types.
-///
-/// New TUI behavior should prefer the app-server protocol methods. This
-/// module exists so clients can remove a direct `codex-core` dependency
-/// while legacy startup/config paths are migrated to RPCs.
-pub mod legacy_core {
-    pub use codex_core::DEFAULT_AGENTS_MD_FILENAME;
-    pub use codex_core::LOCAL_AGENTS_MD_FILENAME;
-    pub use codex_core::McpManager;
-    pub use codex_core::check_execpolicy_for_warnings;
-    pub use codex_core::format_exec_policy_error_with_source;
-    pub use codex_core::grant_read_root_non_elevated;
-    pub use codex_core::web_search_detail;
-
-    pub mod config {
-        pub use codex_core::config::*;
-
-        pub mod edit {
-            pub use codex_config::edit::*;
-        }
-    }
-
-    pub mod connectors {
-        pub use codex_core::connectors::*;
-    }
-
-    pub mod otel_init {
-        pub use codex_core::otel_init::*;
-    }
-
-    pub mod personality_migration {
-        pub use codex_core::personality_migration::*;
-    }
-
-    pub mod review_format {
-        pub use codex_core::review_format::*;
-    }
-
-    pub mod review_prompts {
-        pub use codex_core::review_prompts::*;
-    }
-
-    pub mod test_support {
-        pub use codex_core::test_support::*;
-    }
-
-    pub mod util {
-        pub use codex_core::util::*;
-    }
-
-    pub mod windows_sandbox {
-        pub use codex_core::windows_sandbox::*;
-    }
-}
+pub(crate) use request_method::request_method_name;
 
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -924,20 +872,6 @@ impl AppServerClient {
             Self::Remote(client) => AppServerRequestHandle::Remote(client.request_handle()),
         }
     }
-}
-
-/// Extracts the JSON-RPC method name for diagnostics without extending the
-/// protocol crate with in-process-only helpers.
-pub(crate) fn request_method_name(request: &ClientRequest) -> String {
-    serde_json::to_value(request)
-        .ok()
-        .and_then(|value| {
-            value
-                .get("method")
-                .and_then(serde_json::Value::as_str)
-                .map(ToOwned::to_owned)
-        })
-        .unwrap_or_else(|| "<unknown>".to_string())
 }
 
 #[cfg(test)]
