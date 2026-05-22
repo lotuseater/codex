@@ -10,6 +10,22 @@ use codex_protocol::SessionId;
 use serde::Deserialize;
 use serde::Serialize;
 
+/// Settings from the previously completed turn that influence the next turn.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PreviousTurnSettings {
+    pub model: String,
+    pub realtime_active: Option<bool>,
+}
+
+impl PreviousTurnSettings {
+    pub fn new(model: String, realtime_active: Option<bool>) -> Self {
+        Self {
+            model,
+            realtime_active,
+        }
+    }
+}
+
 /// Stable identity for a Codex session.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct SessionIdentity {
@@ -32,6 +48,18 @@ pub enum SessionLifecycleState {
     Draining,
     Completed,
     Failed,
+}
+
+impl SessionLifecycleState {
+    /// Returns true when the session can accept new input.
+    pub fn accepts_input(self) -> bool {
+        matches!(self, Self::Created | Self::Active)
+    }
+
+    /// Returns true when the session has reached a terminal state.
+    pub fn is_terminal(self) -> bool {
+        matches!(self, Self::Completed | Self::Failed)
+    }
 }
 
 /// Identity plus lifecycle information for callers that only need a summary.
