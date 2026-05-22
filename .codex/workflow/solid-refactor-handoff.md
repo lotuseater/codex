@@ -1235,3 +1235,15 @@ This checkpoint supersedes older duplicate "missing handoff" notes above.
   - `codex-workers -DryRun -Pattern "solid_refactor_wave21_stream_error_duplicate_repair_worker.prompt.md"`
     exited 0.
   - Launched visible worker with PID `10164`.
+- Self-review fallout routed:
+  - Root added direct `codex-file-system` and `codex-session-state`
+    dependencies to `codex-rs/core/Cargo.toml` because current source imports
+    `codex_file_system::LOCAL_FS` and
+    `codex_session_state::PreviousTurnSettings`.
+  - `solid_refactor_wave21_core_lib_fallout_repair_worker.prompt.md` owns the
+    remaining source fallout from `logs/wave19-codex-core-lib-check.log`:
+    missing `ToolsConfig` / `ToolsConfigParams` imports and stale
+    multi-agent `ToolOutput` method signatures.
+  - `codex-workers -DryRun -Pattern "solid_refactor_wave21_core_lib_fallout_repair_worker.prompt.md"`
+    exited 0.
+  - Launched visible worker with PID `21812`.
