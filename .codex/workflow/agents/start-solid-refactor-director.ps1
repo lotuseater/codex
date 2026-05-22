@@ -15,6 +15,7 @@ param(
     [string]$ResumeSessionId,
     [string]$ResumeReminder = "Resume reminder: reread .codex\workflow\solid-refactor-overseer-memo.md, .codex\workflow\solid-refactor-handoff.md, docs\current-project-architecture-solid-refactor-plan.md, docs\current-project-architecture-solid-review.md, and fresh worker handoffs. Continue as director only: spawn real separate visible worker windows via codex-workers, no broad builds/tests/schema/formatters/Bazel/lock/release until architecture refactor is complete, and no broad self-review. Maybe you spawned too few sessions for current broad work; think of more possible subtasks and spawn a broader worker wave according to your handoff.",
     [switch]$NoResumeReminder,
+    [int]$ResumeReminderDelaySeconds = 45,
     [switch]$DryRun,
     [switch]$NoStopExisting
 )
@@ -82,9 +83,17 @@ $PowerShellCommand = Resolve-ExecutablePath $PowerShellCommand "powershell.exe"
 $runScript = Resolve-FullPath (Join-Path $PSScriptRoot "run-solid-refactor-director.ps1")
 $stopScript = Resolve-FullPath (Join-Path $PSScriptRoot "stop-solid-refactor-director.ps1")
 
-if ($Mode -eq "Resume" -and -not $ResumeSessionId -and (Test-Path -LiteralPath $StatePath)) {
+$existingState = $null
+if (Test-Path -LiteralPath $StatePath) {
     try {
         $existingState = Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json
+    } catch {
+        $existingState = $null
+    }
+}
+
+if ($Mode -eq "Resume" -and -not $ResumeSessionId -and $existingState) {
+    try {
         if ($existingState.sessionId) {
             $ResumeSessionId = [string]$existingState.sessionId
         } elseif ($existingState.sessionPath) {
@@ -161,6 +170,7 @@ $process = Start-Process -FilePath $PowerShellCommand -ArgumentList $argumentLis
     logPath = $LogPath
     markerPath = $MarkerPath
     sessionId = $(if ($ResumeSessionId) { $ResumeSessionId } else { $null })
+    sessionPath = $(if ($existingState -and $existingState.sessionPath) { [string]$existingState.sessionPath } else { $null })
     startedAt = (Get-Date).ToString("o")
 } | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $StatePath -Encoding UTF8
 
@@ -168,7 +178,7 @@ $process = Start-Process -FilePath $PowerShellCommand -ArgumentList $argumentLis
     Set-Content -LiteralPath $MarkerPath -Encoding UTF8
 
 $targetWindow = $null
-if ($Mode -eq "Start" -or ($Mode -eq "Resume" -and -not $NoResumeReminder)) {
+if ($Mode -eq "Start" -or $Mode -eq "Resume") {
     Start-Sleep -Seconds $InitialPromptDelaySeconds
     $targetWindow = Wait-SolidTerminalWindow -Title $directorTitle -RootPid $process.Id -BaselineHandles $baselineHandles -WaitMs $InitialPromptWaitMs
     $windowHandle = 0
@@ -179,10 +189,18 @@ if ($Mode -eq "Start" -or ($Mode -eq "Resume" -and -not $NoResumeReminder)) {
 
     if ($Mode -eq "Start") {
         $prompt = Get-Content -LiteralPath $PromptPath -Raw
-    } else {
-        $prompt = $ResumeReminder
+        Invoke-SolidTerminalPasteEnter -Message $prompt -Title $directorTitle -RootPid $process.Id -WindowHandle $windowHandle -WaitMs $InitialPromptWaitMs -SubmitDelayMs $InitialPromptSubmitDelayMs -SubmitRepeat $InitialPromptSubmitRepeat | Out-Null
+    } elseif (-not $NoResumeReminder) {
+        if ($ResumeReminderDelaySeconds -gt 0) {
+            Start-Sleep -Seconds $ResumeReminderDelaySeconds
+        }
+
+        $prompt = (Get-Content -LiteralPath $PromptPath -Raw).TrimEnd()
+        if ($ResumeReminder) {
+            $prompt = $prompt + [Environment]::NewLine + [Environment]::NewLine + $ResumeReminder
+        }
+        Invoke-SolidTerminalPasteEnter -Message $prompt -Title $directorTitle -RootPid $process.Id -WindowHandle $windowHandle -WaitMs $InitialPromptWaitMs -SubmitDelayMs $InitialPromptSubmitDelayMs -SubmitRepeat $InitialPromptSubmitRepeat | Out-Null
     }
-    Invoke-SolidTerminalPasteEnter -Message $prompt -Title $directorTitle -RootPid $process.Id -WindowHandle $windowHandle -WaitMs $InitialPromptWaitMs -SubmitDelayMs $InitialPromptSubmitDelayMs -SubmitRepeat $InitialPromptSubmitRepeat | Out-Null
 }
 
 [pscustomobject]@{
