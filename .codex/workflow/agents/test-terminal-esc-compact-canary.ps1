@@ -33,7 +33,7 @@ try {
     ) -PassThru -WindowStyle Normal
 
     Start-Sleep -Milliseconds 800
-    Invoke-SolidTerminalSendKeys -Keys "{ESC}" -Title $title -RootPid $process.Id -WaitMs $TimeoutMs | Out-Null
+    Invoke-SolidTerminalSendKeys -Keys "{ESCAPE}" -Title $title -RootPid $process.Id -WaitMs $TimeoutMs | Out-Null
     Start-Sleep -Milliseconds 300
     Invoke-SolidTerminalPasteEnter -Message "/compact" -Title $title -RootPid $process.Id -WaitMs $TimeoutMs -SubmitRepeat 3 | Out-Null
 

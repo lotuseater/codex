@@ -59,7 +59,7 @@ $argumentList = @(
 $process = Start-Process -FilePath $pwsh -ArgumentList $argumentList -PassThru -WindowStyle Normal
 
 try {
-    $send = Invoke-SolidTerminalSendKeys -Keys "{ESC}" -Title $title -RootPid $process.Id -WaitMs $TimeoutMs
+    $send = Invoke-SolidTerminalSendKeys -Keys "{ESCAPE}" -Title $title -RootPid $process.Id -WaitMs $TimeoutMs
     $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMs)
     while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $resultPath)) {
         Start-Sleep -Milliseconds 50
