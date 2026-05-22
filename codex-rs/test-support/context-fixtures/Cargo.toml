@@ -1,0 +1,27 @@
+[package]
+name = "codex-test-support-context-fixtures"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
+doctest = false
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+codex-protocol = { workspace = true }
+codex-tool-execution-api = { workspace = true }
+codex-tool-registry-api = { workspace = true }
+codex-utils-absolute-path = { workspace = true }
+codex-utils-cargo-bin = { workspace = true }
+regex-lite = { workspace = true }
+serde_json = { workspace = true }
+similar = { workspace = true }
+tempfile = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
