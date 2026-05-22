@@ -2,18 +2,18 @@ use assert_matches::assert_matches;
 use std::sync::Arc;
 use std::time::Duration;
 
+use codex_core_test_runtime::responses::ev_completed;
+use codex_core_test_runtime::responses::ev_function_call;
+use codex_core_test_runtime::responses::ev_response_created;
+use codex_core_test_runtime::responses::mount_sse_once;
+use codex_core_test_runtime::responses::mount_sse_sequence;
+use codex_core_test_runtime::responses::sse;
+use codex_core_test_runtime::responses::start_mock_server;
+use codex_core_test_runtime::test_codex::test_codex;
+use codex_core_test_runtime::wait_for_event;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
 use codex_protocol::user_input::UserInput;
-use core_test_support::responses::ev_completed;
-use core_test_support::responses::ev_function_call;
-use core_test_support::responses::ev_response_created;
-use core_test_support::responses::mount_sse_once;
-use core_test_support::responses::mount_sse_sequence;
-use core_test_support::responses::sse;
-use core_test_support::responses::start_mock_server;
-use core_test_support::test_codex::test_codex;
-use core_test_support::wait_for_event;
 use regex_lite::Regex;
 use serde_json::json;
 
@@ -53,7 +53,6 @@ async fn interrupt_long_running_tool_emits_turn_aborted() {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
-            thread_settings: Default::default(),
         })
         .await
         .unwrap();
@@ -110,7 +109,6 @@ async fn interrupt_tool_records_history_entries() {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
-            thread_settings: Default::default(),
         })
         .await
         .unwrap();
@@ -131,7 +129,6 @@ async fn interrupt_tool_records_history_entries() {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
-            thread_settings: Default::default(),
         })
         .await
         .unwrap();
@@ -214,7 +211,6 @@ async fn interrupt_persists_turn_aborted_marker_in_next_request() {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
-            thread_settings: Default::default(),
         })
         .await
         .unwrap();
@@ -235,7 +231,6 @@ async fn interrupt_persists_turn_aborted_marker_in_next_request() {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
-            thread_settings: Default::default(),
         })
         .await
         .unwrap();

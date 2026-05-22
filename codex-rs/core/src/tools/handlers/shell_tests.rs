@@ -2,8 +2,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use codex_protocol::models::ShellCommandToolCallParams;
-use core_test_support::PathBufExt;
-use core_test_support::test_path_buf;
+use codex_test_support_lightweight::PathBufExt;
+use codex_test_support_lightweight::test_path_buf;
 use pretty_assertions::assert_eq;
 
 use crate::exec_env::create_env;
@@ -13,7 +13,6 @@ use crate::shell::Shell;
 use crate::shell::ShellType;
 use crate::shell_snapshot::ShellSnapshot;
 use crate::tools::context::FunctionToolOutput;
-use crate::tools::context::ToolCallSource;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::handlers::ShellCommandHandler;
@@ -23,6 +22,7 @@ use crate::turn_diff_tracker::TurnDiffTracker;
 use codex_shell_command::is_safe_command::is_known_safe_command;
 use codex_shell_command::powershell::try_find_powershell_executable_blocking;
 use codex_shell_command::powershell::try_find_pwsh_executable_blocking;
+use codex_tool_execution_api::ToolCallSource;
 use serde_json::json;
 use tempfile::TempDir;
 use tokio::sync::Mutex;
@@ -233,7 +233,8 @@ async fn shell_command_pre_tool_use_payload_uses_raw_command() {
         arguments: json!({ "command": "printf shell command" }).to_string(),
     };
     let (session, turn) = make_session_and_context().await;
-    let handler = ShellCommandHandler::from(codex_tools::ShellCommandBackendConfig::Classic);
+    let handler =
+        ShellCommandHandler::from(codex_tool_execution_api::ShellCommandBackendConfig::Classic);
 
     assert_eq!(
         handler.pre_tool_use_payload(&ToolInvocation {
@@ -242,8 +243,8 @@ async fn shell_command_pre_tool_use_payload_uses_raw_command() {
             cancellation_token: tokio_util::sync::CancellationToken::new(),
             tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
             call_id: "call-42".to_string(),
-            tool_name: codex_tools::ToolName::plain("shell_command"),
-            source: crate::tools::context::ToolCallSource::Direct,
+            tool_name: codex_tool_execution_api::ToolName::plain("shell_command"),
+            source: codex_tool_execution_api::ToolCallSource::Direct,
             payload,
         }),
         Some(crate::tools::registry::PreToolUsePayload {
@@ -263,7 +264,8 @@ async fn build_post_tool_use_payload_uses_tool_output_wire_value() {
         success: Some(true),
         post_tool_use_response: Some(json!("shell output")),
     };
-    let handler = ShellCommandHandler::from(codex_tools::ShellCommandBackendConfig::Classic);
+    let handler =
+        ShellCommandHandler::from(codex_tool_execution_api::ShellCommandBackendConfig::Classic);
     let (session, turn) = make_session_and_context().await;
     let invocation = ToolInvocation {
         session: session.into(),
@@ -271,7 +273,7 @@ async fn build_post_tool_use_payload_uses_tool_output_wire_value() {
         cancellation_token: tokio_util::sync::CancellationToken::new(),
         tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
         call_id: "call-42".to_string(),
-        tool_name: codex_tools::ToolName::plain("shell_command"),
+        tool_name: codex_tool_execution_api::ToolName::plain("shell_command"),
         source: ToolCallSource::Direct,
         payload,
     };

@@ -8,7 +8,7 @@ use codex_tool_registry_api::REPO_CONTEXT_SCOUT_TOOL_NAME;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::function_tool::FunctionCallError;
+use codex_tool_execution_api::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;

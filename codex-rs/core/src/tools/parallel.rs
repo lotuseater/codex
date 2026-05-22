@@ -12,7 +12,7 @@ use tracing::Instrument;
 use tracing::instrument;
 use tracing::trace_span;
 
-use crate::function_tool::FunctionCallError;
+use codex_tool_execution_api::FunctionCallError;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use crate::tools::context::AbortedToolOutput;
@@ -22,10 +22,10 @@ use crate::tools::lifecycle::notify_tool_aborted;
 use crate::tools::registry::AnyToolResult;
 use crate::tools::registry::ToolArgumentDiffConsumer;
 use crate::tools::router::ToolCall;
-use crate::tools::router::ToolCallSource;
 use crate::tools::router::ToolRouter;
 use codex_protocol::error::CodexErr;
 use codex_protocol::models::ResponseInputItem;
+use codex_tool_execution_api::ToolCallSource;
 
 #[derive(Clone)]
 pub(crate) struct ToolCallRuntime {
@@ -54,7 +54,7 @@ impl ToolCallRuntime {
 
     pub(crate) fn create_diff_consumer(
         &self,
-        tool_name: &codex_tools::ToolName,
+        tool_name: &codex_tool_execution_api::ToolName,
     ) -> Option<Box<dyn ToolArgumentDiffConsumer>> {
         self.router.create_diff_consumer(tool_name)
     }
@@ -242,13 +242,13 @@ mod tests {
     use tokio::sync::oneshot;
 
     struct ImmediateHandler {
-        tool_name: codex_tools::ToolName,
+        tool_name: codex_tool_execution_api::ToolName,
     }
 
     impl ToolExecutor<ToolInvocation> for ImmediateHandler {
         type Output = Box<dyn crate::tools::context::ToolOutput>;
 
-        fn tool_name(&self) -> codex_tools::ToolName {
+        fn tool_name(&self) -> codex_tool_execution_api::ToolName {
             self.tool_name.clone()
         }
 
@@ -315,7 +315,7 @@ mod tests {
 
         let session = Arc::new(session);
         let turn_context = Arc::new(turn_context);
-        let tool_name = codex_tools::ToolName::plain("test_tool");
+        let tool_name = codex_tool_execution_api::ToolName::plain("test_tool");
         let handler = Arc::new(ImmediateHandler {
             tool_name: tool_name.clone(),
         }) as Arc<dyn RegisteredTool>;

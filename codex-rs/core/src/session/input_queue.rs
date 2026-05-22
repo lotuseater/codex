@@ -15,10 +15,16 @@ pub(crate) enum TurnInput {
     ResponseInputItem(ResponseInputItem),
 }
 
+impl From<ResponseInputItem> for TurnInput {
+    fn from(item: ResponseInputItem) -> Self {
+        Self::ResponseInputItem(item)
+    }
+}
+
 /// Turn-local pending input storage owned by the input queue flow.
 #[derive(Default)]
 pub(crate) struct TurnInputQueue {
-    items: Vec<TurnInput>,
+    pub(crate) items: Vec<TurnInput>,
 }
 
 /// Session-scoped pending input storage and active-turn mailbox delivery coordination.

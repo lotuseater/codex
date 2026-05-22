@@ -11,7 +11,7 @@ use codex_utils_image::PromptImageMode;
 use codex_utils_image::load_for_prompt_bytes;
 use serde::Deserialize;
 
-use crate::function_tool::FunctionCallError;
+use codex_tool_execution_api::FunctionCallError;
 use crate::original_image_detail::can_request_original_image_detail;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
@@ -23,8 +23,9 @@ use crate::tools::handlers::view_image_spec::ViewImageToolOptions;
 use crate::tools::handlers::view_image_spec::create_view_image_tool;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
-use codex_tools::ToolName;
-use codex_tools::ToolSpec;
+use codex_tool_execution_api::ToolName;
+use codex_tool_execution_api::ToolOutputPayload;
+use codex_tool_registry_api::ToolSpec;
 
 pub struct ViewImageHandler {
     options: ViewImageToolOptions,
@@ -221,7 +222,11 @@ impl ToolOutput for ViewImageOutput {
         true
     }
 
-    fn to_response_item(&self, call_id: &str, _payload: &ToolPayload) -> ResponseInputItem {
+    fn to_response_item(
+        &self,
+        call_id: &str,
+        _payload: &dyn ToolOutputPayload,
+    ) -> ResponseInputItem {
         let body =
             FunctionCallOutputBody::ContentItems(vec![FunctionCallOutputContentItem::InputImage {
                 image_url: self.image_url.clone(),
@@ -238,7 +243,7 @@ impl ToolOutput for ViewImageOutput {
         }
     }
 
-    fn code_mode_result(&self, _payload: &ToolPayload) -> serde_json::Value {
+    fn code_mode_result(&self, _payload: &dyn ToolOutputPayload) -> serde_json::Value {
         serde_json::json!({
             "image_url": self.image_url,
             "detail": self.image_detail
@@ -250,11 +255,11 @@ impl ToolOutput for ViewImageOutput {
 mod tests {
     use super::*;
     use crate::session::tests::make_session_and_context;
-    use crate::tools::context::ToolCallSource;
     use crate::tools::context::ToolInvocation;
     use crate::turn_diff_tracker::TurnDiffTracker;
     use codex_protocol::models::PermissionProfile;
-    use core_test_support::TempDirExt;
+    use codex_test_support_lightweight::TempDirExt;
+    use codex_tool_execution_api::ToolCallSource;
     use pretty_assertions::assert_eq;
     use serde_json::json;
     use std::sync::Arc;
@@ -302,7 +307,7 @@ mod tests {
                 cancellation_token: tokio_util::sync::CancellationToken::new(),
                 tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
                 call_id: "call-view-image".to_string(),
-                tool_name: codex_tools::ToolName::plain("view_image"),
+                tool_name: codex_tool_execution_api::ToolName::plain("view_image"),
                 source: ToolCallSource::Direct,
                 payload: ToolPayload::Function {
                     arguments: json!({ "path": "image.png" }).to_string(),
@@ -330,7 +335,7 @@ mod tests {
                 cancellation_token: tokio_util::sync::CancellationToken::new(),
                 tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
                 call_id: "call-view-image".to_string(),
-                tool_name: codex_tools::ToolName::plain("view_image"),
+                tool_name: codex_tool_execution_api::ToolName::plain("view_image"),
                 source: ToolCallSource::Direct,
                 payload: ToolPayload::Function {
                     arguments: json!({ "path": "image.png", "detail": "low" }).to_string(),
@@ -369,7 +374,7 @@ mod tests {
                 cancellation_token: tokio_util::sync::CancellationToken::new(),
                 tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
                 call_id: "call-view-image".to_string(),
-                tool_name: codex_tools::ToolName::plain("view_image"),
+                tool_name: codex_tool_execution_api::ToolName::plain("view_image"),
                 source: ToolCallSource::Direct,
                 payload: ToolPayload::Function {
                     arguments: json!({ "path": "image.png", "detail": "high" }).to_string(),

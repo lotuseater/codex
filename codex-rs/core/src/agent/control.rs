@@ -1,10 +1,13 @@
 use crate::agent::AgentStatus;
+use crate::agent::graph_store::list_open_thread_spawn_children;
+use crate::agent::graph_store::mark_thread_spawn_edge_closed;
+use crate::agent::graph_store::persist_open_thread_spawn_edge;
 use crate::agent::registry::AgentMetadata;
 use crate::agent::registry::AgentRegistry;
 use crate::agent::role::DEFAULT_ROLE_NAME;
 use crate::agent::role::resolve_role_config;
 use crate::agent::status::is_final;
-use crate::codex_thread::CodexThreadTurnContextOverrides;
+use crate::codex_thread::CodexThreadSettingsOverrides;
 use crate::codex_thread::ThreadConfigSnapshot;
 use crate::session::emit_subagent_session_started;
 use crate::session_prefix::format_subagent_context_line;
@@ -33,7 +36,6 @@ use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::protocol::ThreadSource;
 use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::user_input::UserInput;
-use codex_state::DirectionalThreadSpawnEdgeStatus;
 use codex_thread_store_api::ReadThreadParams;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -523,11 +525,7 @@ impl AgentControl {
 
         let mut resume_queue = VecDeque::from([(thread_id, root_depth)]);
         while let Some((parent_thread_id, parent_depth)) = resume_queue.pop_front() {
-            let child_ids = match state_db_ctx
-                .list_thread_spawn_children_with_status(
-                    parent_thread_id,
-                    DirectionalThreadSpawnEdgeStatus::Open,
-                )
+            let child_ids = match list_open_thread_spawn_children(&state_db_ctx, parent_thread_id)
                 .await
             {
                 Ok(child_ids) => child_ids,
@@ -540,7 +538,7 @@ impl AgentControl {
             };
 
             for child_thread_id in child_ids {
-                let child_depth = parent_depth + 1;
+                let child_depth = crate::agent::policy::next_thread_spawn_depth(parent_depth);
                 let child_resumed = if state.get_thread(child_thread_id).await.is_ok() {
                     true
                 } else {
@@ -757,7 +755,7 @@ impl AgentControl {
         let thread = state.get_thread(agent_id).await?;
         let effort = reasoning_effort.map(Some);
         thread
-            .validate_turn_context_overrides(CodexThreadTurnContextOverrides {
+            .validate_turn_context_overrides(CodexThreadSettingsOverrides {
                 model: model.clone(),
                 effort,
                 ..Default::default()
@@ -849,9 +847,7 @@ impl AgentControl {
         let state = self.upgrade()?;
         if let Ok(thread) = state.get_thread(agent_id).await
             && let Some(state_db_ctx) = thread.state_db()
-            && let Err(err) = state_db_ctx
-                .set_thread_spawn_edge_status(agent_id, DirectionalThreadSpawnEdgeStatus::Closed)
-                .await
+            && let Err(err) = mark_thread_spawn_edge_closed(&state_db_ctx, agent_id).await
         {
             warn!("failed to persist thread-spawn edge status for {agent_id}: {err}");
         }
@@ -1279,13 +1275,8 @@ impl AgentControl {
         let Some(state_db_ctx) = thread.state_db() else {
             return;
         };
-        if let Err(err) = state_db_ctx
-            .upsert_thread_spawn_edge(
-                parent_thread_id,
-                child_thread_id,
-                DirectionalThreadSpawnEdgeStatus::Open,
-            )
-            .await
+        if let Err(err) =
+            persist_open_thread_spawn_edge(&state_db_ctx, parent_thread_id, child_thread_id).await
         {
             warn!("failed to persist thread-spawn edge: {err}");
         }

@@ -1,6 +1,6 @@
 use super::*;
-use core_test_support::PathBufExt;
-use core_test_support::PathExt;
+use codex_test_support_lightweight::PathBufExt;
+use codex_test_support_lightweight::PathExt;
 use pretty_assertions::assert_eq;
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;

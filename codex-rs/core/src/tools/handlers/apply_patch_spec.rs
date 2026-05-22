@@ -1,6 +1,6 @@
-use codex_tool_registry_api::ToolSpec;
 use codex_tool_registry_api::FreeformTool;
 use codex_tool_registry_api::FreeformToolFormat;
+use codex_tool_registry_api::ToolSpec;
 
 const APPLY_PATCH_LARK_GRAMMAR: &str = include_str!("apply_patch.lark");
 

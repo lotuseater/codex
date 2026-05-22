@@ -1,18 +1,18 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use codex_context_pack::ContextPackRequest;
-use codex_context_pack::has_context_pack;
-use codex_context_pack::is_explicit_repo_routing_prompt;
-use codex_context_pack::render_graphify_scout_pack;
 use codex_first_moves::FirstMovesConfig;
 use codex_first_moves::PredictRequest;
 use codex_first_moves::format_first_moves_context;
 use codex_first_moves::is_legacy_first_moves_context;
 use codex_first_moves::is_whole_repo_exploration_prompt;
 use codex_first_moves::predict;
-use codex_memories_context::ProjectProblemMemoryContextRequest;
-use codex_memories_context::build_project_problem_memory_context;
+use codex_prompt_context::ContextPackMarker;
+use codex_prompt_context::ContextPackRenderer;
+use codex_prompt_context::ContextPackRequest;
+use codex_prompt_context::ProjectProblemContextProvider;
+use codex_prompt_context::ProjectProblemContextRequest;
+use codex_prompt_context::RepoRoutingClassifier;
 use codex_protocol::config_types::ContextBudgetMode;
 use codex_protocol::items::TurnItem;
 use codex_protocol::permissions::FileSystemSandboxKind;
@@ -20,10 +20,61 @@ use codex_repo_context_scout::ScoutCommandMode;
 use codex_repo_context_scout::ScoutRequest;
 use codex_repo_context_scout::ScoutTrigger;
 use codex_repo_context_scout::run_shadow;
+use codex_utils_absolute_path::AbsolutePathBuf;
 
 use crate::event_mapping::parse_turn_item;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
+
+struct GraphifyContextPackRenderer;
+
+impl ContextPackRenderer for GraphifyContextPackRenderer {
+    fn render_context_pack(&self, request: &ContextPackRequest<'_>) -> Option<String> {
+        let mut concrete_request =
+            codex_context_pack::ContextPackRequest::new(request.project_root, request.prompt);
+        concrete_request.path_budget = request.path_budget;
+        codex_context_pack::render_graphify_scout_pack(&concrete_request)
+    }
+}
+
+struct GraphifyContextPackMarker;
+
+impl ContextPackMarker for GraphifyContextPackMarker {
+    fn has_context_pack(&self, message: &str) -> bool {
+        codex_context_pack::has_context_pack(message)
+    }
+}
+
+struct GraphifyRepoRoutingClassifier;
+
+impl RepoRoutingClassifier for GraphifyRepoRoutingClassifier {
+    fn is_explicit_repo_routing_prompt(&self, prompt: &str) -> bool {
+        codex_context_pack::is_explicit_repo_routing_prompt(prompt)
+    }
+}
+
+struct MemoriesProjectProblemContextProvider;
+
+impl ProjectProblemContextProvider for MemoriesProjectProblemContextProvider {
+    fn project_problem_context(
+        &self,
+        request: ProjectProblemContextRequest<'_>,
+    ) -> impl std::future::Future<Output = Option<String>> + Send {
+        async move {
+            let codex_home =
+                AbsolutePathBuf::from_absolute_path_checked(request.codex_home).ok()?;
+            codex_memories_context::build_project_problem_memory_context(
+                codex_memories_context::ProjectProblemMemoryContextRequest {
+                    codex_home: &codex_home,
+                    project_root: request.project_root,
+                    prompt: request.prompt,
+                    max_matches: request.max_matches,
+                },
+            )
+            .await
+        }
+    }
+}
 
 pub(super) async fn first_moves_context_for_fresh_turn(
     sess: &Arc<Session>,
@@ -94,7 +145,9 @@ fn effective_first_moves_config(
 }
 
 fn should_inject_later_context(prompt: &str) -> bool {
-    is_whole_repo_exploration_prompt(prompt) || is_explicit_repo_routing_prompt(prompt)
+    let routing_classifier = GraphifyRepoRoutingClassifier;
+    is_whole_repo_exploration_prompt(prompt)
+        || routing_classifier.is_explicit_repo_routing_prompt(prompt)
 }
 
 fn context_pack_for_fresh_turn(turn_context: &TurnContext, prompt: &str) -> Option<String> {
@@ -111,7 +164,8 @@ fn context_pack_for_fresh_turn(turn_context: &TurnContext, prompt: &str) -> Opti
     ) {
         return None;
     }
-    render_graphify_scout_pack(&ContextPackRequest::new(turn_context.cwd.as_path(), prompt))
+    GraphifyContextPackRenderer
+        .render_context_pack(&ContextPackRequest::new(turn_context.cwd.as_path(), prompt))
 }
 
 fn combine_context_pack_and_first_moves(
@@ -147,13 +201,14 @@ async fn project_problem_memory_context(
         return None;
     }
 
-    build_project_problem_memory_context(ProjectProblemMemoryContextRequest {
-        codex_home: &turn_context.config.codex_home,
-        project_root: turn_context.cwd.as_path(),
-        prompt,
-        max_matches: turn_context.config.memories.project_problem_max_matches,
-    })
-    .await
+    MemoriesProjectProblemContextProvider
+        .project_problem_context(ProjectProblemContextRequest {
+            codex_home: &turn_context.config.codex_home,
+            project_root: turn_context.cwd.as_path(),
+            prompt,
+            max_matches: turn_context.config.memories.project_problem_max_matches,
+        })
+        .await
 }
 
 pub(super) async fn spawn_repo_context_scout_shadow_for_fresh_turn(
@@ -214,8 +269,10 @@ pub(super) fn merge_first_moves_context(
     let Some(first_moves_context) = first_moves_context else {
         return hook_contexts;
     };
-    hook_contexts
-        .retain(|context| !is_legacy_first_moves_context(context) && !has_context_pack(context));
+    let context_pack_marker = GraphifyContextPackMarker;
+    hook_contexts.retain(|context| {
+        !is_legacy_first_moves_context(context) && !context_pack_marker.has_context_pack(context)
+    });
     hook_contexts.insert(0, first_moves_context);
     hook_contexts
 }

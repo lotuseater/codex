@@ -10,7 +10,7 @@ use crate::turn_timing::now_unix_timestamp_ms;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
-use codex_tools::ToolSpec;
+use codex_tool_registry_api::ToolSpec;
 use std::sync::Arc;
 
 pub(crate) struct Handler;
@@ -141,7 +141,7 @@ impl ToolExecutor<ToolInvocation> for Handler {
     }
 }
 
-impl ToolHandler for Handler {
+impl CoreToolRuntime for Handler {
     fn matches_kind(&self, payload: &ToolPayload) -> bool {
         matches!(payload, ToolPayload::Function { .. })
     }
@@ -173,11 +173,15 @@ impl ToolOutput for ResumeAgentResult {
         true
     }
 
-    fn to_response_item(&self, call_id: &str, payload: &ToolPayload) -> ResponseInputItem {
+    fn to_response_item(
+        &self,
+        call_id: &str,
+        payload: &dyn ToolOutputPayload,
+    ) -> ResponseInputItem {
         tool_output_response_item(call_id, payload, self, Some(true), "resume_agent")
     }
 
-    fn code_mode_result(&self, _payload: &ToolPayload) -> JsonValue {
+    fn code_mode_result(&self, _payload: &dyn ToolOutputPayload) -> JsonValue {
         tool_output_code_mode_result(self, "resume_agent")
     }
 }

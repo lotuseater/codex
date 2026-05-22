@@ -1,7 +1,7 @@
 use codex_tool_registry_api::JsonSchema;
 use codex_tool_registry_api::TOOL_SEARCH_TOOL_NAME;
-use codex_tool_registry_api::ToolSpec;
 use codex_tool_registry_api::ToolSearchSourceInfo;
+use codex_tool_registry_api::ToolSpec;
 use std::collections::BTreeMap;
 
 pub(crate) fn create_tool_search_tool(

@@ -11,7 +11,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::context::ContextualUserFragment;
 use crate::context::ImageGenerationInstructions;
-use crate::function_tool::FunctionCallError;
+use codex_tool_execution_api::FunctionCallError;
 use crate::parse_turn_item;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
@@ -158,8 +158,7 @@ pub(crate) async fn record_completed_response_item_with_finalized_facts(
         |facts| facts.defers_mailbox_delivery_to_next_turn,
     );
     if defers_mailbox_delivery {
-        sess.input_queue
-            .defer_mailbox_delivery_to_next_turn(&sess.active_turn, &turn_context.sub_id)
+        sess.defer_mailbox_delivery_to_next_turn(&turn_context.sub_id)
             .await;
     }
     mark_thread_memory_mode_polluted_if_external_context(sess, turn_context, item).await;
@@ -352,11 +351,7 @@ pub(crate) async fn handle_output_item_done(
         // The model emitted a tool call; log it, persist the item immediately, and queue the tool execution.
         Ok(Some(call)) => {
             ctx.sess
-                .input_queue
-                .accept_mailbox_delivery_for_current_turn(
-                    &ctx.sess.active_turn,
-                    &ctx.turn_context.sub_id,
-                )
+                .accept_mailbox_delivery_for_current_turn(&ctx.turn_context.sub_id)
                 .await;
 
             let payload_preview = call.payload.log_payload().into_owned();

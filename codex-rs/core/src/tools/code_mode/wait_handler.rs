@@ -1,13 +1,13 @@
 use serde::Deserialize;
 
-use crate::function_tool::FunctionCallError;
+use codex_tool_execution_api::FunctionCallError;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::context::boxed_tool_output;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
-use codex_tools::ToolName;
-use codex_tools::ToolSpec;
+use codex_tool_execution_api::ToolName;
+use codex_tool_registry_api::ToolSpec;
 
 use super::DEFAULT_WAIT_YIELD_TIME_MS;
 use super::ExecContext;

@@ -2,6 +2,15 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use anyhow::Result;
+use codex_core_test_runtime::responses::ev_assistant_message;
+use codex_core_test_runtime::responses::ev_completed;
+use codex_core_test_runtime::responses::ev_response_created;
+use codex_core_test_runtime::responses::mount_sse_once;
+use codex_core_test_runtime::responses::sse;
+use codex_core_test_runtime::responses::start_mock_server;
+use codex_core_test_runtime::skip_if_no_network;
+use codex_core_test_runtime::test_codex::test_codex;
+use codex_core_test_runtime::test_codex::turn_permission_fields;
 use codex_exec_server::CreateDirectoryOptions;
 use codex_exec_server::ExecutorFileSystem;
 use codex_protocol::models::PermissionProfile;
@@ -9,15 +18,6 @@ use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::Op;
 use codex_protocol::user_input::UserInput;
 use codex_utils_absolute_path::AbsolutePathBuf;
-use core_test_support::responses::ev_assistant_message;
-use core_test_support::responses::ev_completed;
-use core_test_support::responses::ev_response_created;
-use core_test_support::responses::mount_sse_once;
-use core_test_support::responses::sse;
-use core_test_support::responses::start_mock_server;
-use core_test_support::skip_if_no_network;
-use core_test_support::test_codex::test_codex;
-use core_test_support::test_codex::turn_permission_fields;
 use std::sync::Arc;
 
 async fn write_repo_skill(
@@ -102,7 +102,7 @@ async fn user_turn_includes_skill_instructions() -> Result<()> {
         })
         .await?;
 
-    core_test_support::wait_for_event(test.codex.as_ref(), |event| {
+    codex_core_test_runtime::wait_for_event(test.codex.as_ref(), |event| {
         matches!(event, codex_protocol::protocol::EventMsg::TurnComplete(_))
     })
     .await;

@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use codex_features::Feature;
 use codex_mcp::CODEX_APPS_MCP_SERVER_NAME;
 use codex_mcp::ToolInfo as McpToolInfo;
-use codex_tools::ToolsConfig;
+use codex_tool_registry_api::McpToolExposureConfig;
 
 use crate::config::Config;
 use crate::connectors;
@@ -28,7 +28,7 @@ pub(crate) fn build_mcp_tool_exposure(
     connectors: Option<&[connectors::AppInfo]>,
     explicitly_enabled_connectors: &[connectors::AppInfo],
     config: &Config,
-    tools_config: &ToolsConfig,
+    tools_config: &impl McpToolExposureConfig,
 ) -> McpToolExposure {
     let mut deferred_tools = filter_non_codex_apps_mcp_tools_only(all_mcp_tools);
     if let Some(connectors) = connectors {
@@ -39,7 +39,7 @@ pub(crate) fn build_mcp_tool_exposure(
         ));
     }
 
-    let should_defer = tools_config.search_tool
+    let should_defer = tools_config.search_tool_enabled()
         && (config
             .features
             .enabled(Feature::ToolSearchAlwaysDeferMcpTools)

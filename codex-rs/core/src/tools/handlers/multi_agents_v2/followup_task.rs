@@ -4,7 +4,7 @@ use super::message_tool::MessageDeliveryMode;
 use super::message_tool::handle_message_string_tool;
 use super::*;
 use crate::tools::handlers::multi_agents_spec::create_followup_task_tool;
-use codex_tools::ToolSpec;
+use codex_tool_registry_api::ToolSpec;
 
 pub(crate) struct Handler;
 

@@ -17,7 +17,7 @@ use codex_protocol::models::ResponseInputItem;
 use serde_json::Value as JsonValue;
 use tokio_util::sync::CancellationToken;
 
-use crate::function_tool::FunctionCallError;
+use codex_tool_execution_api::FunctionCallError;
 use crate::original_image_detail::can_request_original_image_detail;
 use crate::original_image_detail::sanitize_original_image_detail as sanitize_image_detail_items;
 use crate::session::session::Session;
@@ -28,10 +28,10 @@ use crate::tools::context::SharedTurnDiffTracker;
 use crate::tools::context::ToolPayload;
 use crate::tools::parallel::ToolCallRuntime;
 use crate::tools::router::ToolCall;
-use crate::tools::router::ToolCallSource;
 use crate::unified_exec::resolve_max_tokens;
 use codex_features::Feature;
-use codex_tools::ToolName;
+use codex_tool_execution_api::ToolCallSource;
+use codex_tool_execution_api::ToolName;
 use codex_utils_output_truncation::TruncationPolicy;
 use codex_utils_output_truncation::formatted_truncate_text_content_items_with_policy;
 use codex_utils_output_truncation::truncate_function_output_items_with_policy;
@@ -347,7 +347,7 @@ mod tests {
     use super::build_nested_tool_payload;
     use crate::tools::context::ToolPayload;
     use codex_code_mode::CodeModeToolKind;
-    use codex_tools::ToolName;
+    use codex_tool_execution_api::ToolName;
     use serde_json::json;
 
     #[test]

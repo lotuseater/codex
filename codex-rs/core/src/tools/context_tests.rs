@@ -1,7 +1,11 @@
 use super::*;
+use codex_core_test_runtime::assert_regex_match;
+use codex_test_support_context_fixtures::tool_fixtures::deferred_responses_api_tool;
 use codex_protocol::models::DEFAULT_IMAGE_DETAIL;
 use codex_protocol::models::SearchToolCallParams;
-use core_test_support::assert_regex_match;
+use codex_tool_execution_api::TELEMETRY_PREVIEW_MAX_BYTES;
+use codex_tool_execution_api::TELEMETRY_PREVIEW_MAX_LINES;
+use codex_tool_execution_api::TELEMETRY_PREVIEW_TRUNCATION_NOTICE;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 
@@ -327,18 +331,9 @@ fn tool_search_payloads_roundtrip_as_tool_search_outputs() {
         },
     };
     let response = ToolSearchOutput {
-        tools: vec![LoadableToolSpec::Function(codex_tools::ResponsesApiTool {
-            name: "create_event".to_string(),
-            description: String::new(),
-            strict: false,
-            defer_loading: Some(true),
-            parameters: codex_tool_schema::JsonSchema::object(
-                /*properties*/ Default::default(),
-                /*required*/ None,
-                /*additional_properties*/ None,
-            ),
-            output_schema: None,
-        })],
+        tools: vec![LoadableToolSpec::Function(deferred_responses_api_tool(
+            "create_event",
+        ))],
     }
     .to_response_item("search-1", &payload);
 
@@ -469,6 +464,7 @@ fn exec_command_tool_output_success_for_logging_tracks_exit_code() {
         chunk_id: String::new(),
         wall_time: std::time::Duration::from_millis(10),
         raw_output: b"ok".to_vec(),
+        truncation_policy: TruncationPolicy::Tokens(10_000),
         max_output_tokens: None,
         process_id: None,
         exit_code: Some(0),

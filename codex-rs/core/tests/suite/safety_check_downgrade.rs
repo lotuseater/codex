@@ -1,4 +1,19 @@
 use anyhow::Result;
+use codex_core_test_runtime::responses::ev_assistant_message;
+use codex_core_test_runtime::responses::ev_function_call;
+use codex_core_test_runtime::responses::ev_model_verification_metadata;
+use codex_core_test_runtime::responses::ev_response_created;
+use codex_core_test_runtime::responses::mount_response_once;
+use codex_core_test_runtime::responses::mount_response_sequence;
+use codex_core_test_runtime::responses::sse;
+use codex_core_test_runtime::responses::sse_completed;
+use codex_core_test_runtime::responses::sse_response;
+use codex_core_test_runtime::responses::start_mock_server;
+use codex_core_test_runtime::skip_if_no_network;
+use codex_core_test_runtime::test_codex::TestCodex;
+use codex_core_test_runtime::test_codex::test_codex;
+use codex_core_test_runtime::test_codex::turn_permission_fields;
+use codex_core_test_runtime::wait_for_event;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::models::ResponseItem;
@@ -9,21 +24,6 @@ use codex_protocol::protocol::ModelRerouteReason;
 use codex_protocol::protocol::ModelVerification;
 use codex_protocol::protocol::Op;
 use codex_protocol::user_input::UserInput;
-use core_test_support::responses::ev_assistant_message;
-use core_test_support::responses::ev_function_call;
-use core_test_support::responses::ev_model_verification_metadata;
-use core_test_support::responses::ev_response_created;
-use core_test_support::responses::mount_response_once;
-use core_test_support::responses::mount_response_sequence;
-use core_test_support::responses::sse;
-use core_test_support::responses::sse_completed;
-use core_test_support::responses::sse_response;
-use core_test_support::responses::start_mock_server;
-use core_test_support::skip_if_no_network;
-use core_test_support::test_codex::TestCodex;
-use core_test_support::test_codex::test_codex;
-use core_test_support::test_codex::turn_permission_fields;
-use core_test_support::wait_for_event;
 use pretty_assertions::assert_eq;
 use wiremock::ResponseTemplate;
 
@@ -150,7 +150,7 @@ async fn response_model_field_mismatch_emits_warning_when_header_matches_request
                 }
             }
         }),
-        core_test_support::responses::ev_completed("resp-1"),
+        codex_core_test_runtime::responses::ev_completed("resp-1"),
     ]))
     .insert_header("OpenAI-Model", REQUESTED_MODEL);
     let _mock = mount_response_once(&server, response).await;
@@ -214,13 +214,13 @@ async fn openai_model_header_mismatch_only_emits_one_warning_per_turn() -> Resul
             "shell_command",
             &serde_json::to_string(&tool_args)?,
         ),
-        core_test_support::responses::ev_completed("resp-1"),
+        codex_core_test_runtime::responses::ev_completed("resp-1"),
     ]))
     .insert_header("OpenAI-Model", SERVER_MODEL);
     let second_response = sse_response(sse(vec![
         ev_response_created("resp-2"),
         ev_assistant_message("msg-1", "done"),
-        core_test_support::responses::ev_completed("resp-2"),
+        codex_core_test_runtime::responses::ev_completed("resp-2"),
     ]))
     .insert_header("OpenAI-Model", SERVER_MODEL);
     let _mock = mount_response_sequence(&server, vec![first_response, second_response]).await;
@@ -298,7 +298,7 @@ async fn model_verification_emits_structured_event_without_reroute_or_warning() 
     let response = sse_response(sse(vec![
         ev_response_created("resp-1"),
         ev_model_verification_metadata("resp-1", vec![TRUSTED_ACCESS_FOR_CYBER_VERIFICATION]),
-        core_test_support::responses::ev_completed("resp-1"),
+        codex_core_test_runtime::responses::ev_completed("resp-1"),
     ]));
     let _mock = mount_response_once(&server, response).await;
 
@@ -368,13 +368,13 @@ async fn model_verification_only_emits_once_per_turn() -> Result<()> {
             &serde_json::to_string(&tool_args)?,
         ),
         ev_model_verification_metadata("resp-1", vec![TRUSTED_ACCESS_FOR_CYBER_VERIFICATION]),
-        core_test_support::responses::ev_completed("resp-1"),
+        codex_core_test_runtime::responses::ev_completed("resp-1"),
     ]));
     let second_response = sse_response(sse(vec![
         ev_response_created("resp-2"),
         ev_model_verification_metadata("resp-2", vec![TRUSTED_ACCESS_FOR_CYBER_VERIFICATION]),
         ev_assistant_message("msg-1", "done"),
-        core_test_support::responses::ev_completed("resp-2"),
+        codex_core_test_runtime::responses::ev_completed("resp-2"),
     ]));
     let _mock = mount_response_sequence(&server, vec![first_response, second_response]).await;
 

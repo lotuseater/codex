@@ -6,9 +6,9 @@ use crate::tools::ToolRouter;
 use crate::tools::handlers::DynamicToolHandler;
 use crate::tools::handlers::McpHandler;
 use crate::tools::registry::ToolRegistryBuilder;
-use crate::tools::router::ToolRouterParams;
 use crate::tools::spec_plan::build_tool_registry_builder_from_executors;
 use codex_app_catalog_types::AppInfo;
+use codex_core_test_runtime::assert_regex_match;
 use codex_features::Feature;
 use codex_features::Features;
 use codex_mcp::CODEX_APPS_MCP_SERVER_NAME;
@@ -20,26 +20,25 @@ use codex_protocol::models::PermissionProfile;
 use codex_protocol::openai_models::ConfigShellToolType;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::protocol::SessionSource;
+use codex_tool_execution_api::ShellCommandBackendConfig;
+use codex_tool_execution_api::ToolName;
+use codex_tool_execution_api::ToolsConfig;
+use codex_tool_execution_api::ToolsConfigParams;
+use codex_tool_execution_api::UnifiedExecShellMode;
+use codex_tool_execution_api::ZshForkConfig;
+use codex_tool_registry_api::ConfiguredToolSpec;
+use codex_tool_registry_api::DiscoverableTool;
+use codex_tool_registry_api::LoadableToolSpec;
+use codex_tool_registry_api::REQUEST_PLUGIN_INSTALL_TOOL_NAME;
+use codex_tool_registry_api::ResponsesApiNamespaceTool;
+use codex_tool_registry_api::ResponsesApiTool;
+use codex_tool_registry_api::TOOL_SEARCH_TOOL_NAME;
+use codex_tool_registry_api::ToolSpec;
+use codex_tool_registry_api::WORKFLOW_BATCH_TOOL_NAME;
+use codex_tool_registry_api::mcp_call_tool_result_output_schema;
 use codex_tool_schema::AdditionalProperties;
 use codex_tool_schema::JsonSchema;
-use codex_tools::ConfiguredToolSpec;
-use codex_tools::DiscoverableTool;
-use codex_tools::LoadableToolSpec;
-use codex_tools::REQUEST_PLUGIN_INSTALL_TOOL_NAME;
-use codex_tools::ResponsesApiNamespaceTool;
-use codex_tools::ResponsesApiTool;
-use codex_tools::ShellCommandBackendConfig;
-use codex_tools::TOOL_SEARCH_TOOL_NAME;
-use codex_tools::ToolName;
-use codex_tools::ToolSpec;
-use codex_tools::ToolsConfig;
-use codex_tools::ToolsConfigParams;
-use codex_tools::UnifiedExecShellMode;
-use codex_tools::ZshForkConfig;
-use codex_tools::mcp_call_tool_result_output_schema;
-use codex_tools::mcp_tool_to_deferred_responses_api_tool;
 use codex_utils_absolute_path::AbsolutePathBuf;
-use core_test_support::assert_regex_match;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -141,26 +140,21 @@ async fn search_capable_model_info() -> ModelInfo {
 
 #[test]
 fn deferred_responses_api_tool_serializes_with_defer_loading() {
-    let tool = mcp_tool(
-        "lookup_order",
-        "Look up an order",
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "order_id": {"type": "string"}
-            },
-            "required": ["order_id"],
-            "additionalProperties": false,
-        }),
-    );
-
-    let serialized = serde_json::to_value(ToolSpec::Function(
-        mcp_tool_to_deferred_responses_api_tool(
-            &ToolName::namespaced("mcp__codex_apps__", "lookup_order"),
-            &tool,
-        )
-        .expect("convert deferred tool"),
-    ))
+    let serialized = serde_json::to_value(ToolSpec::Function(ResponsesApiTool {
+        name: ToolName::namespaced("mcp__codex_apps__", "lookup_order").to_string(),
+        description: "Look up an order".to_string(),
+        strict: false,
+        defer_loading: Some(true),
+        parameters: JsonSchema::object(
+            BTreeMap::from([(
+                "order_id".to_string(),
+                JsonSchema::string(/*description*/ None),
+            )]),
+            Some(vec!["order_id".to_string()]),
+            Some(false.into()),
+        ),
+        output_schema: Some(mcp_call_tool_result_output_schema(serde_json::json!({}))),
+    }))
     .expect("serialize deferred tool");
 
     assert_eq!(
@@ -406,9 +400,9 @@ async fn workflow_batch_default_exposure_has_registered_handler() {
     assert!(
         tools
             .iter()
-            .any(|tool| tool.spec.name() == codex_tools::WORKFLOW_BATCH_TOOL_NAME)
+            .any(|tool| tool.spec.name() == WORKFLOW_BATCH_TOOL_NAME)
     );
-    assert!(registry.has_handler(&ToolName::plain(codex_tools::WORKFLOW_BATCH_TOOL_NAME)));
+    assert!(registry.has_handler(&ToolName::plain(WORKFLOW_BATCH_TOOL_NAME)));
 }
 
 async fn assert_model_tools(
@@ -430,16 +424,13 @@ async fn assert_model_tools(
         permission_profile: &PermissionProfile::Disabled,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
-    let router = ToolRouter::from_config(
-        &tools_config,
-        ToolRouterParams {
-            mcp_tools: None,
-            deferred_mcp_tools: None,
-            discoverable_tools: None,
-            extension_tool_executors: Vec::new(),
-            dynamic_tools: &[],
-        },
-    );
+    let ToolRouterParts {
+        executors,
+        hosted_specs,
+    } = collect_tool_router_parts(&tools_config, None, None, None, &[], &[]);
+    let (model_visible_specs, registry) =
+        build_tool_registry_builder_from_executors(&tools_config, executors, hosted_specs).build();
+    let router = ToolRouter::from_parts(registry, model_visible_specs);
     let model_visible_specs = router.model_visible_specs();
     let tool_names = model_visible_specs
         .iter()
@@ -447,7 +438,6 @@ async fn assert_model_tools(
         .collect::<Vec<_>>();
     assert_eq!(&tool_names, &expected_tools,);
 }
-
 async fn assert_default_model_tools(
     model_slug: &str,
     features: &Features,
@@ -798,11 +788,14 @@ async fn shell_zsh_fork_prefers_shell_command_over_unified_exec() {
             .unified_exec_shell_mode,
         if cfg!(unix) {
             UnifiedExecShellMode::ZshFork(ZshForkConfig {
-                shell_zsh_path: AbsolutePathBuf::from_absolute_path("/opt/codex/zsh").unwrap(),
+                shell_zsh_path: AbsolutePathBuf::from_absolute_path("/opt/codex/zsh")
+                    .unwrap()
+                    .into_path_buf(),
                 main_execve_wrapper_exe: AbsolutePathBuf::from_absolute_path(
                     "/opt/codex/codex-execve-wrapper",
                 )
-                .unwrap(),
+                .unwrap()
+                .into_path_buf(),
             })
         } else {
             UnifiedExecShellMode::Direct

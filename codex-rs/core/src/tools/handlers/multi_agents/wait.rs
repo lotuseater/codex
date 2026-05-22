@@ -4,7 +4,7 @@ use crate::tools::handlers::multi_agents_spec::WaitAgentTimeoutOptions;
 use crate::tools::handlers::multi_agents_spec::create_wait_agent_tool_v1;
 use crate::turn_timing::now_unix_timestamp_ms;
 use codex_protocol::error::CodexErr;
-use codex_tools::ToolSpec;
+use codex_tool_registry_api::ToolSpec;
 use futures::FutureExt;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
@@ -238,11 +238,15 @@ impl ToolOutput for WaitAgentResult {
         true
     }
 
-    fn to_response_item(&self, call_id: &str, payload: &ToolPayload) -> ResponseInputItem {
+    fn to_response_item(
+        &self,
+        call_id: &str,
+        payload: &dyn ToolOutputPayload,
+    ) -> ResponseInputItem {
         tool_output_response_item(call_id, payload, self, /*success*/ None, "wait_agent")
     }
 
-    fn code_mode_result(&self, _payload: &ToolPayload) -> JsonValue {
+    fn code_mode_result(&self, _payload: &dyn ToolOutputPayload) -> JsonValue {
         tool_output_code_mode_result(self, "wait_agent")
     }
 }

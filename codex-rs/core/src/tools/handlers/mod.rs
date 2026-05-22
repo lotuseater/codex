@@ -20,6 +20,7 @@ mod plan;
 pub(crate) mod plan_spec;
 mod request_permissions;
 mod request_plugin_install;
+pub(crate) mod request_plugin_install_spec;
 mod request_user_input;
 pub(crate) mod request_user_input_spec;
 mod shell;
@@ -42,7 +43,7 @@ use serde_json::Map;
 use serde_json::Value;
 use std::path::Path;
 
-use crate::function_tool::FunctionCallError;
+use codex_tool_execution_api::FunctionCallError;
 use crate::sandboxing::SandboxPermissions;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;

@@ -7,40 +7,30 @@ use crate::session::SessionSettingsUpdate;
 use crate::session::SteerInputError;
 use codex_features::Feature;
 use codex_otel::SessionTelemetry;
-use codex_protocol::config_types::ApprovalsReviewer;
-use codex_protocol::config_types::CollaborationMode;
-use codex_protocol::config_types::ContextBudgetMode;
-use codex_protocol::config_types::Personality;
-use codex_protocol::config_types::ReasoningSummary;
-use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CodexResult;
 use codex_protocol::mcp::CallToolResult;
-use codex_protocol::models::ActivePermissionProfile;
 use codex_protocol::models::ContentItem;
-use codex_protocol::models::PermissionProfile;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
-use codex_protocol::openai_models::ReasoningEffort;
-use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::Op;
-use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::SessionConfiguredEvent;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::Submission;
 use codex_protocol::protocol::ThreadMemoryMode;
-use codex_protocol::protocol::ThreadSource;
 use codex_protocol::protocol::TokenUsageInfo;
 use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::protocol::W3cTraceContext;
 use codex_protocol::user_input::UserInput;
+pub use codex_thread_manager_api::CodexThreadSettingsOverrides;
+pub use codex_thread_manager_api::CodexThreadTurnContextOverrides;
+pub use codex_thread_manager_api::ThreadConfigSnapshot;
 use codex_thread_store_api::StoredThread;
 use codex_thread_store_api::StoredThreadHistory;
 use codex_thread_store_api::ThreadMetadataPatch;
 use codex_thread_store_api::ThreadStoreError;
 use codex_thread_store_api::ThreadStoreResult;
-use codex_utils_absolute_path::AbsolutePathBuf;
 use rmcp::model::ReadResourceRequestParams;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -49,60 +39,6 @@ use tokio::sync::Mutex;
 use tokio::sync::watch;
 
 use codex_rollout::state_db::StateDbHandle;
-
-#[derive(Clone, Debug)]
-pub struct ThreadConfigSnapshot {
-    pub model: String,
-    pub model_provider_id: String,
-    pub service_tier: Option<String>,
-    pub approval_policy: AskForApproval,
-    pub approvals_reviewer: ApprovalsReviewer,
-    pub permission_profile: PermissionProfile,
-    pub active_permission_profile: Option<ActivePermissionProfile>,
-    pub cwd: AbsolutePathBuf,
-    pub workspace_roots: Vec<AbsolutePathBuf>,
-    pub profile_workspace_roots: Vec<AbsolutePathBuf>,
-    pub ephemeral: bool,
-    pub reasoning_effort: Option<ReasoningEffort>,
-    pub reasoning_summary: Option<ReasoningSummary>,
-    pub personality: Option<Personality>,
-    pub collaboration_mode: CollaborationMode,
-    pub session_source: SessionSource,
-    pub thread_source: Option<ThreadSource>,
-}
-
-impl ThreadConfigSnapshot {
-    pub fn sandbox_policy(&self) -> SandboxPolicy {
-        let file_system_sandbox_policy = self.permission_profile.file_system_sandbox_policy();
-        codex_sandboxing::compatibility_sandbox_policy_for_permission_profile(
-            &self.permission_profile,
-            &file_system_sandbox_policy,
-            self.permission_profile.network_sandbox_policy(),
-            self.cwd.as_path(),
-        )
-    }
-}
-
-/// Thread settings overrides that app-server validates before starting a turn.
-#[derive(Clone, Default)]
-pub struct CodexThreadSettingsOverrides {
-    pub cwd: Option<PathBuf>,
-    pub workspace_roots: Option<Vec<AbsolutePathBuf>>,
-    pub profile_workspace_roots: Option<Vec<AbsolutePathBuf>>,
-    pub approval_policy: Option<AskForApproval>,
-    pub approvals_reviewer: Option<ApprovalsReviewer>,
-    pub sandbox_policy: Option<SandboxPolicy>,
-    pub permission_profile: Option<PermissionProfile>,
-    pub active_permission_profile: Option<ActivePermissionProfile>,
-    pub windows_sandbox_level: Option<WindowsSandboxLevel>,
-    pub model: Option<String>,
-    pub effort: Option<Option<ReasoningEffort>>,
-    pub summary: Option<ReasoningSummary>,
-    pub service_tier: Option<Option<String>>,
-    pub context_budget_mode: Option<ContextBudgetMode>,
-    pub collaboration_mode: Option<CollaborationMode>,
-    pub personality: Option<Personality>,
-}
 
 pub struct CodexThread {
     pub(crate) codex: Codex,
@@ -270,6 +206,23 @@ impl CodexThread {
         self.codex.session.preview_settings(&updates).await
     }
 
+    pub async fn validate_turn_context_overrides(
+        &self,
+        overrides: CodexThreadTurnContextOverrides,
+    ) -> ConstraintResult<()> {
+        let updates = self.thread_settings_update(overrides).await;
+        self.codex.session.validate_settings(&updates).await
+    }
+
+    pub async fn apply_thread_settings_overrides(
+        &self,
+        overrides: CodexThreadSettingsOverrides,
+    ) -> ConstraintResult<ThreadConfigSnapshot> {
+        let updates = self.thread_settings_update(overrides).await;
+        self.codex.session.update_settings(updates).await?;
+        Ok(self.codex.thread_config_snapshot().await)
+    }
+
     async fn thread_settings_update(
         &self,
         overrides: CodexThreadSettingsOverrides,
@@ -396,7 +349,6 @@ impl CodexThread {
         {
             self.codex
                 .session
-                .input_queue
                 .queue_response_items_for_next_turn(items)
                 .await;
             self.codex.session.maybe_start_turn_for_pending_work().await;

@@ -22,6 +22,7 @@ use codex_otel::HOOK_RUN_DURATION_METRIC;
 use codex_otel::HOOK_RUN_METRIC;
 use codex_protocol::items::TurnItem;
 use codex_protocol::items::UserMessageItem;
+use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
@@ -33,6 +34,7 @@ use codex_protocol::protocol::HookSource;
 use codex_protocol::protocol::HookStartedEvent;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
+use codex_protocol::user_input::UserInput;
 use serde_json::Value;
 
 use crate::context::ContextualUserFragment;
@@ -474,6 +476,14 @@ pub(crate) async fn inspect_pending_input(
     }
 }
 
+pub(crate) async fn run_user_prompt_submit_hooks(
+    sess: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
+    prompt: Vec<UserInput>,
+) -> HookRuntimeOutcome {
+    inspect_pending_input(sess, turn_context, &TurnInput::UserInput(prompt)).await
+}
+
 pub(crate) async fn record_pending_input(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
@@ -482,8 +492,13 @@ pub(crate) async fn record_pending_input(
 ) {
     match pending_input {
         TurnInput::UserInput(content) => {
-            sess.record_user_prompt_and_emit_turn_item(turn_context.as_ref(), content.as_slice())
-                .await;
+            let response_item: ResponseItem = ResponseInputItem::from(content.clone()).into();
+            sess.record_user_prompt_and_emit_turn_item(
+                turn_context.as_ref(),
+                content.as_slice(),
+                response_item,
+            )
+            .await;
         }
         TurnInput::ResponseInputItem(input) => {
             let response_item = ResponseItem::from(input);

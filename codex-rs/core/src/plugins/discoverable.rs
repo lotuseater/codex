@@ -10,7 +10,7 @@ use codex_core_plugins::OPENAI_CURATED_MARKETPLACE_NAME;
 use codex_core_plugins::PluginsManager;
 use codex_core_plugins::TOOL_SUGGEST_DISCOVERABLE_PLUGIN_ALLOWLIST;
 use codex_features::Feature;
-use codex_tools::DiscoverablePluginInfo;
+use codex_tool_registry_api::DiscoverablePluginInfo;
 
 const TOOL_SUGGEST_DISCOVERABLE_MARKETPLACE_ALLOWLIST: &[&str] = &[
     OPENAI_BUNDLED_MARKETPLACE_NAME,

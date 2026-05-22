@@ -1,5 +1,5 @@
-use crate::config::edit::ConfigEditsBuilder;
 use codex_config::config_toml::ConfigToml;
+use codex_config::ConfigEditsBuilder;
 use codex_protocol::config_types::Personality;
 use codex_thread_store_api::ListThreadsParams;
 use codex_thread_store_api::ThreadSortKey;
@@ -93,7 +93,3 @@ async fn create_marker(marker_path: &Path) -> io::Result<()> {
         Err(err) => Err(err),
     }
 }
-
-#[cfg(test)]
-#[path = "personality_migration_tests.rs"]
-mod tests;

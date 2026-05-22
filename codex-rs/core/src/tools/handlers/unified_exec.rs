@@ -8,7 +8,7 @@ use crate::tools::context::ToolPayload;
 use crate::tools::hook_names::HookToolName;
 use crate::tools::registry::PostToolUsePayload;
 use codex_protocol::models::AdditionalPermissionProfile;
-use codex_tools::UnifiedExecShellMode;
+use codex_tool_execution_api::UnifiedExecShellMode;
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -126,7 +126,10 @@ pub(crate) fn get_command(
         }
         UnifiedExecShellMode::ZshFork(zsh_fork_config) => Ok(ResolvedCommand {
             command: vec![
-                zsh_fork_config.shell_zsh_path.to_string_lossy().to_string(),
+                zsh_fork_config
+                    .shell_zsh_path()
+                    .to_string_lossy()
+                    .to_string(),
                 if use_login_shell { "-lc" } else { "-c" }.to_string(),
                 args.cmd.clone(),
             ],

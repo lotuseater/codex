@@ -2,9 +2,6 @@ use crate::context_manager::truncate_function_output_payload;
 use crate::original_image_detail::sanitize_original_image_detail;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
-use crate::tools::TELEMETRY_PREVIEW_MAX_BYTES;
-use crate::tools::TELEMETRY_PREVIEW_MAX_LINES;
-use crate::tools::TELEMETRY_PREVIEW_TRUNCATION_NOTICE;
 use crate::turn_diff_tracker::TurnDiffTracker;
 use crate::unified_exec::resolve_max_tokens;
 use codex_protocol::mcp::CallToolResult;
@@ -13,20 +10,20 @@ use codex_protocol::models::FunctionCallOutputContentItem;
 use codex_protocol::models::FunctionCallOutputPayload;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::function_call_output_content_items_to_text;
-use codex_tools::LoadableToolSpec;
-use codex_tools::ToolName;
+use codex_tool_execution_api::ToolName;
+pub use codex_tool_execution_api::ToolOutput;
+use codex_tool_execution_api::ToolOutputPayload;
+pub use codex_tool_execution_api::ToolPayload;
+use codex_tool_execution_api::telemetry_preview;
+use codex_tool_registry_api::LoadableToolSpec;
 use codex_utils_output_truncation::TruncationPolicy;
 use codex_utils_output_truncation::formatted_truncate_text;
-use codex_utils_string::take_bytes_at_char_boundary;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
-
-pub use codex_tools::ToolOutput;
-pub use codex_tools::ToolPayload;
 
 pub(crate) fn boxed_tool_output<T>(output: T) -> Box<dyn ToolOutput>
 where
@@ -37,18 +34,7 @@ where
 
 pub type SharedTurnDiffTracker = Arc<Mutex<TurnDiffTracker>>;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ToolCallSource {
-    Direct,
-    CodeMode {
-        /// Runtime cell that issued the nested tool request.
-        cell_id: String,
-        /// Code-mode's per-cell tool invocation id. This is useful for
-        /// debugging the JS/runtime bridge, but it is not the Codex tool call id
-        /// because the runtime id only needs to be unique within one cell.
-        runtime_tool_call_id: String,
-    },
-}
+pub use codex_tool_execution_api::ToolCallSource;
 
 #[derive(Clone)]
 pub struct ToolInvocation {
@@ -85,24 +71,32 @@ impl ToolOutput for McpToolOutput {
         self.result.success()
     }
 
-    fn to_response_item(&self, call_id: &str, _payload: &ToolPayload) -> ResponseInputItem {
+    fn to_response_item(
+        &self,
+        call_id: &str,
+        _payload: &dyn ToolOutputPayload,
+    ) -> ResponseInputItem {
         ResponseInputItem::FunctionCallOutput {
             call_id: call_id.to_string(),
             output: self.response_payload(),
         }
     }
 
-    fn code_mode_result(&self, _payload: &ToolPayload) -> JsonValue {
+    fn code_mode_result(&self, _payload: &dyn ToolOutputPayload) -> JsonValue {
         serde_json::to_value(&self.result).unwrap_or_else(|err| {
             JsonValue::String(format!("failed to serialize mcp result: {err}"))
         })
     }
 
-    fn post_tool_use_input(&self, _payload: &ToolPayload) -> Option<JsonValue> {
+    fn post_tool_use_input(&self, _payload: &dyn ToolOutputPayload) -> Option<JsonValue> {
         Some(self.tool_input.clone())
     }
 
-    fn post_tool_use_response(&self, _call_id: &str, _payload: &ToolPayload) -> Option<JsonValue> {
+    fn post_tool_use_response(
+        &self,
+        _call_id: &str,
+        _payload: &dyn ToolOutputPayload,
+    ) -> Option<JsonValue> {
         serde_json::to_value(&self.result).ok()
     }
 }
@@ -163,7 +157,11 @@ impl ToolOutput for ToolSearchOutput {
         true
     }
 
-    fn to_response_item(&self, call_id: &str, _payload: &ToolPayload) -> ResponseInputItem {
+    fn to_response_item(
+        &self,
+        call_id: &str,
+        _payload: &dyn ToolOutputPayload,
+    ) -> ResponseInputItem {
         ResponseInputItem::ToolSearchOutput {
             call_id: call_id.to_string(),
             status: "completed".to_string(),
@@ -223,11 +221,19 @@ impl ToolOutput for FunctionToolOutput {
         self.success.unwrap_or(true)
     }
 
-    fn to_response_item(&self, call_id: &str, payload: &ToolPayload) -> ResponseInputItem {
+    fn to_response_item(
+        &self,
+        call_id: &str,
+        payload: &dyn ToolOutputPayload,
+    ) -> ResponseInputItem {
         function_tool_response(call_id, payload, self.body.clone(), self.success)
     }
 
-    fn post_tool_use_response(&self, _call_id: &str, _payload: &ToolPayload) -> Option<JsonValue> {
+    fn post_tool_use_response(
+        &self,
+        _call_id: &str,
+        _payload: &dyn ToolOutputPayload,
+    ) -> Option<JsonValue> {
         self.post_tool_use_response.clone()
     }
 }
@@ -251,7 +257,11 @@ impl ToolOutput for ApplyPatchToolOutput {
         true
     }
 
-    fn to_response_item(&self, call_id: &str, payload: &ToolPayload) -> ResponseInputItem {
+    fn to_response_item(
+        &self,
+        call_id: &str,
+        payload: &dyn ToolOutputPayload,
+    ) -> ResponseInputItem {
         function_tool_response(
             call_id,
             payload,
@@ -262,11 +272,15 @@ impl ToolOutput for ApplyPatchToolOutput {
         )
     }
 
-    fn post_tool_use_response(&self, _call_id: &str, _payload: &ToolPayload) -> Option<JsonValue> {
+    fn post_tool_use_response(
+        &self,
+        _call_id: &str,
+        _payload: &dyn ToolOutputPayload,
+    ) -> Option<JsonValue> {
         Some(JsonValue::String(self.text.clone()))
     }
 
-    fn code_mode_result(&self, _payload: &ToolPayload) -> JsonValue {
+    fn code_mode_result(&self, _payload: &dyn ToolOutputPayload) -> JsonValue {
         JsonValue::Object(serde_json::Map::new())
     }
 }
@@ -284,23 +298,28 @@ impl ToolOutput for AbortedToolOutput {
         false
     }
 
-    fn to_response_item(&self, call_id: &str, payload: &ToolPayload) -> ResponseInputItem {
-        match payload {
-            ToolPayload::ToolSearch { .. } => ResponseInputItem::ToolSearchOutput {
+    fn to_response_item(
+        &self,
+        call_id: &str,
+        payload: &dyn ToolOutputPayload,
+    ) -> ResponseInputItem {
+        if payload.is_tool_search() {
+            return ResponseInputItem::ToolSearchOutput {
                 call_id: call_id.to_string(),
                 status: "completed".to_string(),
                 execution: "client".to_string(),
                 tools: Vec::new(),
-            },
-            _ => function_tool_response(
-                call_id,
-                payload,
-                vec![FunctionCallOutputContentItem::InputText {
-                    text: self.message.clone(),
-                }],
-                /*success*/ None,
-            ),
+            };
         }
+
+        function_tool_response(
+            call_id,
+            payload,
+            vec![FunctionCallOutputContentItem::InputText {
+                text: self.message.clone(),
+            }],
+            /*success*/ None,
+        )
     }
 }
 
@@ -328,7 +347,11 @@ impl ToolOutput for ExecCommandToolOutput {
         self.exit_code.is_none_or(|exit_code| exit_code == 0)
     }
 
-    fn to_response_item(&self, call_id: &str, payload: &ToolPayload) -> ResponseInputItem {
+    fn to_response_item(
+        &self,
+        call_id: &str,
+        payload: &dyn ToolOutputPayload,
+    ) -> ResponseInputItem {
         function_tool_response(
             call_id,
             payload,
@@ -347,13 +370,17 @@ impl ToolOutput for ExecCommandToolOutput {
         }
     }
 
-    fn post_tool_use_input(&self, _payload: &ToolPayload) -> Option<JsonValue> {
+    fn post_tool_use_input(&self, _payload: &dyn ToolOutputPayload) -> Option<JsonValue> {
         self.hook_command
             .as_ref()
             .map(|command| serde_json::json!({ "command": command }))
     }
 
-    fn post_tool_use_response(&self, _call_id: &str, _payload: &ToolPayload) -> Option<JsonValue> {
+    fn post_tool_use_response(
+        &self,
+        _call_id: &str,
+        _payload: &dyn ToolOutputPayload,
+    ) -> Option<JsonValue> {
         if self.process_id.is_some() || self.hook_command.is_none() {
             return None;
         }
@@ -363,7 +390,7 @@ impl ToolOutput for ExecCommandToolOutput {
         ))
     }
 
-    fn code_mode_result(&self, _payload: &ToolPayload) -> JsonValue {
+    fn code_mode_result(&self, _payload: &dyn ToolOutputPayload) -> JsonValue {
         #[derive(Serialize)]
         struct UnifiedExecCodeModeResult {
             #[serde(skip_serializing_if = "Option::is_none")]
@@ -437,7 +464,7 @@ impl ExecCommandToolOutput {
 
 fn function_tool_response(
     call_id: &str,
-    payload: &ToolPayload,
+    payload: &dyn ToolOutputPayload,
     body: Vec<FunctionCallOutputContentItem>,
     success: Option<bool>,
 ) -> ResponseInputItem {
@@ -448,7 +475,7 @@ fn function_tool_response(
         _ => FunctionCallOutputBody::ContentItems(body),
     };
 
-    if matches!(payload, ToolPayload::Custom { .. }) {
+    if payload.is_custom() {
         return ResponseInputItem::CustomToolCallOutput {
             call_id: call_id.to_string(),
             name: None,
@@ -460,46 +487,6 @@ fn function_tool_response(
         call_id: call_id.to_string(),
         output: FunctionCallOutputPayload { body, success },
     }
-}
-
-fn telemetry_preview(content: &str) -> String {
-    let truncated_slice = take_bytes_at_char_boundary(content, TELEMETRY_PREVIEW_MAX_BYTES);
-    let truncated_by_bytes = truncated_slice.len() < content.len();
-
-    let mut preview = String::new();
-    let mut lines_iter = truncated_slice.lines();
-    for idx in 0..TELEMETRY_PREVIEW_MAX_LINES {
-        match lines_iter.next() {
-            Some(line) => {
-                if idx > 0 {
-                    preview.push('\n');
-                }
-                preview.push_str(line);
-            }
-            None => break,
-        }
-    }
-    let truncated_by_lines = lines_iter.next().is_some();
-
-    if !truncated_by_bytes && !truncated_by_lines {
-        return content.to_string();
-    }
-
-    if preview.len() < truncated_slice.len()
-        && truncated_slice
-            .as_bytes()
-            .get(preview.len())
-            .is_some_and(|byte| *byte == b'\n')
-    {
-        preview.push('\n');
-    }
-
-    if !preview.is_empty() && !preview.ends_with('\n') {
-        preview.push('\n');
-    }
-    preview.push_str(TELEMETRY_PREVIEW_TRUNCATION_NOTICE);
-
-    preview
 }
 
 #[cfg(test)]

@@ -9,17 +9,17 @@ use codex_protocol::protocol::Op;
 use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::RolloutLine;
 use codex_protocol::user_input::UserInput;
-use core_test_support::responses;
-use core_test_support::responses::ev_assistant_message;
-use core_test_support::responses::ev_completed;
-use core_test_support::responses::ev_response_created;
-use core_test_support::responses::sse;
-use core_test_support::responses::start_mock_server;
-use core_test_support::skip_if_no_network;
-use core_test_support::test_codex::TestCodex;
-use core_test_support::test_codex::test_codex;
-use core_test_support::test_codex::turn_permission_fields;
-use core_test_support::wait_for_event;
+use codex_core_test_runtime::responses;
+use codex_core_test_runtime::responses::ev_assistant_message;
+use codex_core_test_runtime::responses::ev_completed;
+use codex_core_test_runtime::responses::ev_response_created;
+use codex_core_test_runtime::responses::sse;
+use codex_core_test_runtime::responses::start_mock_server;
+use codex_core_test_runtime::skip_if_no_network;
+use codex_core_test_runtime::test_codex::TestCodex;
+use codex_core_test_runtime::test_codex::test_codex;
+use codex_core_test_runtime::test_codex::turn_permission_fields;
+use codex_core_test_runtime::wait_for_event;
 use image::ImageBuffer;
 use image::Rgba;
 use pretty_assertions::assert_eq;
@@ -209,6 +209,7 @@ async fn drag_drop_image_persists_rollout_request_shape() -> anyhow::Result<()> 
             items: vec![
                 UserInput::Image {
                     image_url: image_url.clone(),
+                    detail: None,
                 },
                 UserInput::Text {
                     text: "dropped image".to_string(),

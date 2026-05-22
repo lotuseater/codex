@@ -2,8 +2,8 @@ use crate::tools::handlers::multi_agents_spec::WaitAgentTimeoutOptions;
 use codex_extension_api::ExtensionToolExecutor;
 use codex_mcp::ToolInfo;
 use codex_protocol::dynamic_tools::DynamicToolSpec;
-use codex_tools::DiscoverableTool;
-use codex_tools::ToolsConfig;
+use codex_tool_execution_api::ToolsConfig;
+use codex_tool_registry_api::DiscoverableTool;
 use std::sync::Arc;
 
 #[derive(Clone, Copy)]

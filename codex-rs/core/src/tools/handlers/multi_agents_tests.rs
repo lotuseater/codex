@@ -2,11 +2,11 @@ use super::*;
 use crate::ThreadManager;
 use crate::config::AgentRoleConfig;
 use crate::config::DEFAULT_AGENT_MAX_DEPTH;
-use crate::function_tool::FunctionCallError;
+use crate::config::ThreadStoreConfig;
+use codex_tool_execution_api::FunctionCallError;
 use crate::init_state_db;
 use crate::session::tests::make_session_and_context;
 use crate::session_prefix::format_subagent_notification_message;
-use crate::thread_manager::thread_store_from_config;
 use crate::tools::context::ToolOutput;
 use crate::tools::handlers::multi_agents_v2::CloseAgentHandler as CloseAgentHandlerV2;
 use crate::tools::handlers::multi_agents_v2::FollowupTaskHandler as FollowupTaskHandlerV2;
@@ -52,7 +52,10 @@ use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::TurnAbortedEvent;
 use codex_protocol::protocol::TurnCompleteEvent;
 use codex_protocol::user_input::UserInput;
-use core_test_support::TempDirExt;
+use codex_test_support_lightweight::TempDirExt;
+use codex_thread_store::ThreadStoreSelection;
+use codex_thread_store::thread_store_from_config;
+use codex_thread_store_api::UnsupportedLiveThreadFactory;
 use pretty_assertions::assert_eq;
 use serde::Deserialize;
 use serde_json::json;
@@ -76,8 +79,8 @@ fn invocation(
         cancellation_token: CancellationToken::new(),
         tracker: Arc::new(Mutex::new(TurnDiffTracker::default())),
         call_id: "call-1".to_string(),
-        tool_name: codex_tools::ToolName::plain(tool_name),
-        source: crate::tools::context::ToolCallSource::Direct,
+        tool_name: codex_tool_execution_api::ToolName::plain(tool_name),
+        source: codex_tool_execution_api::ToolCallSource::Direct,
         payload,
     }
 }
@@ -2242,7 +2245,7 @@ async fn spawn_agent_reapplies_runtime_sandbox_after_role_config() {
     turn.permission_profile = expected_permission_profile.clone();
     assert_ne!(
         expected_permission_profile,
-        turn.config.permissions.effective_permission_profile(),
+        turn.config.permissions.permission_profile(),
         "test requires a runtime profile override that differs from base config"
     );
 
@@ -2415,7 +2418,7 @@ async fn multi_agent_v2_spawn_agent_rejects_nested_spawning() {
     assert_eq!(
         err,
         FunctionCallError::RespondToModel(
-            codex_agent_policy::MULTI_AGENT_V2_NESTED_SPAWN_REJECTION.to_string()
+            crate::agent::policy::MULTI_AGENT_V2_NESTED_SPAWN_REJECTION.to_string()
         )
     );
 }
@@ -2441,7 +2444,7 @@ async fn multi_agent_v2_spawn_agent_rejects_non_thread_subagent_spawning() {
     assert_eq!(
         err,
         FunctionCallError::RespondToModel(
-            codex_agent_policy::MULTI_AGENT_V2_NESTED_SPAWN_REJECTION.to_string()
+            crate::agent::policy::MULTI_AGENT_V2_NESTED_SPAWN_REJECTION.to_string()
         )
     );
 }
@@ -2611,7 +2614,6 @@ async fn send_input_accepts_structured_items() {
         ],
         final_output_json_schema: None,
         responsesapi_client_metadata: None,
-        thread_settings: Default::default(),
     };
     let captured = manager
         .captured_ops()
@@ -3868,6 +3870,11 @@ async fn tool_handlers_cascade_close_and_resume_and_keep_explicitly_closed_subtr
         .enable(Feature::Sqlite)
         .expect("test config should allow sqlite");
     let state_db = init_state_db(&config).await;
+    let thread_store_selection = match &config.experimental_thread_store {
+        ThreadStoreConfig::Local => ThreadStoreSelection::Local,
+        ThreadStoreConfig::InMemory { id } => ThreadStoreSelection::InMemory { id: id.clone() },
+    };
+    let thread_store = thread_store_from_config(&config, thread_store_selection, state_db.clone());
     let manager = ThreadManager::new(
         &config,
         AuthManager::from_auth_for_testing(CodexAuth::from_api_key("dummy")),
@@ -3875,7 +3882,8 @@ async fn tool_handlers_cascade_close_and_resume_and_keep_explicitly_closed_subtr
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         empty_extension_registry(),
         /*analytics_events_client*/ None,
-        thread_store_from_config(&config, state_db.clone()),
+        thread_store,
+        Arc::new(UnsupportedLiveThreadFactory::new()),
         state_db.clone(),
         "11111111-1111-4111-8111-111111111111".to_string(),
         /*attestation_provider*/ None,

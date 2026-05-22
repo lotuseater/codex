@@ -2,7 +2,7 @@ use super::*;
 use crate::agent::control::render_input_preview;
 use crate::tools::handlers::multi_agents_spec::create_send_input_tool_v1;
 use crate::turn_timing::now_unix_timestamp_ms;
-use codex_tools::ToolSpec;
+use codex_tool_registry_api::ToolSpec;
 
 pub(crate) struct Handler;
 
@@ -144,11 +144,15 @@ impl ToolOutput for SendInputResult {
         true
     }
 
-    fn to_response_item(&self, call_id: &str, payload: &ToolPayload) -> ResponseInputItem {
+    fn to_response_item(
+        &self,
+        call_id: &str,
+        payload: &dyn ToolOutputPayload,
+    ) -> ResponseInputItem {
         tool_output_response_item(call_id, payload, self, Some(true), "send_input")
     }
 
-    fn code_mode_result(&self, _payload: &ToolPayload) -> JsonValue {
+    fn code_mode_result(&self, _payload: &dyn ToolOutputPayload) -> JsonValue {
         tool_output_code_mode_result(self, "send_input")
     }
 }

@@ -2,6 +2,16 @@
 #![cfg(unix)]
 
 use anyhow::Result;
+use codex_core_test_runtime::responses::mount_function_call_agent_response;
+use codex_core_test_runtime::responses::start_mock_server;
+use codex_core_test_runtime::skip_if_no_network;
+use codex_core_test_runtime::test_codex::TestCodex;
+use codex_core_test_runtime::test_codex::turn_permission_fields;
+use codex_core_test_runtime::wait_for_event;
+use codex_core_test_runtime::wait_for_event_match;
+use codex_core_test_runtime::zsh_fork::build_zsh_fork_test;
+use codex_core_test_runtime::zsh_fork::restrictive_workspace_write_profile;
+use codex_core_test_runtime::zsh_fork::zsh_fork_runtime;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
@@ -9,16 +19,6 @@ use codex_protocol::protocol::ExecApprovalRequestEvent;
 use codex_protocol::protocol::GranularApprovalConfig;
 use codex_protocol::protocol::Op;
 use codex_protocol::user_input::UserInput;
-use core_test_support::responses::mount_function_call_agent_response;
-use core_test_support::responses::start_mock_server;
-use core_test_support::skip_if_no_network;
-use core_test_support::test_codex::TestCodex;
-use core_test_support::test_codex::turn_permission_fields;
-use core_test_support::wait_for_event;
-use core_test_support::wait_for_event_match;
-use core_test_support::zsh_fork::build_zsh_fork_test;
-use core_test_support::zsh_fork::restrictive_workspace_write_profile;
-use core_test_support::zsh_fork::zsh_fork_runtime;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;

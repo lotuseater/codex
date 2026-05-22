@@ -132,6 +132,7 @@ use codex_rollout_trace::AgentResultTracePayload;
 use codex_rollout_trace::ThreadStartedTraceMetadata;
 use codex_rollout_trace::ThreadTraceContext;
 use codex_sandboxing::policy_transforms::intersect_permission_profiles;
+use codex_session_api::PreviousTurnSettings;
 use codex_shell_command::parse_command::parse_command;
 use codex_terminal_detection::user_agent;
 use codex_thread_store_api::CreateThreadParams;
@@ -201,6 +202,7 @@ mod context_budget;
 mod desktop_automation;
 mod first_moves;
 mod handlers;
+mod input_queue;
 mod mcp;
 mod multi_agents;
 mod review;
@@ -214,6 +216,9 @@ use self::config_lock::validate_config_lock_if_configured;
 #[cfg(test)]
 use self::handlers::submission_dispatch_span;
 use self::handlers::submission_loop;
+pub(crate) use self::input_queue::InputQueue;
+pub(crate) use self::input_queue::TurnInput;
+pub(crate) use self::input_queue::TurnInputQueue;
 use self::review::spawn_review_thread;
 use self::session::AppServerClientMetadata;
 use self::session::Session;
@@ -270,18 +275,6 @@ impl SteerInputError {
     }
 }
 
-/// Notes from the previous real user turn.
-///
-/// Conceptually this is the same role that `previous_model` used to fill, but
-/// it can carry other prior-turn settings that matter when constructing
-/// sensible state-change diffs or full-context reinjection, such as model
-/// switches or detecting a prior `realtime_active -> false` transition.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct PreviousTurnSettings {
-    pub(crate) model: String,
-    pub(crate) realtime_active: Option<bool>,
-}
-
 #[cfg(test)]
 use crate::SkillLoadOutcome;
 #[cfg(test)]
@@ -298,7 +291,6 @@ use crate::session_startup_prewarm::SessionStartupPrewarmHandle;
 use crate::shell;
 use crate::shell_snapshot::ShellSnapshot;
 use crate::state::ActiveTurn;
-use crate::state::MailboxDeliveryPhase;
 use crate::state::PendingRequestPermissions;
 use crate::state::SessionServices;
 use crate::state::SessionState;
@@ -366,9 +358,6 @@ use codex_protocol::protocol::TokenUsage;
 use codex_protocol::protocol::TokenUsageInfo;
 use codex_protocol::protocol::WarningEvent;
 use codex_protocol::user_input::UserInput;
-use codex_tools::ToolEnvironmentMode;
-use codex_tools::ToolsConfig;
-use codex_tools::ToolsConfigParams;
 use codex_utils_absolute_path::AbsolutePathBuf;
 #[cfg(test)]
 use codex_utils_stream_parser::ProposedPlanSegment;
@@ -425,7 +414,7 @@ pub(crate) struct CodexSpawnArgs {
     pub(crate) analytics_events_client: Option<AnalyticsEventsClient>,
     pub(crate) thread_store: Arc<dyn ThreadStore>,
     pub(crate) live_thread_factory: Arc<dyn LiveThreadFactory>,
-    pub(crate) state_db: Option<StateDbHandle>,
+    pub(crate) state_db: Option<state_db::StateDbHandle>,
     pub(crate) attestation_provider: Option<Arc<dyn AttestationProvider>>,
 }
 
@@ -516,8 +505,9 @@ impl Codex {
         }
 
         let primary_environment = environment_selections.primary_environment();
+        let mut startup_warnings = Vec::new();
         let user_instructions = AgentsMdManager::new(&config)
-            .user_instructions(primary_environment.as_deref())
+            .user_instructions(primary_environment.as_deref(), &mut startup_warnings)
             .await;
 
         let exec_policy = if crate::guardian::is_guardian_reviewer_source(&session_source) {
@@ -628,6 +618,8 @@ impl Codex {
             active_permission_profile: config.permissions.active_permission_profile(),
             windows_sandbox_level: WindowsSandboxLevel::from_config(&config),
             cwd: config.cwd.clone(),
+            workspace_roots: vec![config.cwd.clone()],
+            profile_workspace_roots: Vec::new(),
             codex_home: config.codex_home.clone(),
             thread_name: None,
             environments: environment_selections.to_selections(),
@@ -1365,6 +1357,17 @@ impl Session {
     ) -> ConstraintResult<()> {
         let state = self.state.lock().await;
         state.session_configuration.apply(updates).map(|_| ())
+    }
+
+    pub(crate) async fn preview_settings(
+        &self,
+        updates: &SessionSettingsUpdate,
+    ) -> ConstraintResult<ThreadConfigSnapshot> {
+        let state = self.state.lock().await;
+        state
+            .session_configuration
+            .apply(updates)
+            .map(|configuration| configuration.thread_config_snapshot())
     }
 
     pub(crate) async fn set_session_startup_prewarm(
@@ -2913,13 +2916,28 @@ impl Session {
                 state.token_info()
             };
             if let Some(token_info) = token_info.as_ref() {
+                let to_extension_usage =
+                    |usage: &TokenUsage| codex_extension_api::TokenUsage {
+                        input_tokens: usage.input_tokens,
+                        cached_input_tokens: usage.cached_input_tokens,
+                        output_tokens: usage.output_tokens,
+                        reasoning_output_tokens: usage.reasoning_output_tokens,
+                        total_tokens: usage.total_tokens,
+                    };
+                let extension_token_info = codex_extension_api::TokenUsageInfo {
+                    total_token_usage: to_extension_usage(&token_info.total_token_usage),
+                    last_token_usage: to_extension_usage(&token_info.last_token_usage),
+                    model_context_window: token_info.model_context_window,
+                };
                 for contributor in self.services.extensions.token_usage_contributors() {
-                    contributor.on_token_usage(
-                        &self.services.session_extension_data,
-                        &self.services.thread_extension_data,
-                        turn_context.extension_data.as_ref(),
-                        token_info,
-                    );
+                    contributor
+                        .on_token_usage(
+                            &self.services.session_extension_data,
+                            &self.services.thread_extension_data,
+                            turn_context.extension_data.as_ref(),
+                            &extension_token_info,
+                        )
+                        .await;
                 }
             }
         }
@@ -3165,7 +3183,7 @@ impl Session {
         }
 
         let mut turn_state = active_turn.turn_state.lock().await;
-        turn_state.push_pending_input(input.into());
+        turn_state.push_pending_input(TurnInput::UserInput(input));
         turn_state.accept_mailbox_delivery_for_current_turn();
         Ok(active_turn_id.clone())
     }
@@ -3192,35 +3210,24 @@ impl Session {
         }
     }
 
-    pub(crate) async fn defer_mailbox_delivery_to_next_turn(&self, sub_id: &str) {
-        let turn_state = self.turn_state_for_sub_id(sub_id).await;
-        let Some(turn_state) = turn_state else {
-            return;
-        };
-        let mut turn_state = turn_state.lock().await;
-        if turn_state.has_pending_input() {
-            return;
-        }
-        turn_state.set_mailbox_delivery_phase(MailboxDeliveryPhase::NextTurn);
-    }
-
-    pub(crate) async fn accept_mailbox_delivery_for_current_turn(&self, sub_id: &str) {
-        let turn_state = self.turn_state_for_sub_id(sub_id).await;
-        let Some(turn_state) = turn_state else {
-            return;
-        };
-        turn_state
-            .lock()
-            .await
-            .set_mailbox_delivery_phase(MailboxDeliveryPhase::CurrentTurn);
-    }
-
     pub(crate) async fn record_memory_citation_for_turn(&self, sub_id: &str) {
         let turn_state = self.turn_state_for_sub_id(sub_id).await;
         let Some(turn_state) = turn_state else {
             return;
         };
         turn_state.lock().await.has_memory_citation = true;
+    }
+
+    pub(crate) async fn defer_mailbox_delivery_to_next_turn(&self, sub_id: &str) {
+        self.input_queue
+            .defer_mailbox_delivery_to_next_turn(&self.active_turn, sub_id)
+            .await;
+    }
+
+    pub(crate) async fn accept_mailbox_delivery_for_current_turn(&self, sub_id: &str) {
+        self.input_queue
+            .accept_mailbox_delivery_for_current_turn(&self.active_turn, sub_id)
+            .await;
     }
 
     async fn turn_state_for_sub_id(
@@ -3256,7 +3263,7 @@ impl Session {
         clippy::await_holding_invalid_type,
         reason = "active turn checks and turn state updates must remain atomic"
     )]
-    pub async fn prepend_pending_input(&self, input: Vec<ResponseInputItem>) -> Result<(), ()> {
+    pub async fn prepend_pending_input(&self, input: Vec<TurnInput>) -> Result<(), ()> {
         let mut active = self.active_turn.lock().await;
         match active.as_mut() {
             Some(at) => {
@@ -3272,7 +3279,7 @@ impl Session {
         clippy::await_holding_invalid_type,
         reason = "active turn checks and turn state updates must remain atomic"
     )]
-    pub async fn get_pending_input(&self) -> Vec<ResponseInputItem> {
+    pub async fn get_pending_input(&self) -> Vec<TurnInput> {
         let (pending_input, accepts_mailbox_delivery) = {
             let mut active = self.active_turn.lock().await;
             match active.as_mut() {
@@ -3295,6 +3302,7 @@ impl Session {
                 .drain()
                 .into_iter()
                 .map(|mail| mail.to_response_input_item())
+                .map(TurnInput::ResponseInputItem)
                 .collect::<Vec<_>>()
         };
         if pending_input.is_empty() {

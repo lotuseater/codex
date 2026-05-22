@@ -2,7 +2,7 @@ use crate::agent::AgentStatus;
 use crate::config::Config;
 use crate::config::DEFAULT_MULTI_AGENT_V2_MIN_WAIT_TIMEOUT_MS;
 use crate::config::HARD_MAX_MULTI_AGENT_V2_TIMEOUT_MS;
-use crate::function_tool::FunctionCallError;
+use codex_tool_execution_api::FunctionCallError;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use crate::tools::context::FunctionToolOutput;
@@ -23,6 +23,7 @@ use codex_protocol::protocol::Op;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::user_input::UserInput;
+use codex_tool_execution_api::ToolOutputPayload;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -52,7 +53,7 @@ where
 
 pub(crate) fn tool_output_response_item<T>(
     call_id: &str,
-    payload: &ToolPayload,
+    payload: &dyn ToolOutputPayload,
     value: &T,
     success: Option<bool>,
     tool_name: &str,

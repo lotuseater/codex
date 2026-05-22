@@ -3,7 +3,27 @@
 
 use anyhow::Result;
 use codex_config::types::AppToolApproval;
+use codex_core::CodexThreadSettingsOverrides;
 use codex_core::config::Config;
+use codex_core_test_runtime::PathExt;
+use codex_core_test_runtime::apps_test_server::AppsTestServer;
+use codex_core_test_runtime::apps_test_server::SEARCH_CALENDAR_CREATE_TOOL;
+use codex_core_test_runtime::apps_test_server::SEARCH_CALENDAR_NAMESPACE;
+use codex_core_test_runtime::apps_test_server::recorded_apps_tool_call_by_call_id;
+use codex_core_test_runtime::apps_test_server::search_capable_apps_builder;
+use codex_core_test_runtime::responses::ev_assistant_message;
+use codex_core_test_runtime::responses::ev_completed;
+use codex_core_test_runtime::responses::ev_function_call;
+use codex_core_test_runtime::responses::ev_function_call_with_namespace;
+use codex_core_test_runtime::responses::ev_response_created;
+use codex_core_test_runtime::responses::mount_sse_sequence;
+use codex_core_test_runtime::responses::sse;
+use codex_core_test_runtime::responses::start_mock_server;
+use codex_core_test_runtime::skip_if_no_network;
+use codex_core_test_runtime::test_codex::TestCodex;
+use codex_core_test_runtime::test_codex::turn_permission_fields;
+use codex_core_test_runtime::wait_for_event;
+use codex_core_test_runtime::wait_for_event_match;
 use codex_features::Feature;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::ModeKind;
@@ -16,25 +36,6 @@ use codex_protocol::protocol::Op;
 use codex_protocol::request_user_input::RequestUserInputAnswer;
 use codex_protocol::request_user_input::RequestUserInputResponse;
 use codex_protocol::user_input::UserInput;
-use core_test_support::PathExt;
-use core_test_support::apps_test_server::AppsTestServer;
-use core_test_support::apps_test_server::SEARCH_CALENDAR_CREATE_TOOL;
-use core_test_support::apps_test_server::SEARCH_CALENDAR_NAMESPACE;
-use core_test_support::apps_test_server::recorded_apps_tool_call_by_call_id;
-use core_test_support::apps_test_server::search_capable_apps_builder;
-use core_test_support::responses::ev_assistant_message;
-use core_test_support::responses::ev_completed;
-use core_test_support::responses::ev_function_call;
-use core_test_support::responses::ev_function_call_with_namespace;
-use core_test_support::responses::ev_response_created;
-use core_test_support::responses::mount_sse_sequence;
-use core_test_support::responses::sse;
-use core_test_support::responses::start_mock_server;
-use core_test_support::skip_if_no_network;
-use core_test_support::test_codex::TestCodex;
-use core_test_support::test_codex::turn_permission_fields;
-use core_test_support::wait_for_event;
-use core_test_support::wait_for_event_match;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use std::collections::HashMap;
@@ -76,21 +77,19 @@ async fn submit_user_turn(
             environments: None,
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
-            thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+            thread_settings: CodexThreadSettingsOverrides {
                 cwd: Some(test.cwd.path().to_path_buf()),
                 approval_policy: Some(approval_policy),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
-                collaboration_mode: collaboration_mode.or({
-                    Some(codex_protocol::config_types::CollaborationMode {
-                        mode: codex_protocol::config_types::ModeKind::Default,
-                        settings: codex_protocol::config_types::Settings {
-                            model: session_model,
-                            reasoning_effort: None,
-                            developer_instructions: None,
-                        },
-                    })
-                }),
+                collaboration_mode: collaboration_mode.or(Some(CollaborationMode {
+                    mode: ModeKind::Default,
+                    settings: Settings {
+                        model: session_model,
+                        reasoning_effort: None,
+                        developer_instructions: None,
+                    },
+                })),
                 ..Default::default()
             },
         })

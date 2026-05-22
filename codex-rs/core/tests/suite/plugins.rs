@@ -7,21 +7,21 @@ use std::time::Instant;
 
 use anyhow::Result;
 use anyhow::bail;
+use codex_core_test_runtime::apps_test_server::AppsTestServer;
+use codex_core_test_runtime::responses::ev_completed;
+use codex_core_test_runtime::responses::ev_response_created;
+use codex_core_test_runtime::responses::mount_sse_once;
+use codex_core_test_runtime::responses::sse;
+use codex_core_test_runtime::responses::start_mock_server;
+use codex_core_test_runtime::skip_if_no_network;
+use codex_core_test_runtime::stdio_server_bin;
+use codex_core_test_runtime::test_codex::test_codex;
+use codex_core_test_runtime::wait_for_event;
+use codex_core_test_runtime::wait_for_event_with_timeout;
 use codex_features::Feature;
 use codex_login::CodexAuth;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
-use core_test_support::apps_test_server::AppsTestServer;
-use core_test_support::responses::ev_completed;
-use core_test_support::responses::ev_response_created;
-use core_test_support::responses::mount_sse_once;
-use core_test_support::responses::sse;
-use core_test_support::responses::start_mock_server;
-use core_test_support::skip_if_no_network;
-use core_test_support::stdio_server_bin;
-use core_test_support::test_codex::test_codex;
-use core_test_support::wait_for_event;
-use core_test_support::wait_for_event_with_timeout;
 use tempfile::TempDir;
 use wiremock::MockServer;
 
@@ -227,7 +227,6 @@ async fn capability_sections_render_in_developer_message_in_order() -> Result<()
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
-            thread_settings: Default::default(),
         })
         .await?;
 
@@ -306,7 +305,6 @@ async fn explicit_plugin_mentions_inject_plugin_guidance() -> Result<()> {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
-            thread_settings: Default::default(),
         })
         .await?;
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
@@ -388,7 +386,6 @@ async fn explicit_plugin_mentions_track_plugin_used_analytics() -> Result<()> {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
-            thread_settings: Default::default(),
         })
         .await?;
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;

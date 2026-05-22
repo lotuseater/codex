@@ -2,12 +2,12 @@ use std::sync::Arc;
 
 use codex_extension_api::ExtensionToolExecutor;
 use codex_extension_api::ExtensionToolOutput;
+use codex_tool_execution_api::ToolCall as ExtensionToolCall;
 use codex_tool_execution_api::ToolName;
 use codex_tool_registry_api::ToolSpec;
-use codex_tool_execution_api::ToolCall as ExtensionToolCall;
 use serde_json::Value;
 
-use crate::function_tool::FunctionCallError;
+use codex_tool_execution_api::FunctionCallError;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
@@ -111,15 +111,20 @@ mod tests {
     use crate::tools::registry::PreToolUsePayload;
     use crate::tools::registry::ToolHandler;
     use crate::turn_diff_tracker::TurnDiffTracker;
+    use codex_extension_api::ExtensionToolOutput;
     use codex_tool_execution_api::ToolCallSource;
+    use codex_tool_execution_api::ToolName;
     use codex_tool_registry_api::ResponsesApiTool;
+    use codex_tool_registry_api::ToolSpec;
     use codex_tool_registry_api::parse_tool_input_schema;
 
     struct StubExtensionExecutor;
 
     #[async_trait::async_trait]
-    impl codex_extension_api::ToolExecutor<codex_tool_execution_api::ToolCall> for StubExtensionExecutor {
-        type Output = codex_tool_execution_api::JsonToolOutput;
+    impl codex_extension_api::ToolExecutor<codex_tool_execution_api::ToolCall>
+        for StubExtensionExecutor
+    {
+        type Output = ExtensionToolOutput;
 
         fn tool_name(&self) -> ToolName {
             ToolName::plain("extension_echo")
@@ -147,9 +152,15 @@ mod tests {
         fn handle(
             &self,
             _call: codex_tool_execution_api::ToolCall,
-        ) -> impl std::future::Future<Output = Result<Self::Output, codex_tool_execution_api::FunctionCallError>> + Send
-        {
-            async { Ok(codex_tool_execution_api::JsonToolOutput::new(json!({ "ok": true }))) }
+        ) -> impl std::future::Future<
+            Output = Result<Self::Output, codex_tool_execution_api::FunctionCallError>,
+        > + Send {
+            async {
+                let output: ExtensionToolOutput = Box::new(
+                    codex_tool_execution_api::JsonToolOutput::new(json!({ "ok": true })),
+                );
+                Ok(output)
+            }
         }
     }
 

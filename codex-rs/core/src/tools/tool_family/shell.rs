@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use codex_protocol::openai_models::ConfigShellToolType;
-use codex_tools::ShellCommandBackendConfig;
-use codex_tools::ToolEnvironmentMode;
+use codex_tool_execution_api::ShellCommandBackendConfig;
+use codex_tool_execution_api::ToolEnvironmentMode;
 
 use crate::tools::handlers::ExecCommandHandler;
 use crate::tools::handlers::ExecCommandHandlerOptions;

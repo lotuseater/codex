@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::exec::ExecParams;
 use crate::exec_policy::ExecApprovalRequest;
-use crate::function_tool::FunctionCallError;
+use codex_tool_execution_api::FunctionCallError;
 use crate::session::turn_context::TurnContext;
 use crate::shell::ShellType;
 use crate::tools::context::FunctionToolOutput;
@@ -24,7 +24,7 @@ use crate::tools::runtimes::shell::ShellRuntimeBackend;
 use crate::tools::sandboxing::ToolCtx;
 use codex_protocol::models::AdditionalPermissionProfile;
 use codex_protocol::protocol::ExecCommandSource;
-use codex_tools::ToolName;
+use codex_tool_execution_api::ToolName;
 
 mod shell_command;
 

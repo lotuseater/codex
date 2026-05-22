@@ -4,7 +4,7 @@
 //! status updates: `create_goal` starts an active objective, while
 //! `update_goal` can only mark the existing goal complete or blocked.
 
-use crate::function_tool::FunctionCallError;
+use codex_tool_execution_api::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use codex_protocol::protocol::ThreadGoal;
 use codex_protocol::protocol::ThreadGoalStatus;

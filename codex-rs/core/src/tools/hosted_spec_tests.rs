@@ -3,8 +3,8 @@ use codex_protocol::config_types::WebSearchContextSize;
 use codex_protocol::config_types::WebSearchFilters;
 use codex_protocol::config_types::WebSearchUserLocation;
 use codex_protocol::config_types::WebSearchUserLocationType;
-use codex_tools::ResponsesApiWebSearchFilters;
-use codex_tools::ResponsesApiWebSearchUserLocation;
+use codex_tool_registry_api::ResponsesApiWebSearchFilters;
+use codex_tool_registry_api::ResponsesApiWebSearchUserLocation;
 use pretty_assertions::assert_eq;
 
 #[test]

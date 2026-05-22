@@ -1,6 +1,6 @@
 use super::*;
 use crate::session::tests::make_session_configuration_for_tests;
-use crate::state::AutoCompactWindowSnapshot;
+use crate::state::auto_compact_window::AutoCompactWindowSnapshot;
 use codex_protocol::protocol::CreditsSnapshot;
 use codex_protocol::protocol::RateLimitWindow;
 use pretty_assertions::assert_eq;

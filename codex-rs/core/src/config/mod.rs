@@ -7,6 +7,7 @@ use crate::unified_exec::MIN_EMPTY_YIELD_TIME_MS;
 use crate::windows_sandbox::WindowsSandboxLevelExt;
 use crate::windows_sandbox::resolve_windows_sandbox_mode;
 use crate::windows_sandbox::resolve_windows_sandbox_private_desktop;
+use codex_compaction_policy::DEFAULT_TRIGGER_CONTEXT_PERCENT;
 use codex_config::CloudRequirementsLoader;
 use codex_config::ConfigLayerSource;
 use codex_config::ConfigLayerStack;
@@ -60,7 +61,6 @@ use codex_config::types::TuiNotificationSettings;
 use codex_config::types::TuiPetAnchor;
 use codex_config::types::UriBasedFileOpener;
 use codex_config::types::WindowsSandboxModeToml;
-use codex_context_reduction::DEFAULT_TRIGGER_CONTEXT_PERCENT;
 use codex_core_plugins::PluginsConfigInput;
 use codex_exec_server::ExecutorFileSystem;
 use codex_exec_server::LOCAL_FS;
@@ -146,6 +146,8 @@ mod managed_features;
 mod network_proxy_spec;
 mod otel;
 mod permissions;
+#[cfg(test)]
+pub(crate) mod resolved_permission_profile;
 #[cfg(test)]
 mod schema;
 pub use codex_config::ConfigLoadOptions;
@@ -248,7 +250,7 @@ fn resolve_model_compact_percentage(
     match configured {
         None => DEFAULT_TRIGGER_CONTEXT_PERCENT,
         Some(value) if (0..=100).contains(&value) => value as u8,
-        Some(value) => {
+        Some(_value) => {
             startup_warnings.push(format!(
                 "configured value for `model_compact_percentage` must be between 0 and 100; \
                  using default {DEFAULT_TRIGGER_CONTEXT_PERCENT}"
@@ -767,6 +769,9 @@ pub struct Config {
     /// Optional path override for the host-owned apps MCP server.
     pub apps_mcp_path_override: Option<String>,
 
+    /// Optional product SKU forwarded to the host-owned apps MCP server.
+    pub apps_mcp_product_sku: Option<String>,
+
     /// Machine-local realtime audio device preferences used by realtime voice.
     pub realtime_audio: RealtimeAudioConfig,
 
@@ -899,7 +904,7 @@ pub struct MultiAgentV2Config {
 }
 
 pub const DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT: &str =
-    codex_agent_policy::DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT;
+    crate::agent::policy::DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT;
 
 // Keep the full multi-agent planning and worker guidance in codex-agent-policy so
 // config stays a thin adapter while the prompt policy remains independently tested.
@@ -910,7 +915,7 @@ pub const DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT: &str =
 // oversight. The moved subagent prompt keeps worker boundaries, short handoffs,
 // root-only spawning, and no-revert/no-finalization rules.
 pub const DEFAULT_MULTI_AGENT_V2_SUBAGENT_USAGE_HINT_TEXT: &str =
-    codex_agent_policy::DEFAULT_MULTI_AGENT_V2_SUBAGENT_USAGE_HINT_TEXT;
+    crate::agent::policy::DEFAULT_MULTI_AGENT_V2_SUBAGENT_USAGE_HINT_TEXT;
 
 impl Default for MultiAgentV2Config {
     fn default() -> Self {
@@ -978,8 +983,10 @@ impl AuthManagerConfig for Config {
         self.cli_auth_credentials_store_mode
     }
 
-    fn forced_chatgpt_workspace_id(&self) -> Option<String> {
-        self.forced_chatgpt_workspace_id.clone()
+    fn forced_chatgpt_workspace_id(&self) -> Option<Vec<String>> {
+        self.forced_chatgpt_workspace_id
+            .clone()
+            .map(|workspace_id| vec![workspace_id])
     }
 
     fn chatgpt_base_url(&self) -> String {
@@ -1207,6 +1214,7 @@ impl Config {
         let plugins_input = self.plugins_config_input();
         let loaded_plugins = plugins_manager.plugins_for_config(&plugins_input).await;
         let mut configured_mcp_servers = self.mcp_servers.get().clone();
+        let mut plugin_ids_by_mcp_server_name = HashMap::new();
         for plugin in loaded_plugins
             .plugins()
             .iter()
@@ -1219,7 +1227,12 @@ impl Config {
                 self.config_layer_stack.requirements().plugins.as_ref(),
             );
             for (name, plugin_server) in plugin_mcp_servers {
-                configured_mcp_servers.entry(name).or_insert(plugin_server);
+                if let std::collections::hash_map::Entry::Vacant(entry) =
+                    configured_mcp_servers.entry(name.clone())
+                {
+                    entry.insert(plugin_server);
+                    plugin_ids_by_mcp_server_name.insert(name, plugin.config_name.clone());
+                }
             }
         }
         if let Some(mcp_requirements) = self.config_layer_stack.requirements().mcp_servers.as_ref()
@@ -1233,6 +1246,7 @@ impl Config {
         McpConfig {
             chatgpt_base_url: self.chatgpt_base_url.clone(),
             apps_mcp_path_override: self.apps_mcp_path_override.clone(),
+            apps_mcp_product_sku: self.apps_mcp_product_sku.clone(),
             codex_home: self.codex_home.to_path_buf(),
             mcp_oauth_credentials_store_mode: self.mcp_oauth_credentials_store_mode,
             mcp_oauth_callback_port: self.mcp_oauth_callback_port,
@@ -1255,6 +1269,7 @@ impl Config {
                 ElicitationCapability::default()
             },
             configured_mcp_servers,
+            plugin_ids_by_mcp_server_name,
             plugin_capability_summaries: loaded_plugins.capability_summaries().to_vec(),
         }
     }
@@ -2335,12 +2350,14 @@ impl Config {
             guardian_policy_config_source: _,
         } = config_layer_stack.requirements().clone();
 
-        let user_instructions = AgentsMdManager::load_global_instructions(Some(&codex_home))
-            .map(|loaded| loaded.contents);
         let mut startup_warnings = config_layer_stack
             .startup_warnings()
             .unwrap_or_default()
             .to_vec();
+        let user_instructions =
+            AgentsMdManager::load_global_instructions(fs, Some(&codex_home), &mut startup_warnings)
+                .await
+                .map(|loaded| loaded.contents);
 
         // Destructure ConfigOverrides fully to ensure all overrides are applied.
         let ConfigOverrides {
@@ -3369,6 +3386,9 @@ impl Config {
                 .or(cfg.chatgpt_base_url)
                 .unwrap_or("https://chatgpt.com/backend-api/".to_string()),
             apps_mcp_path_override,
+            apps_mcp_product_sku: config_profile
+                .apps_mcp_product_sku
+                .or(cfg.apps_mcp_product_sku),
             realtime_audio: cfg
                 .audio
                 .map_or_else(RealtimeAudioConfig::default, |audio| RealtimeAudioConfig {

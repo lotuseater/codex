@@ -1,7 +1,7 @@
 use super::*;
 use crate::tools::handlers::multi_agents_spec::create_compact_agent_tool;
 use crate::turn_timing::now_unix_timestamp_ms;
-use codex_tools::ToolSpec;
+use codex_tool_registry_api::ToolSpec;
 
 pub(crate) struct Handler;
 
@@ -100,7 +100,7 @@ impl ToolExecutor<ToolInvocation> for Handler {
     }
 }
 
-impl ToolHandler for Handler {
+impl CoreToolRuntime for Handler {
     fn matches_kind(&self, payload: &ToolPayload) -> bool {
         matches!(payload, ToolPayload::Function { .. })
     }
@@ -128,11 +128,15 @@ impl ToolOutput for CompactAgentResult {
         true
     }
 
-    fn to_response_item(&self, call_id: &str, payload: &ToolPayload) -> ResponseInputItem {
+    fn to_response_item(
+        &self,
+        call_id: &str,
+        payload: &dyn ToolOutputPayload,
+    ) -> ResponseInputItem {
         tool_output_response_item(call_id, payload, self, Some(true), "compact_agent")
     }
 
-    fn code_mode_result(&self, _payload: &ToolPayload) -> JsonValue {
+    fn code_mode_result(&self, _payload: &dyn ToolOutputPayload) -> JsonValue {
         tool_output_code_mode_result(self, "compact_agent")
     }
 }

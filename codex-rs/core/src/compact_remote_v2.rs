@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::Prompt;
@@ -178,10 +179,15 @@ async fn run_remote_compact_task_inner_impl(
     let mut task_memory =
         crate::task_memory::CompactionTaskMemory::from_history(&trace_input_history);
     let prompt_input = history.for_prompt(&turn_context.model_info.input_modalities);
+    let explicitly_enabled_connectors = HashSet::new();
+    let cancellation_token = CancellationToken::new();
     let tool_router = built_tools(
         sess.as_ref(),
         turn_context.as_ref(),
-        &CancellationToken::new(),
+        &prompt_input,
+        &explicitly_enabled_connectors,
+        None,
+        &cancellation_token,
     )
     .await?;
     let mut input = prompt_input.clone();

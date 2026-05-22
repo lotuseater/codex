@@ -2,6 +2,8 @@
 
 use codex_config::CONFIG_TOML_FILE;
 use codex_core::NewThread;
+use codex_core_test_runtime::load_default_config_for_test;
+use codex_core_test_runtime::wait_for_event;
 use codex_features::Feature;
 use codex_login::CodexAuth;
 use codex_protocol::protocol::EventMsg;
@@ -9,8 +11,6 @@ use codex_protocol::protocol::InitialHistory;
 use codex_protocol::protocol::WarningEvent;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use core::time::Duration;
-use core_test_support::load_default_config_for_test;
-use core_test_support::wait_for_event;
 use tempfile::TempDir;
 use tokio::time::timeout;
 use toml::toml;

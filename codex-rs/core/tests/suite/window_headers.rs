@@ -3,20 +3,20 @@
 use anyhow::Result;
 use codex_core::CodexThread;
 use codex_core::compact::SUMMARIZATION_PROMPT;
+use codex_core_test_runtime::compact_fixtures::COMPACT_WARNING_MESSAGE;
+use codex_core_test_runtime::responses::ResponsesRequest;
+use codex_core_test_runtime::responses::ev_assistant_message;
+use codex_core_test_runtime::responses::ev_completed;
+use codex_core_test_runtime::responses::mount_sse_sequence;
+use codex_core_test_runtime::responses::sse;
+use codex_core_test_runtime::responses::start_mock_server;
+use codex_core_test_runtime::skip_if_no_network;
+use codex_core_test_runtime::test_codex::test_codex;
+use codex_core_test_runtime::wait_for_event;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::WarningEvent;
 use codex_protocol::user_input::UserInput;
-use core_test_support::compact_fixtures::COMPACT_WARNING_MESSAGE;
-use core_test_support::responses::ResponsesRequest;
-use core_test_support::responses::ev_assistant_message;
-use core_test_support::responses::ev_completed;
-use core_test_support::responses::mount_sse_sequence;
-use core_test_support::responses::sse;
-use core_test_support::responses::start_mock_server;
-use core_test_support::skip_if_no_network;
-use core_test_support::test_codex::test_codex;
-use core_test_support::wait_for_event;
 use pretty_assertions::assert_eq;
 use std::sync::Arc;
 
@@ -112,7 +112,6 @@ async fn submit_user_turn(codex: &Arc<CodexThread>, text: &str) -> Result<()> {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
-            thread_settings: Default::default(),
         })
         .await?;
     wait_for_event(codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;

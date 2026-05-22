@@ -1,4 +1,4 @@
-use crate::function_tool::FunctionCallError;
+use codex_tool_execution_api::FunctionCallError;
 use crate::goals::GoalRuntimeEvent;
 use crate::goals::SetGoalRequest;
 use crate::tools::context::ToolInvocation;
@@ -10,8 +10,8 @@ use crate::tools::handlers::parse_arguments;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
 use codex_protocol::protocol::ThreadGoalStatus;
-use codex_tools::ToolName;
-use codex_tools::ToolSpec;
+use codex_tool_execution_api::ToolName;
+use codex_tool_registry_api::ToolSpec;
 
 use super::CompletionBudgetReport;
 use super::UpdateGoalArgs;

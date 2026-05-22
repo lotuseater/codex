@@ -1,5 +1,7 @@
 use super::turn_context::image_generation_tool_auth_allowed;
 use super::*;
+use codex_tool_execution_api::ToolsConfig;
+use codex_tool_execution_api::ToolsConfigParams;
 use std::sync::atomic::AtomicBool;
 
 /// Spawn a review thread using the given prompt.

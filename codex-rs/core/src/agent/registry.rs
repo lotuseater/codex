@@ -14,6 +14,8 @@ use std::sync::Mutex;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
+use super::policy;
+
 /// This structure is used to add some limits on the multi-agent capabilities for Codex. In
 /// the current implementation, it limits:
 /// * Total number of sub-agents (i.e. threads) per user session
@@ -72,11 +74,11 @@ fn session_depth(session_source: &SessionSource) -> i32 {
 }
 
 pub(crate) fn next_thread_spawn_depth(session_source: &SessionSource) -> i32 {
-    session_depth(session_source).saturating_add(1)
+    policy::next_thread_spawn_depth(session_depth(session_source))
 }
 
 pub(crate) fn exceeds_thread_spawn_depth_limit(depth: i32, max_depth: i32) -> bool {
-    depth > max_depth
+    policy::exceeds_thread_spawn_depth_limit(depth, max_depth)
 }
 
 impl AgentRegistry {

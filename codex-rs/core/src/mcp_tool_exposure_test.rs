@@ -5,14 +5,8 @@ use codex_features::Feature;
 use codex_features::Features;
 use codex_mcp::CODEX_APPS_MCP_SERVER_NAME;
 use codex_mcp::ToolInfo;
-use codex_models_manager::test_support::construct_model_info_offline_for_tests;
-use codex_protocol::config_types::WebSearchMode;
-use codex_protocol::config_types::WindowsSandboxLevel;
-use codex_protocol::models::PermissionProfile;
-use codex_protocol::protocol::SessionSource;
-use codex_tools::ToolName;
-use codex_tools::ToolsConfig;
-use codex_tools::ToolsConfigParams;
+use codex_protocol::ToolName;
+use codex_tool_registry_api::McpToolExposureConfig;
 use pretty_assertions::assert_eq;
 use rmcp::model::JsonObject;
 use rmcp::model::Tool;
@@ -94,24 +88,18 @@ fn tool_names(tools: &[ToolInfo]) -> HashSet<ToolName> {
         .collect()
 }
 
-async fn tools_config_for_mcp_tool_exposure(search_tool: bool) -> ToolsConfig {
-    let config = test_config().await;
-    let model_info =
-        construct_model_info_offline_for_tests("gpt-5.4", &config.to_models_manager_config());
-    let features = Features::with_defaults();
-    let available_models = Vec::new();
-    let mut tools_config = ToolsConfig::new(&ToolsConfigParams {
-        model_info: &model_info,
-        available_models: &available_models,
-        features: &features,
-        image_generation_tool_auth_allowed: true,
-        web_search_mode: Some(WebSearchMode::Cached),
-        session_source: SessionSource::Cli,
-        permission_profile: &PermissionProfile::Disabled,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
-    });
-    tools_config.search_tool = search_tool;
-    tools_config
+struct TestMcpToolExposureConfig {
+    search_tool: bool,
+}
+
+impl McpToolExposureConfig for TestMcpToolExposureConfig {
+    fn search_tool_enabled(&self) -> bool {
+        self.search_tool
+    }
+}
+
+fn tools_config_for_mcp_tool_exposure(search_tool: bool) -> TestMcpToolExposureConfig {
+    TestMcpToolExposureConfig { search_tool }
 }
 
 #[tokio::test]
@@ -121,7 +109,7 @@ async fn directly_exposes_small_effective_tool_sets_when_always_defer_disabled()
         .features
         .disable(Feature::ToolSearchAlwaysDeferMcpTools)
         .expect("test config should allow feature update");
-    let tools_config = tools_config_for_mcp_tool_exposure(/*search_tool*/ true).await;
+    let tools_config = tools_config_for_mcp_tool_exposure(/*search_tool*/ true);
     let mcp_tools = numbered_mcp_tools(DIRECT_MCP_TOOL_EXPOSURE_THRESHOLD - 1);
 
     let exposure = build_mcp_tool_exposure(
@@ -139,7 +127,7 @@ async fn directly_exposes_small_effective_tool_sets_when_always_defer_disabled()
 #[tokio::test]
 async fn searches_large_effective_tool_sets() {
     let config = test_config().await;
-    let tools_config = tools_config_for_mcp_tool_exposure(/*search_tool*/ true).await;
+    let tools_config = tools_config_for_mcp_tool_exposure(/*search_tool*/ true);
     let mcp_tools = numbered_mcp_tools(DIRECT_MCP_TOOL_EXPOSURE_THRESHOLD);
 
     let exposure = build_mcp_tool_exposure(
@@ -161,7 +149,7 @@ async fn searches_large_effective_tool_sets() {
 #[tokio::test]
 async fn directly_exposes_explicit_apps_without_deferred_overlap() {
     let config = test_config().await;
-    let tools_config = tools_config_for_mcp_tool_exposure(/*search_tool*/ true).await;
+    let tools_config = tools_config_for_mcp_tool_exposure(/*search_tool*/ true);
     let mut mcp_tools = numbered_mcp_tools(DIRECT_MCP_TOOL_EXPOSURE_THRESHOLD - 1);
     mcp_tools.push(make_mcp_tool(
         CODEX_APPS_MCP_SERVER_NAME,
@@ -216,7 +204,7 @@ async fn always_defer_feature_preserves_explicit_apps() {
         .features
         .enable(Feature::ToolSearchAlwaysDeferMcpTools)
         .expect("test config should allow feature update");
-    let tools_config = tools_config_for_mcp_tool_exposure(/*search_tool*/ true).await;
+    let tools_config = tools_config_for_mcp_tool_exposure(/*search_tool*/ true);
     let mcp_tools = vec![
         make_mcp_tool(
             "rmcp",
@@ -272,7 +260,7 @@ async fn always_defer_feature_preserves_bootstrap_mcp_tools() {
         .features
         .enable(Feature::ToolSearchAlwaysDeferMcpTools)
         .expect("test config should allow feature update");
-    let tools_config = tools_config_for_mcp_tool_exposure(/*search_tool*/ true).await;
+    let tools_config = tools_config_for_mcp_tool_exposure(/*search_tool*/ true);
     let mcp_tools = vec![
         make_mcp_tool(
             "wizard-codex",
@@ -332,7 +320,7 @@ async fn always_defer_feature_does_not_directly_expose_non_wizard_bootstrap_name
         .features
         .enable(Feature::ToolSearchAlwaysDeferMcpTools)
         .expect("test config should allow feature update");
-    let tools_config = tools_config_for_mcp_tool_exposure(/*search_tool*/ true).await;
+    let tools_config = tools_config_for_mcp_tool_exposure(/*search_tool*/ true);
     let mcp_tools = vec![make_mcp_tool(
         "other_server",
         "first_moves_predict",

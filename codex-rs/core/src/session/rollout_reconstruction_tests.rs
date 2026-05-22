@@ -59,6 +59,7 @@ async fn record_initial_history_resumed_bare_turn_context_does_not_hydrate_previ
     let previous_model = "previous-rollout-model";
     let previous_context_item = TurnContextItem {
         turn_id: Some(turn_context.sub_id.clone()),
+        trace_id: turn_context.trace_id.clone(),
         #[allow(deprecated)]
         cwd: turn_context.cwd.to_path_buf(),
         current_date: turn_context.current_date.clone(),
@@ -74,6 +75,10 @@ async fn record_initial_history_resumed_bare_turn_context_does_not_hydrate_previ
         realtime_active: Some(turn_context.realtime_active),
         effort: turn_context.reasoning_effort,
         summary: codex_protocol::config_types::ReasoningSummary::Auto,
+        user_instructions: turn_context.user_instructions.clone(),
+        developer_instructions: turn_context.developer_instructions.clone(),
+        final_output_json_schema: turn_context.final_output_json_schema.clone(),
+        truncation_policy: Some(turn_context.truncation_policy.clone()),
     };
     let rollout_items = vec![RolloutItem::TurnContext(previous_context_item)];
 
@@ -112,6 +117,7 @@ async fn record_initial_history_resumed_hydrates_previous_turn_settings_from_lif
     let previous_model = "previous-rollout-model";
     let mut previous_context_item = TurnContextItem {
         turn_id: Some(turn_context.sub_id.clone()),
+        trace_id: turn_context.trace_id.clone(),
         #[allow(deprecated)]
         cwd: turn_context.cwd.to_path_buf(),
         current_date: turn_context.current_date.clone(),
@@ -127,6 +133,10 @@ async fn record_initial_history_resumed_hydrates_previous_turn_settings_from_lif
         realtime_active: Some(turn_context.realtime_active),
         effort: turn_context.reasoning_effort,
         summary: codex_protocol::config_types::ReasoningSummary::Auto,
+        user_instructions: turn_context.user_instructions.clone(),
+        developer_instructions: turn_context.developer_instructions.clone(),
+        final_output_json_schema: turn_context.final_output_json_schema.clone(),
+        truncation_policy: Some(turn_context.truncation_policy.clone()),
     };
     let turn_id = previous_context_item
         .turn_id
@@ -147,7 +157,9 @@ async fn record_initial_history_resumed_hydrates_previous_turn_settings_from_lif
             codex_protocol::protocol::UserMessageEvent {
                 message: "seed".to_string(),
                 images: None,
+                image_details: Vec::new(),
                 local_images: Vec::new(),
+                local_image_details: Vec::new(),
                 text_elements: Vec::new(),
                 ..Default::default()
             },
@@ -214,7 +226,9 @@ async fn reconstruct_history_rollback_keeps_history_and_metadata_in_sync_for_com
             codex_protocol::protocol::UserMessageEvent {
                 message: "turn 1 user".to_string(),
                 images: None,
+                image_details: Vec::new(),
                 local_images: Vec::new(),
+                local_image_details: Vec::new(),
                 text_elements: Vec::new(),
                 ..Default::default()
             },
@@ -243,7 +257,9 @@ async fn reconstruct_history_rollback_keeps_history_and_metadata_in_sync_for_com
             codex_protocol::protocol::UserMessageEvent {
                 message: "turn 2 user".to_string(),
                 images: None,
+                image_details: Vec::new(),
                 local_images: Vec::new(),
+                local_image_details: Vec::new(),
                 text_elements: Vec::new(),
                 ..Default::default()
             },
@@ -314,7 +330,9 @@ async fn reconstruct_history_rollback_keeps_history_and_metadata_in_sync_for_inc
             codex_protocol::protocol::UserMessageEvent {
                 message: "turn 1 user".to_string(),
                 images: None,
+                image_details: Vec::new(),
                 local_images: Vec::new(),
+                local_image_details: Vec::new(),
                 text_elements: Vec::new(),
                 ..Default::default()
             },
@@ -343,7 +361,9 @@ async fn reconstruct_history_rollback_keeps_history_and_metadata_in_sync_for_inc
             codex_protocol::protocol::UserMessageEvent {
                 message: "turn 2 user".to_string(),
                 images: None,
+                image_details: Vec::new(),
                 local_images: Vec::new(),
+                local_image_details: Vec::new(),
                 text_elements: Vec::new(),
                 ..Default::default()
             },
@@ -406,7 +426,9 @@ async fn reconstruct_history_rollback_skips_non_user_turns_for_history_and_metad
             codex_protocol::protocol::UserMessageEvent {
                 message: "turn 1 user".to_string(),
                 images: None,
+                image_details: Vec::new(),
                 local_images: Vec::new(),
+                local_image_details: Vec::new(),
                 text_elements: Vec::new(),
                 ..Default::default()
             },
@@ -435,7 +457,9 @@ async fn reconstruct_history_rollback_skips_non_user_turns_for_history_and_metad
             codex_protocol::protocol::UserMessageEvent {
                 message: "turn 2 user".to_string(),
                 images: None,
+                image_details: Vec::new(),
                 local_images: Vec::new(),
+                local_image_details: Vec::new(),
                 text_elements: Vec::new(),
                 ..Default::default()
             },
@@ -526,7 +550,9 @@ async fn reconstruct_history_rollback_counts_inter_agent_assistant_turns() {
             codex_protocol::protocol::UserMessageEvent {
                 message: "turn 1 user".to_string(),
                 images: None,
+                image_details: Vec::new(),
                 local_images: Vec::new(),
+                local_image_details: Vec::new(),
                 text_elements: Vec::new(),
                 ..Default::default()
             },
@@ -615,7 +641,9 @@ async fn reconstruct_history_rollback_clears_history_and_metadata_when_exceeding
             codex_protocol::protocol::UserMessageEvent {
                 message: "only user".to_string(),
                 images: None,
+                image_details: Vec::new(),
                 local_images: Vec::new(),
+                local_image_details: Vec::new(),
                 text_elements: Vec::new(),
                 ..Default::default()
             },
@@ -668,7 +696,9 @@ async fn record_initial_history_resumed_rollback_skips_only_user_turns() {
             codex_protocol::protocol::UserMessageEvent {
                 message: "seed".to_string(),
                 images: None,
+                image_details: Vec::new(),
                 local_images: Vec::new(),
+                local_image_details: Vec::new(),
                 text_elements: Vec::new(),
                 ..Default::default()
             },
@@ -741,7 +771,9 @@ async fn record_initial_history_resumed_rollback_drops_incomplete_user_turn_comp
             codex_protocol::protocol::UserMessageEvent {
                 message: "seed".to_string(),
                 images: None,
+                image_details: Vec::new(),
                 local_images: Vec::new(),
+                local_image_details: Vec::new(),
                 text_elements: Vec::new(),
                 ..Default::default()
             },
@@ -768,7 +800,9 @@ async fn record_initial_history_resumed_rollback_drops_incomplete_user_turn_comp
             codex_protocol::protocol::UserMessageEvent {
                 message: "rolled back".to_string(),
                 images: None,
+                image_details: Vec::new(),
                 local_images: Vec::new(),
+                local_image_details: Vec::new(),
                 text_elements: Vec::new(),
                 ..Default::default()
             },
@@ -900,7 +934,9 @@ async fn reconstruct_history_legacy_compaction_without_replacement_history_clear
             codex_protocol::protocol::UserMessageEvent {
                 message: "after legacy compact".to_string(),
                 images: None,
+                image_details: Vec::new(),
                 local_images: Vec::new(),
+                local_image_details: Vec::new(),
                 text_elements: Vec::new(),
                 ..Default::default()
             },
@@ -931,6 +967,7 @@ async fn record_initial_history_resumed_turn_context_after_compaction_reestablis
     let previous_model = "previous-rollout-model";
     let previous_context_item = TurnContextItem {
         turn_id: Some(turn_context.sub_id.clone()),
+        trace_id: turn_context.trace_id.clone(),
         #[allow(deprecated)]
         cwd: turn_context.cwd.to_path_buf(),
         current_date: turn_context.current_date.clone(),
@@ -946,6 +983,10 @@ async fn record_initial_history_resumed_turn_context_after_compaction_reestablis
         realtime_active: Some(turn_context.realtime_active),
         effort: turn_context.reasoning_effort,
         summary: codex_protocol::config_types::ReasoningSummary::Auto,
+        user_instructions: turn_context.user_instructions.clone(),
+        developer_instructions: turn_context.developer_instructions.clone(),
+        final_output_json_schema: turn_context.final_output_json_schema.clone(),
+        truncation_policy: Some(turn_context.truncation_policy.clone()),
     };
     let previous_turn_id = previous_context_item
         .turn_id
@@ -964,7 +1005,9 @@ async fn record_initial_history_resumed_turn_context_after_compaction_reestablis
             codex_protocol::protocol::UserMessageEvent {
                 message: "seed".to_string(),
                 images: None,
+                image_details: Vec::new(),
                 local_images: Vec::new(),
+                local_image_details: Vec::new(),
                 text_elements: Vec::new(),
                 ..Default::default()
             },
@@ -1006,6 +1049,7 @@ async fn record_initial_history_resumed_turn_context_after_compaction_reestablis
             .expect("serialize seeded reference context item"),
         serde_json::to_value(Some(TurnContextItem {
             turn_id: Some(turn_context.sub_id.clone()),
+            trace_id: turn_context.trace_id.clone(),
             #[allow(deprecated)]
             cwd: turn_context.cwd.to_path_buf(),
             current_date: turn_context.current_date.clone(),
@@ -1021,6 +1065,10 @@ async fn record_initial_history_resumed_turn_context_after_compaction_reestablis
             realtime_active: Some(turn_context.realtime_active),
             effort: turn_context.reasoning_effort,
             summary: codex_protocol::config_types::ReasoningSummary::Auto,
+            user_instructions: turn_context.user_instructions.clone(),
+            developer_instructions: turn_context.developer_instructions.clone(),
+            final_output_json_schema: turn_context.final_output_json_schema.clone(),
+            truncation_policy: Some(turn_context.truncation_policy.clone()),
         }))
         .expect("serialize expected reference context item")
     );
@@ -1033,6 +1081,7 @@ async fn record_initial_history_resumed_aborted_turn_without_id_clears_active_tu
     let previous_model = "previous-rollout-model";
     let previous_context_item = TurnContextItem {
         turn_id: Some(turn_context.sub_id.clone()),
+        trace_id: turn_context.trace_id.clone(),
         #[allow(deprecated)]
         cwd: turn_context.cwd.to_path_buf(),
         current_date: turn_context.current_date.clone(),
@@ -1048,6 +1097,10 @@ async fn record_initial_history_resumed_aborted_turn_without_id_clears_active_tu
         realtime_active: Some(turn_context.realtime_active),
         effort: turn_context.reasoning_effort,
         summary: codex_protocol::config_types::ReasoningSummary::Auto,
+        user_instructions: turn_context.user_instructions.clone(),
+        developer_instructions: turn_context.developer_instructions.clone(),
+        final_output_json_schema: turn_context.final_output_json_schema.clone(),
+        truncation_policy: Some(turn_context.truncation_policy.clone()),
     };
     let previous_turn_id = previous_context_item
         .turn_id
@@ -1068,7 +1121,9 @@ async fn record_initial_history_resumed_aborted_turn_without_id_clears_active_tu
             codex_protocol::protocol::UserMessageEvent {
                 message: "seed".to_string(),
                 images: None,
+                image_details: Vec::new(),
                 local_images: Vec::new(),
+                local_image_details: Vec::new(),
                 text_elements: Vec::new(),
                 ..Default::default()
             },
@@ -1095,7 +1150,9 @@ async fn record_initial_history_resumed_aborted_turn_without_id_clears_active_tu
             codex_protocol::protocol::UserMessageEvent {
                 message: "aborted".to_string(),
                 images: None,
+                image_details: Vec::new(),
                 local_images: Vec::new(),
+                local_image_details: Vec::new(),
                 text_elements: Vec::new(),
                 ..Default::default()
             },
@@ -1146,6 +1203,7 @@ async fn record_initial_history_resumed_unmatched_abort_preserves_active_turn_fo
     let unmatched_abort_turn_id = "other-turn".to_string();
     let current_context_item = TurnContextItem {
         turn_id: Some(current_turn_id.clone()),
+        trace_id: turn_context.trace_id.clone(),
         #[allow(deprecated)]
         cwd: turn_context.cwd.to_path_buf(),
         current_date: turn_context.current_date.clone(),
@@ -1161,6 +1219,10 @@ async fn record_initial_history_resumed_unmatched_abort_preserves_active_turn_fo
         realtime_active: Some(turn_context.realtime_active),
         effort: turn_context.reasoning_effort,
         summary: codex_protocol::config_types::ReasoningSummary::Auto,
+        user_instructions: turn_context.user_instructions.clone(),
+        developer_instructions: turn_context.developer_instructions.clone(),
+        final_output_json_schema: turn_context.final_output_json_schema.clone(),
+        truncation_policy: Some(turn_context.truncation_policy.clone()),
     };
 
     let rollout_items = vec![
@@ -1176,7 +1238,9 @@ async fn record_initial_history_resumed_unmatched_abort_preserves_active_turn_fo
             codex_protocol::protocol::UserMessageEvent {
                 message: "seed".to_string(),
                 images: None,
+                image_details: Vec::new(),
                 local_images: Vec::new(),
+                local_image_details: Vec::new(),
                 text_elements: Vec::new(),
                 ..Default::default()
             },
@@ -1203,7 +1267,9 @@ async fn record_initial_history_resumed_unmatched_abort_preserves_active_turn_fo
             codex_protocol::protocol::UserMessageEvent {
                 message: "current".to_string(),
                 images: None,
+                image_details: Vec::new(),
                 local_images: Vec::new(),
+                local_image_details: Vec::new(),
                 text_elements: Vec::new(),
                 ..Default::default()
             },
@@ -1258,6 +1324,7 @@ async fn record_initial_history_resumed_trailing_incomplete_turn_compaction_clea
     let previous_model = "previous-rollout-model";
     let previous_context_item = TurnContextItem {
         turn_id: Some(turn_context.sub_id.clone()),
+        trace_id: turn_context.trace_id.clone(),
         #[allow(deprecated)]
         cwd: turn_context.cwd.to_path_buf(),
         current_date: turn_context.current_date.clone(),
@@ -1273,6 +1340,10 @@ async fn record_initial_history_resumed_trailing_incomplete_turn_compaction_clea
         realtime_active: Some(turn_context.realtime_active),
         effort: turn_context.reasoning_effort,
         summary: codex_protocol::config_types::ReasoningSummary::Auto,
+        user_instructions: turn_context.user_instructions.clone(),
+        developer_instructions: turn_context.developer_instructions.clone(),
+        final_output_json_schema: turn_context.final_output_json_schema.clone(),
+        truncation_policy: Some(turn_context.truncation_policy.clone()),
     };
     let previous_turn_id = previous_context_item
         .turn_id
@@ -1293,7 +1364,9 @@ async fn record_initial_history_resumed_trailing_incomplete_turn_compaction_clea
             codex_protocol::protocol::UserMessageEvent {
                 message: "seed".to_string(),
                 images: None,
+                image_details: Vec::new(),
                 local_images: Vec::new(),
+                local_image_details: Vec::new(),
                 text_elements: Vec::new(),
                 ..Default::default()
             },
@@ -1320,7 +1393,9 @@ async fn record_initial_history_resumed_trailing_incomplete_turn_compaction_clea
             codex_protocol::protocol::UserMessageEvent {
                 message: "incomplete".to_string(),
                 images: None,
+                image_details: Vec::new(),
                 local_images: Vec::new(),
+                local_image_details: Vec::new(),
                 text_elements: Vec::new(),
                 ..Default::default()
             },
@@ -1371,7 +1446,9 @@ async fn record_initial_history_resumed_trailing_incomplete_turn_preserves_turn_
             codex_protocol::protocol::UserMessageEvent {
                 message: "incomplete".to_string(),
                 images: None,
+                image_details: Vec::new(),
                 local_images: Vec::new(),
+                local_image_details: Vec::new(),
                 text_elements: Vec::new(),
                 ..Default::default()
             },
@@ -1409,6 +1486,7 @@ async fn record_initial_history_resumed_replaced_incomplete_compacted_turn_clear
     let previous_model = "previous-rollout-model";
     let previous_context_item = TurnContextItem {
         turn_id: Some(turn_context.sub_id.clone()),
+        trace_id: turn_context.trace_id.clone(),
         #[allow(deprecated)]
         cwd: turn_context.cwd.to_path_buf(),
         current_date: turn_context.current_date.clone(),
@@ -1424,6 +1502,10 @@ async fn record_initial_history_resumed_replaced_incomplete_compacted_turn_clear
         realtime_active: Some(turn_context.realtime_active),
         effort: turn_context.reasoning_effort,
         summary: codex_protocol::config_types::ReasoningSummary::Auto,
+        user_instructions: turn_context.user_instructions.clone(),
+        developer_instructions: turn_context.developer_instructions.clone(),
+        final_output_json_schema: turn_context.final_output_json_schema.clone(),
+        truncation_policy: Some(turn_context.truncation_policy.clone()),
     };
     let previous_turn_id = previous_context_item
         .turn_id
@@ -1445,7 +1527,9 @@ async fn record_initial_history_resumed_replaced_incomplete_compacted_turn_clear
             codex_protocol::protocol::UserMessageEvent {
                 message: "seed".to_string(),
                 images: None,
+                image_details: Vec::new(),
                 local_images: Vec::new(),
+                local_image_details: Vec::new(),
                 text_elements: Vec::new(),
                 ..Default::default()
             },
@@ -1472,7 +1556,9 @@ async fn record_initial_history_resumed_replaced_incomplete_compacted_turn_clear
             codex_protocol::protocol::UserMessageEvent {
                 message: "compacted".to_string(),
                 images: None,
+                image_details: Vec::new(),
                 local_images: Vec::new(),
+                local_image_details: Vec::new(),
                 text_elements: Vec::new(),
                 ..Default::default()
             },

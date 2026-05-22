@@ -1,13 +1,13 @@
 use codex_protocol::ThreadId;
 use codex_protocol::models::ShellCommandToolCallParams;
-use codex_tools::ShellCommandBackendConfig;
-use codex_tools::ToolName;
+use codex_tool_execution_api::ShellCommandBackendConfig;
+use codex_tool_execution_api::ToolName;
 use std::path::Path;
 
 use crate::exec::ExecCapturePolicy;
 use crate::exec::ExecParams;
 use crate::exec_env::create_env;
-use crate::function_tool::FunctionCallError;
+use codex_tool_execution_api::FunctionCallError;
 use crate::maybe_emit_implicit_skill_invocation;
 use crate::session::turn_context::TurnContext;
 use crate::shell::Shell;
@@ -20,12 +20,12 @@ use crate::tools::handlers::resolve_workdir_base_path;
 use crate::tools::handlers::rewrite_function_string_argument;
 use crate::tools::handlers::updated_hook_command;
 use crate::tools::hook_names::HookToolName;
+use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::PostToolUsePayload;
 use crate::tools::registry::PreToolUsePayload;
 use crate::tools::registry::ToolExecutor;
-use crate::tools::registry::ToolHandler;
 use crate::tools::runtimes::shell::ShellRuntimeBackend;
-use codex_tools::ToolSpec;
+use codex_tool_registry_api::ToolSpec;
 
 use super::super::shell_spec::CommandToolOptions;
 use super::super::shell_spec::create_shell_command_tool;
@@ -207,7 +207,6 @@ impl ToolExecutor<ToolInvocation> for ShellCommandHandler {
             turn,
             tracker,
             call_id,
-            freeform: true,
             shell_runtime_backend: self.shell_runtime_backend(),
         })
         .await
@@ -232,7 +231,7 @@ pub(super) fn is_codex_checkout_workdir(workdir: &Path) -> bool {
     })
 }
 
-impl ToolHandler for ShellCommandHandler {
+impl CoreToolRuntime for ShellCommandHandler {
     fn matches_kind(&self, payload: &ToolPayload) -> bool {
         matches!(payload, ToolPayload::Function { .. })
     }
@@ -268,7 +267,7 @@ impl ToolHandler for ShellCommandHandler {
     fn post_tool_use_payload(
         &self,
         invocation: &ToolInvocation,
-        result: &Self::Output,
+        result: &dyn crate::tools::context::ToolOutput,
     ) -> Option<PostToolUsePayload> {
         let tool_response =
             result.post_tool_use_response(&invocation.call_id, &invocation.payload)?;

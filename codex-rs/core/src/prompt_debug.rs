@@ -9,17 +9,19 @@ use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::user_input::UserInput;
+use codex_thread_store::ThreadStoreSelection;
 use codex_thread_store_api::UnsupportedLiveThreadFactory;
 use tokio_util::sync::CancellationToken;
 
 use crate::config::Config;
+use crate::config::ThreadStoreConfig;
 use crate::resolve_installation_id;
 use crate::session::session::Session;
 use crate::session::turn::build_prompt;
 use crate::session::turn::built_tools;
 use crate::state_db_bridge::StateDbHandle;
 use crate::thread_manager::ThreadManager;
-use crate::thread_manager::thread_store_from_config;
+use crate::thread_store_from_config;
 use codex_extension_api::empty_extension_registry;
 
 /// Build the model-visible `input` list for a single debug turn.
@@ -39,7 +41,11 @@ pub async fn build_prompt_input(
         config.codex_linux_sandbox_exe.clone(),
     )?;
 
-    let thread_store = thread_store_from_config(&config, state_db.clone());
+    let thread_store_selection = match &config.experimental_thread_store {
+        ThreadStoreConfig::Local => ThreadStoreSelection::Local,
+        ThreadStoreConfig::InMemory { id } => ThreadStoreSelection::InMemory { id: id.clone() },
+    };
+    let thread_store = thread_store_from_config(&config, thread_store_selection, state_db.clone());
     let installation_id = resolve_installation_id(&config.codex_home).await?;
     let thread_manager = ThreadManager::new(
         &config,
@@ -90,7 +96,16 @@ pub(crate) async fn build_prompt_input_from_session(
         .clone_history()
         .await
         .for_prompt(&turn_context.model_info.input_modalities);
-    let router = built_tools(sess, turn_context.as_ref(), &CancellationToken::new()).await?;
+    let explicitly_enabled_connectors = std::collections::HashSet::new();
+    let router = built_tools(
+        sess,
+        turn_context.as_ref(),
+        &prompt_input,
+        &explicitly_enabled_connectors,
+        None,
+        &CancellationToken::new(),
+    )
+    .await?;
     let base_instructions = sess.get_base_instructions().await;
     let prompt = build_prompt(
         prompt_input,

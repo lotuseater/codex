@@ -1,51 +1,51 @@
 use std::collections::HashSet;
 
 use codex_app_catalog_types::AppInfo;
-use codex_app_server_protocol::McpElicitationObjectType;
-use codex_app_server_protocol::McpElicitationSchema;
-use codex_app_server_protocol::McpServerElicitationRequest;
-use codex_app_server_protocol::McpServerElicitationRequestParams;
 use codex_config::types::ToolSuggestDisabledTool;
 use codex_mcp::CODEX_APPS_MCP_SERVER_NAME;
+use codex_mcp_elicitation_api::McpElicitationObjectType;
+use codex_mcp_elicitation_api::McpElicitationSchema;
+use codex_mcp_elicitation_api::McpServerElicitationRequest;
+use codex_mcp_elicitation_api::McpServerElicitationRequestParams;
 use codex_rmcp_client::ElicitationAction;
 use codex_rmcp_client::ElicitationResponse;
 use codex_tool_execution_api::ToolName;
 use codex_tool_registry_api::DiscoverableTool;
 use codex_tool_registry_api::DiscoverableToolAction;
 use codex_tool_registry_api::DiscoverableToolType;
-use codex_tool_registry_api::ToolSpec;
 use codex_tool_registry_api::REQUEST_PLUGIN_INSTALL_PERSIST_ALWAYS_VALUE;
 use codex_tool_registry_api::REQUEST_PLUGIN_INSTALL_PERSIST_KEY;
 use codex_tool_registry_api::REQUEST_PLUGIN_INSTALL_TOOL_NAME;
-use codex_tool_registry_api::DiscoverableTool;
 use codex_tool_registry_api::RequestPluginInstallArgs;
 use codex_tool_registry_api::RequestPluginInstallEntry;
 use codex_tool_registry_api::RequestPluginInstallResult;
+use codex_tool_registry_api::ToolSpec;
 use codex_tool_registry_api::all_requested_connectors_picked_up;
 use codex_tool_registry_api::build_request_plugin_install_meta;
 use codex_tool_registry_api::collect_request_plugin_install_entries;
 use codex_tool_registry_api::filter_request_plugin_install_discoverable_tools_for_client;
 use codex_tool_registry_api::verified_connector_install_completed;
 use rmcp::model::RequestId;
-use serde_json::json;
 use serde_json::Value;
+use serde_json::json;
 use tracing::warn;
 
 use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
 use crate::connectors;
-use crate::function_tool::FunctionCallError;
+use codex_tool_execution_api::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::context::boxed_tool_output;
 use crate::tools::handlers::parse_arguments;
-use crate::tools::handlers::request_plugin_install_spec::create_request_plugin_install_tool;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
+use codex_tool_registry_api::create_request_plugin_install_tool;
 
 pub struct RequestPluginInstallHandler {
     request_plugin_install_entries: Vec<RequestPluginInstallEntry>,
+    tool_search_available: bool,
 }
 
 fn build_request_plugin_install_elicitation_request(
@@ -81,11 +81,12 @@ fn build_request_plugin_install_elicitation_request(
 }
 
 impl RequestPluginInstallHandler {
-    pub fn new(discoverable_tools: Vec<DiscoverableTool>) -> Self {
+    pub fn new(discoverable_tools: Vec<DiscoverableTool>, tool_search_available: bool) -> Self {
         Self {
             request_plugin_install_entries: collect_request_plugin_install_entries(
                 &discoverable_tools,
             ),
+            tool_search_available,
         }
     }
 }
@@ -100,6 +101,7 @@ impl ToolExecutor<ToolInvocation> for RequestPluginInstallHandler {
     fn spec(&self) -> Option<ToolSpec> {
         Some(create_request_plugin_install_tool(
             &self.request_plugin_install_entries,
+            self.tool_search_available,
         ))
     }
 

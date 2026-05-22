@@ -23,7 +23,6 @@ use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_model_provider::create_model_provider;
 use codex_model_provider_info::ModelProviderInfo;
-use codex_model_provider_info::OPENAI_PROVIDER_ID;
 use codex_models_manager::manager::RefreshStrategy;
 use codex_models_manager::manager::SharedModelsManager;
 use codex_protocol::ThreadId;
@@ -52,10 +51,9 @@ use codex_state::DirectionalThreadSpawnEdgeStatus;
 use codex_thread_store_api::LiveThreadFactory;
 use codex_thread_store_api::ReadThreadByRolloutPathParams;
 use codex_thread_store_api::ReadThreadParams;
-use codex_thread_store_api::RecordingLiveThreadFactory;
-use codex_thread_store_api::RecordingThreadStore;
 use codex_thread_store_api::StoredThread;
 use codex_thread_store_api::ThreadMetadataPatch;
+use codex_thread_store_api::ThreadPersistenceServices;
 use codex_thread_store_api::ThreadStore;
 use codex_thread_store_api::ThreadStoreError;
 use codex_thread_store_api::UpdateThreadMetadataParams;
@@ -203,8 +201,7 @@ pub(crate) struct ThreadManagerState {
     plugins_manager: Arc<PluginsManager>,
     mcp_manager: Arc<McpManager>,
     extensions: Arc<ExtensionRegistry<Config>>,
-    thread_store: Arc<dyn ThreadStore>,
-    live_thread_factory: Arc<dyn LiveThreadFactory>,
+    persistence: ThreadPersistenceServices,
     attestation_provider: Option<Arc<dyn AttestationProvider>>,
     session_source: SessionSource,
     installation_id: String,
@@ -263,8 +260,7 @@ impl ThreadManager {
                 plugins_manager,
                 mcp_manager,
                 extensions,
-                thread_store,
-                live_thread_factory,
+                persistence: ThreadPersistenceServices::new(thread_store, live_thread_factory),
                 attestation_provider,
                 auth_manager,
                 session_source,
@@ -346,7 +342,6 @@ impl ThreadManager {
         ));
         // This test constructor has no Config input. Tests that need a non-local
         // process store should construct ThreadManager::new with an explicit store.
-        let thread_store: Arc<dyn ThreadStore> = Arc::new(RecordingThreadStore::default());
         Self {
             state: Arc::new(ThreadManagerState {
                 threads: Arc::new(RwLock::new(HashMap::new())),
@@ -358,8 +353,7 @@ impl ThreadManager {
                 plugins_manager,
                 mcp_manager,
                 extensions: empty_extension_registry(),
-                thread_store,
-                live_thread_factory: Arc::new(RecordingLiveThreadFactory::new()),
+                persistence: ThreadPersistenceServices::recording(),
                 attestation_provider: None,
                 auth_manager,
                 session_source: SessionSource::Exec,
@@ -462,6 +456,7 @@ impl ThreadManager {
                 .map_err(|err| thread_store_metadata_update_error(thread_id, err));
         }
         self.state
+            .persistence
             .thread_store
             .update_thread_metadata(UpdateThreadMetadataParams {
                 thread_id,
@@ -813,6 +808,7 @@ impl ThreadManager {
         let requested_rollout_path = rollout_path.clone();
         let stored_thread = self
             .state
+            .persistence
             .thread_store
             .read_thread_by_rollout_path(ReadThreadByRolloutPathParams {
                 rollout_path,
@@ -923,7 +919,8 @@ impl ThreadManagerState {
         params: ReadThreadParams,
     ) -> CodexResult<StoredThread> {
         let thread_id = params.thread_id;
-        self.thread_store
+        self.persistence
+            .thread_store
             .read_thread(params)
             .await
             .map_err(|err| match err {
@@ -1201,8 +1198,8 @@ impl ThreadManagerState {
             parent_trace,
             environment_selections,
             analytics_events_client: self.analytics_events_client.clone(),
-            thread_store: Arc::clone(&self.thread_store),
-            live_thread_factory: Arc::clone(&self.live_thread_factory),
+            thread_store: Arc::clone(&self.persistence.thread_store),
+            live_thread_factory: Arc::clone(&self.persistence.live_thread_factory),
             state_db: self.state_db.clone(),
             attestation_provider: self.attestation_provider.clone(),
         })

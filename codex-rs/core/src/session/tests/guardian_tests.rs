@@ -17,6 +17,7 @@ use codex_config::ConfigLayerEntry;
 use codex_config::ConfigLayerSource;
 use codex_config::ConfigRequirements;
 use codex_config::ConfigRequirementsToml;
+use codex_core_test_runtime::codex_linux_sandbox_exe_or_skip;
 use codex_exec_server::EnvironmentManager;
 use codex_execpolicy::Decision;
 use codex_execpolicy::Evaluation;
@@ -34,20 +35,19 @@ use codex_protocol::request_permissions::PermissionGrantScope;
 use codex_protocol::request_permissions::RequestPermissionProfile;
 use codex_protocol::request_permissions::RequestPermissionsArgs;
 use codex_protocol::request_permissions::RequestPermissionsResponse;
+use codex_test_support_lightweight::PathExt;
+use codex_test_support_lightweight::TempDirExt;
+use codex_test_support_responses::responses::ev_assistant_message;
+use codex_test_support_responses::responses::ev_completed;
+use codex_test_support_responses::responses::ev_response_created;
+use codex_test_support_responses::responses::mount_response_once;
+use codex_test_support_responses::responses::mount_sse_once;
+use codex_test_support_responses::responses::sse;
+use codex_test_support_responses::responses::sse_response;
+use codex_test_support_responses::responses::start_mock_server;
 use codex_thread_store_api::RecordingLiveThreadFactory;
 use codex_thread_store_api::RecordingThreadStore;
-use codex_tools::ShellCommandBackendConfig;
-use core_test_support::PathExt;
-use core_test_support::TempDirExt;
-use core_test_support::codex_linux_sandbox_exe_or_skip;
-use core_test_support::responses::ev_assistant_message;
-use core_test_support::responses::ev_completed;
-use core_test_support::responses::ev_response_created;
-use core_test_support::responses::mount_response_once;
-use core_test_support::responses::mount_sse_once;
-use core_test_support::responses::sse;
-use core_test_support::responses::sse_response;
-use core_test_support::responses::start_mock_server;
+use codex_tool_execution_api::ShellCommandBackendConfig;
 use pretty_assertions::assert_eq;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -337,7 +337,7 @@ async fn guardian_allows_shell_additional_permissions_requests_past_policy_valid
             cancellation_token: CancellationToken::new(),
             tracker: Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new())),
             call_id: "test-call".to_string(),
-            tool_name: codex_tools::ToolName::plain("shell"),
+            tool_name: plain_tool_name("shell"),
             source: crate::tools::context::ToolCallSource::Direct,
             payload: ToolPayload::Function {
                 arguments: serde_json::json!({
@@ -466,7 +466,7 @@ async fn strict_auto_review_turn_grant_forces_guardian_for_shell_policy_skip() {
             cancellation_token: CancellationToken::new(),
             tracker: Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new())),
             call_id: "strict-shell-call".to_string(),
-            tool_name: codex_tools::ToolName::plain("shell"),
+            tool_name: plain_tool_name("shell"),
             source: ToolCallSource::Direct,
             payload: ToolPayload::Function {
                 arguments: serde_json::json!({
@@ -512,7 +512,7 @@ async fn guardian_allows_unified_exec_additional_permissions_requests_past_polic
             cancellation_token: CancellationToken::new(),
             tracker: Arc::clone(&tracker),
             call_id: "exec-call".to_string(),
-            tool_name: codex_tools::ToolName::plain("exec_command"),
+            tool_name: plain_tool_name("exec_command"),
             source: crate::tools::context::ToolCallSource::Direct,
             payload: ToolPayload::Function {
                 arguments: serde_json::json!({
@@ -549,29 +549,32 @@ async fn process_compacted_history_preserves_separate_guardian_developer_message
     turn_context.session_source = guardian_source;
     turn_context.developer_instructions = Some(guardian_policy.clone());
 
+    let compacted_history = vec![
+        ResponseItem::Message {
+            id: None,
+            role: "developer".to_string(),
+            content: vec![ContentItem::InputText {
+                text: "stale developer message".to_string(),
+            }],
+            phase: None,
+        },
+        ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: "summary".to_string(),
+            }],
+            phase: None,
+        },
+    ];
+    let mut task_memory =
+        crate::task_memory::CompactionTaskMemory::from_history(&compacted_history);
     let refreshed = crate::compact_remote::process_compacted_history(
         &session,
         &turn_context,
-        vec![
-            ResponseItem::Message {
-                id: None,
-                role: "developer".to_string(),
-                content: vec![ContentItem::InputText {
-                    text: "stale developer message".to_string(),
-                }],
-                phase: None,
-            },
-            ResponseItem::Message {
-                id: None,
-                role: "user".to_string(),
-                content: vec![ContentItem::InputText {
-                    text: "summary".to_string(),
-                }],
-                phase: None,
-            },
-        ],
+        compacted_history,
         InitialContextInjection::BeforeLastUserMessage,
-        /*task_memory_item*/ None,
+        &mut task_memory,
     )
     .await;
 
@@ -630,7 +633,7 @@ async fn shell_handler_allows_sticky_turn_permissions_without_inline_request_per
             cancellation_token: CancellationToken::new(),
             tracker: Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new())),
             call_id: "sticky-turn-grant".to_string(),
-            tool_name: codex_tools::ToolName::plain("shell"),
+            tool_name: plain_tool_name("shell"),
             source: crate::tools::context::ToolCallSource::Direct,
             payload: ToolPayload::Function {
                 arguments: serde_json::json!({

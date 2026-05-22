@@ -34,6 +34,7 @@ use codex_protocol::protocol::ThreadGoalUpdatedEvent;
 use codex_protocol::protocol::TokenUsage;
 use codex_protocol::protocol::validate_thread_goal_objective;
 use codex_rollout::state_db::reconcile_rollout;
+use codex_tool_registry_api::UPDATE_GOAL_TOOL_NAME;
 use codex_utils_template::Template;
 use futures::future::BoxFuture;
 use std::sync::Arc;
@@ -356,7 +357,7 @@ impl Session {
                 turn_context,
                 tool_name,
             } => Box::pin(async move {
-                if tool_name != codex_tools::UPDATE_GOAL_TOOL_NAME {
+                if tool_name != UPDATE_GOAL_TOOL_NAME {
                     self.account_thread_goal_progress(
                         turn_context,
                         BudgetLimitSteering::Allowed,
@@ -1345,16 +1346,13 @@ impl Session {
                 .await;
             return;
         }
-        self.input_queue
-            .extend_pending_input_for_turn_state(
-                turn_state.as_ref(),
-                candidate
-                    .items
-                    .into_iter()
-                    .map(TurnInput::ResponseInputItem)
-                    .collect(),
-            )
-            .await;
+        {
+            let mut turn_state = turn_state.lock().await;
+            for item in candidate.items {
+                turn_state.push_pending_input(TurnInput::ResponseInputItem(item));
+            }
+            turn_state.accept_mailbox_delivery_for_current_turn();
+        }
 
         let turn_context = self
             .new_default_turn_with_sub_id(uuid::Uuid::new_v4().to_string())
@@ -1392,15 +1390,11 @@ impl Session {
             tracing::debug!("skipping active goal continuation because a turn is already active");
             return None;
         }
-        if self
-            .input_queue
-            .has_queued_response_items_for_next_turn()
-            .await
-        {
+        if self.has_queued_response_items_for_next_turn().await {
             tracing::debug!("skipping active goal continuation because queued input exists");
             return None;
         }
-        if self.input_queue.has_trigger_turn_mailbox_items().await {
+        if self.has_trigger_turn_mailbox_items().await {
             tracing::debug!(
                 "skipping active goal continuation because trigger-turn mailbox input is pending"
             );
@@ -1437,11 +1431,8 @@ impl Session {
             return None;
         }
         if self.active_turn.lock().await.is_some()
-            || self
-                .input_queue
-                .has_queued_response_items_for_next_turn()
-                .await
-            || self.input_queue.has_trigger_turn_mailbox_items().await
+            || self.has_queued_response_items_for_next_turn().await
+            || self.has_trigger_turn_mailbox_items().await
         {
             tracing::debug!("skipping active goal continuation because pending work appeared");
             return None;

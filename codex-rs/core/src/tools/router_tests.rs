@@ -15,20 +15,23 @@ use codex_protocol::dynamic_tools::DynamicToolSpec;
 use codex_protocol::models::FunctionCallOutputBody;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
-use codex_tools::ResponsesApiNamespace;
-use codex_tools::ResponsesApiNamespaceTool;
-use codex_tools::ToolName;
-use codex_tools::ToolSpec;
-use codex_tools::default_namespace_description;
+use codex_test_support_context_fixtures::tool_fixtures::json_tool_output;
+use codex_tool_execution_api::FunctionCallError;
+use codex_tool_execution_api::ToolName;
+use codex_tool_execution_api::ToolOutput;
+use codex_tool_registry_api::ResponsesApiNamespace;
+use codex_tool_registry_api::ResponsesApiNamespaceTool;
+use codex_tool_registry_api::ToolSpec;
+use codex_tool_registry_api::default_namespace_description;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use super::ToolCall;
-use super::ToolCallSource;
 use super::ToolRouter;
 use super::ToolRouterParams;
 use super::extension_tool_executors;
+use codex_tool_execution_api::ToolCallSource;
 
 struct ExtensionEchoContributor;
 
@@ -45,7 +48,7 @@ impl codex_extension_api::ToolContributor for ExtensionEchoContributor {
 struct ExtensionEchoExecutor;
 
 impl ToolExecutor<ExtensionToolCall> for ExtensionEchoExecutor {
-    type Output = Box<dyn codex_tools::ToolOutput>;
+    type Output = Box<dyn ToolOutput>;
 
     fn tool_name(&self) -> ToolName {
         ToolName::namespaced("extension/", "echo")
@@ -77,10 +80,10 @@ impl ToolExecutor<ExtensionToolCall> for ExtensionEchoExecutor {
     async fn handle(
         &self,
         call: ExtensionToolCall,
-    ) -> Result<Box<dyn codex_tools::ToolOutput>, codex_tools::FunctionCallError> {
+    ) -> Result<Box<dyn ToolOutput>, FunctionCallError> {
         let arguments: serde_json::Value =
             serde_json::from_str(call.function_arguments()?).expect("test arguments should parse");
-        Ok(Box::new(codex_tools::JsonToolOutput::new(json!({
+        Ok(Box::new(json_tool_output(json!({
             "arguments": arguments,
             "callId": call.call_id,
             "ok": true,

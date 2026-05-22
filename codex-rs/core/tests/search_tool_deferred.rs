@@ -1,4 +1,7 @@
 mod support;
 
-#[path = "suite/search_tool_deferred.rs"]
+#[path = "../../core-test-suites/tools-router/tests/suite/search_tool_support.rs"]
+mod search_tool_support;
+
+#[path = "../../core-test-suites/tools-router/tests/suite/search_tool_deferred.rs"]
 mod search_tool_deferred;

@@ -19,6 +19,7 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use rmcp::model::RequestId;
 use tokio::sync::oneshot;
 
+use crate::session::TurnInput;
 use crate::session::TurnInputQueue;
 use crate::session::turn_context::TurnContext;
 use crate::tasks::AnySessionTask;
@@ -102,6 +103,12 @@ impl ActiveTurn {
     pub(crate) fn drain_tasks(&mut self) -> Vec<RunningTask> {
         self.tasks.drain(..).map(|(_, task)| task).collect()
     }
+
+    pub(crate) async fn clear_pending(&self) {
+        let mut turn_state = self.turn_state.lock().await;
+        turn_state.clear_pending_waiters();
+        turn_state.pending_input.items.clear();
+    }
 }
 
 /// Mutable state for a single turn.
@@ -129,6 +136,10 @@ pub(crate) struct PendingRequestPermissions {
 }
 
 impl TurnState {
+    pub(crate) fn prepend_pending_input(&mut self, input: Vec<TurnInput>) {
+        self.pending_input.items.splice(0..0, input);
+    }
+
     pub(crate) fn insert_pending_approval(
         &mut self,
         key: String,
@@ -150,6 +161,18 @@ impl TurnState {
         self.pending_user_input.clear();
         self.pending_elicitations.clear();
         self.pending_dynamic_tools.clear();
+    }
+
+    pub(crate) fn push_pending_input(&mut self, input: impl Into<TurnInput>) {
+        self.pending_input.items.push(input.into());
+    }
+
+    pub(crate) fn take_pending_input(&mut self) -> Vec<TurnInput> {
+        self.pending_input.items.split_off(0)
+    }
+
+    pub(crate) fn has_pending_input(&self) -> bool {
+        !self.pending_input.items.is_empty()
     }
 
     pub(crate) fn insert_pending_request_permissions(

@@ -29,7 +29,6 @@ use crate::hook_runtime::inspect_pending_input;
 use crate::hook_runtime::record_additional_contexts;
 use crate::hook_runtime::record_pending_input;
 use crate::hook_runtime::run_pending_session_start_hooks;
-use crate::hook_runtime::run_user_prompt_submit_hooks;
 use crate::injection::ToolMentionKind;
 use crate::injection::app_id_from_path;
 use crate::injection::tool_kind_for_path;
@@ -43,7 +42,7 @@ use crate::mentions::collect_tool_mentions_from_messages;
 use crate::parse_turn_item;
 use crate::plugins::build_plugin_injections;
 use crate::resolve_skill_dependencies_for_turn;
-use crate::session::PreviousTurnSettings;
+use crate::session::TurnInput;
 use crate::session::desktop_automation::desktop_automation_context_for_prompt;
 use crate::session::desktop_automation::merge_desktop_automation_context;
 use crate::session::first_moves::first_moves_context_for_fresh_turn;
@@ -52,6 +51,7 @@ use crate::session::first_moves::spawn_repo_context_scout_shadow_for_fresh_turn;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use crate::stream_events_utils::HandleOutputCtx;
+use crate::stream_events_utils::TurnItemContributorPolicy;
 use crate::stream_events_utils::handle_non_tool_response_item;
 use crate::stream_events_utils::handle_output_item_done;
 use crate::stream_events_utils::last_assistant_message_from_item;
@@ -119,8 +119,9 @@ use codex_protocol::protocol::ThreadSource;
 use codex_protocol::protocol::TurnDiffEvent;
 use codex_protocol::protocol::WarningEvent;
 use codex_protocol::user_input::UserInput;
-use codex_tools::ToolName;
-use codex_tools::filter_request_plugin_install_discoverable_tools_for_client;
+use codex_session_api::PreviousTurnSettings;
+use codex_tool_execution_api::ToolName;
+use codex_tool_registry_api::filter_request_plugin_install_discoverable_tools_for_client;
 use codex_utils_stream_parser::AssistantTextChunk;
 use codex_utils_stream_parser::AssistantTextStreamParser;
 use codex_utils_stream_parser::ProposedPlanSegment;
@@ -344,7 +345,7 @@ pub(crate) async fn run_turn(
             .context_for_turn(turn_context.cwd.as_path(), prompt.as_str())
             .await;
         let user_prompt_submit_outcome =
-            run_user_prompt_submit_hooks(&sess, &turn_context, prompt).await;
+            inspect_pending_input(&sess, &turn_context, &TurnInput::UserInput(input.clone())).await;
         let mut additional_contexts = merge_desktop_automation_context(
             desktop_automation_context,
             merge_first_moves_context(
@@ -436,7 +437,8 @@ pub(crate) async fn run_turn(
         if !pending_input.is_empty() {
             let mut pending_input_iter = pending_input.into_iter();
             while let Some(pending_input_item) = pending_input_iter.next() {
-                let outcome = inspect_pending_input(&sess, &turn_context, pending_input_item).await;
+                let outcome =
+                    inspect_pending_input(&sess, &turn_context, &pending_input_item).await;
                 if outcome.should_stop {
                     let remaining_pending_input = pending_input_iter.collect::<Vec<_>>();
                     if !remaining_pending_input.is_empty() {
@@ -1722,8 +1724,8 @@ pub(crate) async fn built_tools(
     );
     let mcp_tools = has_mcp_servers.then_some(mcp_tool_exposure.direct_tools);
     let deferred_mcp_tools = mcp_tool_exposure.deferred_tools;
-    Ok(Arc::new(ToolRouter::from_config(
-        &turn_context.tools_config,
+    Ok(Arc::new(ToolRouter::from_turn_context(
+        turn_context,
         ToolRouterParams {
             mcp_tools,
             deferred_mcp_tools,
@@ -1992,7 +1994,8 @@ pub(super) fn realtime_text_for_event(msg: &EventMsg) -> Option<String> {
         | EventMsg::CollabCompactBegin(_)
         | EventMsg::CollabCompactEnd(_)
         | EventMsg::CollabRestartBegin(_)
-        | EventMsg::CollabRestartEnd(_) => None,
+        | EventMsg::CollabRestartEnd(_)
+        | EventMsg::ThreadSettingsApplied(_) => None,
     }
 }
 
@@ -2234,8 +2237,14 @@ async fn handle_assistant_item_done_in_plan_mode(
     {
         maybe_complete_plan_item_from_message(sess, turn_context, state, item).await;
 
-        if let Some(turn_item) =
-            handle_non_tool_response_item(sess, turn_context, item, /*plan_mode*/ true).await
+        if let Some(turn_item) = handle_non_tool_response_item(
+            sess,
+            turn_context,
+            TurnItemContributorPolicy::Skip,
+            item,
+            /*plan_mode*/ true,
+        )
+        .await
         {
             emit_turn_item_in_plan_mode(
                 sess,
@@ -2424,6 +2433,7 @@ async fn try_run_sampling_request(
                 let mut ctx = HandleOutputCtx {
                     sess: sess.clone(),
                     turn_context: turn_context.clone(),
+                    turn_store: Arc::clone(&turn_context.extension_data),
                     tool_runtime: tool_runtime.clone(),
                     cancellation_token: cancellation_token.child_token(),
                 };
@@ -2442,6 +2452,7 @@ async fn try_run_sampling_request(
                     | ResponseItem::ToolSearchOutput { .. }
                     | ResponseItem::WebSearchCall { .. }
                     | ResponseItem::ImageGenerationCall { .. }
+                    | ResponseItem::CompactionTrigger
                     | ResponseItem::Compaction { .. }
                     | ResponseItem::ContextCompaction { .. }
                     | ResponseItem::Other => false,
@@ -2482,6 +2493,7 @@ async fn try_run_sampling_request(
                 if let Some(turn_item) = handle_non_tool_response_item(
                     sess.as_ref(),
                     turn_context.as_ref(),
+                    TurnItemContributorPolicy::Run(turn_context.extension_data.as_ref()),
                     &item,
                     plan_mode,
                 )

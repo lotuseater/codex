@@ -1,3 +1,4 @@
+use codex_core_test_runtime::skip_if_sandbox;
 use codex_exec_server::LOCAL_FS;
 use codex_git_utils::GitInfo;
 use codex_git_utils::GitSha;
@@ -7,10 +8,9 @@ use codex_git_utils::get_has_changes;
 use codex_git_utils::git_diff_to_remote;
 use codex_git_utils::recent_commits;
 use codex_git_utils::resolve_root_git_project_for_trust;
+use codex_test_support_lightweight::PathBufExt;
+use codex_test_support_lightweight::PathExt;
 use codex_utils_path::normalize_for_path_comparison;
-use core_test_support::PathBufExt;
-use core_test_support::PathExt;
-use core_test_support::skip_if_sandbox;
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;

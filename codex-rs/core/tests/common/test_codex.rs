@@ -19,7 +19,6 @@ use codex_core::config::Config;
 use codex_core::resolve_installation_id;
 use codex_core::shell::Shell;
 use codex_core::shell::get_shell_by_model_provided_path;
-use codex_core::thread_store_from_config;
 use codex_exec_server::CreateDirectoryOptions;
 use codex_exec_server::ExecutorFileSystem;
 use codex_exec_server::RemoveOptions;
@@ -41,23 +40,25 @@ use codex_protocol::protocol::SessionConfiguredEvent;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::user_input::UserInput;
+use codex_thread_store_api::RecordingThreadStore;
+use codex_thread_store_api::UnsupportedLiveThreadFactory;
 use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_utils_absolute_path::test_support::PathBufExt;
 use futures::future::BoxFuture;
 use serde_json::Value;
 use tempfile::TempDir;
 use wiremock::MockServer;
 
-use crate::PathBufExt;
-use crate::TempDirExt;
-use crate::get_remote_test_env;
-use crate::load_default_config_for_test;
-use crate::load_default_config_for_test_with_cloud_requirements;
+use crate::protocol_fixtures::TempDirExt;
+use crate::protocol_fixtures::get_remote_test_env;
 use crate::responses::WebSocketTestServer;
 use crate::responses::output_value_to_text;
 use crate::responses::start_mock_server;
+use crate::runtime_harness::load_default_config_for_test;
+use crate::runtime_harness::load_default_config_for_test_with_cloud_requirements;
+use crate::runtime_harness::wait_for_event_match;
+use crate::runtime_harness::wait_for_event_with_timeout;
 use crate::streaming_sse::StreamingSseServer;
-use crate::wait_for_event_match;
-use crate::wait_for_event_with_timeout;
 use wiremock::Match;
 use wiremock::matchers::path_regex;
 
@@ -394,7 +395,7 @@ impl TestCodexBuilder {
         let environment_manager = Arc::new(
             codex_exec_server::EnvironmentManager::create_for_tests(
                 exec_server_url,
-                local_runtime_paths,
+                Some(local_runtime_paths),
             )
             .await,
         );
@@ -427,7 +428,7 @@ impl TestCodexBuilder {
     ) -> anyhow::Result<TestCodex> {
         let auth = self.auth.clone();
         let state_db = codex_core::init_state_db(&config).await;
-        let thread_store = thread_store_from_config(&config, state_db.clone());
+        let thread_store = Arc::new(RecordingThreadStore::new());
         let installation_id = resolve_installation_id(&config.codex_home).await?;
         let thread_manager = ThreadManager::new(
             &config,
@@ -437,6 +438,7 @@ impl TestCodexBuilder {
             empty_extension_registry(),
             /*analytics_events_client*/ None,
             thread_store,
+            Arc::new(UnsupportedLiveThreadFactory::new()),
             state_db.clone(),
             installation_id,
             /*attestation_provider*/ None,

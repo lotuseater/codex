@@ -4,9 +4,20 @@ use super::ContextualUserFragment;
 pub(crate) struct BatchMiniProgrammingInstructions;
 
 impl ContextualUserFragment for BatchMiniProgrammingInstructions {
-    const ROLE: &'static str = "developer";
-    const START_MARKER: &'static str = "<batch_mini_programming_instructions>";
-    const END_MARKER: &'static str = "</batch_mini_programming_instructions>";
+    fn role() -> &'static str {
+        "developer"
+    }
+
+    fn markers(&self) -> (&'static str, &'static str) {
+        Self::type_markers()
+    }
+
+    fn type_markers() -> (&'static str, &'static str) {
+        (
+            "<batch_mini_programming_instructions>",
+            "</batch_mini_programming_instructions>",
+        )
+    }
 
     fn body(&self) -> String {
         r#"

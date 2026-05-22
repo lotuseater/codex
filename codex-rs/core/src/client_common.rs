@@ -4,7 +4,7 @@ use codex_protocol::error::Result;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::FunctionCallOutputBody;
 use codex_protocol::models::ResponseItem;
-use codex_tools::ToolSpec;
+use codex_tool_registry_api::ToolSpec;
 use futures::Stream;
 use serde::Deserialize;
 use serde_json::Value;

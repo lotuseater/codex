@@ -1,5 +1,7 @@
 use super::*;
+use crate::StateDbHandle;
 use crate::goals::GoalRuntimeState;
+use crate::session::InputQueue;
 use crate::session::blackboard::new_blackboard_session;
 use codex_protocol::SessionId;
 use codex_protocol::config_types::ContextBudgetMode;
@@ -32,6 +34,7 @@ pub(crate) struct Session {
     pub(super) mailbox: Mailbox,
     pub(super) mailbox_rx: Mutex<MailboxReceiver>,
     pub(super) idle_pending_input: Mutex<Vec<ResponseInputItem>>, // TODO (jif) merge with mailbox!
+    pub(crate) input_queue: InputQueue,
     pub(crate) goal_runtime: GoalRuntimeState,
     pub(crate) guardian_review_session: GuardianReviewSessionManager,
     pub(crate) services: SessionServices,
@@ -113,6 +116,10 @@ pub(crate) struct SessionConfiguration {
     /// execution sandbox are resolved against this directory **instead** of
     /// the process-wide current working directory.
     pub(super) cwd: AbsolutePathBuf,
+    /// Runtime workspace roots active for this thread.
+    pub(super) workspace_roots: Vec<AbsolutePathBuf>,
+    /// Workspace roots contributed by the selected permission profile.
+    pub(super) profile_workspace_roots: Vec<AbsolutePathBuf>,
     /// Directory containing all Codex state for this session.
     pub(super) codex_home: AbsolutePathBuf,
     /// Optional user-facing name for the thread, updated during the session.
@@ -172,6 +179,7 @@ impl SessionConfiguration {
     }
 
     pub(super) fn thread_config_snapshot(&self) -> ThreadConfigSnapshot {
+        let active_permission_profile = self.active_permission_profile();
         ThreadConfigSnapshot {
             model: self.collaboration_mode.model().to_string(),
             model_provider_id: self.original_config_do_not_use.model_provider_id.clone(),
@@ -179,11 +187,15 @@ impl SessionConfiguration {
             approval_policy: self.approval_policy.value(),
             approvals_reviewer: self.approvals_reviewer,
             permission_profile: self.permission_profile(),
-            active_permission_profile: self.active_permission_profile(),
+            active_permission_profile,
             cwd: self.cwd.clone(),
+            workspace_roots: self.workspace_roots.clone(),
+            profile_workspace_roots: self.profile_workspace_roots.clone(),
             ephemeral: self.original_config_do_not_use.ephemeral,
             reasoning_effort: self.collaboration_mode.reasoning_effort(),
+            reasoning_summary: self.model_reasoning_summary,
             personality: self.personality,
+            collaboration_mode: self.collaboration_mode.clone(),
             session_source: self.session_source.clone(),
             thread_source: self.thread_source,
         }
@@ -262,7 +274,17 @@ impl SessionConfiguration {
             .unwrap_or_else(|| self.cwd.clone());
 
         let cwd_changed = absolute_cwd.as_path() != self.cwd.as_path();
+        let workspace_roots_were_default =
+            self.workspace_roots.len() == 1 && self.workspace_roots[0] == self.cwd;
         next_configuration.cwd = absolute_cwd;
+        if let Some(workspace_roots) = updates.workspace_roots.clone() {
+            next_configuration.workspace_roots = workspace_roots;
+        } else if cwd_changed && workspace_roots_were_default {
+            next_configuration.workspace_roots = vec![next_configuration.cwd.clone()];
+        }
+        if let Some(profile_workspace_roots) = updates.profile_workspace_roots.clone() {
+            next_configuration.profile_workspace_roots = profile_workspace_roots;
+        }
 
         if let Some(permission_profile) = updates.permission_profile.clone() {
             let active_permission_profile =
@@ -278,6 +300,11 @@ impl SessionConfiguration {
                 Some(&current_file_system_sandbox_policy),
             )?;
             next_configuration.active_permission_profile = active_permission_profile;
+            if next_configuration.active_permission_profile.is_none()
+                && updates.profile_workspace_roots.is_none()
+            {
+                next_configuration.profile_workspace_roots = Vec::new();
+            }
         } else if let Some(sandbox_policy) = updates.sandbox_policy.clone() {
             let file_system_sandbox_policy =
                 FileSystemSandboxPolicy::from_legacy_sandbox_policy_preserving_deny_entries(
@@ -294,6 +321,7 @@ impl SessionConfiguration {
                 ),
             )?;
             next_configuration.active_permission_profile = None;
+            next_configuration.profile_workspace_roots = Vec::new();
         } else if cwd_changed
             && file_system_policy_matches_legacy
             && file_system_policy_has_rebindable_project_root_write
@@ -350,6 +378,8 @@ impl SessionConfiguration {
 #[derive(Default, Clone)]
 pub(crate) struct SessionSettingsUpdate {
     pub(crate) cwd: Option<PathBuf>,
+    pub(crate) workspace_roots: Option<Vec<AbsolutePathBuf>>,
+    pub(crate) profile_workspace_roots: Option<Vec<AbsolutePathBuf>>,
     pub(crate) approval_policy: Option<AskForApproval>,
     pub(crate) approvals_reviewer: Option<ApprovalsReviewer>,
     pub(crate) sandbox_policy: Option<SandboxPolicy>,
@@ -877,7 +907,7 @@ impl Session {
                     config: config.as_ref(),
                     session_store: &session_extension_data,
                     thread_store: &thread_extension_data,
-                });
+                }).await;
             }
 
             let services = SessionServices {
@@ -966,6 +996,7 @@ impl Session {
                 mailbox,
                 mailbox_rx: Mutex::new(mailbox_rx),
                 idle_pending_input: Mutex::new(Vec::new()),
+                input_queue: InputQueue::new(),
                 goal_runtime: GoalRuntimeState::new(),
                 guardian_review_session: GuardianReviewSessionManager::default(),
                 services,
@@ -1055,14 +1086,15 @@ impl Session {
             .cloned();
             let mcp_runtime_environment = match turn_environment {
                 Some(turn_environment) => McpRuntimeEnvironment::new(
-                    Arc::clone(&turn_environment.environment),
+                    Some(Arc::clone(&turn_environment.environment)),
+                    sess.services.environment_manager.try_local_environment(),
                     turn_environment.cwd.to_path_buf(),
                 ),
                 None => McpRuntimeEnvironment::new(
                     sess.services
                         .environment_manager
-                        .default_environment()
-                        .unwrap_or_else(|| sess.services.environment_manager.local_environment()),
+                        .default_or_local_environment(),
+                    sess.services.environment_manager.try_local_environment(),
                     session_configuration.cwd.to_path_buf(),
                 ),
             };

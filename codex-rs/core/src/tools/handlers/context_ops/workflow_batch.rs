@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::function_tool::FunctionCallError;
+use codex_tool_execution_api::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::handlers::parse_arguments;
@@ -138,7 +138,7 @@ mod tests {
     use tokio::sync::Mutex;
 
     use super::super::ContextOpsHandler;
-    use crate::function_tool::FunctionCallError;
+    use codex_tool_execution_api::FunctionCallError;
     use crate::session::tests::make_session_and_context;
     use crate::tools::context::FunctionToolOutput;
     use crate::tools::context::ToolInvocation;

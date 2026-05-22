@@ -1,4 +1,4 @@
-use crate::function_tool::FunctionCallError;
+use codex_tool_execution_api::FunctionCallError;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::context::boxed_tool_output;
@@ -6,8 +6,8 @@ use crate::tools::handlers::goal_spec::GET_GOAL_TOOL_NAME;
 use crate::tools::handlers::goal_spec::create_get_goal_tool;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
-use codex_tools::ToolName;
-use codex_tools::ToolSpec;
+use codex_tool_execution_api::ToolName;
+use codex_tool_registry_api::ToolSpec;
 
 use super::CompletionBudgetReport;
 use super::format_goal_error;

@@ -10,72 +10,124 @@ name = "codex_core"
 path = "src/lib.rs"
 
 [[test]]
-name = "agents"
-path = "tests/agents.rs"
+name = "apply_patch_cli_invocation"
+path = "tests/apply_patch_cli_invocation.rs"
 
 [[test]]
-name = "agents_jobs"
-path = "tests/agents_jobs.rs"
+name = "apply_patch_output_aggregation"
+path = "tests/apply_patch_output_aggregation.rs"
 
 [[test]]
-name = "agents_delegate"
-path = "tests/agents_delegate.rs"
+name = "apply_patch_output_formatting"
+path = "tests/apply_patch_output_formatting.rs"
 
 [[test]]
-name = "agents_hierarchy"
-path = "tests/agents_hierarchy.rs"
+name = "apply_patch_parse_failures"
+path = "tests/apply_patch_parse_failures.rs"
 
 [[test]]
-name = "agents_tool_parallelism"
-path = "tests/agents_tool_parallelism.rs"
+name = "apply_patch_safety_paths"
+path = "tests/apply_patch_safety_paths.rs"
+
+[[test]]
+name = "apply_patch_success"
+path = "tests/apply_patch_success.rs"
 
 [[test]]
 name = "client"
 path = "tests/client.rs"
 
 [[test]]
-name = "compact"
-path = "tests/compact.rs"
+name = "client_live_cli"
+path = "tests/client_live_cli.rs"
+
+[[test]]
+name = "client_proxy_headers"
+path = "tests/client_proxy_headers.rs"
 
 [[test]]
 name = "config"
 path = "tests/config.rs"
 
 [[test]]
-name = "config_code_mode_apps"
-path = "tests/config_code_mode_apps.rs"
+name = "config_model_cache"
+path = "tests/config_model_cache.rs"
 
 [[test]]
-name = "config_code_mode_async"
-path = "tests/config_code_mode_async.rs"
+name = "config_model_switching"
+path = "tests/config_model_switching.rs"
 
 [[test]]
-name = "config_code_mode_config"
-path = "tests/config_code_mode_config.rs"
+name = "model_switching_context"
+path = "tests/model_switching_context.rs"
 
 [[test]]
-name = "config_code_mode_execution"
-path = "tests/config_code_mode_execution.rs"
+name = "model_switching_media"
+path = "tests/model_switching_media.rs"
 
 [[test]]
-name = "config_code_mode_mcp"
-path = "tests/config_code_mode_mcp.rs"
+name = "config_models"
+path = "tests/config_models.rs"
 
 [[test]]
-name = "config_code_mode_media"
-path = "tests/config_code_mode_media.rs"
+name = "config_personality"
+path = "tests/config_personality.rs"
 
 [[test]]
-name = "exec"
-path = "tests/exec.rs"
+name = "config_remote_models"
+path = "tests/config_remote_models.rs"
+
+[[test]]
+name = "config_rollouts"
+path = "tests/config_rollouts.rs"
+
+[[test]]
+name = "exec_apply_patch"
+path = "tests/exec_apply_patch.rs"
+
+[[test]]
+name = "exec_remote_env"
+path = "tests/exec_remote_env.rs"
+
+[[test]]
+name = "exec_sandbox"
+path = "tests/exec_sandbox.rs"
 
 [[test]]
 name = "permissions"
 path = "tests/permissions.rs"
 
 [[test]]
+name = "permissions_review"
+path = "tests/permissions_review.rs"
+
+[[test]]
+name = "prompt_debug_tests"
+path = "tests/prompt_debug_tests.rs"
+
+[[test]]
+name = "quota_exceeded"
+path = "tests/quota_exceeded.rs"
+
+[[test]]
 name = "responses_headers"
 path = "tests/responses_headers.rs"
+
+[[test]]
+name = "responses_headers_model_info"
+path = "tests/responses_headers_model_info.rs"
+
+[[test]]
+name = "responses_headers_turn_metadata"
+path = "tests/responses_headers_turn_metadata.rs"
+
+[[test]]
+name = "review_history_parent_history_isolation"
+path = "tests/review_history_parent_history_isolation.rs"
+
+[[test]]
+name = "review_history_parent_session_surface"
+path = "tests/review_history_parent_session_surface.rs"
 
 [[test]]
 name = "rmcp_client_connection"
@@ -94,16 +146,52 @@ name = "rmcp_client_tool_calls"
 path = "tests/rmcp_client_tool_calls.rs"
 
 [[test]]
-name = "state"
-path = "tests/state.rs"
+name = "rollout_list_find"
+path = "tests/rollout_list_find.rs"
 
 [[test]]
 name = "telemetry"
 path = "tests/telemetry.rs"
 
 [[test]]
+name = "otel_response_items"
+path = "tests/otel_response_items.rs"
+
+[[test]]
+name = "otel_tool_decisions"
+path = "tests/otel_tool_decisions.rs"
+
+[[test]]
 name = "tools"
 path = "tests/tools.rs"
+
+[[test]]
+name = "tools_mcp_openai_file"
+path = "tests/tools_mcp_openai_file.rs"
+
+[[test]]
+name = "tools_mcp_plugins"
+path = "tests/tools_mcp_plugins.rs"
+
+[[test]]
+name = "tools_mcp_turn_metadata"
+path = "tests/tools_mcp_turn_metadata.rs"
+
+[[test]]
+name = "tools_pending_input"
+path = "tests/tools_pending_input.rs"
+
+[[test]]
+name = "tools_request_plugin_install"
+path = "tests/tools_request_plugin_install.rs"
+
+[[test]]
+name = "tools_request_user_input"
+path = "tests/tools_request_user_input.rs"
+
+[[test]]
+name = "tools_search"
+path = "tests/tools_search.rs"
 
 [[test]]
 name = "search_tool_deferred"
@@ -121,6 +209,42 @@ path = "tests/search_tool_matching.rs"
 name = "search_tool_mcp"
 path = "tests/search_tool_mcp.rs"
 
+[[test]]
+name = "tools_skill_approval"
+path = "tests/tools_skill_approval.rs"
+
+[[test]]
+name = "tools_skills"
+path = "tests/tools_skills.rs"
+
+[[test]]
+name = "view_image_user_turn"
+path = "tests/view_image_user_turn.rs"
+
+[[test]]
+name = "view_image_tool_local"
+path = "tests/view_image_tool_local.rs"
+
+[[test]]
+name = "view_image_tool_remote"
+path = "tests/view_image_tool_remote.rs"
+
+[[test]]
+name = "view_image_tool_errors"
+path = "tests/view_image_tool_errors.rs"
+
+[[test]]
+name = "web_search_modes"
+path = "tests/web_search_modes.rs"
+
+[[test]]
+name = "web_search_config"
+path = "tests/web_search_config.rs"
+
+[[test]]
+name = "window_headers"
+path = "tests/window_headers.rs"
+
 [lints]
 workspace = true
 
@@ -136,6 +260,7 @@ codex-analytics = { workspace = true }
 codex-agent-graph-store = { workspace = true }
 codex-agent-policy = { workspace = true }
 codex-api = { workspace = true }
+codex-auth-api = { workspace = true }
 codex-app-catalog-types = { workspace = true }
 codex-apply-patch = { workspace = true }
 codex-async-utils = { workspace = true }
@@ -143,6 +268,7 @@ codex-blackboard = { workspace = true }
 codex-build-policy = { workspace = true }
 codex-cognos-ops = { workspace = true }
 codex-code-mode = { workspace = true }
+codex-compaction-policy = { workspace = true }
 codex-connectors = { workspace = true }
 codex-config = { workspace = true }
 codex-context-pack = { workspace = true }
@@ -173,6 +299,7 @@ codex-otel = { workspace = true }
 codex-plugin = { workspace = true }
 codex-model-provider = { workspace = true }
 codex-operation-cache = { workspace = true }
+codex-prompt-context = { workspace = true }
 codex-prompt-reducer = { workspace = true }
 codex-protocol = { workspace = true }
 codex-response-debug-context = { workspace = true }
@@ -180,13 +307,16 @@ codex-rollout = { workspace = true }
 codex-rollout-trace = { workspace = true }
 codex-rmcp-client = { workspace = true }
 codex-sandboxing = { workspace = true }
-codex-self-review = { workspace = true }
+codex-session-api = { workspace = true }
 codex-state = { workspace = true }
 codex-task-memory = { workspace = true }
 codex-terminal-detection = { workspace = true }
+codex-thread-manager-api = { workspace = true }
+codex-thread-store = { workspace = true }
 codex-thread-store-api = { workspace = true }
+codex-tool-execution-api = { workspace = true }
+codex-tool-registry-api = { workspace = true }
 codex-tool-schema = { workspace = true }
-codex-tools = { workspace = true }
 codex-workflow-batch = { workspace = true }
 codex-turn-diff = { workspace = true }
 codex-utils-absolute-path = { workspace = true }
@@ -260,10 +390,13 @@ codex-shell-escalation = { workspace = true }
 [dev-dependencies]
 assert_cmd = { workspace = true }
 assert_matches = { workspace = true }
+codex-core-test-runtime = { workspace = true }
 codex-otel = { workspace = true }
 codex-test-binary-support = { workspace = true }
+codex-test-support-context-fixtures = { workspace = true }
+codex-test-support-lightweight = { workspace = true }
+codex-test-support-responses = { workspace = true }
 codex-utils-cargo-bin = { workspace = true }
-core_test_support = { workspace = true }
 ctor = { workspace = true }
 insta = { workspace = true }
 maplit = { workspace = true }
@@ -281,9 +414,7 @@ test-log = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true }
 tracing-test = { workspace = true, features = ["no-env-filter"] }
-walkdir = { workspace = true }
 wiremock = { workspace = true }
-zstd = { workspace = true }
 
 [package.metadata.cargo-shear]
 ignored = ["openssl-sys"]

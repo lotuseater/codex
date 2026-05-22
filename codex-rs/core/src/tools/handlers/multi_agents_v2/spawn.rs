@@ -3,6 +3,10 @@ use crate::agent::control::SpawnAgentForkMode;
 use crate::agent::control::SpawnAgentOptions;
 use crate::agent::control::render_input_preview;
 use crate::agent::next_thread_spawn_depth;
+use crate::agent::policy::MULTI_AGENT_V2_NESTED_SPAWN_REJECTION;
+use crate::agent::policy::MultiAgentV2SpawnLineage;
+use crate::agent::policy::MultiAgentV2SpawnParent;
+use crate::agent::policy::root_can_spawn_child;
 use crate::agent::role::DEFAULT_ROLE_NAME;
 use crate::agent::role::apply_role_to_config;
 use crate::tools::handlers::multi_agents_spec::SpawnAgentToolOptions;
@@ -12,7 +16,7 @@ use codex_protocol::AgentPath;
 use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::SessionSource;
-use codex_tools::ToolSpec;
+use codex_tool_registry_api::ToolSpec;
 
 #[derive(Default)]
 pub(crate) struct Handler {
@@ -68,13 +72,17 @@ async fn handle_spawn_agent(
 
     let session_source = turn.session_source.clone();
     let child_depth = next_thread_spawn_depth(&session_source);
-    let parent_is_root = !matches!(
+    let parent = if matches!(
         session_source,
         SessionSource::SubAgent(_) | SessionSource::Internal(_)
-    );
-    if !codex_agent_policy::multi_agent_v2_root_can_spawn_child(parent_is_root, child_depth) {
+    ) {
+        MultiAgentV2SpawnParent::Nested
+    } else {
+        MultiAgentV2SpawnParent::Root
+    };
+    if !root_can_spawn_child(MultiAgentV2SpawnLineage::new(parent, child_depth)) {
         return Err(FunctionCallError::RespondToModel(
-            codex_agent_policy::MULTI_AGENT_V2_NESTED_SPAWN_REJECTION.to_string(),
+            MULTI_AGENT_V2_NESTED_SPAWN_REJECTION.to_string(),
         ));
     }
     session
@@ -321,11 +329,15 @@ impl ToolOutput for SpawnAgentResult {
         true
     }
 
-    fn to_response_item(&self, call_id: &str, payload: &ToolPayload) -> ResponseInputItem {
+    fn to_response_item(
+        &self,
+        call_id: &str,
+        payload: &dyn ToolOutputPayload,
+    ) -> ResponseInputItem {
         tool_output_response_item(call_id, payload, self, Some(true), "spawn_agent")
     }
 
-    fn code_mode_result(&self, _payload: &ToolPayload) -> JsonValue {
+    fn code_mode_result(&self, _payload: &dyn ToolOutputPayload) -> JsonValue {
         tool_output_code_mode_result(self, "spawn_agent")
     }
 }

@@ -1,6 +1,6 @@
-use codex_tools::JsonSchema;
-use codex_tools::ResponsesApiTool;
-use codex_tools::ToolSpec;
+use codex_tool_registry_api::ResponsesApiTool;
+use codex_tool_registry_api::ToolSpec;
+use codex_tool_schema::JsonSchema;
 use serde_json::Value;
 use serde_json::json;
 use std::collections::BTreeMap;

@@ -11,29 +11,29 @@ use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 
-use crate::function_tool::FunctionCallError;
+use codex_tool_execution_api::FunctionCallError;
 use crate::session::session::Session;
 use crate::session::tests::make_session_and_context;
 use crate::session::turn_context::TurnContext;
 use crate::tools::code_mode::CodeModeWaitHandler;
 use crate::tools::code_mode::WAIT_TOOL_NAME;
 use crate::tools::context::FunctionToolOutput;
-use crate::tools::context::ToolCallSource;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
 use crate::tools::registry::ToolRegistry;
 use crate::turn_diff_tracker::TurnDiffTracker;
+use codex_tool_execution_api::ToolCallSource;
 
 struct TestHandler {
-    tool_name: codex_tools::ToolName,
+    tool_name: codex_tool_execution_api::ToolName,
 }
 
 impl ToolExecutor<ToolInvocation> for TestHandler {
     type Output = Box<dyn crate::tools::context::ToolOutput>;
 
-    fn tool_name(&self) -> codex_tools::ToolName {
+    fn tool_name(&self) -> codex_tool_execution_api::ToolName {
         self.tool_name.clone()
     }
 
@@ -63,7 +63,7 @@ async fn dispatch_lifecycle_trace_records_direct_and_code_mode_requesters() -> a
     );
 
     let registry = ToolRegistry::with_handler_for_test(Arc::new(TestHandler {
-        tool_name: codex_tools::ToolName::plain("test_tool"),
+        tool_name: codex_tool_execution_api::ToolName::plain("test_tool"),
     }));
     let session = Arc::new(session);
     let turn = Arc::new(turn);
@@ -174,7 +174,7 @@ async fn dispatch_lifecycle_trace_records_incompatible_payload_failures() -> any
     attach_test_trace(&mut session, &turn, temp.path())?;
 
     let registry = ToolRegistry::with_handler_for_test(Arc::new(TestHandler {
-        tool_name: codex_tools::ToolName::plain("test_tool"),
+        tool_name: codex_tool_execution_api::ToolName::plain("test_tool"),
     }));
     let session = Arc::new(session);
     let turn = Arc::new(turn);
@@ -184,7 +184,7 @@ async fn dispatch_lifecycle_trace_records_incompatible_payload_failures() -> any
             session,
             turn,
             "incompatible-call",
-            codex_tools::ToolName::plain("test_tool"),
+            codex_tool_execution_api::ToolName::plain("test_tool"),
             ToolCallSource::Direct,
             ToolPayload::Custom {
                 input: "{}".to_string(),
@@ -245,7 +245,7 @@ fn test_invocation(
         session,
         turn,
         call_id,
-        codex_tools::ToolName::plain(tool_name),
+        codex_tool_execution_api::ToolName::plain(tool_name),
         source,
         ToolPayload::Function {
             arguments: arguments.to_string(),
@@ -257,7 +257,7 @@ fn test_invocation_with_payload(
     session: Arc<Session>,
     turn: Arc<TurnContext>,
     call_id: &str,
-    tool_name: codex_tools::ToolName,
+    tool_name: codex_tool_execution_api::ToolName,
     source: ToolCallSource,
     payload: ToolPayload,
 ) -> ToolInvocation {

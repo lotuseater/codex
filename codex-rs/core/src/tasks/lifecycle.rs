@@ -33,10 +33,16 @@ impl Session {
         reason: TurnAbortReason,
         turn_store: &ExtensionData,
     ) {
+        let extension_reason = match reason {
+            TurnAbortReason::Interrupted => codex_extension_api::TurnAbortReason::Interrupted,
+            TurnAbortReason::Replaced => codex_extension_api::TurnAbortReason::Replaced,
+            TurnAbortReason::ReviewEnded => codex_extension_api::TurnAbortReason::ReviewEnded,
+            TurnAbortReason::BudgetLimited => codex_extension_api::TurnAbortReason::BudgetLimited,
+        };
         for contributor in self.services.extensions.turn_lifecycle_contributors() {
             contributor
                 .on_turn_abort(codex_extension_api::TurnAbortInput {
-                    reason: reason.clone(),
+                    reason: extension_reason,
                     session_store: &self.services.session_extension_data,
                     thread_store: &self.services.thread_extension_data,
                     turn_store,

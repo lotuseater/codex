@@ -4,8 +4,7 @@
 //! keeps the core-specific mapping from registry invocations/results out of the
 //! registry control flow.
 
-use crate::function_tool::FunctionCallError;
-use crate::tools::context::ToolCallSource;
+use codex_tool_execution_api::FunctionCallError;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
@@ -15,6 +14,7 @@ use codex_rollout_trace::ToolDispatchPayload;
 use codex_rollout_trace::ToolDispatchRequester;
 use codex_rollout_trace::ToolDispatchResult;
 use codex_rollout_trace::ToolDispatchTraceContext;
+use codex_tool_execution_api::ToolCallSource;
 
 /// Keeps registry early-return paths paired with trace end events.
 pub(crate) struct ToolDispatchTrace {

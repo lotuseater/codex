@@ -1,5 +1,5 @@
 use super::*;
-use core_test_support::PathBufExt;
+use codex_test_support_lightweight::PathBufExt;
 use pretty_assertions::assert_eq;
 
 use tempfile::tempdir;

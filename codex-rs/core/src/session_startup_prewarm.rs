@@ -17,6 +17,7 @@ use codex_otel::STARTUP_PREWARM_DURATION_METRIC;
 use codex_otel::SessionTelemetry;
 use codex_protocol::error::Result as CodexResult;
 use codex_protocol::models::BaseInstructions;
+use codex_protocol::models::ResponseItem;
 
 pub(crate) struct SessionStartupPrewarmHandle {
     task: JoinHandle<CodexResult<ModelClientSession>>,
@@ -231,9 +232,14 @@ async fn schedule_startup_prewarm_inner(
     );
     let startup_cancellation_token = CancellationToken::new();
     let built_tools_started_at = Instant::now();
+    let startup_input: Vec<ResponseItem> = Vec::new();
+    let startup_explicitly_enabled_connectors = std::collections::HashSet::new();
     let startup_router = built_tools(
         session.as_ref(),
         startup_turn_context.as_ref(),
+        &startup_input,
+        &startup_explicitly_enabled_connectors,
+        None,
         &startup_cancellation_token,
     )
     .await?;

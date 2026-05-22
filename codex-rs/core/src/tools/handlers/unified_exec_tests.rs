@@ -1,8 +1,8 @@
 use super::*;
 use crate::shell::ShellType;
 use crate::shell::default_user_shell;
-use codex_tools::UnifiedExecShellMode;
-use codex_tools::ZshForkConfig;
+use codex_tool_execution_api::UnifiedExecShellMode;
+use codex_tool_execution_api::ZshForkConfig;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_output_truncation::TruncationPolicy;
 use pretty_assertions::assert_eq;
@@ -10,12 +10,12 @@ use std::sync::Arc;
 
 use crate::session::tests::make_session_and_context;
 use crate::tools::context::ExecCommandToolOutput;
-use crate::tools::context::ToolCallSource;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::hook_names::HookToolName;
 use crate::tools::registry::CoreToolRuntime;
 use crate::turn_diff_tracker::TurnDiffTracker;
+use codex_tool_execution_api::ToolCallSource;
 use tokio::sync::Mutex;
 
 const TEST_TRUNCATION_POLICY: TruncationPolicy = TruncationPolicy::Tokens(10_000);
@@ -32,7 +32,7 @@ async fn invocation_for_payload(
         cancellation_token: tokio_util::sync::CancellationToken::new(),
         tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
         call_id: call_id.to_string(),
-        tool_name: codex_tools::ToolName::plain(tool_name),
+        tool_name: codex_tool_execution_api::ToolName::plain(tool_name),
         source: ToolCallSource::Direct,
         payload,
     }
@@ -173,14 +173,14 @@ fn test_get_command_ignores_explicit_shell_in_zsh_fork_mode() -> anyhow::Result<
     } else {
         "/opt/codex/zsh"
     })?;
-    let shell_mode = UnifiedExecShellMode::ZshFork(ZshForkConfig {
-        shell_zsh_path: shell_zsh_path.clone(),
-        main_execve_wrapper_exe: AbsolutePathBuf::from_absolute_path(if cfg!(windows) {
+    let shell_mode = UnifiedExecShellMode::ZshFork(ZshForkConfig::new(
+        shell_zsh_path.clone(),
+        AbsolutePathBuf::from_absolute_path(if cfg!(windows) {
             r"C:\opt\codex\codex-execve-wrapper"
         } else {
             "/opt/codex/codex-execve-wrapper"
         })?,
-    });
+    ));
 
     let resolved = get_command(
         &args,
@@ -217,8 +217,8 @@ async fn exec_command_pre_tool_use_payload_uses_raw_command() {
             cancellation_token: tokio_util::sync::CancellationToken::new(),
             tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
             call_id: "call-43".to_string(),
-            tool_name: codex_tools::ToolName::plain("exec_command"),
-            source: crate::tools::context::ToolCallSource::Direct,
+            tool_name: codex_tool_execution_api::ToolName::plain("exec_command"),
+            source: codex_tool_execution_api::ToolCallSource::Direct,
             payload,
         }),
         Some(crate::tools::registry::PreToolUsePayload {
@@ -243,8 +243,8 @@ async fn exec_command_pre_tool_use_payload_skips_write_stdin() {
             cancellation_token: tokio_util::sync::CancellationToken::new(),
             tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
             call_id: "call-44".to_string(),
-            tool_name: codex_tools::ToolName::plain("write_stdin"),
-            source: crate::tools::context::ToolCallSource::Direct,
+            tool_name: codex_tool_execution_api::ToolName::plain("write_stdin"),
+            source: codex_tool_execution_api::ToolCallSource::Direct,
             payload,
         }),
         None

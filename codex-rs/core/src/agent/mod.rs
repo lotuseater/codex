@@ -1,6 +1,8 @@
 pub(crate) mod agent_resolver;
 pub(crate) mod control;
+pub(crate) mod graph_store;
 pub(crate) mod mailbox;
+pub(crate) mod policy;
 mod registry;
 pub(crate) mod role;
 pub(crate) mod status;

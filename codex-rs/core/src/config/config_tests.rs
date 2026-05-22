@@ -96,10 +96,10 @@ use serde::Deserialize;
 use tempfile::tempdir;
 
 use super::*;
-use core_test_support::PathBufExt;
-use core_test_support::PathExt;
-use core_test_support::TempDirExt;
-use core_test_support::test_absolute_path;
+use codex_test_support_lightweight::PathBufExt;
+use codex_test_support_lightweight::PathExt;
+use codex_test_support_lightweight::TempDirExt;
+use codex_test_support_lightweight::test_absolute_path;
 use pretty_assertions::assert_eq;
 use rmcp::model::ElicitationCapability;
 use rmcp::model::FormElicitationCapability;
@@ -1604,10 +1604,7 @@ async fn permission_profile_override_populates_runtime_permissions() -> std::io:
     )
     .await?;
 
-    assert_eq!(
-        config.permissions.effective_permission_profile(),
-        permission_profile
-    );
+    assert_eq!(config.permissions.permission_profile(), permission_profile);
     assert_eq!(config.permissions.active_permission_profile(), None);
     assert_eq!(
         &config.legacy_sandbox_policy(),
@@ -1661,10 +1658,7 @@ async fn permission_profile_override_preserves_managed_unrestricted_filesystem()
     )
     .await?;
 
-    assert_eq!(
-        config.permissions.effective_permission_profile(),
-        permission_profile
-    );
+    assert_eq!(config.permissions.permission_profile(), permission_profile);
     assert_eq!(
         &config.legacy_sandbox_policy(),
         &SandboxPolicy::ExternalSandbox {
@@ -1835,10 +1829,7 @@ async fn permission_profile_override_preserves_configured_network_policy_without
         config.permissions.network.is_none(),
         "profile network.enabled should not start the managed network proxy"
     );
-    assert_eq!(
-        config.permissions.effective_permission_profile(),
-        permission_profile
-    );
+    assert_eq!(config.permissions.permission_profile(), permission_profile);
     Ok(())
 }
 
@@ -2407,7 +2398,7 @@ async fn default_permissions_can_select_builtin_full_access_profile() -> std::io
     .await?;
 
     assert_eq!(
-        config.permissions.effective_permission_profile(),
+        config.permissions.permission_profile(),
         PermissionProfile::Disabled
     );
     assert_eq!(
@@ -9621,7 +9612,7 @@ async fn permission_profile_override_falls_back_when_disallowed_by_requirements(
     let expected_sandbox_policy = SandboxPolicy::new_read_only_policy();
     assert_eq!(config.legacy_sandbox_policy(), expected_sandbox_policy);
     assert_eq!(
-        config.permissions.effective_permission_profile(),
+        config.permissions.permission_profile(),
         PermissionProfile::read_only()
     );
     Ok(())
@@ -9649,7 +9640,7 @@ async fn active_profile_is_cleared_when_requirements_force_fallback() -> std::io
         .await?;
 
     assert_eq!(
-        config.permissions.effective_permission_profile(),
+        config.permissions.permission_profile(),
         PermissionProfile::read_only()
     );
     assert_eq!(config.permissions.active_permission_profile(), None);
@@ -9769,7 +9760,7 @@ async fn requirements_web_search_mode_overrides_danger_full_access_default() -> 
     assert_eq!(
         resolve_web_search_mode_for_turn(
             &config.web_search_mode,
-            &config.permissions.effective_permission_profile(),
+            &config.permissions.permission_profile(),
         ),
         WebSearchMode::Cached,
     );

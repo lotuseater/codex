@@ -6,9 +6,17 @@ pub(crate) struct TaskMemory {
 }
 
 impl ContextualUserFragment for TaskMemory {
-    const ROLE: &'static str = "user";
-    const START_MARKER: &'static str = "<task_memory>";
-    const END_MARKER: &'static str = "</task_memory>";
+    fn role() -> &'static str {
+        "user"
+    }
+
+    fn markers(&self) -> (&'static str, &'static str) {
+        Self::type_markers()
+    }
+
+    fn type_markers() -> (&'static str, &'static str) {
+        ("<task_memory>", "</task_memory>")
+    }
 
     fn body(&self) -> String {
         format!("\n{}\n", self.body.trim())

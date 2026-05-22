@@ -4,12 +4,12 @@ use codex_context_reduction::ContextReductionReason;
 use codex_protocol::models::AdditionalPermissionProfile;
 use codex_protocol::models::ResponseItem;
 use codex_sandboxing::policy_transforms::merge_permission_profiles;
+use std::collections::HashMap;
 use std::collections::HashSet;
 
 use super::auto_compact_window::AutoCompactWindow;
 use super::auto_compact_window::AutoCompactWindowSnapshot;
 use crate::context_manager::ContextManager;
-use crate::session::PreviousTurnSettings;
 use crate::session::session::SessionConfiguration;
 use crate::session_startup_prewarm::SessionStartupPrewarmHandle;
 use crate::task_memory::TaskMemoryThrottleState;
@@ -21,6 +21,7 @@ use codex_protocol::protocol::RateLimitSnapshot;
 use codex_protocol::protocol::TokenUsage;
 use codex_protocol::protocol::TokenUsageInfo;
 use codex_protocol::protocol::TurnContextItem;
+use codex_session_api::PreviousTurnSettings;
 use codex_utils_output_truncation::TruncationPolicy;
 
 /// Persistent, session-scoped state previously stored directly on `Session`.
@@ -28,6 +29,7 @@ pub(crate) struct SessionState {
     pub(crate) session_configuration: SessionConfiguration,
     pub(crate) history: ContextManager,
     pub(crate) latest_rate_limits: Option<RateLimitSnapshot>,
+    pub(crate) dependency_env: HashMap<String, String>,
     pub(crate) server_reasoning_included: bool,
     pub(crate) mcp_dependency_prompted: HashSet<String>,
     /// Settings used by the latest regular user turn, used for turn-to-turn
@@ -64,6 +66,7 @@ impl SessionState {
             session_configuration,
             history,
             latest_rate_limits: None,
+            dependency_env: HashMap::new(),
             server_reasoning_included: false,
             mcp_dependency_prompted: HashSet::new(),
             previous_turn_settings: None,
@@ -108,6 +111,14 @@ impl SessionState {
         let is_first_turn = self.next_turn_is_first;
         self.next_turn_is_first = false;
         is_first_turn
+    }
+
+    pub(crate) fn dependency_env(&self) -> HashMap<String, String> {
+        self.dependency_env.clone()
+    }
+
+    pub(crate) fn set_dependency_env(&mut self, values: HashMap<String, String>) {
+        self.dependency_env = values;
     }
 
     pub(crate) fn set_restored_session_auto_compact_pending(&mut self, value: bool) {

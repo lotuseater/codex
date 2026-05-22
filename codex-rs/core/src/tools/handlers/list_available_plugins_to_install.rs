@@ -4,7 +4,7 @@ use codex_tool_registry_api::ListAvailablePluginsToInstallResult;
 use codex_tool_registry_api::RequestPluginInstallEntry;
 use codex_tool_registry_api::ToolSpec;
 
-use crate::function_tool::FunctionCallError;
+use codex_tool_execution_api::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;

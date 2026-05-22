@@ -17,7 +17,7 @@ use crate::exec::ExecParams;
 use crate::exec::process_exec_tool_call;
 use crate::exec_env::CODEX_THREAD_ID_ENV_VAR;
 use crate::exec_env::create_env;
-use crate::function_tool::FunctionCallError;
+use codex_tool_execution_api::FunctionCallError;
 use crate::session::turn_context::TurnEnvironment;
 use crate::tools::context::ToolInvocation;
 

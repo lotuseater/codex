@@ -9,6 +9,7 @@ use codex_protocol::models::PermissionProfile;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_protocol::protocol::AskForApproval;
 
+use crate::protocol_fixtures::fetch_dotslash_file;
 use crate::test_codex::TestCodex;
 use crate::test_codex::test_codex;
 
@@ -105,7 +106,7 @@ fn find_test_zsh_path() -> Result<Option<PathBuf>> {
         return Ok(None);
     }
 
-    match crate::fetch_dotslash_file(&dotslash_zsh, /*dotslash_cache*/ None) {
+    match fetch_dotslash_file(&dotslash_zsh, /*dotslash_cache*/ None) {
         Ok(path) => Ok(Some(path)),
         Err(error) => {
             eprintln!("skipping zsh-fork test: failed to fetch zsh via dotslash: {error:#}");

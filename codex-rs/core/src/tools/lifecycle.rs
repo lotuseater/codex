@@ -2,12 +2,12 @@ use codex_extension_api::ToolCallOutcome;
 use codex_extension_api::ToolCallSource as ExtensionToolCallSource;
 use codex_extension_api::ToolFinishInput;
 use codex_extension_api::ToolStartInput;
-use codex_tools::ToolName;
+use codex_tool_execution_api::ToolName;
 
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
-use crate::tools::context::ToolCallSource;
 use crate::tools::context::ToolInvocation;
+use codex_tool_execution_api::ToolCallSource;
 
 pub(crate) async fn notify_tool_start(invocation: &ToolInvocation) {
     for contributor in invocation

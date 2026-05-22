@@ -61,6 +61,7 @@ use codex_api::auth_header_telemetry;
 use codex_api::build_session_headers;
 use codex_api::create_text_param_for_request;
 use codex_api::response_create_client_metadata;
+use codex_auth_api::AuthMode as RuntimeAuthMode;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_login::RefreshTokenError;
@@ -83,7 +84,7 @@ use codex_protocol::protocol::W3cTraceContext;
 use codex_rollout_trace::CompactionTraceContext;
 use codex_rollout_trace::InferenceTraceAttempt;
 use codex_rollout_trace::InferenceTraceContext;
-use codex_tools::create_tools_json_for_responses_api;
+use codex_tool_registry_api::create_tools_json_for_responses_api;
 use eventsource_stream::Event;
 use eventsource_stream::EventStreamError;
 use futures::StreamExt;
@@ -869,7 +870,7 @@ impl ModelClient {
                 endpoint: request_route_telemetry.endpoint,
                 auth_header_attached: auth_context.auth_header_attached,
                 auth_header_name: auth_context.auth_header_name,
-                auth_mode: auth_context.auth_mode,
+                auth_mode: auth_context.telemetry_auth_mode(),
                 auth_retry_after_unauthorized: Some(auth_context.retry_after_unauthorized),
                 auth_recovery_mode: auth_context.recovery_mode,
                 auth_recovery_phase: auth_context.recovery_phase,
@@ -1970,7 +1971,7 @@ impl PendingUnauthorizedRetry {
 
 #[derive(Clone, Copy, Debug, Default)]
 struct AuthRequestTelemetryContext {
-    auth_mode: Option<&'static str>,
+    auth_mode: Option<RuntimeAuthMode>,
     auth_header_attached: bool,
     auth_header_name: Option<&'static str>,
     retry_after_unauthorized: bool,
@@ -1987,10 +1988,10 @@ impl AuthRequestTelemetryContext {
         let auth_telemetry = auth_header_telemetry(api_auth);
         Self {
             auth_mode: auth.map(|auth| match auth {
-                CodexAuth::ApiKey(_) => "ApiKey",
-                CodexAuth::Chatgpt(_)
-                | CodexAuth::ChatgptAuthTokens(_)
-                | CodexAuth::AgentIdentity(_) => "Chatgpt",
+                CodexAuth::ApiKey(_) => RuntimeAuthMode::ApiKey,
+                CodexAuth::Chatgpt(_) => RuntimeAuthMode::Chatgpt,
+                CodexAuth::ChatgptAuthTokens(_) => RuntimeAuthMode::ChatgptAuthTokens,
+                CodexAuth::AgentIdentity(_) => RuntimeAuthMode::AgentIdentity,
             }),
             auth_header_attached: auth_telemetry.attached,
             auth_header_name: auth_telemetry.name,
@@ -1998,6 +1999,15 @@ impl AuthRequestTelemetryContext {
             recovery_mode: retry.recovery_mode,
             recovery_phase: retry.recovery_phase,
         }
+    }
+
+    fn telemetry_auth_mode(&self) -> Option<&'static str> {
+        self.auth_mode.map(|mode| match mode {
+            RuntimeAuthMode::ApiKey => "ApiKey",
+            RuntimeAuthMode::Chatgpt
+            | RuntimeAuthMode::ChatgptAuthTokens
+            | RuntimeAuthMode::AgentIdentity => "Chatgpt",
+        })
     }
 }
 
@@ -2191,7 +2201,7 @@ impl RequestTelemetry for ApiTelemetry {
                 endpoint: self.request_route_telemetry.endpoint,
                 auth_header_attached: self.auth_context.auth_header_attached,
                 auth_header_name: self.auth_context.auth_header_name,
-                auth_mode: self.auth_context.auth_mode,
+                auth_mode: self.auth_context.telemetry_auth_mode(),
                 auth_retry_after_unauthorized: Some(self.auth_context.retry_after_unauthorized),
                 auth_recovery_mode: self.auth_context.recovery_mode,
                 auth_recovery_phase: self.auth_context.recovery_phase,
@@ -2245,7 +2255,7 @@ impl WebsocketTelemetry for ApiTelemetry {
                 endpoint: self.request_route_telemetry.endpoint,
                 auth_header_attached: self.auth_context.auth_header_attached,
                 auth_header_name: self.auth_context.auth_header_name,
-                auth_mode: self.auth_context.auth_mode,
+                auth_mode: self.auth_context.telemetry_auth_mode(),
                 auth_retry_after_unauthorized: Some(self.auth_context.retry_after_unauthorized),
                 auth_recovery_mode: self.auth_context.recovery_mode,
                 auth_recovery_phase: self.auth_context.recovery_phase,

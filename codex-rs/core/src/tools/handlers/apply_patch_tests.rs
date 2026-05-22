@@ -3,8 +3,8 @@ use codex_apply_patch::MaybeApplyPatchVerified;
 use codex_exec_server::LOCAL_FS;
 use codex_protocol::permissions::FileSystemSandboxPolicy;
 use codex_protocol::protocol::FileChange;
-use core_test_support::PathBufExt;
-use core_test_support::PathExt;
+use codex_test_support_lightweight::PathBufExt;
+use codex_test_support_lightweight::PathExt;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use std::collections::HashMap;
@@ -35,8 +35,8 @@ async fn invocation_for_payload(payload: ToolPayload) -> ToolInvocation {
         cancellation_token: tokio_util::sync::CancellationToken::new(),
         tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
         call_id: "call-apply-patch".to_string(),
-        tool_name: codex_tools::ToolName::plain("apply_patch"),
-        source: crate::tools::context::ToolCallSource::Direct,
+        tool_name: codex_tool_execution_api::ToolName::plain("apply_patch"),
+        source: codex_tool_execution_api::ToolCallSource::Direct,
         payload,
     }
 }

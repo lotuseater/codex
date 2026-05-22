@@ -14,12 +14,14 @@ async fn process_compacted_history_with_test_session(
         .set_previous_turn_settings(previous_turn_settings.cloned())
         .await;
     let initial_context = session.build_initial_context(&turn_context).await;
+    let mut task_memory =
+        crate::task_memory::CompactionTaskMemory::from_history(&compacted_history);
     let refreshed = crate::compact_remote::process_compacted_history(
         &session,
         &turn_context,
         compacted_history,
         InitialContextInjection::BeforeLastUserMessage,
-        /*task_memory_item*/ None,
+        &mut task_memory,
     )
     .await;
     (refreshed, initial_context)
@@ -437,6 +439,8 @@ async fn process_compacted_history_replaces_stale_task_memory_with_fresh_item() 
     );
 
     let (session, turn_context) = crate::session::tests::make_session_and_context().await;
+    let mut task_memory =
+        crate::task_memory::CompactionTaskMemory::from_history(std::slice::from_ref(&fresh));
     let refreshed = crate::compact_remote::process_compacted_history(
         &session,
         &turn_context,
@@ -449,7 +453,7 @@ async fn process_compacted_history_replaces_stale_task_memory_with_fresh_item() 
             phase: None,
         }],
         InitialContextInjection::BeforeLastUserMessage,
-        Some(fresh),
+        &mut task_memory,
     )
     .await;
     let digests = refreshed

@@ -40,9 +40,9 @@ fn handler_looks_up_namespaced_aliases_explicitly() {
         (namespaced_name.clone(), Arc::clone(&namespaced_handler)),
     ]));
 
-    let plain = registry.handler(&plain_name);
-    let namespaced = registry.handler(&namespaced_name);
-    let missing_namespaced = registry.handler(&ToolName::namespaced(
+    let plain = registry.tool(&plain_name);
+    let namespaced = registry.tool(&namespaced_name);
+    let missing_namespaced = registry.tool(&ToolName::namespaced(
         "mcp__codex_apps__calendar",
         tool_name,
     ));

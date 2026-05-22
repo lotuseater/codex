@@ -15,7 +15,7 @@ use codex_connectors::ConnectorDirectoryCacheKey;
 use codex_exec_server::EnvironmentManager;
 use codex_exec_server::ExecServerRuntimePaths;
 use codex_protocol::models::PermissionProfile;
-use codex_tools::DiscoverableTool;
+use codex_tool_registry_api::DiscoverableTool;
 use rmcp::model::ToolAnnotations;
 use serde::Deserialize;
 use tracing::warn;

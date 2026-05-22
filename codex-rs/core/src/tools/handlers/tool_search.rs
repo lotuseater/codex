@@ -1,9 +1,8 @@
-use crate::function_tool::FunctionCallError;
+use codex_tool_execution_api::FunctionCallError;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::context::ToolSearchOutput;
 use crate::tools::context::boxed_tool_output;
-use crate::tools::handlers::tool_search_spec::create_tool_search_tool;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
 use crate::tools::tool_search_entry::ToolSearchEntry;
@@ -16,9 +15,10 @@ use codex_tool_execution_api::ToolName;
 use codex_tool_registry_api::LoadableToolSpec;
 use codex_tool_registry_api::TOOL_SEARCH_DEFAULT_LIMIT;
 use codex_tool_registry_api::TOOL_SEARCH_TOOL_NAME;
-use codex_tool_registry_api::ToolSpec;
 use codex_tool_registry_api::ToolSearchSourceInfo;
+use codex_tool_registry_api::ToolSpec;
 use codex_tool_registry_api::coalesce_loadable_tool_specs;
+use codex_tool_registry_api::create_tool_search_tool;
 
 pub struct ToolSearchHandler {
     entries: Vec<ToolSearchEntry>,

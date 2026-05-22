@@ -1920,7 +1920,7 @@ async fn persist_codex_app_tool_approval(
     connector_id: &str,
     tool_name: &str,
 ) -> anyhow::Result<()> {
-    ConfigEditsBuilder::for_config(config)
+    config_edits_builder_for_config(config)
         .with_edits([ConfigEdit::SetPath {
             segments: vec![
                 "apps".to_string(),
@@ -1972,7 +1972,7 @@ async fn persist_non_app_mcp_tool_approval(
         .map(|plugin| plugin.config_name.clone());
 
     if let Some(plugin_config_name) = plugin_config_name {
-        return ConfigEditsBuilder::for_config(config)
+        return config_edits_builder_for_config(config)
             .with_edits([ConfigEdit::SetPath {
                 segments: vec![
                     "plugins".to_string(),
@@ -2001,7 +2001,12 @@ fn custom_mcp_tool_approval_config_builder(
     }
 
     Ok(user_mcp_server_is_configured(config, server)?
-        .then(|| ConfigEditsBuilder::for_config(config)))
+        .then(|| config_edits_builder_for_config(config)))
+}
+
+fn config_edits_builder_for_config(config: &Config) -> ConfigEditsBuilder {
+    ConfigEditsBuilder::new(config.codex_home.as_path())
+        .with_profile(config.active_profile.as_deref())
 }
 
 async fn persist_custom_mcp_tool_approval_with(

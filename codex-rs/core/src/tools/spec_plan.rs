@@ -55,17 +55,19 @@ use crate::tools::spec_plan_types::ToolRegistryBuildParams;
 use crate::tools::spec_plan_types::agent_type_description;
 use codex_extension_api::ExtensionToolExecutor;
 use codex_protocol::openai_models::ConfigShellToolType;
-use codex_tools::ResponsesApiNamespaceTool;
-use codex_tools::TOOL_SEARCH_TOOL_NAME;
-use codex_tools::ToolEnvironmentMode;
-use codex_tools::ToolName;
-use codex_tools::ToolSpec;
-use codex_tools::ToolsConfig;
-use codex_tools::collect_code_mode_exec_prompt_tool_definitions;
-use codex_tools::create_desktop_automation_tools;
-use codex_tools::create_first_moves_tools;
-use codex_tools::create_workflow_batch_tool;
-use codex_tools::default_namespace_description;
+use codex_tool_execution_api::ToolEnvironmentMode;
+use codex_tool_execution_api::ToolName;
+use codex_tool_execution_api::ToolsConfig;
+use codex_tool_registry_api::ResponsesApiNamespaceTool;
+use codex_tool_registry_api::TOOL_SEARCH_TOOL_NAME;
+use codex_tool_registry_api::ToolSpec;
+use codex_tool_registry_api::augment_tool_spec_for_code_mode;
+use codex_tool_registry_api::collect_code_mode_exec_prompt_tool_definitions;
+use codex_tool_registry_api::create_context_ops_tools;
+use codex_tool_registry_api::create_desktop_automation_tools;
+use codex_tool_registry_api::create_first_moves_tools;
+use codex_tool_registry_api::create_workflow_batch_tool;
+use codex_tool_registry_api::default_namespace_description;
 use std::collections::BTreeMap;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -116,7 +118,7 @@ pub(crate) fn build_tool_registry_builder_from_executors(
         .into_iter()
         .map(|(spec, exposure)| {
             if config.code_mode_enabled && exposure != ToolExposure::DirectModelOnly {
-                codex_tools::augment_tool_spec_for_code_mode(spec)
+                augment_tool_spec_for_code_mode(spec)
             } else {
                 spec
             }
@@ -340,8 +342,14 @@ pub(crate) fn collect_tool_executors(
         && let Some(discoverable_tools) =
             params.discoverable_tools.filter(|tools| !tools.is_empty())
     {
+        let tool_search_available = config.search_tool
+            && config.namespace_tools
+            && executors
+                .iter()
+                .any(|executor| executor.exposure() == ToolExposure::Deferred);
         executors.push(Arc::new(RequestPluginInstallHandler::new(
-            discoverable_tools,
+            discoverable_tools.to_vec(),
+            tool_search_available,
         )));
     }
 
@@ -360,7 +368,7 @@ pub(crate) fn collect_tool_executors(
     }
 
     if config.context_ops_enabled {
-        for tool in codex_tools::create_context_ops_tools() {
+        for tool in create_context_ops_tools() {
             executors.push(Arc::new(ContextOpsHandler::new(tool)));
         }
     }

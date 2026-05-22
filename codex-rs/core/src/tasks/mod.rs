@@ -30,6 +30,7 @@ use crate::goals::GoalRuntimeEvent;
 use crate::hook_runtime::inspect_pending_input;
 use crate::hook_runtime::record_additional_contexts;
 use crate::hook_runtime::record_pending_input;
+use crate::session::TurnInput;
 use crate::session::session::Session;
 use crate::session::turn::auto_compact_token_limit;
 use crate::session::turn::run_auto_compact;
@@ -368,7 +369,8 @@ impl Session {
                 turn_state.push_pending_input(item);
             }
         }
-        self.emit_turn_start_lifecycle(turn_context.extension_data.as_ref());
+        self.emit_turn_start_lifecycle(turn_context.extension_data.as_ref())
+            .await;
 
         let mut active = self.active_turn.lock().await;
         let turn = active.get_or_insert_with(ActiveTurn::default);
@@ -439,6 +441,7 @@ impl Session {
             task,
             cancellation_token,
             turn_context: Arc::clone(&turn_context),
+            turn_extension_data: Arc::clone(&turn_context.extension_data),
             _timer: timer,
         };
         turn.add_task(running_task);
@@ -503,13 +506,13 @@ impl Session {
         }
 
         if let Some(turn_context) = turn_context.as_deref() {
-            self.emit_turn_abort_lifecycle(reason.clone(), turn_context.extension_data.as_ref());
+            self.emit_turn_abort_lifecycle(reason.clone(), turn_context.extension_data.as_ref())
+                .await;
         }
         if (aborted_turn || reason == TurnAbortReason::Interrupted)
             && let Err(err) = self
                 .goal_runtime_apply(GoalRuntimeEvent::TaskAborted {
                     turn_context: turn_context.as_deref(),
-                    reason: reason.clone(),
                 })
                 .await
         {
@@ -551,12 +554,12 @@ impl Session {
             self.handle_task_abort(task, reason.clone()).await;
         }
         if let Some(turn_context) = turn_context.as_deref() {
-            self.emit_turn_abort_lifecycle(reason.clone(), turn_context.extension_data.as_ref());
+            self.emit_turn_abort_lifecycle(reason.clone(), turn_context.extension_data.as_ref())
+                .await;
         }
         if let Err(err) = self
             .goal_runtime_apply(GoalRuntimeEvent::TaskAborted {
                 turn_context: turn_context.as_deref(),
-                reason: reason.clone(),
             })
             .await
         {
@@ -582,7 +585,7 @@ impl Session {
             .turn_metadata_state
             .cancel_git_enrichment_task();
 
-        let mut pending_input = Vec::<ResponseInputItem>::new();
+        let mut pending_input = Vec::<TurnInput>::new();
         let mut should_clear_active_turn = false;
         let mut token_usage_at_turn_start = None;
         let mut turn_had_memory_citation = false;
@@ -619,7 +622,7 @@ impl Session {
         }
         if !pending_input.is_empty() {
             for pending_input_item in pending_input {
-                let outcome = inspect_pending_input(self, &turn_context, pending_input_item).await;
+                let outcome = inspect_pending_input(self, &turn_context, &pending_input_item).await;
                 if outcome.should_stop {
                     record_additional_contexts(self, &turn_context, outcome.additional_contexts)
                         .await;
@@ -789,7 +792,15 @@ impl Session {
             warn!("failed to run post-turn semantic compact: {err}");
         }
         if should_clear_active_turn && matches!(finished_task_kind, Some(TaskKind::Regular)) {
-            let pending_after_compact = self.get_pending_input().await;
+            let pending_after_compact: Vec<ResponseInputItem> = self
+                .get_pending_input()
+                .await
+                .into_iter()
+                .map(|input| match input {
+                    TurnInput::UserInput(input) => ResponseInputItem::from(input),
+                    TurnInput::ResponseInputItem(input) => input,
+                })
+                .collect();
             if !pending_after_compact.is_empty() {
                 self.queue_response_items_for_next_turn(pending_after_compact)
                     .await;
@@ -817,7 +828,8 @@ impl Session {
             .time_to_first_token_ms()
             .await;
         if should_clear_active_turn {
-            self.emit_turn_stop_lifecycle(turn_context.extension_data.as_ref());
+            self.emit_turn_stop_lifecycle(turn_context.extension_data.as_ref())
+                .await;
         }
         if let Err(err) = self
             .goal_runtime_apply(GoalRuntimeEvent::TurnFinished {

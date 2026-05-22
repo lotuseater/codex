@@ -16,6 +16,7 @@ use crate::tools::handlers::multi_agents_spec::create_wait_agent_tool_v2;
 use crate::tools::handlers::plan_spec::create_update_plan_tool;
 use crate::tools::handlers::request_user_input_spec::REQUEST_USER_INPUT_TOOL_NAME;
 use crate::tools::handlers::request_user_input_spec::create_request_user_input_tool;
+use crate::tools::handlers::request_user_input_spec::request_user_input_available_modes;
 use crate::tools::handlers::request_user_input_spec::request_user_input_tool_description;
 use crate::tools::handlers::shell_spec::CommandToolOptions;
 use crate::tools::handlers::shell_spec::create_exec_command_tool;
@@ -29,6 +30,7 @@ use codex_app_catalog_types::AppInfo;
 #[cfg(windows)]
 use codex_desktop_automation::DAB_FIND_WINDOW_TOOL;
 use codex_extension_api::ExtensionToolExecutor;
+use codex_extension_api::ExtensionToolOutput;
 use codex_extension_api::ToolCall as ExtensionToolCall;
 use codex_extension_api::ToolExecutor;
 use codex_features::Feature;
@@ -46,26 +48,26 @@ use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::WebSearchToolType;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
-use codex_tools::AdditionalProperties;
-use codex_tools::DiscoverablePluginInfo;
-use codex_tools::DiscoverableTool;
-use codex_tools::FIRST_MOVES_PREDICT_TOOL_NAME;
-use codex_tools::FIRST_MOVES_STATS_TOOL_NAME;
-use codex_tools::FreeformTool;
-use codex_tools::JsonSchema;
-use codex_tools::JsonSchemaPrimitiveType;
-use codex_tools::JsonSchemaType;
-use codex_tools::REQUEST_PLUGIN_INSTALL_TOOL_NAME;
-use codex_tools::ResponsesApiNamespaceTool;
-use codex_tools::ResponsesApiTool;
-use codex_tools::ResponsesApiWebSearchFilters;
-use codex_tools::ResponsesApiWebSearchUserLocation;
-use codex_tools::TOOL_SEARCH_TOOL_NAME;
-use codex_tools::ToolEnvironmentMode;
-use codex_tools::ToolName;
-use codex_tools::ToolsConfigParams;
-use codex_tools::mcp_call_tool_result_output_schema;
-use codex_tools::request_user_input_available_modes;
+use codex_tool_execution_api::FunctionCallError;
+use codex_tool_execution_api::ToolEnvironmentMode;
+use codex_tool_execution_api::ToolName;
+use codex_tool_execution_api::ToolsConfigParams;
+use codex_tool_registry_api::DiscoverablePluginInfo;
+use codex_tool_registry_api::DiscoverableTool;
+use codex_tool_registry_api::FIRST_MOVES_PREDICT_TOOL_NAME;
+use codex_tool_registry_api::FIRST_MOVES_STATS_TOOL_NAME;
+use codex_tool_registry_api::FreeformTool;
+use codex_tool_registry_api::REQUEST_PLUGIN_INSTALL_TOOL_NAME;
+use codex_tool_registry_api::ResponsesApiNamespaceTool;
+use codex_tool_registry_api::ResponsesApiTool;
+use codex_tool_registry_api::ResponsesApiWebSearchFilters;
+use codex_tool_registry_api::ResponsesApiWebSearchUserLocation;
+use codex_tool_registry_api::TOOL_SEARCH_TOOL_NAME;
+use codex_tool_registry_api::mcp_call_tool_result_output_schema;
+use codex_tool_schema::AdditionalProperties;
+use codex_tool_schema::JsonSchema;
+use codex_tool_schema::JsonSchemaPrimitiveType;
+use codex_tool_schema::JsonSchemaType;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -85,7 +87,7 @@ fn extension_tool_executor(name: &str, description: &str) -> Arc<dyn ExtensionTo
     }
 
     impl ToolExecutor<ExtensionToolCall> for SpecOnlyExtensionExecutor {
-        type Output = codex_tools::JsonToolOutput;
+        type Output = ExtensionToolOutput;
 
         fn tool_name(&self) -> ToolName {
             ToolName::plain(self.name.as_str())
@@ -112,7 +114,7 @@ fn extension_tool_executor(name: &str, description: &str) -> Arc<dyn ExtensionTo
         async fn handle(
             &self,
             _call: ExtensionToolCall,
-        ) -> Result<Self::Output, codex_tools::FunctionCallError> {
+        ) -> Result<Self::Output, FunctionCallError> {
             panic!("spec planning should not execute extension tools")
         }
     }

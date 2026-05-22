@@ -3,15 +3,14 @@
 //! These specs expose goal read/update primitives to the model while keeping
 //! usage accounting system-managed.
 
-use codex_tools::JsonSchema;
-use codex_tools::ResponsesApiTool;
-use codex_tools::ToolSpec;
+pub use codex_tool_registry_api::CREATE_GOAL_TOOL_NAME;
+pub use codex_tool_registry_api::GET_GOAL_TOOL_NAME;
+use codex_tool_registry_api::JsonSchema;
+use codex_tool_registry_api::ResponsesApiTool;
+use codex_tool_registry_api::ToolSpec;
+pub use codex_tool_registry_api::UPDATE_GOAL_TOOL_NAME;
 use serde_json::json;
 use std::collections::BTreeMap;
-
-pub const GET_GOAL_TOOL_NAME: &str = "get_goal";
-pub const CREATE_GOAL_TOOL_NAME: &str = "create_goal";
-pub const UPDATE_GOAL_TOOL_NAME: &str = "update_goal";
 
 pub fn create_get_goal_tool() -> ToolSpec {
     ToolSpec::Function(ResponsesApiTool {

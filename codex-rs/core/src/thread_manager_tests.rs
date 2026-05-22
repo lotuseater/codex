@@ -1,4 +1,7 @@
 use super::*;
+use crate::StateDbHandle;
+use crate::config::Config;
+use crate::config::ThreadStoreConfig;
 use crate::config::test_config;
 use crate::init_state_db;
 use crate::installation_id::INSTALLATION_ID_FILENAME;
@@ -23,13 +26,30 @@ use codex_protocol::protocol::ThreadSource;
 use codex_protocol::protocol::TurnStartedEvent;
 use codex_protocol::protocol::UserMessageEvent;
 use codex_protocol::user_input::UserInput;
-use core_test_support::PathBufExt;
-use core_test_support::PathExt;
-use core_test_support::responses::mount_models_once;
+use codex_test_support_lightweight::PathBufExt;
+use codex_test_support_lightweight::PathExt;
+use codex_test_support_responses::responses::mount_models_once;
+use codex_thread_store::InMemoryThreadStore;
+use codex_thread_store::ThreadStoreSelection;
+use codex_thread_store::thread_store_from_config;
+use codex_thread_store_api::RecordingLiveThreadFactory;
+use codex_thread_store_api::ThreadStore;
+use codex_thread_store_api::UnsupportedLiveThreadFactory;
 use pretty_assertions::assert_eq;
 use std::time::Duration;
 use tempfile::tempdir;
 use wiremock::MockServer;
+
+fn thread_store_from_config_for_test(
+    config: &Config,
+    state_db: Option<StateDbHandle>,
+) -> std::sync::Arc<dyn ThreadStore> {
+    let selection = match &config.experimental_thread_store {
+        ThreadStoreConfig::Local => ThreadStoreSelection::Local,
+        ThreadStoreConfig::InMemory { id } => ThreadStoreSelection::InMemory { id: id.clone() },
+    };
+    thread_store_from_config(config, selection, state_db)
+}
 
 const TEST_INSTALLATION_ID: &str = "11111111-1111-4111-8111-111111111111";
 
@@ -498,7 +518,8 @@ async fn resume_and_fork_do_not_restore_thread_environments_from_rollout() {
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         empty_extension_registry(),
         /*analytics_events_client*/ None,
-        thread_store_from_config(&config, /*state_db*/ None),
+        thread_store_from_config_for_test(&config, /*state_db*/ None),
+        Arc::new(RecordingLiveThreadFactory::new()),
         /*state_db*/ None,
         TEST_INSTALLATION_ID.to_string(),
         /*attestation_provider*/ None,
@@ -608,7 +629,7 @@ async fn explicit_installation_id_skips_codex_home_file() {
         AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
     let installation_id = uuid::Uuid::new_v4().to_string();
     let state_db = init_state_db(&config).await;
-    let thread_store = thread_store_from_config(&config, state_db.clone());
+    let thread_store = thread_store_from_config_for_test(&config, state_db.clone());
     let manager = ThreadManager::new(
         &config,
         auth_manager,
@@ -617,6 +638,7 @@ async fn explicit_installation_id_skips_codex_home_file() {
         empty_extension_registry(),
         /*analytics_events_client*/ None,
         thread_store,
+        Arc::new(RecordingLiveThreadFactory::new()),
         state_db.clone(),
         installation_id.clone(),
         /*attestation_provider*/ None,
@@ -655,7 +677,8 @@ async fn resume_active_thread_from_rollout_returns_running_thread() {
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         empty_extension_registry(),
         /*analytics_events_client*/ None,
-        thread_store_from_config(&config, /*state_db*/ None),
+        thread_store_from_config_for_test(&config, /*state_db*/ None),
+        Arc::new(RecordingLiveThreadFactory::new()),
         /*state_db*/ None,
         TEST_INSTALLATION_ID.to_string(),
         /*attestation_provider*/ None,
@@ -712,7 +735,8 @@ async fn resume_stopped_thread_from_rollout_spawns_new_thread() {
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         empty_extension_registry(),
         /*analytics_events_client*/ None,
-        thread_store_from_config(&config, /*state_db*/ None),
+        thread_store_from_config_for_test(&config, /*state_db*/ None),
+        Arc::new(RecordingLiveThreadFactory::new()),
         /*state_db*/ None,
         TEST_INSTALLATION_ID.to_string(),
         /*attestation_provider*/ None,
@@ -768,7 +792,7 @@ async fn resume_stopped_thread_from_rollout_preserves_thread_source() {
     let auth_manager =
         AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
     let state_db = init_state_db(&config).await;
-    let thread_store = thread_store_from_config(&config, state_db.clone());
+    let thread_store = thread_store_from_config_for_test(&config, state_db.clone());
     let manager = ThreadManager::new(
         &config,
         auth_manager.clone(),
@@ -777,6 +801,7 @@ async fn resume_stopped_thread_from_rollout_preserves_thread_source() {
         empty_extension_registry(),
         /*analytics_events_client*/ None,
         thread_store,
+        Arc::new(RecordingLiveThreadFactory::new()),
         state_db.clone(),
         TEST_INSTALLATION_ID.to_string(),
         /*attestation_provider*/ None,
@@ -854,7 +879,7 @@ async fn rollout_path_resume_and_fork_read_history_through_thread_store() {
     let auth_manager =
         AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
     let state_db = init_state_db(&config).await;
-    let thread_store = thread_store_from_config(&config, state_db.clone());
+    let thread_store = thread_store_from_config_for_test(&config, state_db.clone());
     let in_memory_store = thread_store
         .as_any()
         .downcast_ref::<InMemoryThreadStore>()
@@ -867,6 +892,7 @@ async fn rollout_path_resume_and_fork_read_history_through_thread_store() {
         empty_extension_registry(),
         /*analytics_events_client*/ None,
         thread_store.clone(),
+        Arc::new(RecordingLiveThreadFactory::new()),
         state_db,
         TEST_INSTALLATION_ID.to_string(),
         /*attestation_provider*/ None,
@@ -969,7 +995,8 @@ async fn new_uses_active_provider_for_model_refresh() {
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         empty_extension_registry(),
         /*analytics_events_client*/ None,
-        thread_store_from_config(&config, /*state_db*/ None),
+        thread_store_from_config_for_test(&config, /*state_db*/ None),
+        Arc::new(RecordingLiveThreadFactory::new()),
         /*state_db*/ None,
         TEST_INSTALLATION_ID.to_string(),
         /*attestation_provider*/ None,
@@ -1125,9 +1152,10 @@ fn completed_legacy_event_history_is_not_mid_turn() {
         RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
             message: "hello".to_string(),
             images: None,
+            image_details: Vec::new(),
             text_elements: Vec::new(),
             local_images: Vec::new(),
-            ..Default::default()
+            local_image_details: Vec::new(),
         })),
         RolloutItem::EventMsg(EventMsg::AgentMessage(AgentMessageEvent {
             message: "done".to_string(),
@@ -1153,9 +1181,10 @@ fn mixed_response_and_legacy_user_event_history_is_mid_turn() {
         RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
             message: "hello".to_string(),
             images: None,
+            image_details: Vec::new(),
             text_elements: Vec::new(),
             local_images: Vec::new(),
-            ..Default::default()
+            local_image_details: Vec::new(),
         })),
     ]);
 
@@ -1187,7 +1216,8 @@ async fn interrupted_fork_snapshot_does_not_synthesize_turn_id_for_legacy_histor
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         empty_extension_registry(),
         /*analytics_events_client*/ None,
-        thread_store_from_config(&config, state_db.clone()),
+        thread_store_from_config_for_test(&config, state_db.clone()),
+        Arc::new(RecordingLiveThreadFactory::new()),
         state_db.clone(),
         TEST_INSTALLATION_ID.to_string(),
         /*attestation_provider*/ None,
@@ -1295,7 +1325,8 @@ async fn interrupted_fork_snapshot_preserves_explicit_turn_id() {
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         empty_extension_registry(),
         /*analytics_events_client*/ None,
-        thread_store_from_config(&config, state_db.clone()),
+        thread_store_from_config_for_test(&config, state_db.clone()),
+        Arc::new(RecordingLiveThreadFactory::new()),
         state_db.clone(),
         TEST_INSTALLATION_ID.to_string(),
         /*attestation_provider*/ None,
@@ -1392,7 +1423,8 @@ async fn interrupted_fork_snapshot_uses_persisted_mid_turn_history_without_live_
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         empty_extension_registry(),
         /*analytics_events_client*/ None,
-        thread_store_from_config(&config, state_db.clone()),
+        thread_store_from_config_for_test(&config, state_db.clone()),
+        Arc::new(RecordingLiveThreadFactory::new()),
         state_db.clone(),
         TEST_INSTALLATION_ID.to_string(),
         /*attestation_provider*/ None,
@@ -1535,7 +1567,8 @@ async fn resumed_thread_keeps_paused_goal_paused() -> anyhow::Result<()> {
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         empty_extension_registry(),
         /*analytics_events_client*/ None,
-        thread_store_from_config(&config, state_db.clone()),
+        thread_store_from_config_for_test(&config, state_db.clone()),
+        Arc::new(RecordingLiveThreadFactory::new()),
         state_db.clone(),
         TEST_INSTALLATION_ID.to_string(),
         /*attestation_provider*/ None,
