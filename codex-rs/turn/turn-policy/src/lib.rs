@@ -60,3 +60,37 @@ impl TurnPolicy for AllowAllPolicy {
         TurnPolicyDecision::Allow
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use codex_turn_state::TurnPhase;
+
+    fn turn_id(value: u64) -> TurnId {
+        TurnId::new(format!("turn-{value}"))
+    }
+
+    #[test]
+    fn policy_context_exposes_input_and_state() {
+        let turn_id = turn_id(31);
+        let input = TurnInput::new(turn_id.clone(), "continue");
+        let state = TurnState::new(turn_id.clone());
+
+        let context = TurnPolicyContext::new(&input, &state);
+
+        assert_eq!(&turn_id, context.input().turn_id());
+        assert_eq!("continue", context.input().prompt());
+        assert_eq!(&turn_id, context.state().turn_id());
+        assert_eq!(TurnPhase::Queued, context.state().phase());
+    }
+
+    #[test]
+    fn allow_all_policy_allows_turn_without_core_runtime() {
+        let turn_id = turn_id(37);
+        let input = TurnInput::new(turn_id.clone(), "run");
+        let state = TurnState::new(turn_id);
+        let context = TurnPolicyContext::new(&input, &state);
+
+        assert_eq!(TurnPolicyDecision::Allow, AllowAllPolicy.evaluate(&context));
+    }
+}
