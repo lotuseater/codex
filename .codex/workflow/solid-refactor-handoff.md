@@ -6,6 +6,11 @@ Status: active refactor-first orchestration; compact-safe current state; wave19 
 This handoff is the current source of truth. It intentionally omits old launch
 history except where it affects active process ownership.
 
+Repeated-read guardrail: use `python scripts\repeated_read_replay_canary.py <session.jsonl>`
+for compact/non-interactive worker sessions when prompt-reduction or tool-output
+changes could make the agent repeat exact or overlapping source reads/searches.
+Write reports under `.codex\workflow\`.
+
 ## Director Checkpoint - 2026-05-22 02:23 Europe/Kyiv
 
 - Director reread the overseer memo, this handoff, the SOLID plan/review docs,

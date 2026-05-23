@@ -83,6 +83,7 @@ In the codex-rs folder where the rust code lives:
   - Start with `powershell -ExecutionPolicy Bypass -File scripts\build-local-codex.ps1 -Mode FastRelease`.
   - Use `-Mode LowMemRelease` only to lower Cargo job count; it uses the same release profile/cache as `FastRelease`.
   - Do not run `cargo test -p codex-cli`, `cargo test -p codex-exec`, or similarly broad debug lanes. For focused Rust tests, prefer `powershell -ExecutionPolicy Bypass -File scripts\test-local-codex-release.ps1 -Package <crate> -Filter <test-filter>` so passed release tests are logged and disposable release test executables are cleaned automatically.
+  - For prompt-reduction or non-interactive-session changes that may cause repeated source reads/searches, run `python scripts\repeated_read_replay_canary.py <session.jsonl>` and store JSON reports under `.codex\workflow\` before handing the session back to workers.
 
 Run `just fmt` (in `codex-rs` directory) automatically after you have finished making Rust code changes; do not ask for approval to run it. Additionally, run the tests:
 
