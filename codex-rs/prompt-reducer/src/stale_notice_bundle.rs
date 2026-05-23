@@ -15,6 +15,7 @@ use crate::write_artifact;
 
 const STALE_REDUCTION_NOTICE_BUNDLE_REASON: &str = "stale_reduction_notice_bundle";
 const STALE_REDUCTION_NOTICE_BUNDLE_MIN_ITEMS: usize = 2;
+const SOURCE_ACCESS_HISTORY_MAX_ENTRIES: usize = 24;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct StaleReductionNotice {
@@ -218,7 +219,6 @@ fn has_preserved_evidence(text: &str) -> bool {
     }
     const PRESERVE_MARKERS: &[&str] = &[
         "approval",
-        "access_ledger:",
         "build failed",
         "compiler diagnostic",
         "context_pack",
@@ -254,7 +254,7 @@ fn nonzero_exit_code(lower_text: &str) -> bool {
 fn render_replacement(notices: &[StaleReductionNotice], artifact_path: &Path) -> String {
     let original_tokens = notices.iter().map(|notice| notice.tokens).sum::<usize>();
     let reason_counts = format_reason_counts(notices);
-    format!(
+    let mut output = format!(
         "[prompt reduction: {STALE_REDUCTION_NOTICE_BUNDLE_REASON}]\n\
          original_items: {}\n\
          original_tokens_estimate: {original_tokens}\n\
@@ -265,7 +265,12 @@ fn render_replacement(notices: &[StaleReductionNotice], artifact_path: &Path) ->
          keep_inline: current instructions, recent verification, actionable failures/diagnostics, findings, context packs, approvals/safety, and API/behavior decisions.",
         notices.len(),
         artifact_path.display()
-    )
+    );
+    if let Some(source_access_history) = format_source_access_history(notices) {
+        output.push_str("\n\n");
+        output.push_str(&source_access_history);
+    }
+    output
 }
 
 fn render_artifact(notices: &[StaleReductionNotice]) -> String {
@@ -298,6 +303,53 @@ fn render_artifact(notices: &[StaleReductionNotice]) -> String {
         writeln!(&mut output, "--- end notice {} ---", index + 1).unwrap();
     }
     output
+}
+
+fn format_source_access_history(notices: &[StaleReductionNotice]) -> Option<String> {
+    let mut entries = BTreeSet::<String>::new();
+    for notice in notices {
+        let Some(ledger) = access_ledger_line(&notice.text) else {
+            continue;
+        };
+        let artifact = artifact_reference(&notice.text).unwrap_or("(unknown)");
+        entries.insert(format!(
+            "text-slot-{} reason={}; {}; artifact={}",
+            notice.text_slot_index, notice.reason, ledger, artifact
+        ));
+    }
+    if entries.is_empty() {
+        return None;
+    }
+
+    let total = entries.len();
+    let shown = entries
+        .into_iter()
+        .take(SOURCE_ACCESS_HISTORY_MAX_ENTRIES)
+        .collect::<Vec<_>>();
+    let omitted = total.saturating_sub(shown.len());
+    let mut output = format!(
+        "source_access_history\nentries_total: {total}\nrepeated_access_guard: compare future reads/searches against these entries and recover artifacts before repeating exact or overlapping source access.\nentries:"
+    );
+    for entry in shown {
+        output.push_str("\n- ");
+        output.push_str(&entry);
+    }
+    if omitted > 0 {
+        output.push_str(&format!("\n- ... +{omitted} more"));
+    }
+    Some(output)
+}
+
+fn access_ledger_line(text: &str) -> Option<&str> {
+    text.lines()
+        .map(str::trim)
+        .find(|line| line.starts_with("access_ledger:"))
+}
+
+fn artifact_reference(text: &str) -> Option<&str> {
+    text.lines()
+        .map(str::trim)
+        .find_map(|line| line.strip_prefix("artifact:").map(str::trim))
 }
 
 fn format_reason_counts(notices: &[StaleReductionNotice]) -> String {
@@ -550,6 +602,40 @@ mod tests {
         let artifact = only_artifact(temp.path());
         let artifact_text = std::fs::read_to_string(artifact).unwrap();
         assert!(!artifact_text.contains("developer-instruction"));
+        assert!(artifact_text.contains(&old_source));
+        assert!(artifact_text.contains(&old_search));
+    }
+
+    #[test]
+    fn stale_bundle_keeps_source_access_history_inline() {
+        let old_source = format!(
+            "{}\naccess_ledger: kind=read; source=shell_output:Get-Content src/lib.rs; paths=src/lib.rs; requested_lines=1-80; result_lines=80; result_chars=3200",
+            notice("source_read_digest", "old-source")
+        );
+        let old_search = format!(
+            "{}\naccess_ledger: kind=search; source=shell_output:rg -n \"needle\" src tests; paths=src/lib.rs, tests/test.rs; requested_lines=(unknown); result_lines=4; result_chars=420",
+            notice("search_result_digest", "old-search")
+        );
+        let mut items = vec![
+            output("old-source", old_source.clone()),
+            output("old-search", old_search.clone()),
+        ];
+        let temp = TempDir::new().unwrap();
+        let mut stats = stats_for_current_items(&items);
+
+        bundle_stale_reduction_notices(&mut items, temp.path(), 3, &mut stats).unwrap();
+
+        let texts = output_texts(&items);
+        assert!(texts[0].contains("[prompt reduction: stale_reduction_notice_bundle]"));
+        assert!(texts[0].contains("source_access_history"));
+        assert!(texts[0].contains("entries_total: 2"));
+        assert!(texts[0].contains("requested_lines=1-80"));
+        assert!(texts[0].contains("kind=search"));
+        assert!(texts[0].contains("artifact=`C:\\Temp\\old-source.txt`"));
+        assert_eq!("", texts[1]);
+
+        let artifact = only_artifact(temp.path());
+        let artifact_text = std::fs::read_to_string(artifact).unwrap();
         assert!(artifact_text.contains(&old_source));
         assert!(artifact_text.contains(&old_search));
     }
