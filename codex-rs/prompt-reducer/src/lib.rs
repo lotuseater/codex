@@ -2079,30 +2079,91 @@ fn markdown_headings(text: &str, limit: usize) -> Vec<String> {
 
 fn inventory_paths(text: &str) -> BTreeSet<String> {
     let mut paths = BTreeSet::new();
-    for line in text.lines() {
-        let trimmed = clean_path_candidate(line);
-        if looks_like_inventory_path(&trimmed) {
-            paths.insert(normalize_slashes(trimmed));
-        }
-        for token in line.split([',', ';']) {
-            for part in token.split(" -> ") {
-                for candidate in part.split(" | ") {
-                    let cleaned = clean_path_candidate(candidate);
-                    if looks_like_inventory_path(&cleaned) {
-                        paths.insert(normalize_slashes(cleaned));
-                    }
-                }
-            }
-        }
+    for candidate in path_candidate_fragments(text) {
+        insert_path_candidate(&mut paths, &candidate, false);
     }
     paths
 }
 
+fn source_paths(source: &str) -> BTreeSet<String> {
+    let mut paths = BTreeSet::new();
+    for candidate in path_candidate_fragments(source) {
+        insert_path_candidate(&mut paths, &candidate, true);
+    }
+    paths
+}
+
+fn path_candidate_fragments(text: &str) -> Vec<String> {
+    let mut candidates = Vec::new();
+    for line in text.lines() {
+        candidates.push(line.to_string());
+        candidates.extend(quoted_path_candidates(line));
+        for token in line.split([',', ';']) {
+            for part in token.split(" -> ") {
+                for segment in part.split(" | ") {
+                    push_path_candidate_segment(&mut candidates, segment);
+                }
+            }
+        }
+    }
+    candidates
+}
+
+fn push_path_candidate_segment(candidates: &mut Vec<String>, segment: &str) {
+    candidates.push(segment.to_string());
+    if let Some((_, value)) = segment.rsplit_once('=') {
+        candidates.push(value.to_string());
+    }
+    for word in segment.split_whitespace() {
+        candidates.push(word.to_string());
+        if let Some((_, value)) = word.rsplit_once('=') {
+            candidates.push(value.to_string());
+        }
+    }
+}
+
+fn quoted_path_candidates(text: &str) -> Vec<String> {
+    let mut candidates = Vec::new();
+    let mut active_quote = None;
+    let mut start = 0usize;
+    for (index, ch) in text.char_indices() {
+        if Some(ch) == active_quote {
+            if start < index {
+                candidates.push(text[start..index].to_string());
+            }
+            active_quote = None;
+        } else if active_quote.is_none() && matches!(ch, '\'' | '"' | '`') {
+            active_quote = Some(ch);
+            start = index + ch.len_utf8();
+        }
+    }
+    candidates
+}
+
+fn insert_path_candidate(
+    paths: &mut BTreeSet<String>,
+    candidate: &str,
+    allow_directory_path: bool,
+) {
+    let cleaned = clean_path_candidate(candidate);
+    if cleaned.is_empty() {
+        return;
+    }
+    if looks_like_inventory_path(&cleaned)
+        || (allow_directory_path && looks_like_source_directory_path(&cleaned))
+    {
+        paths.insert(normalize_slashes(cleaned));
+    }
+}
+
 fn clean_path_candidate(text: &str) -> String {
     text.trim()
-        .trim_matches('`')
-        .trim_matches('"')
-        .trim_matches('\'')
+        .trim_matches(|ch| {
+            matches!(
+                ch,
+                '`' | '"' | '\'' | '(' | ')' | '[' | ']' | '{' | '}' | ',' | ';'
+            )
+        })
         .trim_start_matches("- ")
         .trim_start_matches("* ")
         .trim_start_matches("?? ")
@@ -2119,16 +2180,47 @@ fn looks_like_inventory_path(text: &str) -> bool {
     if normalized.len() < 5 || normalized.contains(' ') {
         return false;
     }
+    let lower = normalized.to_ascii_lowercase();
+    if lower.starts_with("shell_output:")
+        || lower.starts_with("source:")
+        || normalized.contains('$')
+        || normalized.contains('=')
+        || normalized
+            .chars()
+            .any(|ch| matches!(ch, '"' | '\'' | '`' | '{' | '}' | '[' | ']'))
+    {
+        return false;
+    }
     if normalized.starts_with("C:/") {
         return true;
     }
-    let lower = normalized.to_ascii_lowercase();
     lower.contains('/')
         && [
             ".rs", ".toml", ".json", ".md", ".snap", ".ps1", ".txt", ".lock", ".yaml", ".yml",
         ]
         .iter()
         .any(|suffix| lower.ends_with(suffix))
+}
+
+fn looks_like_source_directory_path(text: &str) -> bool {
+    let normalized = normalize_slashes(text);
+    if looks_like_inventory_path(&normalized) {
+        return true;
+    }
+    if normalized.len() < 3
+        || normalized.contains(' ')
+        || normalized.starts_with('-')
+        || normalized.contains('*')
+        || normalized.contains('?')
+        || normalized.contains('$')
+        || normalized.contains('=')
+        || normalized
+            .chars()
+            .any(|ch| matches!(ch, '"' | '\'' | '`' | '{' | '}' | '[' | ']'))
+    {
+        return false;
+    }
+    normalized.starts_with("C:/") || (normalized.contains('/') && !normalized.ends_with('/'))
 }
 
 fn render_compact_path_list(operation: &str, paths: &BTreeSet<String>, limit: usize) -> String {
@@ -2517,7 +2609,7 @@ fn search_result_digest(source: &str, text: &str, threshold: usize) -> Option<St
             .to_string();
         *extension_counts.entry(extension).or_default() += 1;
     }
-    let source_paths = inventory_paths(source);
+    let source_paths = source_paths(source);
     Some(format!(
         "search_result_digest\nmatches_total: {}\npaths_total: {}\nextensions: {}\nsamples: {}\n{}\ncontent: omitted; recover exact search output from artifact",
         matches_total,
@@ -2559,7 +2651,7 @@ fn parse_search_result_line(line: &str) -> Option<(String, usize, String)> {
 }
 
 fn source_read_digest(source: &str, text: &str) -> String {
-    let paths = inventory_paths(source);
+    let paths = source_paths(source);
     let path_summary = summarize_paths(&paths, 12);
     format!(
         "source_read_digest\nsource: {}\nlines_total: {}\nchars_total: {}\npaths: {}\n{}\nexcerpt:\n{}",
@@ -3722,9 +3814,12 @@ mod source_access_ledger_tests {
         );
 
         assert!(digest.contains("access_ledger: kind=read"));
-        assert!(digest.contains("context_reduction_adapter.rs"));
+        assert!(digest.contains("paths: codex-rs/core/src/context_reduction_adapter.rs"));
+        assert!(digest.contains("paths=codex-rs/core/src/context_reduction_adapter.rs"));
         assert!(digest.contains("requested_lines=110-220"));
         assert!(digest.contains("result_lines=2"));
+        assert!(!digest.contains("paths=shell_output"));
+        assert!(!digest.contains("paths: shell_output:$p"));
     }
 
     #[test]
@@ -3735,7 +3830,22 @@ mod source_access_ledger_tests {
         );
 
         assert!(digest.contains("access_ledger: kind=read"));
+        assert!(digest.contains("paths: codex-rs/context-reduction/src/lib.rs"));
+        assert!(digest.contains("paths=codex-rs/context-reduction/src/lib.rs"));
         assert!(digest.contains("requested_lines=1-35"));
+    }
+
+    #[test]
+    fn source_read_digest_extracts_quoted_absolute_get_content_path() {
+        let digest = source_read_digest(
+            "shell_output:Get-Content -Path 'C:\\Users\\Oleh\\.codex\\skills\\debug-investigation\\SKILL.md' -TotalCount 120",
+            "---\nname: debug-investigation",
+        );
+
+        assert!(digest.contains("paths: C:/Users/Oleh/.codex/skills/debug-investigation/SKILL.md"));
+        assert!(digest.contains("paths=C:/Users/Oleh/.codex/skills/debug-investigation/SKILL.md"));
+        assert!(digest.contains("requested_lines=1-120"));
+        assert!(!digest.contains("paths=(unknown)"));
     }
 
     #[test]
@@ -3748,8 +3858,9 @@ mod source_access_ledger_tests {
         .expect("search digest");
 
         assert!(digest.contains("access_ledger: kind=search"));
-        assert!(digest.contains("codex-rs\\core"));
-        assert!(digest.contains("codex-rs\\tui"));
+        assert!(digest.contains("paths=codex-rs/core, codex-rs/tui"));
+        assert!(!digest.contains("paths=*.rs"));
+        assert!(!digest.contains("paths=shell_output"));
         assert!(digest.contains("result_lines=2"));
     }
 }
