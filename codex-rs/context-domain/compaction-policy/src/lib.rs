@@ -118,6 +118,8 @@ pub struct SemanticCompactInput {
     pub total_usage_tokens: i64,
     /// Active automatic compaction token limit.
     pub auto_compact_limit: i64,
+    /// Optional effective model context window for percentage-based pressure.
+    pub context_window: Option<i64>,
     /// Optional visible-context usage percentage reported by the runtime.
     pub visible_context_percent_used: Option<i64>,
 }

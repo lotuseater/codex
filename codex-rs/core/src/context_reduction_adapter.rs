@@ -115,6 +115,7 @@ pub(crate) fn semantic_compact_input(
         policy: domain_context_reduction_policy(),
         total_usage_tokens,
         auto_compact_limit,
+        context_window: turn_context.model_context_window(),
         visible_context_percent_used,
     };
     context_reduction::SemanticCompactInput {
@@ -122,6 +123,7 @@ pub(crate) fn semantic_compact_input(
         policy: context_reduction_policy_from_domain(input.policy),
         total_usage_tokens: input.total_usage_tokens,
         auto_compact_limit: input.auto_compact_limit,
+        context_window: input.context_window,
         visible_context_percent_used: input.visible_context_percent_used,
     }
 }

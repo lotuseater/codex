@@ -65,6 +65,7 @@ impl Default for ContextReductionPolicy {
 pub struct ContextReductionInput {
     pub total_usage_tokens: i64,
     pub auto_compact_limit: i64,
+    pub context_window: Option<i64>,
     pub visible_context_percent_used: Option<i64>,
 }
 
@@ -112,7 +113,11 @@ impl ContextReductionState {
         policy: ContextReductionPolicy,
         input: ContextReductionInput,
     ) -> ContextReductionDecision {
-        let Some(threshold_tokens) = trigger_threshold_tokens(policy, input.auto_compact_limit)
+        let threshold_context_window = input
+            .context_window
+            .filter(|context_window| *context_window > 0)
+            .unwrap_or(input.auto_compact_limit);
+        let Some(threshold_tokens) = trigger_threshold_tokens(policy, threshold_context_window)
         else {
             return ContextReductionDecision::Skip;
         };
@@ -133,13 +138,13 @@ impl ContextReductionState {
 
 pub fn trigger_threshold_tokens(
     policy: ContextReductionPolicy,
-    auto_compact_limit: i64,
+    threshold_context_window: i64,
 ) -> Option<i64> {
-    if auto_compact_limit <= 0 || policy.trigger_context_percent() == 0 {
+    if threshold_context_window <= 0 || policy.trigger_context_percent() == 0 {
         return None;
     }
     let trigger_percent = i64::from(policy.trigger_context_percent().min(100));
-    let numerator = auto_compact_limit.saturating_mul(trigger_percent);
+    let numerator = threshold_context_window.saturating_mul(trigger_percent);
     Some(numerator.saturating_add(99) / 100)
 }
 
@@ -162,6 +167,7 @@ pub struct SemanticCompactInput {
     pub policy: ContextReductionPolicy,
     pub total_usage_tokens: i64,
     pub auto_compact_limit: i64,
+    pub context_window: Option<i64>,
     pub visible_context_percent_used: Option<i64>,
 }
 
@@ -237,6 +243,7 @@ impl SemanticCompactState {
                 ContextReductionInput {
                     total_usage_tokens: input.total_usage_tokens,
                     auto_compact_limit: input.auto_compact_limit,
+                    context_window: input.context_window,
                     visible_context_percent_used: input.visible_context_percent_used,
                 },
             ),
@@ -368,6 +375,7 @@ mod tests {
         ContextReductionInput {
             total_usage_tokens,
             auto_compact_limit: 100_000,
+            context_window: Some(100_000),
             visible_context_percent_used: None,
         }
     }
@@ -378,6 +386,7 @@ mod tests {
             policy: ContextReductionPolicy::default(),
             total_usage_tokens,
             auto_compact_limit: 100_000,
+            context_window: Some(100_000),
             visible_context_percent_used: None,
         }
     }
@@ -392,6 +401,7 @@ mod tests {
             policy: ContextReductionPolicy::default(),
             total_usage_tokens,
             auto_compact_limit: 100_000,
+            context_window: Some(100_000),
             visible_context_percent_used: Some(visible_context_percent_used),
         }
     }
@@ -453,6 +463,39 @@ mod tests {
     }
 
     #[test]
+    fn token_pressure_uses_context_window_not_auto_compact_limit() {
+        let state = ContextReductionState::default();
+        let policy = ContextReductionPolicy::default();
+
+        assert_eq!(
+            state.decide(
+                policy,
+                ContextReductionInput {
+                    total_usage_tokens: 10_000,
+                    auto_compact_limit: 50_000,
+                    context_window: Some(100_000),
+                    visible_context_percent_used: None,
+                }
+            ),
+            ContextReductionDecision::Skip
+        );
+        assert_eq!(
+            state.decide(
+                policy,
+                ContextReductionInput {
+                    total_usage_tokens: 20_000,
+                    auto_compact_limit: 50_000,
+                    context_window: Some(100_000),
+                    visible_context_percent_used: None,
+                }
+            ),
+            ContextReductionDecision::Reduce {
+                threshold_tokens: 20_000,
+            }
+        );
+    }
+
+    #[test]
     fn semantic_early_pressure_uses_configured_policy() {
         let state = SemanticCompactState::default();
         let policy = ContextReductionPolicy::new(35, DEFAULT_TURN_COOLDOWN);
@@ -463,6 +506,7 @@ mod tests {
                 policy,
                 total_usage_tokens: 34_999,
                 auto_compact_limit: 100_000,
+                context_window: Some(100_000),
                 visible_context_percent_used: None,
             }),
             SemanticCompactDecision::Skip
@@ -473,6 +517,7 @@ mod tests {
                 policy,
                 total_usage_tokens: 35_000,
                 auto_compact_limit: 100_000,
+                context_window: Some(100_000),
                 visible_context_percent_used: None,
             }),
             SemanticCompactDecision::Compact {
@@ -493,6 +538,7 @@ mod tests {
                 policy,
                 total_usage_tokens: 1,
                 auto_compact_limit: 100_000,
+                context_window: Some(100_000),
                 visible_context_percent_used: None,
             }),
             SemanticCompactDecision::Skip
@@ -505,6 +551,7 @@ mod tests {
                 policy,
                 total_usage_tokens: 1,
                 auto_compact_limit: 100_000,
+                context_window: Some(100_000),
                 visible_context_percent_used: None,
             }),
             SemanticCompactDecision::Compact {
@@ -523,6 +570,7 @@ mod tests {
                 policy: ContextReductionPolicy::new(0, DEFAULT_TURN_COOLDOWN),
                 total_usage_tokens: 99_999,
                 auto_compact_limit: 100_000,
+                context_window: Some(100_000),
                 visible_context_percent_used: Some(100),
             }),
             SemanticCompactDecision::Skip
@@ -752,6 +800,7 @@ mod tests {
                 policy: ContextReductionPolicy::default(),
                 total_usage_tokens: 50_000,
                 auto_compact_limit: 1_000_000,
+                context_window: Some(1_000_000),
                 visible_context_percent_used: None,
             }),
             SemanticCompactDecision::Compact {

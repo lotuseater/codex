@@ -1,0 +1,1 @@
+powershell -ExecutionPolicy Bypass -File scripts\build-local-codex.ps1 -Mode FastRelease
