@@ -396,11 +396,17 @@ Work order:
 - Preferred PATH command: `codex-workers`.
 - Repo script: `.codex/workflow/agents/start-codex-workers.ps1`.
 - Prompt runner: `.codex/workflow/agents/launch-solid-refactor-worker.ps1`.
+- Single interactive worker launcher:
+  `.codex/workflow/agents/start-codex-interactive.ps1`.
 - `codex-workers -List` lists matching prompts and handoffs.
 - `codex-workers -DryRun` shows the windows/logs it would create.
 - `codex-workers -Pattern "solid_refactor_wave4_*.prompt.md"` launches one
   visible Codex window per matching prompt file.
 - `codex-workers -WorkerNames name1,name2` launches an explicit subset.
+- Use `start-codex-interactive.ps1 -PromptPath <prompt.md> -Name <worker>`
+  for one visible normal Codex session. It runs interactive `codex`, not
+  `codex exec`, and exposes `$env:CODEX_WORKER_PROMPT` plus
+  `$env:CODEX_WORKER_HANDOFF` inside the worker window.
 
 Default in this repo script is still `solid_refactor_wave3_*.prompt.md`;
 always pass `-Pattern` when launching a new wave.

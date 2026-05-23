@@ -2162,6 +2162,83 @@ fn render_compact_path_list(operation: &str, paths: &BTreeSet<String>, limit: us
     lines.join("\n")
 }
 
+fn summarize_paths(paths: &BTreeSet<String>, limit: usize) -> String {
+    if paths.is_empty() {
+        return "(unknown)".to_string();
+    }
+
+    let mut selected = paths.iter().take(limit).cloned().collect::<Vec<_>>();
+    if paths.len() > limit {
+        selected.push(format!("... +{} more", paths.len() - limit));
+    }
+    selected.join(", ")
+}
+
+fn requested_line_window(source: &str) -> Option<(usize, usize)> {
+    let compact = source
+        .chars()
+        .filter(|ch| !ch.is_whitespace())
+        .collect::<String>()
+        .to_ascii_lowercase();
+
+    if let Some(for_pos) = compact.find("for($") {
+        let after_for = &compact[for_pos + "for($".len()..];
+        let start = parse_usize_after(after_for, "=")?;
+        let le_pos = after_for.find("-le")?;
+        let end = parse_leading_usize(&after_for[le_pos + "-le".len()..])?;
+        if start <= end {
+            return Some((start, end));
+        }
+    }
+
+    if let Some(total_count) = parse_usize_after(&compact, "-totalcount") {
+        return Some((1, total_count));
+    }
+
+    None
+}
+
+fn parse_usize_after(text: &str, marker: &str) -> Option<usize> {
+    let index = text.find(marker)?;
+    parse_leading_usize(&text[index + marker.len()..])
+}
+
+fn parse_leading_usize(text: &str) -> Option<usize> {
+    let digits = text
+        .chars()
+        .take_while(|ch| ch.is_ascii_digit())
+        .collect::<String>();
+    if digits.is_empty() {
+        None
+    } else {
+        digits.parse().ok()
+    }
+}
+
+fn requested_line_window_summary(source: &str) -> String {
+    requested_line_window(source)
+        .map(|(start, end)| format!("{start}-{end}"))
+        .unwrap_or_else(|| "(unknown)".to_string())
+}
+
+fn source_access_ledger_line(
+    kind: &str,
+    source: &str,
+    paths: &BTreeSet<String>,
+    result_lines: usize,
+    result_chars: usize,
+) -> String {
+    format!(
+        "access_ledger: kind={}; source={}; paths={}; requested_lines={}; result_lines={}; result_chars={}",
+        kind,
+        compact_source_label(source),
+        summarize_paths(paths, 12),
+        requested_line_window_summary(source),
+        result_lines,
+        result_chars,
+    )
+}
+
 fn render_counts(counts: &BTreeMap<String, usize>) -> String {
     counts
         .iter()
@@ -2440,8 +2517,9 @@ fn search_result_digest(source: &str, text: &str, threshold: usize) -> Option<St
             .to_string();
         *extension_counts.entry(extension).or_default() += 1;
     }
+    let source_paths = inventory_paths(source);
     Some(format!(
-        "search_result_digest\nmatches_total: {}\npaths_total: {}\nextensions: {}\nsamples: {}\ncontent: omitted; recover exact search output from artifact",
+        "search_result_digest\nmatches_total: {}\npaths_total: {}\nextensions: {}\nsamples: {}\n{}\ncontent: omitted; recover exact search output from artifact",
         matches_total,
         paths.len(),
         render_counts(&extension_counts),
@@ -2449,7 +2527,14 @@ fn search_result_digest(source: &str, text: &str, threshold: usize) -> Option<St
             "(none)".to_string()
         } else {
             samples.join(" | ")
-        }
+        },
+        source_access_ledger_line(
+            "search",
+            source,
+            &source_paths,
+            text.lines().count(),
+            text.chars().count()
+        )
     ))
 }
 
@@ -2475,17 +2560,20 @@ fn parse_search_result_line(line: &str) -> Option<(String, usize, String)> {
 
 fn source_read_digest(source: &str, text: &str) -> String {
     let paths = inventory_paths(source);
-    let path_summary = if paths.is_empty() {
-        "(unknown)".to_string()
-    } else {
-        paths.into_iter().take(12).collect::<Vec<_>>().join(", ")
-    };
+    let path_summary = summarize_paths(&paths, 12);
     format!(
-        "source_read_digest\nsource: {}\nlines_total: {}\nchars_total: {}\npaths: {}\nexcerpt:\n{}",
+        "source_read_digest\nsource: {}\nlines_total: {}\nchars_total: {}\npaths: {}\n{}\nexcerpt:\n{}",
         compact_source_label(source),
         text.lines().count(),
         text.chars().count(),
         path_summary,
+        source_access_ledger_line(
+            "read",
+            source,
+            &paths,
+            text.lines().count(),
+            text.chars().count()
+        ),
         excerpt(text)
     )
 }
@@ -3619,5 +3707,49 @@ mod tests {
             content,
             phase: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod source_access_ledger_tests {
+    use super::*;
+
+    #[test]
+    fn source_read_digest_carries_line_window_access_ledger() {
+        let digest = source_read_digest(
+            "shell_output:$p='codex-rs\\core\\src\\context_reduction_adapter.rs'; $lines=Get-Content $p; for($i=110;$i -le 220;$i++){ '{0}: {1}' -f $i,$lines[$i-1] }",
+            "110:     auto_compact_limit: i64,\n111:     visible_context_percent_used: Option<i64>,",
+        );
+
+        assert!(digest.contains("access_ledger: kind=read"));
+        assert!(digest.contains("context_reduction_adapter.rs"));
+        assert!(digest.contains("requested_lines=110-220"));
+        assert!(digest.contains("result_lines=2"));
+    }
+
+    #[test]
+    fn source_read_digest_carries_total_count_window() {
+        let digest = source_read_digest(
+            "shell_output:Get-Content -Path 'codex-rs\\context-reduction\\src\\lib.rs' -TotalCount 35",
+            "//! Policy and prompts for automatic context reduction.\n\nuse std::fmt;",
+        );
+
+        assert!(digest.contains("access_ledger: kind=read"));
+        assert!(digest.contains("requested_lines=1-35"));
+    }
+
+    #[test]
+    fn search_result_digest_carries_search_access_ledger() {
+        let digest = search_result_digest(
+            "shell_output:rg -n \"token_context_percent_used\" codex-rs\\core codex-rs\\tui -S -g '*.rs'",
+            "codex-rs\\core\\src\\session\\turn.rs:848:                visible_context_percent_used,\ncodex-rs\\tui\\src\\bottom_pane\\chat_composer.rs:5405:            context_percent: i64,",
+            1,
+        )
+        .expect("search digest");
+
+        assert!(digest.contains("access_ledger: kind=search"));
+        assert!(digest.contains("codex-rs\\core"));
+        assert!(digest.contains("codex-rs\\tui"));
+        assert!(digest.contains("result_lines=2"));
     }
 }

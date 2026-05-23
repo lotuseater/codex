@@ -218,6 +218,7 @@ fn has_preserved_evidence(text: &str) -> bool {
     }
     const PRESERVE_MARKERS: &[&str] = &[
         "approval",
+        "access_ledger:",
         "build failed",
         "compiler diagnostic",
         "context_pack",
@@ -463,6 +464,26 @@ mod tests {
     }
 
     #[test]
+    fn leaves_source_access_ledger_notices_inline() {
+        let old_source = format!(
+            "{}\naccess_ledger: kind=read; source=shell_output:Get-Content src/lib.rs; paths=src/lib.rs; requested_lines=1-80; result_lines=80; result_chars=3200",
+            notice("source_read_digest", "old-source")
+        );
+        let old_search = notice("search_result_digest", "old-search");
+        let mut items = vec![
+            output("old-source", old_source.clone()),
+            output("old-search", old_search.clone()),
+        ];
+        let temp = TempDir::new().unwrap();
+        let mut stats = stats_for_current_items(&items);
+
+        bundle_stale_reduction_notices(&mut items, temp.path(), 1, &mut stats).unwrap();
+
+        assert_eq!(vec![old_source, old_search], output_texts(&items));
+        assert!(std::fs::read_dir(temp.path()).unwrap().next().is_none());
+    }
+
+    #[test]
     fn leaves_recent_eligible_notices_inline() {
         let recent_source = notice("source_read_digest", "recent-source");
         let recent_command = notice("command_log_digest", "recent-command");
@@ -592,7 +613,7 @@ mod tests {
     }
 
     fn stats_for_current_items(items: &[ResponseItem]) -> PromptReductionStats {
-        let original_tokens = output_texts(items)
+        let original_tokens = all_texts(items)
             .iter()
             .map(|text| approx_tokens(text))
             .sum();
