@@ -692,7 +692,12 @@ mod tests {
         assert!(prompt.contains("loop_followup_gain"));
         assert!(prompt.contains("list_agents"));
         assert!(prompt.contains("what to delegate to subagents"));
-        assert!(prompt.contains("up to three persistent high-capability helper agents"));
+        assert!(prompt.contains("context drift or context compactions"));
+        assert!(prompt.contains("even one worker is useful"));
+        assert!(prompt.contains("interactive Codex sessions"));
+        assert!(prompt.contains("5 minutes between checks"));
+        assert!(prompt.contains("portable PowerShell"));
+        assert!(prompt.contains("Start-Process powershell"));
         assert!(prompt.contains("short summary or short result only when the main agent needs"));
         assert!(prompt.contains("plan self-review produces the revised or final plan"));
         assert!(prompt.contains("accept the implementation prompt automatically"));
@@ -700,9 +705,8 @@ mod tests {
 
     #[test]
     fn default_multi_agent_v2_hints_include_delegation_policy() {
-        assert!(
-            DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT.contains(MAIN_AGENT_PLAN_DELEGATION_PROMPT)
-        );
+        assert!(MAIN_AGENT_PLAN_DELEGATION_PROMPT.contains("update_plan calls outside Plan mode"));
+        assert!(MAIN_AGENT_PLAN_DELEGATION_PROMPT.contains("external worker sessions"));
         assert!(
             DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT
                 .contains("Only the main/root agent spawns helpers")
@@ -711,6 +715,14 @@ mod tests {
             DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT
                 .contains("Compact helpers after bulky reads")
         );
+        assert!(DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT.contains("5 minutes between checks"));
+        assert!(
+            DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT
+                .contains("visible interactive Codex session")
+        );
+        assert!(DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT.contains("$env:CODEX_WORKER_PROMPT"));
+        assert!(DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT.contains("$env:CODEX_WORKER_HANDOFF"));
+        assert!(DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT.contains("must not depend on"));
         assert!(
             DEFAULT_MULTI_AGENT_V2_SUBAGENT_USAGE_HINT_TEXT
                 .contains("A short summary or short result is optional")

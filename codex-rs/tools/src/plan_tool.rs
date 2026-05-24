@@ -68,5 +68,17 @@ mod tests {
             tool.description
                 .contains("short summary or short result only when")
         );
+        assert!(
+            tool.description
+                .contains("including update_plan calls outside Plan mode")
+        );
+        assert!(
+            tool.description
+                .contains("context drift or context compactions")
+        );
+        assert!(tool.description.contains("even one worker is useful"));
+        assert!(tool.description.contains("5 minutes between checks"));
+        assert!(tool.description.contains("portable PowerShell"));
+        assert!(tool.description.contains("Start-Process powershell"));
     }
 }
