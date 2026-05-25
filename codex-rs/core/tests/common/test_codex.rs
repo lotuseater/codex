@@ -49,7 +49,7 @@ use serde_json::Value;
 use tempfile::TempDir;
 use wiremock::MockServer;
 
-use crate::protocol_fixtures::TempDirExt;
+use crate::TempDirExt;
 use crate::protocol_fixtures::get_remote_test_env;
 use crate::responses::WebSocketTestServer;
 use crate::responses::output_value_to_text;

@@ -49,6 +49,7 @@ pub use types::ThreadEventPersistenceMode;
 pub use types::ThreadMetadataPatch;
 pub use types::ThreadPage;
 pub use types::ThreadPersistenceMetadata;
+pub use types::ThreadStoreSelection;
 pub use types::ThreadSortKey;
 pub use types::TurnPage;
 pub use types::UpdateThreadMetadataParams;

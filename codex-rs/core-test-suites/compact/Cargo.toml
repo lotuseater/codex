@@ -64,6 +64,10 @@ name = "compact_resume_warning"
 path = "tests/compact_resume_warning.rs"
 
 [[test]]
+name = "compact_snapshot_request_shape"
+path = "tests/compact_snapshot_request_shape.rs"
+
+[[test]]
 name = "compact_user_instructions"
 path = "tests/compact_user_instructions.rs"
 

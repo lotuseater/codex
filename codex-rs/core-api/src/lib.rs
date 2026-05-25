@@ -2,6 +2,7 @@
 
 #![deny(private_bounds, private_interfaces, unreachable_pub)]
 
+pub mod attestation;
 pub mod config_types;
 pub mod identifiers;
 
@@ -49,6 +50,9 @@ pub use codex_protocol::protocol::TurnEnvironmentSelection;
 pub use codex_protocol::protocol::W3cTraceContext;
 pub use codex_protocol::user_input::UserInput;
 pub use codex_utils_absolute_path::AbsolutePathBuf;
+pub use attestation::AttestationContext;
+pub use attestation::AttestationProvider;
+pub use attestation::GenerateAttestationFuture;
 pub use config_types::AltScreenMode;
 pub use config_types::ApprovalsReviewer;
 pub use config_types::CollaborationModeMask;

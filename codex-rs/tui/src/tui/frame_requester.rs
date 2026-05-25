@@ -97,15 +97,35 @@ impl FrameRequester {
 /// [`FrameRateLimiter`]).
 #[derive(Debug)]
 struct FrameScheduleState {
-    pending_deadline: Mutex<Option<Instant>>,
+    deadlines: Mutex<FrameDeadlineState>,
     requester_count: AtomicUsize,
     notify: Notify,
+}
+
+#[derive(Debug, Default)]
+struct FrameDeadlineState {
+    pending_deadline: Option<Instant>,
+    in_flight_deadline: Option<InFlightDeadline>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InFlightDeadline {
+    Waiting(Instant),
+    Emitting(Instant),
+}
+
+impl InFlightDeadline {
+    fn target(self) -> Instant {
+        match self {
+            Self::Waiting(target) | Self::Emitting(target) => target,
+        }
+    }
 }
 
 impl Default for FrameScheduleState {
     fn default() -> Self {
         Self {
-            pending_deadline: Mutex::new(None),
+            deadlines: Mutex::new(FrameDeadlineState::default()),
             requester_count: AtomicUsize::new(1),
             notify: Notify::new(),
         }
@@ -126,13 +146,10 @@ impl FrameScheduleState {
     }
 
     fn request_frame(&self, draw_at: Instant) {
-        let mut pending_deadline = self
-            .pending_deadline
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let should_notify = pending_deadline.is_none_or(|current| draw_at < current);
-        *pending_deadline = Some(pending_deadline.map_or(draw_at, |current| current.min(draw_at)));
-        drop(pending_deadline);
+        let now = Instant::now();
+        let mut deadlines = self.deadlines.lock().unwrap_or_else(|e| e.into_inner());
+        let should_notify = deadlines.request_frame(draw_at, now);
+        drop(deadlines);
 
         if should_notify {
             self.notify_scheduler();
@@ -140,17 +157,50 @@ impl FrameScheduleState {
     }
 
     fn pending_deadline(&self) -> Option<Instant> {
-        *self
-            .pending_deadline
+        self.deadlines
             .lock()
             .unwrap_or_else(|e| e.into_inner())
+            .next_deadline()
     }
 
-    fn clear_pending_deadline(&self) {
-        *self
-            .pending_deadline
+    fn take_pending_deadline(&self) -> Option<Instant> {
+        self.deadlines
             .lock()
-            .unwrap_or_else(|e| e.into_inner()) = None;
+            .unwrap_or_else(|e| e.into_inner())
+            .pending_deadline
+            .take()
+    }
+
+    fn set_in_flight_waiting(&self, target: Instant) {
+        self.deadlines
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .in_flight_deadline = Some(InFlightDeadline::Waiting(target));
+    }
+
+    fn mark_in_flight_emitting(&self, target: Instant) {
+        let mut deadlines = self.deadlines.lock().unwrap_or_else(|e| e.into_inner());
+        if deadlines.in_flight_deadline == Some(InFlightDeadline::Waiting(target)) {
+            deadlines.in_flight_deadline = Some(InFlightDeadline::Emitting(target));
+        }
+    }
+
+    fn clear_in_flight_deadline(&self, target: Instant) {
+        let mut deadlines = self.deadlines.lock().unwrap_or_else(|e| e.into_inner());
+        if deadlines
+            .in_flight_deadline
+            .is_some_and(|deadline| deadline.target() == target)
+        {
+            deadlines.in_flight_deadline = None;
+        }
+    }
+
+    fn has_pending_deadline_before(&self, target: Instant) -> bool {
+        self.deadlines
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .pending_deadline
+            .is_some_and(|deadline| deadline < target)
     }
 
     fn notify_scheduler(&self) {
@@ -159,6 +209,54 @@ impl FrameScheduleState {
 
     async fn notified(&self) {
         self.notify.notified().await;
+    }
+}
+
+impl FrameDeadlineState {
+    fn request_frame(&mut self, draw_at: Instant, now: Instant) -> bool {
+        match self.in_flight_deadline {
+            Some(InFlightDeadline::Waiting(target)) => {
+                if draw_at < target || (now >= target && draw_at > now) {
+                    self.store_pending_deadline(draw_at, Some(target))
+                } else {
+                    false
+                }
+            }
+            Some(InFlightDeadline::Emitting(_target)) => {
+                if draw_at > now {
+                    self.store_pending_deadline(draw_at, None)
+                } else {
+                    false
+                }
+            }
+            None => self.store_pending_deadline(draw_at, None),
+        }
+    }
+
+    fn store_pending_deadline(
+        &mut self,
+        draw_at: Instant,
+        waiting_target: Option<Instant>,
+    ) -> bool {
+        let should_notify = self
+            .pending_deadline
+            .is_none_or(|current| draw_at < current)
+            && waiting_target.is_none_or(|target| draw_at < target);
+        self.pending_deadline = Some(
+            self.pending_deadline
+                .map_or(draw_at, |current| current.min(draw_at)),
+        );
+        should_notify
+    }
+
+    fn next_deadline(&self) -> Option<Instant> {
+        let in_flight_deadline = self.in_flight_deadline.map(InFlightDeadline::target);
+        match (self.pending_deadline, in_flight_deadline) {
+            (Some(pending), Some(in_flight)) => Some(pending.min(in_flight)),
+            (Some(pending), None) => Some(pending),
+            (None, Some(in_flight)) => Some(in_flight),
+            (None, None) => None,
+        }
     }
 }
 
@@ -189,7 +287,7 @@ impl FrameScheduler {
     /// is sent for multiple requests scheduled before the next draw deadline.
     async fn run(mut self) {
         loop {
-            let Some(requested_deadline) = self.schedule_state.pending_deadline() else {
+            let Some(requested_deadline) = self.schedule_state.take_pending_deadline() else {
                 if self.requesters_are_dropped() {
                     break;
                 }
@@ -202,8 +300,10 @@ impl FrameScheduler {
             }
 
             let target = self.rate_limiter.clamp_deadline(requested_deadline);
+            self.schedule_state.set_in_flight_waiting(target);
             match self.wait_for_deadline_or_reschedule(target).await {
                 FrameScheduleEvent::Rescheduled => {
+                    self.schedule_state.clear_in_flight_deadline(target);
                     if self.requesters_are_dropped() {
                         break;
                     }
@@ -215,6 +315,7 @@ impl FrameScheduler {
                     if self.requesters_are_dropped() {
                         break;
                     }
+                    self.schedule_state.mark_in_flight_emitting(target);
                     self.emit_draw(target);
 
                     if self.requesters_are_dropped() {
@@ -229,16 +330,24 @@ impl FrameScheduler {
         let deadline = tokio::time::sleep_until(target.into());
         tokio::pin!(deadline);
 
-        tokio::select! {
-            _ = self.schedule_state.notified() => FrameScheduleEvent::Rescheduled,
-            _ = &mut deadline => FrameScheduleEvent::DeadlineElapsed,
+        loop {
+            tokio::select! {
+                _ = self.schedule_state.notified() => {
+                    if self.requesters_are_dropped()
+                        || self.schedule_state.has_pending_deadline_before(target)
+                    {
+                        break FrameScheduleEvent::Rescheduled;
+                    }
+                }
+                _ = &mut deadline => break FrameScheduleEvent::DeadlineElapsed,
+            }
         }
     }
 
     fn emit_draw(&mut self, target: Instant) {
-        self.schedule_state.clear_pending_deadline();
         self.rate_limiter.mark_emitted(target);
         let _ = self.draw_tx.send(());
+        self.schedule_state.clear_in_flight_deadline(target);
     }
 
     fn requesters_are_dropped(&self) -> bool {
@@ -516,5 +625,53 @@ mod tests {
 
         let second = draw_rx.recv().timeout(Duration::from_millis(20)).await;
         assert!(second.is_err(), "unexpected extra draw received");
+    }
+
+    #[test]
+    fn test_delayed_request_after_elapsed_target_stays_pending() {
+        let state = FrameScheduleState::default();
+        let target = Instant::now() - Duration::from_millis(1);
+        let delayed_deadline = Instant::now() + Duration::from_millis(100);
+
+        state.set_in_flight_waiting(target);
+        state.request_frame(delayed_deadline);
+
+        assert_eq!(
+            state
+                .deadlines
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .pending_deadline,
+            Some(delayed_deadline),
+            "future delayed request during the emit window must survive the current draw"
+        );
+
+        state.mark_in_flight_emitting(target);
+        state.clear_in_flight_deadline(target);
+        assert_eq!(
+            state.pending_deadline(),
+            Some(delayed_deadline),
+            "clearing the emitted draw must not clear a later pending request"
+        );
+    }
+
+    #[test]
+    fn test_later_request_before_waiting_target_coalesces() {
+        let state = FrameScheduleState::default();
+        let target = Instant::now() + Duration::from_millis(100);
+        let later_deadline = target + Duration::from_millis(100);
+
+        state.set_in_flight_waiting(target);
+        state.request_frame(later_deadline);
+
+        assert_eq!(
+            state
+                .deadlines
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .pending_deadline,
+            None,
+            "later requests made before the waiting target should be covered by that draw"
+        );
     }
 }

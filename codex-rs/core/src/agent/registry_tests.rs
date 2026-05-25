@@ -1,5 +1,8 @@
 use super::*;
 use codex_protocol::AgentPath;
+use codex_protocol::ThreadId;
+use codex_protocol::protocol::SessionSource;
+use codex_protocol::protocol::SubAgentSource;
 use pretty_assertions::assert_eq;
 use std::collections::HashSet;
 
@@ -39,11 +42,6 @@ fn format_agent_nickname_adds_ordinals_after_reset() {
 }
 
 #[test]
-fn session_depth_defaults_to_zero_for_root_sources() {
-    assert_eq!(session_depth(&SessionSource::Cli), 0);
-}
-
-#[test]
 fn thread_spawn_depth_increments_and_enforces_limit() {
     let session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
         parent_thread_id: ThreadId::new(),
@@ -61,9 +59,8 @@ fn thread_spawn_depth_increments_and_enforces_limit() {
 }
 
 #[test]
-fn non_thread_spawn_subagents_default_to_depth_zero() {
+fn non_thread_spawn_subagents_start_at_depth_one() {
     let session_source = SessionSource::SubAgent(SubAgentSource::Review);
-    assert_eq!(session_depth(&session_source), 0);
     assert_eq!(next_thread_spawn_depth(&session_source), 1);
     assert!(!exceeds_thread_spawn_depth_limit(
         /*depth*/ 1, /*max_depth*/ 1

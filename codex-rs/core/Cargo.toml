@@ -234,12 +234,8 @@ name = "view_image_tool_errors"
 path = "tests/view_image_tool_errors.rs"
 
 [[test]]
-name = "web_search_modes"
-path = "tests/web_search_modes.rs"
-
-[[test]]
-name = "web_search_config"
-path = "tests/web_search_config.rs"
+name = "web_search_protocol"
+path = "tests/web_search_protocol.rs"
 
 [[test]]
 name = "window_headers"
@@ -274,6 +270,7 @@ codex-config = { workspace = true }
 codex-context-pack = { workspace = true }
 codex-context-reduction = { workspace = true }
 codex-context-ops-impl = { workspace = true }
+codex-core-api = { workspace = true }
 codex-core-plugins = { workspace = true }
 codex-core-skills = { workspace = true }
 codex-desktop-automation = { workspace = true }

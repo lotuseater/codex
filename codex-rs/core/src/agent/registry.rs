@@ -3,8 +3,6 @@ use codex_protocol::ThreadId;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result;
 use codex_protocol::openai_models::ReasoningEffort;
-use codex_protocol::protocol::SessionSource;
-use codex_protocol::protocol::SubAgentSource;
 use rand::prelude::IndexedRandom;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -13,8 +11,6 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
-
-use super::policy;
 
 /// This structure is used to add some limits on the multi-agent capabilities for Codex. In
 /// the current implementation, it limits:
@@ -63,22 +59,6 @@ fn format_agent_nickname(name: &str, nickname_reset_count: usize) -> String {
             format!("{name} the {value}{suffix}")
         }
     }
-}
-
-fn session_depth(session_source: &SessionSource) -> i32 {
-    match session_source {
-        SessionSource::SubAgent(SubAgentSource::ThreadSpawn { depth, .. }) => *depth,
-        SessionSource::SubAgent(_) => 0,
-        _ => 0,
-    }
-}
-
-pub(crate) fn next_thread_spawn_depth(session_source: &SessionSource) -> i32 {
-    policy::next_thread_spawn_depth(session_depth(session_source))
-}
-
-pub(crate) fn exceeds_thread_spawn_depth_limit(depth: i32, max_depth: i32) -> bool {
-    policy::exceeds_thread_spawn_depth_limit(depth, max_depth)
 }
 
 impl AgentRegistry {

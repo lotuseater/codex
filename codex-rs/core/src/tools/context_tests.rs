@@ -1,11 +1,11 @@
 use super::*;
 use codex_core_test_runtime::assert_regex_match;
 use codex_protocol::models::DEFAULT_IMAGE_DETAIL;
-use codex_protocol::models::SearchToolCallParams;
 use codex_test_support_context_fixtures::tool_fixtures::deferred_responses_api_tool;
 use codex_tool_execution_api::TELEMETRY_PREVIEW_MAX_BYTES;
 use codex_tool_execution_api::TELEMETRY_PREVIEW_MAX_LINES;
 use codex_tool_execution_api::TELEMETRY_PREVIEW_TRUNCATION_NOTICE;
+use codex_tool_execution_api::ToolSearchArguments;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 
@@ -325,7 +325,7 @@ fn custom_tool_calls_can_derive_text_from_content_items() {
 #[test]
 fn tool_search_payloads_roundtrip_as_tool_search_outputs() {
     let payload = ToolPayload::ToolSearch {
-        arguments: SearchToolCallParams {
+        arguments: ToolSearchArguments {
             query: "calendar".to_string(),
             limit: None,
         },

@@ -3,16 +3,11 @@ use std::sync::Arc;
 use codex_rollout::RolloutConfigView;
 use codex_rollout::state_db::StateDbHandle;
 use codex_thread_store_api::ThreadStore;
+use codex_thread_store_api::ThreadStoreSelection;
 
 use crate::InMemoryThreadStore;
 use crate::LocalThreadStore;
 use crate::LocalThreadStoreConfig;
-
-/// Concrete thread-store implementation selected by application wiring.
-pub enum ThreadStoreSelection {
-    Local,
-    InMemory { id: String },
-}
 
 /// Build a concrete thread store from application configuration inputs.
 pub fn thread_store_from_config(

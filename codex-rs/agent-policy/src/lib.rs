@@ -1,5 +1,8 @@
 mod plan_prompt;
 
+use codex_protocol::protocol::SessionSource;
+use codex_protocol::protocol::SubAgentSource;
+
 pub use plan_prompt::DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT;
 pub use plan_prompt::DEFAULT_MULTI_AGENT_V2_SUBAGENT_USAGE_HINT_TEXT;
 pub use plan_prompt::MAIN_AGENT_PLAN_DELEGATION_PROMPT;
@@ -44,6 +47,18 @@ impl MultiAgentV2SpawnLineage {
 
 pub const fn next_thread_spawn_depth(parent_depth: i32) -> i32 {
     parent_depth.saturating_add(1)
+}
+
+const fn session_depth(session_source: &SessionSource) -> i32 {
+    match session_source {
+        SessionSource::SubAgent(SubAgentSource::ThreadSpawn { depth, .. }) => *depth,
+        SessionSource::SubAgent(_) => 0,
+        _ => 0,
+    }
+}
+
+pub const fn next_thread_spawn_depth_for_session_source(session_source: &SessionSource) -> i32 {
+    next_thread_spawn_depth(session_depth(session_source))
 }
 
 pub const fn exceeds_thread_spawn_depth_limit(depth: i32, max_depth: i32) -> bool {
@@ -835,6 +850,27 @@ mod tests {
         assert!(exceeds_thread_spawn_depth_limit(
             /*depth*/ 3, /*max_depth*/ 2
         ));
+    }
+
+    #[test]
+    fn thread_spawn_depth_for_session_source_uses_thread_spawn_depth_only() {
+        use codex_protocol::ThreadId;
+
+        let thread_spawn = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+            parent_thread_id: ThreadId::new(),
+            depth: 4,
+            agent_path: None,
+            agent_nickname: None,
+            agent_role: None,
+        });
+        assert_eq!(next_thread_spawn_depth_for_session_source(&thread_spawn), 5);
+        assert_eq!(
+            next_thread_spawn_depth_for_session_source(&SessionSource::SubAgent(
+                SubAgentSource::Review
+            )),
+            1
+        );
+        assert_eq!(next_thread_spawn_depth_for_session_source(&SessionSource::Cli), 1);
     }
 
     #[test]

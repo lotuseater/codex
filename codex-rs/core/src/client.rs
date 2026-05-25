@@ -106,9 +106,9 @@ use tracing::instrument;
 use tracing::trace;
 use tracing::warn;
 
-use crate::attestation::AttestationContext;
-use crate::attestation::AttestationProvider;
 use crate::attestation::X_OAI_ATTESTATION_HEADER;
+use codex_core_api::AttestationContext;
+use codex_core_api::AttestationProvider;
 use crate::client_common::Prompt;
 use crate::client_common::ResponseEvent;
 use crate::client_common::ResponseStream;

@@ -55,6 +55,13 @@ pub enum ThreadEventPersistenceMode {
     Extended,
 }
 
+/// Concrete thread-store implementation selected by application wiring.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ThreadStoreSelection {
+    Local,
+    InMemory { id: String },
+}
+
 /// Thread-scoped metadata used when opening live persistence.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ThreadPersistenceMetadata {

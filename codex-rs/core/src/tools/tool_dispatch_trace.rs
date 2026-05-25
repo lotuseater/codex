@@ -106,7 +106,7 @@ fn tool_dispatch_payload(payload: &ToolPayload) -> ToolDispatchPayload {
             arguments: arguments.clone(),
         },
         ToolPayload::ToolSearch { arguments } => ToolDispatchPayload::ToolSearch {
-            arguments: arguments.clone(),
+            arguments: arguments.clone().into(),
         },
         ToolPayload::Custom { input } => ToolDispatchPayload::Custom {
             input: input.clone(),

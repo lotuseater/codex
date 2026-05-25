@@ -9,8 +9,9 @@ use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::user_input::UserInput;
-use codex_thread_store::ThreadStoreSelection;
+use codex_thread_store::thread_store_from_config;
 use codex_thread_store_api::UnsupportedLiveThreadFactory;
+use codex_thread_store_api::ThreadStoreSelection;
 use tokio_util::sync::CancellationToken;
 
 use crate::config::Config;
@@ -21,7 +22,6 @@ use crate::session::turn::build_prompt;
 use crate::session::turn::built_tools;
 use crate::state_db_bridge::StateDbHandle;
 use crate::thread_manager::ThreadManager;
-use crate::thread_store_from_config;
 use codex_extension_api::empty_extension_registry;
 
 /// Build the model-visible `input` list for a single debug turn.

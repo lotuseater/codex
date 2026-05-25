@@ -1,3 +1,5 @@
+use codex_protocol::protocol::SessionSource;
+
 pub(crate) const DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT: &str =
     codex_agent_policy::DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT;
 
@@ -12,6 +14,10 @@ pub(crate) use codex_agent_policy::MultiAgentV2SpawnParent;
 
 pub(crate) fn next_thread_spawn_depth(parent_depth: i32) -> i32 {
     codex_agent_policy::next_thread_spawn_depth(parent_depth)
+}
+
+pub(crate) fn next_thread_spawn_depth_for_session_source(session_source: &SessionSource) -> i32 {
+    codex_agent_policy::next_thread_spawn_depth_for_session_source(session_source)
 }
 
 pub(crate) fn exceeds_thread_spawn_depth_limit(depth: i32, max_depth: i32) -> bool {

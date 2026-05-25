@@ -12,9 +12,9 @@ use codex_extension_api::ExtensionToolExecutor;
 use codex_mcp::ToolInfo;
 use codex_protocol::dynamic_tools::DynamicToolSpec;
 use codex_protocol::models::ResponseItem;
-use codex_protocol::models::SearchToolCallParams;
 use codex_tool_execution_api::FunctionCallError;
 use codex_tool_execution_api::ToolName;
+use codex_tool_execution_api::ToolSearchArguments;
 use codex_tool_registry_api::DiscoverableTool;
 use codex_tool_registry_api::ToolSpec;
 use std::sync::Arc;
@@ -123,7 +123,7 @@ impl ToolRouter {
                 arguments,
                 ..
             } if execution == "client" => {
-                let arguments: SearchToolCallParams =
+                let arguments: ToolSearchArguments =
                     serde_json::from_value(arguments).map_err(|err| {
                         FunctionCallError::RespondToModel(format!(
                             "failed to parse tool_search arguments: {err}"

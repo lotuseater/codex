@@ -16,7 +16,6 @@ use codex_protocol::models::FunctionCallOutputContentItem;
 use codex_protocol::models::FunctionCallOutputPayload;
 use codex_protocol::models::ImageDetail;
 use codex_protocol::models::ResponseInputItem;
-use codex_protocol::models::SearchToolCallParams;
 use codex_protocol::openai_models::ModelInfo;
 use codex_tool_registry_api::ToolExposure;
 use codex_tool_registry_api::ToolSpec;
@@ -88,7 +87,7 @@ pub enum ToolCallSource {
 #[derive(Clone, Debug)]
 pub enum ToolPayload {
     Function { arguments: String },
-    ToolSearch { arguments: SearchToolCallParams },
+    ToolSearch { arguments: ToolSearchArguments },
     Custom { input: String },
 }
 
@@ -98,6 +97,34 @@ impl ToolPayload {
             ToolPayload::Function { arguments } => Cow::Borrowed(arguments),
             ToolPayload::ToolSearch { arguments } => Cow::Owned(arguments.query.clone()),
             ToolPayload::Custom { input } => Cow::Borrowed(input),
+        }
+    }
+}
+
+/// Domain-owned tool search arguments shared by core and tool runtimes.
+///
+/// Keeping this shape in `tool-execution-api` avoids leaking protocol model
+/// types into the core tool runtime boundary.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct ToolSearchArguments {
+    pub query: String,
+    pub limit: Option<usize>,
+}
+
+impl From<ToolSearchArguments> for codex_protocol::models::SearchToolCallParams {
+    fn from(value: ToolSearchArguments) -> Self {
+        Self {
+            query: value.query,
+            limit: value.limit,
+        }
+    }
+}
+
+impl From<codex_protocol::models::SearchToolCallParams> for ToolSearchArguments {
+    fn from(value: codex_protocol::models::SearchToolCallParams) -> Self {
+        Self {
+            query: value.query,
+            limit: value.limit,
         }
     }
 }
