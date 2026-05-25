@@ -313,7 +313,7 @@ pub struct ConfigToml {
     pub personality: Option<Personality>,
 
     /// Optional explicit service tier request id for new turns (for example
-    /// `priority` or `flex`; legacy `fast` also works).
+    /// `default`, `priority`, or `flex`; legacy `fast` also works).
     pub service_tier: Option<String>,
 
     /// Controls local context-budget behavior for new turns.

@@ -111,7 +111,12 @@ plan content should be human and agent digestible. The final plan must be plan-o
 
 * A clear title
 * A brief summary section
-* A `Delegation`, `Work Split`, or `Agent ROI Estimate` section or line: either name the intended agent/work split and which subtasks should be spawned, reused, or resumed, or state that the task is local-only because spawning or reusing an agent is expected to lose on tokens, latency, review cost, coupling, or simplicity. In loop-driven continuations, include `loop_followup_gain` and prefer reusing idle relevant agents when the net estimate is positive.
+* A `Delegation`, `Work Split`, or `Agent ROI Estimate` section or line:
+  * Either name the intended agent/work split and which subtasks should be spawned, reused, or resumed, or state that the task is local-only because spawning or reusing an agent is expected to lose on tokens, latency, review cost, coupling, or simplicity.
+  * When an agent may help, score `new_agent_cost=3`, `reuse_cost=1`, `parallel_gain=0-3`, `context_gain=0-3`, `repeat_gain=0-4`, `loop_followup_gain=0-3`, `risk_penalty=0-3`, and `net = gains + loop_followup_gain - cost - risk`; spawn or reuse only when `net >= 2` and no hard keep-local rule applies, not merely because a subtask is bounded.
+  * In loop-driven continuations, automatic continuation normally adds `loop_followup_gain=2`, or `3` when a relevant idle/reusable agent or repeated operations are likely.
+  * For work complex enough to require planning or likely context drift/compaction, root should coordinate instead of doing implementation/testing/verification itself: reuse or create at least one highest-capability worker when no suitable worker is already active, delegate most bounded implementation/testing work, spawn more workers for independent parallel work, and note the 5-minute handoff check cadence when workers will run.
+  * Strongly prefer separate non-interactive Codex exec worker sessions in separate PowerShell terminals/processes; use tool-spawned in-session agents only when external sessions are unavailable and interactive sessions only when live steering is specifically needed.
 * Important changes or additions to public APIs/interfaces/types
 * Test cases and scenarios
 * Explicit assumptions and defaults chosen where needed
