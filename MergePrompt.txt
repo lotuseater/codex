@@ -1,0 +1,5 @@
+ please pull the main branch from upstream. See what would be the conflicts merging in curret branch. Then refactor
+  some places of future conflicts - to avoid or reduce them. Only after that go for merging main into current branch.
+  Build and deploy in the end. No build/tests before the end of merging, just  code reading and editing. you should
+  spawn helper non-interactive sessions, on each stage splitting work between them, checking results, sleeping for 5
+  minutes between checks - you are just a spawner, overseer
