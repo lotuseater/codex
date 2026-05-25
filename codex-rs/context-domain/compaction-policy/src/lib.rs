@@ -6,7 +6,7 @@
 #![deny(private_bounds, private_interfaces, unreachable_pub)]
 
 /// Default fraction of the usable context window that triggers context reduction.
-pub const DEFAULT_TRIGGER_CONTEXT_PERCENT: u8 = 20;
+pub const DEFAULT_TRIGGER_CONTEXT_PERCENT: u8 = 24;
 
 /// Default number of completed regular turns to wait after a reduction.
 pub const DEFAULT_TURN_COOLDOWN: u32 = 24;

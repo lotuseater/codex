@@ -76,8 +76,52 @@ mod tests {
             tool.description
                 .contains("context drift or context compactions")
         );
-        assert!(tool.description.contains("even one worker is useful"));
+        assert!(
+            tool.description
+                .contains("coordinate instead of doing implementation/testing/verification itself")
+        );
+        assert!(
+            tool.description
+                .contains("at least one persistent highest-capability worker")
+        );
+        assert!(
+            !tool
+                .description
+                .contains(&["even one", " worker", " is useful"].concat())
+        );
+        assert!(tool.description.contains("Agent ROI Estimate"));
+        assert!(tool.description.contains("new_agent_cost=3"));
+        assert!(tool.description.contains("reuse_cost=1"));
+        assert!(
+            tool.description
+                .contains("net = gains + loop_followup_gain - cost - risk")
+        );
+        assert!(
+            tool.description
+                .contains("Spawn or reuse only when net >= 2")
+        );
+        assert!(
+            tool.description
+                .contains("Delegate most bounded implementation/testing work")
+        );
         assert!(tool.description.contains("5 minutes between checks"));
+        assert!(
+            tool.description
+                .contains("separate non-interactive Codex exec worker sessions")
+        );
+        assert!(
+            tool.description
+                .contains("in-session agents only when external sessions are unavailable")
+        );
+        assert!(
+            tool.description
+                .contains("interactive Codex sessions only when live steering")
+        );
+        assert!(
+            tool.description
+                .contains("highest-capability available model and reasoning effort")
+        );
+        assert!(tool.description.contains("prevent recursive delegation"));
         assert!(tool.description.contains("portable PowerShell"));
         assert!(tool.description.contains("Start-Process powershell"));
     }

@@ -1,7 +1,7 @@
 use super::parse_dynamic_tool;
 use crate::ToolDefinition;
 use codex_protocol::dynamic_tools::DynamicToolSpec;
-use codex_tool_schema::JsonSchema;
+use codex_tool_schema::{JsonSchema, JsonSchemaPrimitiveType, JsonSchemaType};
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 
@@ -27,7 +27,14 @@ fn parse_dynamic_tool_sanitizes_input_schema() {
             name: "lookup_ticket".to_string(),
             description: "Fetch a ticket".to_string(),
             input_schema: JsonSchema::object(
-                BTreeMap::from([("id".to_string(), JsonSchema::default(),)]),
+                BTreeMap::from([(
+                    "id".to_string(),
+                    JsonSchema {
+                        schema_type: Some(JsonSchemaType::Single(JsonSchemaPrimitiveType::String)),
+                        description: Some("Ticket identifier".to_string()),
+                        ..JsonSchema::default()
+                    },
+                )]),
                 /*required*/ None,
                 /*additional_properties*/ None
             ),

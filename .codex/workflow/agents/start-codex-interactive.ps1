@@ -1,10 +1,18 @@
 param(
     [string]$Repo,
-    [Parameter(Mandatory = $true)]
     [string]$PromptPath,
+    [string]$Prompt,
     [string]$Name = "codex-interactive-worker",
     [string]$CodexCommand = "codex",
+    [string]$WorkerModel = "gpt-5.3-codex",
+    [string]$WorkerReasoningEffort = "high",
     [string]$HandoffPath,
+    [Alias("ResumeSession")]
+    [string]$Resume,
+    [switch]$Loop,
+    [string]$LoopMessage,
+    [int]$LoopPeriod,
+    [switch]$Hidden,
     [switch]$DryRun
 )
 
@@ -26,6 +34,10 @@ function Resolve-InputPath {
         [string]$PathValue
     )
 
+    if ([string]::IsNullOrWhiteSpace($PathValue)) {
+        return $null
+    }
+
     if ([System.IO.Path]::IsPathRooted($PathValue)) {
         return (Resolve-Path -LiteralPath $PathValue).Path
     }
@@ -36,15 +48,39 @@ function Resolve-InputPath {
 function Convert-ToSafeFileName {
     param([string]$Value)
 
-    $safe = $Value -replace '[^A-Za-z0-9_.-]', '_'
-    if ([string]::IsNullOrWhiteSpace($safe)) {
-        return "codex-interactive-worker"
+    $invalid = [System.IO.Path]::GetInvalidFileNameChars()
+    $chars = $Value.ToCharArray() | ForEach-Object {
+        if ($invalid -contains $_) { "_" } else { $_ }
     }
-    return $safe
+    -join $chars
+}
+
+function ConvertTo-PowerShellSingleQuotedLiteral {
+    param([string]$Value)
+
+    "'" + $Value.Replace("'", "''") + "'"
+}
+
+function ConvertTo-PowerShellArrayLiteral {
+    param([string[]]$Values)
+
+    "@(" + (($Values | ForEach-Object { ConvertTo-PowerShellSingleQuotedLiteral $_ }) -join ", ") + ")"
 }
 
 $resolvedRepo = Resolve-RepoPath -PathValue $Repo
 $resolvedPrompt = Resolve-InputPath -BasePath $resolvedRepo -PathValue $PromptPath
+
+if ([string]::IsNullOrWhiteSpace($Prompt) -and -not [string]::IsNullOrWhiteSpace($resolvedPrompt)) {
+    $Prompt = Get-Content -Raw -LiteralPath $resolvedPrompt
+}
+
+if ([string]::IsNullOrWhiteSpace($Prompt)) {
+    throw "Either -Prompt or -PromptPath is required."
+}
+
+if ($Loop -and [string]::IsNullOrWhiteSpace($Resume)) {
+    throw "-Loop is only supported with -Resume."
+}
 
 $handoffDir = Join-Path $resolvedRepo ".codex\workflow\agents\handoffs"
 New-Item -ItemType Directory -Force -Path $handoffDir | Out-Null
@@ -61,65 +97,111 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedHandoffParent)) {
     New-Item -ItemType Directory -Force -Path $resolvedHandoffParent | Out-Null
 }
 
-if (-not (Test-Path -LiteralPath $HandoffPath)) {
-    "# $Name handoff`n`nStarted: $(Get-Date -Format o)`n" | Set-Content -LiteralPath $HandoffPath -Encoding UTF8
+$codexArgs = @(
+    "-c",
+    "model=$WorkerModel",
+    "-c",
+    "model_reasoning_effort=$WorkerReasoningEffort",
+    "--cd",
+    $resolvedRepo,
+        "--ask-for-approval",
+    "never",
+    "--sandbox",
+    "danger-full-access"
+)
+
+if ([string]::IsNullOrWhiteSpace($Resume)) {
+    $codexArgs += $Prompt
+    $mode = "NewInteractivePrompt"
+} else {
+    $codexArgs += "resume"
+    if ($Loop) {
+        $codexArgs += "--loop"
+        if (-not [string]::IsNullOrWhiteSpace($LoopMessage)) {
+            $codexArgs += "--loop-message"
+            $codexArgs += $LoopMessage
+        }
+        if ($LoopPeriod -gt 0) {
+            $codexArgs += "--loop-period"
+            $codexArgs += [string]$LoopPeriod
+        }
+    }
+    $codexArgs += $Resume
+    $codexArgs += $Prompt
+    $mode = if ($Loop) { "ResumeLoop" } else { "Resume" }
 }
 
-$bootstrapPrompt = @"
-You are a delegated visible interactive Codex worker.
-
-Repository:
-$resolvedRepo
-
-Task prompt file:
-$resolvedPrompt
-
-Handoff file:
-$HandoffPath
-
-Read the task prompt file first, execute that task in this repository, and keep the handoff file concise and current. Do not wait for root unless the prompt names a blocker.
-"@
+$safeNameForFile = Convert-ToSafeFileName -Value $Name
+$launcherPath = Join-Path $handoffDir "$safeNameForFile.launch.ps1"
+$markerPath = Join-Path $handoffDir "$safeNameForFile.marker.txt"
 
 $childCommand = @"
-`$Host.UI.RawUI.WindowTitle = 'Codex worker: $Name'
-Set-Location -LiteralPath '$($resolvedRepo.Replace("'", "''"))'
-`$env:CODEX_WORKER_NAME = '$($Name.Replace("'", "''"))'
-`$env:CODEX_WORKER_PROMPT = '$($resolvedPrompt.Replace("'", "''"))'
-`$env:CODEX_WORKER_HANDOFF = '$($HandoffPath.Replace("'", "''"))'
-`$prompt = @'
-$bootstrapPrompt
-'@
-& '$($CodexCommand.Replace("'", "''"))' --cd '$($resolvedRepo.Replace("'", "''"))' --ask-for-approval never --sandbox danger-full-access `$prompt
+`$ErrorActionPreference = "Stop"
+`$Host.UI.RawUI.WindowTitle = $(ConvertTo-PowerShellSingleQuotedLiteral "Codex worker: $Name")
+Set-Location -LiteralPath $(ConvertTo-PowerShellSingleQuotedLiteral $resolvedRepo)
+`$codexArgs = $(ConvertTo-PowerShellArrayLiteral $codexArgs)
+& $(ConvertTo-PowerShellSingleQuotedLiteral $CodexCommand) @codexArgs
 "@
 
-$encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($childCommand))
+$childCommand | Set-Content -LiteralPath $launcherPath -Encoding UTF8
+
 $args = @(
     "-NoExit",
+    "-NoProfile",
     "-ExecutionPolicy",
     "Bypass",
-    "-EncodedCommand",
-    $encoded
+    "-File",
+    $launcherPath
 )
 
 if ($DryRun) {
     [pscustomobject]@{
         Repo = $resolvedRepo
         PromptPath = $resolvedPrompt
+        Prompt = $Prompt
         HandoffPath = $HandoffPath
+        Resume = $Resume
+        Loop = [bool]$Loop
+        LoopMessage = $LoopMessage
+        LoopPeriod = $LoopPeriod
         CodexCommand = $CodexCommand
+        WorkerModel = $WorkerModel
+        WorkerReasoningEffort = $WorkerReasoningEffort
+        Mode = $mode
         WindowTitle = "Codex worker: $Name"
         Launcher = "powershell.exe"
+        LauncherPath = $launcherPath
         Arguments = $args -join " "
     } | ConvertTo-Json -Depth 4
     exit 0
 }
 
-$process = Start-Process -FilePath "powershell.exe" -ArgumentList $args -WindowStyle Normal -PassThru
+$startArgs = @{
+    FilePath = "powershell.exe"
+    ArgumentList = $args
+    WindowStyle = if ($Hidden) { "Hidden" } else { "Normal" }
+    PassThru = $true
+}
+
+$process = Start-Process @startArgs
+
+@(
+    "$(Get-Date -Format o) mode=$mode pid=$($process.Id) repo=$resolvedRepo resume=$Resume",
+    "visible=$(-not $Hidden)",
+    "prompt=$Prompt",
+    "loop=$([bool]$Loop)",
+    "loop_message=$LoopMessage",
+    "launcher=$launcherPath"
+) | Set-Content -LiteralPath $markerPath
 
 [pscustomobject]@{
     ProcessId = $process.Id
     Repo = $resolvedRepo
     PromptPath = $resolvedPrompt
     HandoffPath = $HandoffPath
+    Resume = $Resume
+    Loop = [bool]$Loop
+    Mode = $mode
     WindowTitle = "Codex worker: $Name"
+    LauncherPath = $launcherPath
 } | ConvertTo-Json -Depth 4

@@ -693,9 +693,22 @@ mod tests {
         assert!(prompt.contains("list_agents"));
         assert!(prompt.contains("what to delegate to subagents"));
         assert!(prompt.contains("context drift or context compactions"));
-        assert!(prompt.contains("even one worker is useful"));
+        assert!(prompt.contains("Spawn or reuse only when net >= 2"));
+        assert!(prompt.contains("coordinate instead of doing implementation/testing/verification itself"));
+        assert!(prompt.contains("at least one persistent highest-capability worker"));
+        assert!(prompt.contains("delegate most bounded implementation/testing work"));
+        assert!(prompt.contains("Agent ROI Estimate"));
+        assert!(prompt.contains("new_agent_cost=3"));
+        assert!(prompt.contains("reuse_cost=1"));
+        assert!(prompt.contains("net = gains + loop_followup_gain - cost - risk"));
         assert!(prompt.contains("interactive Codex sessions"));
+        assert!(prompt.contains("separate non-interactive Codex exec worker sessions"));
+        assert!(prompt.contains("in-session agents only when external sessions are unavailable"));
+        assert!(prompt.contains("interactive Codex sessions only when live steering"));
         assert!(prompt.contains("5 minutes between checks"));
+        assert!(prompt.contains("own PowerShell terminal"));
+        assert!(prompt.contains("highest-capability available model and reasoning effort"));
+        assert!(prompt.contains("lower model or effort only"));
         assert!(prompt.contains("portable PowerShell"));
         assert!(prompt.contains("Start-Process powershell"));
         assert!(prompt.contains("short summary or short result only when the main agent needs"));
@@ -708,20 +721,78 @@ mod tests {
         assert!(MAIN_AGENT_PLAN_DELEGATION_PROMPT.contains("update_plan calls outside Plan mode"));
         assert!(MAIN_AGENT_PLAN_DELEGATION_PROMPT.contains("external worker sessions"));
         assert!(
+            MAIN_AGENT_PLAN_DELEGATION_PROMPT
+                .contains("coordinate instead of doing implementation/testing/verification itself")
+        );
+        assert!(
+            MAIN_AGENT_PLAN_DELEGATION_PROMPT
+                .contains("at least one persistent highest-capability worker")
+        );
+        assert!(
+            MAIN_AGENT_PLAN_DELEGATION_PROMPT
+                .contains("Delegate most bounded implementation/testing work")
+        );
+        assert!(
+            !MAIN_AGENT_PLAN_DELEGATION_PROMPT
+                .contains(&["even one", " worker", " is useful"].concat())
+        );
+        assert!(
+            MAIN_AGENT_PLAN_DELEGATION_PROMPT.contains("non-interactive Codex exec worker sessions")
+        );
+        assert!(
+            MAIN_AGENT_PLAN_DELEGATION_PROMPT
+                .contains("in-session agents only when external sessions are unavailable")
+        );
+        assert!(
+            MAIN_AGENT_PLAN_DELEGATION_PROMPT
+                .contains("interactive Codex sessions only when live steering")
+        );
+        assert!(
+            MAIN_AGENT_PLAN_DELEGATION_PROMPT
+                .contains("highest-capability available model and reasoning effort")
+        );
+        assert!(MAIN_AGENT_PLAN_DELEGATION_PROMPT.contains("Agent ROI Estimate"));
+        assert!(MAIN_AGENT_PLAN_DELEGATION_PROMPT.contains("new_agent_cost=3"));
+        assert!(MAIN_AGENT_PLAN_DELEGATION_PROMPT.contains("reuse_cost=1"));
+        assert!(
+            MAIN_AGENT_PLAN_DELEGATION_PROMPT
+                .contains("net = gains + loop_followup_gain - cost - risk")
+        );
+        assert!(MAIN_AGENT_PLAN_DELEGATION_PROMPT.contains("Spawn or reuse only when net >= 2"));
+        assert!(
             DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT
                 .contains("Only the main/root agent spawns helpers")
+        );
+        assert!(
+            DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT
+                .contains("root should coordinate instead of doing implementation/testing/verification itself")
+        );
+        assert!(
+            DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT
+                .contains("at least one highest-capability worker")
+        );
+        assert!(
+            DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT
+                .contains("Delegate most implementation/testing/verification")
         );
         assert!(
             DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT
                 .contains("Compact helpers after bulky reads")
         );
         assert!(DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT.contains("5 minutes between checks"));
+        assert!(DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT.contains("Start-Process powershell"));
         assert!(
             DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT
-                .contains("visible interactive Codex session")
+                .contains("separate non-interactive Codex exec worker sessions")
         );
-        assert!(DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT.contains("$env:CODEX_WORKER_PROMPT"));
-        assert!(DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT.contains("$env:CODEX_WORKER_HANDOFF"));
+        assert!(
+            DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT
+                .contains("in-session agents only when external sessions are unavailable")
+        );
+        assert!(
+            DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT.contains("create prompt and handoff files")
+        );
+        assert!(DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT.contains("worker sessions"));
         assert!(DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT.contains("must not depend on"));
         assert!(
             DEFAULT_MULTI_AGENT_V2_SUBAGENT_USAGE_HINT_TEXT
