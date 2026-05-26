@@ -38,16 +38,18 @@ impl ChatWidget {
     pub(crate) fn open_world_writable_warning_confirmation(
         &mut self,
         preset: Option<ApprovalPreset>,
+        profile_selection: Option<PermissionProfileSelection>,
         sample_paths: Vec<String>,
         extra_count: usize,
         failed_scan: bool,
     ) {
-        let (approval, active_permission_profile) = match &preset {
+        let (approval, permission_profile, active_permission_profile) = match &preset {
             Some(p) => (
                 Some(AskForApproval::from(p.approval)),
+                Some(p.permission_profile.clone()),
                 Some(p.active_permission_profile.clone()),
             ),
-            None => (None, None),
+            None => (None, None, None),
         };
         let mut header_children: Vec<Box<dyn Renderable>> = Vec::new();
         let describe_profile = |profile: &PermissionProfile| {
@@ -108,11 +110,16 @@ impl ChatWidget {
                 tx.send(AppEvent::SkipNextWorldWritableScan);
             }));
         }
-        if let (Some(approval), Some(active_permission_profile)) =
-            (approval, active_permission_profile.clone())
-        {
+        if let Some(selection) = profile_selection.clone() {
+            accept_actions.extend(Self::permission_profile_selection_actions(selection));
+        } else if let (Some(approval), Some(permission_profile), Some(active_permission_profile)) = (
+            approval,
+            permission_profile.clone(),
+            active_permission_profile.clone(),
+        ) {
             accept_actions.extend(Self::approval_preset_actions(
                 approval,
+                permission_profile,
                 active_permission_profile,
                 mode_label.to_string(),
                 ApprovalsReviewer::User,
@@ -124,11 +131,15 @@ impl ChatWidget {
             tx.send(AppEvent::UpdateWorldWritableWarningAcknowledged(true));
             tx.send(AppEvent::PersistWorldWritableWarningAcknowledged);
         }));
-        if let (Some(approval), Some(active_permission_profile)) =
-            (approval, active_permission_profile)
+        if let Some(selection) = profile_selection {
+            accept_and_remember_actions
+                .extend(Self::permission_profile_selection_actions(selection));
+        } else if let (Some(approval), Some(permission_profile), Some(active_permission_profile)) =
+            (approval, permission_profile, active_permission_profile)
         {
             accept_and_remember_actions.extend(Self::approval_preset_actions(
                 approval,
+                permission_profile,
                 active_permission_profile,
                 mode_label.to_string(),
                 ApprovalsReviewer::User,
@@ -164,6 +175,7 @@ impl ChatWidget {
     pub(crate) fn open_world_writable_warning_confirmation(
         &mut self,
         _preset: Option<ApprovalPreset>,
+        _profile_selection: Option<PermissionProfileSelection>,
         _sample_paths: Vec<String>,
         _extra_count: usize,
         _failed_scan: bool,
@@ -171,7 +183,11 @@ impl ChatWidget {
     }
 
     #[cfg(target_os = "windows")]
-    pub(crate) fn open_windows_sandbox_enable_prompt(&mut self, preset: ApprovalPreset) {
+    pub(crate) fn open_windows_sandbox_enable_prompt(
+        &mut self,
+        preset: ApprovalPreset,
+        profile_selection: Option<PermissionProfileSelection>,
+    ) {
         use ratatui_macros::line;
 
         if !crate::legacy_core::windows_sandbox::ELEVATED_SANDBOX_NUX_ENABLED {
@@ -195,6 +211,7 @@ impl ChatWidget {
                         tx.send(AppEvent::EnableWindowsSandboxForAgentMode {
                             preset: preset_clone.clone(),
                             mode: WindowsSandboxEnableMode::Legacy,
+                            profile_selection: profile_selection.clone(),
                         });
                     })],
                     dismiss_on_select: true,
@@ -238,6 +255,7 @@ impl ChatWidget {
         let accept_otel = self.session_telemetry.clone();
         let legacy_otel = self.session_telemetry.clone();
         let legacy_preset = preset.clone();
+        let legacy_profile_selection = profile_selection.clone();
         let quit_otel = self.session_telemetry.clone();
         let items = vec![
             SelectionItem {
@@ -251,6 +269,7 @@ impl ChatWidget {
                     );
                     tx.send(AppEvent::BeginWindowsSandboxElevatedSetup {
                         preset: preset.clone(),
+                        profile_selection: profile_selection.clone(),
                     });
                 })],
                 dismiss_on_select: true,
@@ -267,6 +286,7 @@ impl ChatWidget {
                     );
                     tx.send(AppEvent::BeginWindowsSandboxLegacySetup {
                         preset: legacy_preset.clone(),
+                        profile_selection: legacy_profile_selection.clone(),
                     });
                 })],
                 dismiss_on_select: true,
@@ -298,10 +318,19 @@ impl ChatWidget {
     }
 
     #[cfg(not(target_os = "windows"))]
-    pub(crate) fn open_windows_sandbox_enable_prompt(&mut self, _preset: ApprovalPreset) {}
+    pub(crate) fn open_windows_sandbox_enable_prompt(
+        &mut self,
+        _preset: ApprovalPreset,
+        _profile_selection: Option<PermissionProfileSelection>,
+    ) {
+    }
 
     #[cfg(target_os = "windows")]
-    pub(crate) fn open_windows_sandbox_fallback_prompt(&mut self, preset: ApprovalPreset) {
+    pub(crate) fn open_windows_sandbox_fallback_prompt(
+        &mut self,
+        preset: ApprovalPreset,
+        profile_selection: Option<PermissionProfileSelection>,
+    ) {
         use ratatui_macros::line;
 
         let mut lines = Vec::new();
@@ -321,6 +350,8 @@ impl ChatWidget {
 
         let elevated_preset = preset.clone();
         let legacy_preset = preset;
+        let elevated_profile_selection = profile_selection.clone();
+        let legacy_profile_selection = profile_selection;
         let quit_otel = self.session_telemetry.clone();
         let items = vec![
             SelectionItem {
@@ -337,6 +368,7 @@ impl ChatWidget {
                         );
                         tx.send(AppEvent::BeginWindowsSandboxElevatedSetup {
                             preset: preset.clone(),
+                            profile_selection: elevated_profile_selection.clone(),
                         });
                     }
                 })],
@@ -357,6 +389,7 @@ impl ChatWidget {
                         );
                         tx.send(AppEvent::BeginWindowsSandboxLegacySetup {
                             preset: preset.clone(),
+                            profile_selection: legacy_profile_selection.clone(),
                         });
                     }
                 })],
@@ -389,7 +422,12 @@ impl ChatWidget {
     }
 
     #[cfg(not(target_os = "windows"))]
-    pub(crate) fn open_windows_sandbox_fallback_prompt(&mut self, _preset: ApprovalPreset) {}
+    pub(crate) fn open_windows_sandbox_fallback_prompt(
+        &mut self,
+        _preset: ApprovalPreset,
+        _profile_selection: Option<PermissionProfileSelection>,
+    ) {
+    }
 
     #[cfg(target_os = "windows")]
     pub(crate) fn maybe_prompt_windows_sandbox_enable(&mut self, show_now: bool) {
@@ -399,7 +437,7 @@ impl ChatWidget {
                 .into_iter()
                 .find(|preset| preset.id == "auto")
         {
-            self.open_windows_sandbox_enable_prompt(preset);
+            self.open_windows_sandbox_enable_prompt(preset, /*profile_selection*/ None);
         }
     }
 

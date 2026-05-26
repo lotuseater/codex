@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
 use codex_extension_api::ExtensionToolExecutor;
-use codex_extension_api::ExtensionToolOutput;
-use codex_tool_execution_api::ToolCall as ExtensionToolCall;
-use codex_tool_execution_api::ToolName;
-use codex_tool_registry_api::ToolSpec;
+use codex_tools::ConversationHistory;
+use codex_tools::ToolCall as ExtensionToolCall;
+use codex_tools::ToolName;
+use codex_tools::ToolSpec;
 use serde_json::Value;
 
+use crate::function_tool::FunctionCallError;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
@@ -16,7 +17,6 @@ use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::PostToolUsePayload;
 use crate::tools::registry::PreToolUsePayload;
 use crate::tools::registry::ToolExecutor;
-use codex_tool_execution_api::FunctionCallError;
 
 pub(crate) struct ExtensionToolHandler {
     executor: Arc<dyn ExtensionToolExecutor>,
@@ -35,19 +35,31 @@ impl ExtensionToolHandler {
     }
 }
 
+#[async_trait::async_trait]
 impl ToolExecutor<ToolInvocation> for ExtensionToolHandler {
-    type Output = ExtensionToolOutput;
-
     fn tool_name(&self) -> ToolName {
         self.executor.tool_name()
     }
 
-    fn spec(&self) -> Option<ToolSpec> {
+    fn spec(&self) -> ToolSpec {
         self.executor.spec()
     }
 
-    async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {
-        self.executor.handle(to_extension_call(&invocation)).await
+    async fn handle(
+        &self,
+        invocation: ToolInvocation,
+    ) -> Result<Box<dyn ToolOutput>, FunctionCallError> {
+        self.executor
+            .handle(to_extension_call(&invocation).await)
+            .await
+    }
+
+    fn supports_parallel_tool_calls(&self) -> bool {
+        self.executor.supports_parallel_tool_calls()
+    }
+
+    fn exposure(&self) -> crate::tools::registry::ToolExposure {
+        self.executor.exposure()
     }
 }
 
@@ -80,10 +92,15 @@ impl CoreToolRuntime for ExtensionToolHandler {
     }
 }
 
-fn to_extension_call(invocation: &ToolInvocation) -> ExtensionToolCall {
+async fn to_extension_call(invocation: &ToolInvocation) -> ExtensionToolCall {
+    let conversation_history =
+        ConversationHistory::new(invocation.session.clone_history().await.into_raw_items());
     ExtensionToolCall {
+        turn_id: invocation.turn.sub_id.clone(),
         call_id: invocation.call_id.clone(),
         tool_name: invocation.tool_name.clone(),
+        truncation_policy: invocation.turn.truncation_policy,
+        conversation_history,
         payload: invocation.payload.clone(),
     }
 }
@@ -100,38 +117,36 @@ fn extension_tool_hook_input(arguments: &str) -> Value {
 mod tests {
     use std::sync::Arc;
 
+    use codex_protocol::models::ContentItem;
+    use codex_protocol::models::ResponseItem;
     use pretty_assertions::assert_eq;
     use serde_json::json;
+    use tokio::sync::Mutex;
 
     use super::ExtensionToolHandler;
     use crate::tools::context::ToolInvocation;
     use crate::tools::context::ToolPayload;
+    use crate::tools::context::ToolCallSource;
     use crate::tools::hook_names::HookToolName;
+    use crate::tools::registry::CoreToolRuntime;
     use crate::tools::registry::PostToolUsePayload;
     use crate::tools::registry::PreToolUsePayload;
-    use crate::tools::registry::ToolHandler;
     use crate::turn_diff_tracker::TurnDiffTracker;
-    use codex_extension_api::ExtensionToolOutput;
-    use codex_tool_execution_api::ToolCallSource;
-    use codex_tool_execution_api::ToolName;
-    use codex_tool_registry_api::ResponsesApiTool;
-    use codex_tool_registry_api::ToolSpec;
-    use codex_tool_registry_api::parse_tool_input_schema;
+    use codex_tools::ResponsesApiTool;
+    use codex_tools::ToolName;
+    use codex_tools::ToolSpec;
+    use codex_tools::parse_tool_input_schema;
 
     struct StubExtensionExecutor;
 
     #[async_trait::async_trait]
-    impl codex_extension_api::ToolExecutor<codex_tool_execution_api::ToolCall>
-        for StubExtensionExecutor
-    {
-        type Output = ExtensionToolOutput;
-
+    impl codex_extension_api::ToolExecutor<codex_tools::ToolCall> for StubExtensionExecutor {
         fn tool_name(&self) -> ToolName {
             ToolName::plain("extension_echo")
         }
 
-        fn spec(&self) -> Option<ToolSpec> {
-            Some(ToolSpec::Function(ResponsesApiTool {
+        fn spec(&self) -> ToolSpec {
+            ToolSpec::Function(ResponsesApiTool {
                 name: "extension_echo".to_string(),
                 description: "Echoes arguments.".to_string(),
                 strict: true,
@@ -146,21 +161,48 @@ mod tests {
                 .expect("extension schema should parse"),
                 output_schema: None,
                 defer_loading: None,
-            }))
+            })
         }
 
-        fn handle(
+        async fn handle(
             &self,
-            _call: codex_tool_execution_api::ToolCall,
-        ) -> impl std::future::Future<
-            Output = Result<Self::Output, codex_tool_execution_api::FunctionCallError>,
-        > + Send {
-            async {
-                let output: ExtensionToolOutput = Box::new(
-                    codex_tool_execution_api::JsonToolOutput::new(json!({ "ok": true })),
-                );
-                Ok(output)
-            }
+            _call: codex_tools::ToolCall,
+        ) -> Result<Box<dyn codex_tools::ToolOutput>, codex_tools::FunctionCallError> {
+            Ok(Box::new(codex_tools::JsonToolOutput::new(
+                json!({ "ok": true }),
+            )))
+        }
+    }
+
+    struct CapturingExtensionExecutor {
+        captured_call: Arc<Mutex<Option<codex_tools::ToolCall>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl codex_extension_api::ToolExecutor<codex_tools::ToolCall> for CapturingExtensionExecutor {
+        fn tool_name(&self) -> codex_tools::ToolName {
+            codex_tools::ToolName::plain("extension_echo")
+        }
+
+        fn spec(&self) -> codex_tools::ToolSpec {
+            codex_tools::ToolSpec::Function(codex_tools::ResponsesApiTool {
+                name: "extension_echo".to_string(),
+                description: "Captures arguments.".to_string(),
+                strict: false,
+                parameters: codex_tools::JsonSchema::default(),
+                output_schema: None,
+                defer_loading: None,
+            })
+        }
+
+        async fn handle(
+            &self,
+            call: codex_tools::ToolCall,
+        ) -> Result<Box<dyn codex_tools::ToolOutput>, codex_tools::FunctionCallError> {
+            *self.captured_call.lock().await = Some(call);
+            Ok(Box::new(codex_tools::JsonToolOutput::new(
+                json!({ "ok": true }),
+            )))
         }
     }
 
@@ -180,17 +222,17 @@ mod tests {
                 arguments: json!({ "message": "hello" }).to_string(),
             },
         };
-        let output = codex_tool_execution_api::JsonToolOutput::new(json!({ "ok": true }));
+        let output = codex_tools::JsonToolOutput::new(json!({ "ok": true }));
 
         assert_eq!(
-            ToolHandler::pre_tool_use_payload(&handler, &invocation),
+            CoreToolRuntime::pre_tool_use_payload(&handler, &invocation),
             Some(PreToolUsePayload {
                 tool_name: HookToolName::new("extension_echo"),
                 tool_input: json!({ "message": "hello" }),
             })
         );
         assert_eq!(
-            ToolHandler::post_tool_use_payload(&handler, &invocation, &output),
+            CoreToolRuntime::post_tool_use_payload(&handler, &invocation, &output),
             Some(PostToolUsePayload {
                 tool_name: HookToolName::new("extension_echo"),
                 tool_use_id: "call-extension".to_string(),
@@ -198,5 +240,62 @@ mod tests {
                 tool_response: json!({ "ok": true }),
             })
         );
+    }
+
+    #[tokio::test]
+    async fn passes_turn_fields_to_extension_call() {
+        let captured_call = Arc::new(Mutex::new(None));
+        let handler = ExtensionToolHandler::new(Arc::new(CapturingExtensionExecutor {
+            captured_call: Arc::clone(&captured_call),
+        }));
+        let (session, turn) = crate::session::tests::make_session_and_context().await;
+        let turn_id = turn.sub_id.clone();
+        let truncation_policy = turn.truncation_policy;
+        let history_item = ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: "extension history".to_string(),
+            }],
+            phase: None,
+        };
+        session
+            .record_into_history(std::slice::from_ref(&history_item), &turn)
+            .await;
+        let invocation = ToolInvocation {
+            session: session.into(),
+            turn: turn.into(),
+            cancellation_token: tokio_util::sync::CancellationToken::new(),
+            tracker: Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new())),
+            call_id: "call-extension".to_string(),
+            tool_name: codex_tools::ToolName::plain("extension_echo"),
+            source: ToolCallSource::Direct,
+            payload: ToolPayload::Function {
+                arguments: json!({ "message": "hello" }).to_string(),
+            },
+        };
+
+        crate::tools::registry::ToolExecutor::handle(&handler, invocation)
+            .await
+            .expect("extension call should succeed");
+
+        let captured_call = captured_call.lock().await.clone().expect("captured call");
+        assert_eq!(captured_call.turn_id, turn_id);
+        assert_eq!(captured_call.call_id, "call-extension");
+        assert_eq!(
+            captured_call.tool_name,
+            codex_tools::ToolName::plain("extension_echo")
+        );
+        assert_eq!(captured_call.truncation_policy, truncation_policy);
+        assert_eq!(
+            captured_call.conversation_history.items(),
+            std::slice::from_ref(&history_item)
+        );
+        match captured_call.payload {
+            ToolPayload::Function { arguments } => {
+                assert_eq!(arguments, json!({ "message": "hello" }).to_string());
+            }
+            payload => panic!("expected function payload, got {payload:?}"),
+        }
     }
 }

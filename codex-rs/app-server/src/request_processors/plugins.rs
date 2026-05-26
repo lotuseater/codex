@@ -997,9 +997,12 @@ impl PluginRequestProcessor {
                     None => None,
                 };
                 let environment_manager = self.thread_manager.environment_manager();
-                let app_summaries =
-                    load_plugin_app_summaries(&config, &outcome.plugin.apps, &environment_manager)
-                        .await;
+                let app_summaries = load_plugin_app_summaries(
+                    &config,
+                    &outcome.plugin.apps,
+                    Arc::clone(&environment_manager),
+                )
+                .await;
                 let visible_skills = outcome
                     .plugin
                     .skills
@@ -1075,8 +1078,12 @@ impl PluginRequestProcessor {
                     .map(codex_plugin::AppConnectorId)
                     .collect::<Vec<_>>();
                 let environment_manager = self.thread_manager.environment_manager();
-                let app_summaries =
-                    load_plugin_app_summaries(&config, &plugin_apps, &environment_manager).await;
+                let app_summaries = load_plugin_app_summaries(
+                    &config,
+                    &plugin_apps,
+                    Arc::clone(&environment_manager),
+                )
+                .await;
                 remote_plugin_detail_to_info(remote_detail, app_summaries)
             }
         };
@@ -1544,7 +1551,7 @@ impl PluginRequestProcessor {
             connectors::list_accessible_connectors_from_mcp_tools_with_environment_manager(
                 config,
                 /*force_refetch*/ true,
-                &environment_manager
+                Arc::clone(&environment_manager)
             ),
         );
 
@@ -1810,7 +1817,7 @@ impl PluginRequestProcessor {
 async fn load_plugin_app_summaries(
     config: &Config,
     plugin_apps: &[codex_plugin::AppConnectorId],
-    environment_manager: &EnvironmentManager,
+    environment_manager: Arc<EnvironmentManager>,
 ) -> Vec<AppSummary> {
     if plugin_apps.is_empty() {
         return Vec::new();

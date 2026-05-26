@@ -4,13 +4,12 @@ use crate::tools::context::ToolPayload;
 use crate::tools::context::boxed_tool_output;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
-use codex_tool_execution_api::FunctionCallError;
-use codex_tool_execution_api::ToolName;
-use codex_tool_registry_api::ToolSpec;
+use crate::function_tool::FunctionCallError;
+use codex_tools::ToolName;
+use codex_tools::ToolSpec;
 
 use super::ExecContext;
 use super::PUBLIC_TOOL_NAME;
-use super::execute_spec::collect_code_mode_tool_definitions;
 use super::handle_runtime_response;
 use super::is_exec_tool_name;
 
@@ -37,7 +36,8 @@ impl CodeModeExecuteHandler {
         let args =
             codex_code_mode::parse_exec_source(&code).map_err(FunctionCallError::RespondToModel)?;
         let exec = ExecContext { session, turn };
-        let enabled_tools = collect_code_mode_tool_definitions(&self.nested_tool_specs);
+        let enabled_tools =
+            codex_tools::collect_code_mode_tool_definitions(&self.nested_tool_specs);
         let stored_values = exec
             .session
             .services
@@ -88,15 +88,14 @@ impl CodeModeExecuteHandler {
     }
 }
 
+#[async_trait::async_trait]
 impl ToolExecutor<ToolInvocation> for CodeModeExecuteHandler {
-    type Output = Box<dyn crate::tools::context::ToolOutput>;
-
     fn tool_name(&self) -> ToolName {
         ToolName::plain(PUBLIC_TOOL_NAME)
     }
 
-    fn spec(&self) -> Option<ToolSpec> {
-        Some(self.spec.clone())
+    fn spec(&self) -> ToolSpec {
+        self.spec.clone()
     }
 
     async fn handle(

@@ -164,8 +164,16 @@ impl GitReviewAnchor {
                 )
             })
             .unwrap_or_default();
-        let unstaged_files = git_lines(&self.cwd, ["diff", "--name-only", "--"]);
-        let staged_files = git_lines(&self.cwd, ["diff", "--cached", "--name-only", "--"]);
+        let unstaged_files = files_changed_since_anchor(
+            &self.cwd,
+            git_lines(&self.cwd, ["diff", "--name-only", "--"]),
+            &self.baseline_snapshots,
+        );
+        let staged_files = files_changed_since_anchor(
+            &self.cwd,
+            git_lines(&self.cwd, ["diff", "--cached", "--name-only", "--"]),
+            &self.baseline_snapshots,
+        );
         let untracked_files = git_lines(&self.cwd, ["ls-files", "--others", "--exclude-standard"]);
         let changed_files = unique_paths(
             committed_files
@@ -364,6 +372,35 @@ fn unique_paths(paths: Vec<String>) -> Vec<String> {
         .collect()
 }
 
+fn files_changed_since_anchor(
+    cwd: &Path,
+    files: Vec<String>,
+    baseline_snapshots: &[BaselineSnapshot],
+) -> Vec<String> {
+    files
+        .into_iter()
+        .filter(|path| {
+            let Some(snapshot) = baseline_snapshots
+                .iter()
+                .find(|snapshot| snapshot.repo_path == *path)
+            else {
+                return true;
+            };
+            !same_file_contents(&snapshot.baseline_path, &cwd.join(path))
+        })
+        .collect()
+}
+
+fn same_file_contents(left: &Path, right: &Path) -> bool {
+    let Ok(left) = fs::read(left) else {
+        return false;
+    };
+    let Ok(right) = fs::read(right) else {
+        return false;
+    };
+    left == right
+}
+
 fn truncate_output(output: &str) -> String {
     let mut chars = output.chars();
     let truncated = chars
@@ -490,6 +527,26 @@ mod tests {
 
         assert!(prompt.contains("git diff --no-index --"));
         assert!(prompt.contains("src/lib.rs"));
+        let _ = fs::remove_dir_all(repo);
+    }
+
+    #[test]
+    fn dirty_anchor_without_followup_change_is_not_changed_work() {
+        let repo = test_repo();
+        write_file(&repo, "src/lib.rs", "clean\n");
+        git(&repo, &["add", "."]);
+        git(&repo, &["commit", "-m", "initial"]);
+        write_file(&repo, "src/lib.rs", "reviewed dirty work\n");
+
+        let anchor = ReviewAnchor::capture(&repo);
+        let prompt = anchor.work_slice().review_prompt("- file-change steps: 0");
+
+        assert!(prompt.contains("- dirty tracked files at anchor: src/lib.rs"));
+        assert!(prompt.contains("- changed files since anchor: (none)"));
+        assert!(prompt.contains("- currently unstaged tracked files: (none)"));
+        assert!(prompt.contains(
+            "(no dirty-at-anchor baseline snapshots apply to the current changed files)"
+        ));
         let _ = fs::remove_dir_all(repo);
     }
 

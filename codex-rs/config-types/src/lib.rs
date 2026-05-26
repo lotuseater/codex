@@ -37,6 +37,15 @@ impl fmt::Display for ContextBudgetMode {
     }
 }
 
+impl FromStr for ContextBudgetMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        serde_json::from_value(serde_json::Value::String(s.to_string()))
+            .map_err(|_| format!("invalid context_budget_mode: {s}"))
+    }
+}
+
 /// See https://platform.openai.com/docs/guides/reasoning?api-mode=responses#get-started-with-reasoning
 #[derive(
     Debug,
@@ -947,6 +956,16 @@ pub struct CollaborationModeMask {
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn context_budget_mode_from_str_accepts_lowercase_modes() {
+        assert_eq!(Ok(ContextBudgetMode::Standard), "standard".parse());
+        assert_eq!(Ok(ContextBudgetMode::Slow), "slow".parse());
+        assert_eq!(
+            "invalid context_budget_mode: fast",
+            "fast".parse::<ContextBudgetMode>().unwrap_err()
+        );
+    }
 
     #[test]
     fn apply_mask_can_clear_optional_fields() {

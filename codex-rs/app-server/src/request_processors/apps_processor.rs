@@ -6,13 +6,14 @@ use codex_core::connectors::AccessibleConnectorsStatus;
 use codex_app_server_protocol::AppsListParams;
 use codex_app_server_protocol::AppsListResponse;
 
-#[derive(Clone)]
 pub(crate) struct AppsRequestProcessor {
     auth_manager: Arc<AuthManager>,
     thread_manager: Arc<ThreadManager>,
     outgoing: Arc<OutgoingMessageSender>,
     config_manager: ConfigManager,
     workspace_settings_cache: Arc<workspace_settings::WorkspaceSettingsCache>,
+    shutdown_token: CancellationToken,
+    _shutdown_drop_guard: DropGuard,
 }
 
 impl AppsRequestProcessor {
@@ -22,13 +23,17 @@ impl AppsRequestProcessor {
         outgoing: Arc<OutgoingMessageSender>,
         config_manager: ConfigManager,
         workspace_settings_cache: Arc<workspace_settings::WorkspaceSettingsCache>,
+        shutdown_token: CancellationToken,
     ) -> Self {
+        let shutdown_drop_guard = shutdown_token.clone().drop_guard();
         Self {
             auth_manager,
             thread_manager,
             outgoing,
             config_manager,
             workspace_settings_cache,
+            shutdown_token,
+            _shutdown_drop_guard: shutdown_drop_guard,
         }
     }
 
@@ -89,10 +94,18 @@ impl AppsRequestProcessor {
         let request = request_id.clone();
         let outgoing = Arc::clone(&self.outgoing);
         let environment_manager = self.thread_manager.environment_manager();
+        let shutdown_token = self.shutdown_token.child_token();
         tokio::spawn(async move {
-            Self::apps_list_task(outgoing, request, params, config, environment_manager).await;
+            tokio::select! {
+                _ = shutdown_token.cancelled() => {}
+                _ = Self::apps_list_task(outgoing, request, params, config, environment_manager) => {}
+            }
         });
         Ok(None)
+    }
+
+    pub(crate) fn shutdown(&self) {
+        self.shutdown_token.cancel();
     }
 
     async fn apps_list_task(
@@ -164,7 +177,7 @@ impl AppsRequestProcessor {
                 connectors::list_accessible_connectors_from_mcp_tools_with_environment_manager(
                     &accessible_config,
                     force_refetch,
-                    &environment_manager,
+                    Arc::clone(&environment_manager),
                 )
                 .await
                 .map_err(|err| format!("failed to load accessible apps: {err}"));

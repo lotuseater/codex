@@ -89,6 +89,7 @@ use tokio::sync::broadcast;
 use tokio::sync::watch;
 use tokio::time::Duration;
 use tokio::time::timeout;
+use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 const EXTERNAL_AUTH_REFRESH_TIMEOUT: Duration = Duration::from_secs(10);
@@ -163,6 +164,7 @@ impl ExternalAuth for ExternalAuthRefreshBridge {
 
 pub(crate) struct MessageProcessor {
     outgoing: Arc<OutgoingMessageSender>,
+    skills_watcher: Arc<SkillsWatcher>,
     account_processor: AccountRequestProcessor,
     apps_processor: AppsRequestProcessor,
     catalog_processor: CatalogRequestProcessor,
@@ -347,6 +349,7 @@ impl MessageProcessor {
         let thread_list_state_permit = Arc::new(Semaphore::new(/*permits*/ 1));
         let workspace_settings_cache =
             Arc::new(workspace_settings::WorkspaceSettingsCache::default());
+        let app_list_shutdown_token = CancellationToken::new();
         let account_processor = AccountRequestProcessor::new(
             auth_manager.clone(),
             Arc::clone(&thread_manager),
@@ -360,6 +363,7 @@ impl MessageProcessor {
             outgoing.clone(),
             config_manager.clone(),
             Arc::clone(&workspace_settings_cache),
+            app_list_shutdown_token,
         );
         let catalog_processor = CatalogRequestProcessor::new(
             auth_manager.clone(),
@@ -494,6 +498,7 @@ impl MessageProcessor {
 
         Self {
             outgoing,
+            skills_watcher,
             account_processor,
             apps_processor,
             catalog_processor,
@@ -521,6 +526,8 @@ impl MessageProcessor {
 
     pub(crate) fn clear_runtime_references(&self) {
         self.account_processor.clear_external_auth();
+        self.apps_processor.shutdown();
+        self.skills_watcher.shutdown();
     }
 
     pub(crate) async fn process_request(
@@ -1050,6 +1057,11 @@ impl MessageProcessor {
             ClientRequest::ThreadMetadataUpdate { params, .. } => {
                 self.thread_processor.thread_metadata_update(params).await
             }
+            ClientRequest::ThreadSettingsUpdate { params, .. } => {
+                self.turn_processor
+                    .thread_settings_update(&request_id, params)
+                    .await
+            }
             ClientRequest::ThreadMemoryModeSet { params, .. } => {
                 self.thread_processor.thread_memory_mode_set(params).await
             }
@@ -1077,6 +1089,9 @@ impl MessageProcessor {
             }
             ClientRequest::ThreadList { params, .. } => {
                 self.thread_processor.thread_list(params).await
+            }
+            ClientRequest::ThreadSearch { params, .. } => {
+                self.thread_processor.thread_search(params).await
             }
             ClientRequest::ThreadLoadedList { params, .. } => {
                 self.thread_processor.thread_loaded_list(params).await

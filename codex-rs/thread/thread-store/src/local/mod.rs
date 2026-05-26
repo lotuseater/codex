@@ -4,6 +4,7 @@ mod helpers;
 mod list_threads;
 mod live_writer;
 mod read_thread;
+mod search_threads;
 mod unarchive_thread;
 mod update_thread_metadata;
 
@@ -37,6 +38,8 @@ use codex_thread_store_api::ThreadStore;
 use codex_thread_store_api::ThreadStoreError;
 use codex_thread_store_api::ThreadStoreResult;
 use codex_thread_store_api::UpdateThreadMetadataParams;
+use codex_thread_store_api::SearchThreadsParams;
+use codex_thread_store_api::ThreadSearchPage;
 
 /// Local filesystem/SQLite-backed implementation of [`ThreadStore`].
 ///
@@ -273,6 +276,13 @@ impl ThreadStore for LocalThreadStore {
 
     async fn list_threads(&self, params: ListThreadsParams) -> ThreadStoreResult<ThreadPage> {
         list_threads::list_threads(self, params).await
+    }
+
+    async fn search_threads(
+        &self,
+        params: SearchThreadsParams,
+    ) -> ThreadStoreResult<ThreadSearchPage> {
+        search_threads::search_threads(self, params).await
     }
 
     async fn update_thread_metadata(

@@ -145,6 +145,7 @@ pub(super) use codex_protocol::config_types::CollaborationMode;
 pub(super) use codex_protocol::config_types::ContextBudgetMode;
 pub(super) use codex_protocol::config_types::ModeKind;
 pub(super) use codex_protocol::config_types::Personality;
+pub(super) use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
 pub(super) use codex_protocol::config_types::ServiceTier;
 pub(super) use codex_protocol::models::ActivePermissionProfile;
 pub(super) use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;

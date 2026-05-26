@@ -216,7 +216,13 @@ impl FrameDeadlineState {
     fn request_frame(&mut self, draw_at: Instant, now: Instant) -> bool {
         match self.in_flight_deadline {
             Some(InFlightDeadline::Waiting(target)) => {
-                if draw_at < target || (now >= target && draw_at > now) {
+                if now >= target {
+                    if draw_at > now {
+                        self.store_pending_deadline(draw_at, None)
+                    } else {
+                        false
+                    }
+                } else if draw_at < target {
                     self.store_pending_deadline(draw_at, Some(target))
                 } else {
                     false
@@ -627,6 +633,67 @@ mod tests {
         assert!(second.is_err(), "unexpected extra draw received");
     }
 
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_earlier_delayed_request_reschedules_sleeping_loop() {
+        let (draw_tx, mut draw_rx) = broadcast::channel(16);
+        let requester = FrameRequester::new(draw_tx);
+
+        requester.schedule_frame_in(Duration::from_millis(100));
+        time::advance(Duration::from_millis(1)).await;
+
+        requester.schedule_frame_in(Duration::from_millis(10));
+        time::advance(Duration::from_millis(10)).await;
+
+        let first = draw_rx
+            .recv()
+            .timeout(Duration::from_millis(20))
+            .await
+            .expect("timed out waiting for rescheduled draw");
+        assert!(first.is_ok(), "broadcast closed unexpectedly");
+
+        let second = draw_rx.recv().timeout(Duration::from_millis(20)).await;
+        assert!(second.is_err(), "unexpected extra draw received");
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_drop_last_requester_wakes_sleeping_scheduler() {
+        let (draw_tx, mut draw_rx) = broadcast::channel(16);
+        let schedule_state = Arc::new(FrameScheduleState::default());
+        let scheduler = FrameScheduler::new(Arc::clone(&schedule_state), draw_tx);
+        let scheduler_task = tokio::spawn(scheduler.run());
+        let requester = FrameRequester { schedule_state };
+
+        requester.schedule_frame_in(Duration::from_secs(60));
+        time::advance(Duration::from_millis(1)).await;
+        drop(requester);
+
+        scheduler_task
+            .timeout(Duration::from_millis(20))
+            .await
+            .expect("scheduler did not exit after last requester was dropped")
+            .expect("scheduler task panicked");
+
+        let draw = draw_rx.recv().timeout(Duration::from_millis(20)).await;
+        assert!(draw.is_err(), "dropped requester should not emit a draw");
+    }
+
+    #[test]
+    fn test_delayed_request_after_elapsed_target_requests_scheduler_wake() {
+        let now = Instant::now();
+        let target = now - Duration::from_millis(1);
+        let delayed_deadline = now + Duration::from_millis(100);
+        let mut deadlines = FrameDeadlineState {
+            pending_deadline: None,
+            in_flight_deadline: Some(InFlightDeadline::Waiting(target)),
+        };
+
+        assert!(
+            deadlines.request_frame(delayed_deadline, now),
+            "future delayed requests after an elapsed target must wake the scheduler"
+        );
+        assert_eq!(deadlines.pending_deadline, Some(delayed_deadline));
+    }
+
     #[test]
     fn test_delayed_request_after_elapsed_target_stays_pending() {
         let state = FrameScheduleState::default();
@@ -652,6 +719,34 @@ mod tests {
             state.pending_deadline(),
             Some(delayed_deadline),
             "clearing the emitted draw must not clear a later pending request"
+        );
+    }
+
+    #[test]
+    fn test_due_request_after_elapsed_target_is_covered_by_current_draw() {
+        let state = FrameScheduleState::default();
+        let target = Instant::now() - Duration::from_millis(1);
+        let due_deadline = Instant::now();
+
+        state.set_in_flight_waiting(target);
+        state.request_frame(due_deadline);
+
+        assert_eq!(
+            state
+                .deadlines
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .pending_deadline,
+            None,
+            "due requests during the emit window should be covered by the current draw"
+        );
+
+        state.mark_in_flight_emitting(target);
+        state.clear_in_flight_deadline(target);
+        assert_eq!(
+            state.pending_deadline(),
+            None,
+            "clearing the emitted draw must not leave a covered request pending"
         );
     }
 

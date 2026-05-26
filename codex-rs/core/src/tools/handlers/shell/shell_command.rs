@@ -41,7 +41,7 @@ enum ShellCommandBackend {
 
 pub struct ShellCommandHandler {
     backend: ShellCommandBackend,
-    options: Option<ShellCommandHandlerOptions>,
+    options: ShellCommandHandlerOptions,
 }
 
 #[derive(Clone, Copy)]
@@ -53,10 +53,11 @@ pub(crate) struct ShellCommandHandlerOptions {
 
 impl ShellCommandHandler {
     pub(crate) fn new(options: ShellCommandHandlerOptions) -> Self {
-        Self {
-            options: Some(options),
-            ..Self::from(options.backend_config)
-        }
+        let backend = match options.backend_config {
+            ShellCommandBackendConfig::Classic => ShellCommandBackend::Classic,
+            ShellCommandBackendConfig::ZshFork => ShellCommandBackend::ZshFork,
+        };
+        Self { backend, options }
     }
 
     fn shell_runtime_backend(&self) -> ShellRuntimeBackend {
@@ -116,15 +117,12 @@ impl ShellCommandHandler {
 }
 
 impl From<ShellCommandBackendConfig> for ShellCommandHandler {
-    fn from(config: ShellCommandBackendConfig) -> Self {
-        let backend = match config {
-            ShellCommandBackendConfig::Classic => ShellCommandBackend::Classic,
-            ShellCommandBackendConfig::ZshFork => ShellCommandBackend::ZshFork,
-        };
-        Self {
-            backend,
-            options: None,
-        }
+    fn from(backend_config: ShellCommandBackendConfig) -> Self {
+        Self::new(ShellCommandHandlerOptions {
+            backend_config,
+            allow_login_shell: false,
+            exec_permission_approvals_enabled: false,
+        })
     }
 }
 
@@ -135,17 +133,15 @@ impl ToolExecutor<ToolInvocation> for ShellCommandHandler {
         ToolName::plain("shell_command")
     }
 
-    fn spec(&self) -> Option<ToolSpec> {
-        self.options.map(|options| {
-            create_shell_command_tool(CommandToolOptions {
-                allow_login_shell: options.allow_login_shell,
-                exec_permission_approvals_enabled: options.exec_permission_approvals_enabled,
-            })
+    fn spec(&self) -> ToolSpec {
+        create_shell_command_tool(CommandToolOptions {
+            allow_login_shell: self.options.allow_login_shell,
+            exec_permission_approvals_enabled: self.options.exec_permission_approvals_enabled,
         })
     }
 
     fn supports_parallel_tool_calls(&self) -> bool {
-        self.options.is_some()
+        true
     }
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {

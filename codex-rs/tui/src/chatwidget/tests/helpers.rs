@@ -246,15 +246,14 @@ pub(crate) fn set_chatgpt_auth(chat: &mut ChatWidget) {
 }
 
 fn test_model_info(slug: &str, priority: i32, supports_fast_mode: bool) -> ModelInfo {
-    let service_tiers = if supports_fast_mode {
-        vec![json!({
+    let mut service_tiers = Vec::new();
+    if supports_fast_mode {
+        service_tiers.push(json!({
             "id": ServiceTier::Fast.request_value(),
             "name": "fast",
             "description": "Fastest inference with increased plan usage"
-        })]
-    } else {
-        Vec::new()
-    };
+        }));
+    }
     serde_json::from_value(json!({
         "slug": slug,
         "display_name": slug,
@@ -267,6 +266,7 @@ fn test_model_info(slug: &str, priority: i32, supports_fast_mode: bool) -> Model
         "priority": priority,
         "additional_speed_tiers": [],
         "service_tiers": service_tiers,
+        "default_service_tier": null,
         "availability_nux": null,
         "upgrade": null,
         "base_instructions": "base instructions",
@@ -585,6 +585,7 @@ pub(super) fn handle_exited_review_mode(chat: &mut ChatWidget) {
             item: AppServerThreadItem::ExitedReviewMode {
                 id: "review-end".to_string(),
                 review: String::new(),
+                review_output: None,
             },
         }),
         /*replay_kind*/ None,
@@ -1572,6 +1573,7 @@ fn hook_event_label(event_name: codex_app_server_protocol::HookEventName) -> &'s
         codex_app_server_protocol::HookEventName::SessionStart => "SessionStart",
         codex_app_server_protocol::HookEventName::UserPromptSubmit => "UserPromptSubmit",
         codex_app_server_protocol::HookEventName::SubagentStart => "SubagentStart",
+        codex_app_server_protocol::HookEventName::SubagentStop => "SubagentStop",
         codex_app_server_protocol::HookEventName::Stop => "Stop",
     }
 }

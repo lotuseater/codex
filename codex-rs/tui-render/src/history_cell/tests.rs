@@ -8,6 +8,11 @@ use crate::session_state::ThreadSessionState;
 use crate::wrapping::word_wrap_lines;
 use codex_permission_types::ManagedFileSystemPermissions;
 use codex_permission_types::NetworkSandboxPolicy;
+use codex_app_server_protocol::AskForApproval;
+use codex_app_server_protocol::McpAuthStatus;
+use codex_config::types::McpServerConfig;
+use codex_otel::RuntimeMetricTotals;
+use codex_otel::RuntimeMetricsSummary;
 use codex_protocol::ThreadId;
 use codex_protocol::parse_command::ParsedCommand;
 use codex_protocol::protocol::AskForApproval;
@@ -394,6 +399,8 @@ fn session_configured_event(model: &str) -> ThreadSessionState {
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
         reasoning_effort: None,
+        collaboration_mode: None,
+        personality: None,
         message_history: None,
         network_proxy: None,
         rollout_path: Some(PathBuf::new()),
@@ -2250,6 +2257,30 @@ fn agent_markdown_cell_does_not_split_words_after_inline_markdown() {
         lines[1].starts_with("  strikethrough,"),
         "expected the next line to resume with the full word: {lines:?}",
     );
+}
+
+#[test]
+fn streamed_agent_list_paragraph_preserves_item_indent_when_wrapped() {
+    let cell = AgentMessageCell::new(
+        vec![
+            Line::from("1. Correctness issue: server tool-search completions are rejected."),
+            Line::default(),
+            Line::from(
+                "   In next_prompt_suggestion.rs, ToolSearchCall records its call id, but a paired output is ignored and suppresses suggestions.",
+            ),
+        ],
+        /*is_first_line*/ true,
+    );
+
+    let lines = render_lines(&cell.display_lines(/*width*/ 64));
+    assert!(
+        lines
+            .iter()
+            .filter(|line| line.contains("paired output") || line.contains("suggestions."))
+            .all(|line| line.starts_with("     ")),
+        "expected all wrapped paragraph rows to retain the assistant gutter and list indent: {lines:?}",
+    );
+    insta::assert_snapshot!(lines.join("\n"));
 }
 
 #[test]

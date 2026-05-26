@@ -42,6 +42,7 @@ use codex_analytics::CompactionPhase;
 use codex_analytics::CompactionReason;
 use codex_analytics::TurnTokenUsageFact;
 use codex_context_reduction::SemanticCompactDecision;
+use codex_extension_api::ExtensionData;
 use codex_login::AuthManager;
 use codex_models_manager::manager::SharedModelsManager;
 use codex_otel::SessionTelemetry;
@@ -162,15 +163,23 @@ fn bool_tag(value: bool) -> &'static str {
 #[derive(Clone)]
 pub(crate) struct SessionTaskContext {
     session: Arc<Session>,
+    turn_extension_data: Arc<ExtensionData>,
 }
 
 impl SessionTaskContext {
-    pub(crate) fn new(session: Arc<Session>) -> Self {
-        Self { session }
+    pub(crate) fn new(session: Arc<Session>, turn_extension_data: Arc<ExtensionData>) -> Self {
+        Self {
+            session,
+            turn_extension_data,
+        }
     }
 
     pub(crate) fn clone_session(&self) -> Arc<Session> {
         Arc::clone(&self.session)
+    }
+
+    pub(crate) fn turn_extension_data(&self) -> Arc<ExtensionData> {
+        Arc::clone(&self.turn_extension_data)
     }
 
     pub(crate) fn auth_manager(&self) -> Arc<AuthManager> {
@@ -215,7 +224,7 @@ pub(crate) trait SessionTask: Send + Sync + 'static {
         self: Arc<Self>,
         session: Arc<SessionTaskContext>,
         ctx: Arc<TurnContext>,
-        input: Vec<UserInput>,
+        input: Vec<TurnInput>,
         cancellation_token: CancellationToken,
     ) -> impl std::future::Future<Output = Option<String>> + Send;
 
@@ -246,7 +255,7 @@ pub(crate) trait AnySessionTask: Send + Sync + 'static {
         self: Arc<Self>,
         session: Arc<SessionTaskContext>,
         ctx: Arc<TurnContext>,
-        input: Vec<UserInput>,
+        input: Vec<TurnInput>,
         cancellation_token: CancellationToken,
     ) -> BoxFuture<'static, Option<String>>;
 
@@ -277,7 +286,7 @@ where
         self: Arc<Self>,
         session: Arc<SessionTaskContext>,
         ctx: Arc<TurnContext>,
-        input: Vec<UserInput>,
+        input: Vec<TurnInput>,
         cancellation_token: CancellationToken,
     ) -> BoxFuture<'static, Option<String>> {
         Box::pin(SessionTask::run(
@@ -359,26 +368,34 @@ impl Session {
             debug_assert!(turn.tasks.is_empty());
             Arc::clone(&turn.turn_state)
         };
-        {
-            let mut turn_state = turn_state.lock().await;
-            turn_state.token_usage_at_turn_start = token_usage_at_turn_start;
-            for item in queued_response_items {
-                turn_state.push_pending_input(item);
-            }
-            for item in mailbox_items {
-                turn_state.push_pending_input(item);
-            }
-        }
-        self.emit_turn_start_lifecycle(turn_context.extension_data.as_ref())
+        turn_state.lock().await.token_usage_at_turn_start = token_usage_at_turn_start.clone();
+        let mut pending_items = queued_response_items
+            .into_iter()
+            .map(TurnInput::ResponseInputItem)
+            .collect::<Vec<_>>();
+        pending_items.extend(mailbox_items);
+        self.input_queue
+            .extend_pending_input_for_turn_state(turn_state.as_ref(), pending_items)
             .await;
+        self.emit_turn_start_lifecycle(turn_context.as_ref(), &token_usage_at_turn_start)
+            .await;
+        let turn_extension_data = Arc::clone(&turn_context.extension_data);
 
         let mut active = self.active_turn.lock().await;
         let turn = active.get_or_insert_with(ActiveTurn::default);
         debug_assert!(turn.tasks.is_empty());
         let done_clone = Arc::clone(&done);
-        let session_ctx = Arc::new(SessionTaskContext::new(Arc::clone(self)));
+        let session_ctx = Arc::new(SessionTaskContext::new(
+            Arc::clone(self),
+            Arc::clone(&turn_extension_data),
+        ));
         let ctx = Arc::clone(&turn_context);
         let task_for_run = Arc::clone(&task);
+        let task_input = if input.is_empty() {
+            Vec::new()
+        } else {
+            vec![TurnInput::UserInput(input)]
+        };
         let task_cancellation_token = cancellation_token.child_token();
         // Task-owned turn spans keep a core-owned span open for the
         // full task lifecycle after the submission dispatch span ends.
@@ -404,7 +421,7 @@ impl Session {
                     .run(
                         Arc::clone(&session_ctx),
                         ctx,
-                        input,
+                        task_input,
                         task_cancellation_token.child_token(),
                     )
                     .await;
@@ -648,7 +665,8 @@ impl Session {
                     "false"
                 },
             );
-            let network_proxy_active = match self.services.network_proxy.as_ref() {
+            let network_proxy = self.services.network_proxy.load_full();
+            let network_proxy_active = match network_proxy.as_ref() {
                 Some(started_network_proxy) => {
                     match started_network_proxy.proxy().current_cfg().await {
                         Ok(config) => config.network.enabled,
@@ -1007,7 +1025,10 @@ impl Session {
 
         task.handle.abort();
 
-        let session_ctx = Arc::new(SessionTaskContext::new(Arc::clone(self)));
+        let session_ctx = Arc::new(SessionTaskContext::new(
+            Arc::clone(self),
+            Arc::clone(&task.turn_extension_data),
+        ));
         session_task
             .abort(session_ctx, Arc::clone(&task.turn_context))
             .await;

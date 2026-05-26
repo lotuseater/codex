@@ -6,6 +6,7 @@ use super::NetworkApprovalContext;
 use super::NetworkApprovalProtocol;
 use super::NetworkPolicyAmendment;
 use super::RequestPermissionProfile;
+use super::ReviewOutput;
 use super::UserInput;
 use super::shared::v2_enum_from_core;
 use crate::protocol::item_builders::convert_patch_changes;
@@ -286,6 +287,7 @@ pub enum ThreadItem {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         mcp_app_resource_uri: Option<String>,
+        plugin_id: Option<String>,
         result: Option<Box<McpToolCallResult>>,
         error: Option<McpToolCallError>,
         /// The duration of the MCP tool call in milliseconds.
@@ -355,7 +357,13 @@ pub enum ThreadItem {
     EnteredReviewMode { id: String, review: String },
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
-    ExitedReviewMode { id: String, review: String },
+    ExitedReviewMode {
+        id: String,
+        review: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        review_output: Option<ReviewOutput>,
+    },
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
     ContextCompaction { id: String },
@@ -846,6 +854,7 @@ impl From<CoreTurnItem> for ThreadItem {
                     status: McpToolCallStatus::from(mcp.status),
                     arguments: mcp.arguments,
                     mcp_app_resource_uri: mcp.mcp_app_resource_uri,
+                    plugin_id: mcp.plugin_id,
                     result: mcp.result.map(McpToolCallResult::from).map(Box::new),
                     error: mcp.error.map(McpToolCallError::from),
                     duration_ms,

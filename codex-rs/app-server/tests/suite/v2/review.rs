@@ -126,6 +126,7 @@ async fn review_start_runs_review_turn_and_emits_code_review_item() -> Result<()
     // Confirm we see the ExitedReviewMode marker (with review text)
     // on the same turn. Ignore any other items the stream surfaces.
     let mut review_body: Option<String> = None;
+    let mut structured_review = None;
     for _ in 0..10 {
         let review_notif: JSONRPCNotification = timeout(
             DEFAULT_READ_TIMEOUT,
@@ -135,9 +136,14 @@ async fn review_start_runs_review_turn_and_emits_code_review_item() -> Result<()
         let completed: ItemCompletedNotification =
             serde_json::from_value(review_notif.params.expect("params must be present"))?;
         match completed.item {
-            ThreadItem::ExitedReviewMode { id, review } => {
+            ThreadItem::ExitedReviewMode {
+                id,
+                review,
+                review_output,
+            } => {
                 assert_eq!(id, turn_id);
                 review_body = Some(review);
+                structured_review = review_output;
                 break;
             }
             _ => continue,
@@ -147,6 +153,13 @@ async fn review_start_runs_review_turn_and_emits_code_review_item() -> Result<()
     let review = review_body.expect("did not observe a code review item");
     assert!(review.contains("Prefer Stylize helpers"));
     assert!(review.contains("/tmp/file.rs:10-20"));
+    let structured_review = structured_review.expect("did not observe structured review output");
+    assert_eq!(structured_review.overall_correctness, "good");
+    assert_eq!(structured_review.findings.len(), 1);
+    let finding = &structured_review.findings[0];
+    assert_eq!(finding.title, "Prefer Stylize helpers");
+    assert_eq!(finding.code_location.line_range.start, 10);
+    assert_eq!(finding.code_location.line_range.end, 20);
 
     Ok(())
 }

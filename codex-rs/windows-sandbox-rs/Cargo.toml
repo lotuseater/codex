@@ -1,5 +1,4 @@
 [package]
-build = "build.rs"
 edition.workspace = true
 license.workspace = true
 name = "codex-windows-sandbox"
@@ -35,6 +34,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["sync", "rt"] }
+tracing-appender = { workspace = true }
 windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_NetworkManagement_WindowsFirewall",
@@ -89,6 +89,3 @@ features = [
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }
-
-[build-dependencies]
-winres = "0.1"

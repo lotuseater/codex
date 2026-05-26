@@ -89,7 +89,9 @@ use codex_app_server_protocol::ThreadRealtimeStartParams;
 use codex_app_server_protocol::ThreadRealtimeStopParams;
 use codex_app_server_protocol::ThreadResumeParams;
 use codex_app_server_protocol::ThreadRollbackParams;
+use codex_app_server_protocol::ThreadSearchParams;
 use codex_app_server_protocol::ThreadSetNameParams;
+use codex_app_server_protocol::ThreadSettingsUpdateParams;
 use codex_app_server_protocol::ThreadShellCommandParams;
 use codex_app_server_protocol::ThreadStartParams;
 use codex_app_server_protocol::ThreadTurnsItemsListParams;
@@ -227,6 +229,21 @@ impl McpProcess {
         .await
     }
 
+    pub async fn new_with_program_and_env(
+        codex_home: &Path,
+        program: &Path,
+        env_overrides: &[(&str, Option<&str>)],
+    ) -> anyhow::Result<Self> {
+        Self::new_with_program_env_and_args(
+            codex_home,
+            program,
+            env_overrides,
+            &[DISABLE_PLUGIN_STARTUP_TASKS_ARG],
+            ManagedConfigTestArg::DefaultPath,
+        )
+        .await
+    }
+
     async fn new_with_env_args_and_managed_config(
         codex_home: &Path,
         env_overrides: &[(&str, Option<&str>)],
@@ -235,6 +252,23 @@ impl McpProcess {
     ) -> anyhow::Result<Self> {
         let program = codex_utils_cargo_bin::cargo_bin("codex-app-server")
             .context("should find binary for codex-app-server")?;
+        Self::new_with_program_env_and_args(
+            codex_home,
+            &program,
+            env_overrides,
+            args,
+            managed_config,
+        )
+        .await
+    }
+
+    async fn new_with_program_env_and_args(
+        codex_home: &Path,
+        program: &Path,
+        env_overrides: &[(&str, Option<&str>)],
+        args: &[&str],
+        managed_config: ManagedConfigTestArg,
+    ) -> anyhow::Result<Self> {
         let mut cmd = Command::new(program);
 
         cmd.stdin(Stdio::piped());
@@ -508,6 +542,15 @@ impl McpProcess {
         self.send_request("thread/metadata/update", params).await
     }
 
+    /// Send a `thread/settings/update` JSON-RPC request.
+    pub async fn send_thread_settings_update_request(
+        &mut self,
+        params: ThreadSettingsUpdateParams,
+    ) -> anyhow::Result<i64> {
+        let params = Some(serde_json::to_value(params)?);
+        self.send_request("thread/settings/update", params).await
+    }
+
     /// Send a `thread/unsubscribe` JSON-RPC request.
     pub async fn send_thread_unsubscribe_request(
         &mut self,
@@ -560,6 +603,15 @@ impl McpProcess {
     ) -> anyhow::Result<i64> {
         let params = Some(serde_json::to_value(params)?);
         self.send_request("thread/list", params).await
+    }
+
+    /// Send a `thread/search` JSON-RPC request.
+    pub async fn send_thread_search_request(
+        &mut self,
+        params: ThreadSearchParams,
+    ) -> anyhow::Result<i64> {
+        let params = Some(serde_json::to_value(params)?);
+        self.send_request("thread/search", params).await
     }
 
     /// Send a `thread/loaded/list` JSON-RPC request.

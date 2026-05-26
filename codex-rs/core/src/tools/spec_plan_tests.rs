@@ -1691,6 +1691,37 @@ fn test_build_specs_mcp_tools_sorted_by_name() {
 }
 
 #[test]
+fn invalid_mcp_tools_are_not_registered() {
+    let model_info = model_info();
+    let features = Features::with_defaults();
+    let available_models = Vec::new();
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        image_generation_tool_auth_allowed: true,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        permission_profile: &PermissionProfile::Disabled,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+    let tool_name = ToolName::namespaced("mcp__invalid__", "lookup");
+
+    let (tools, registry) = build_specs(
+        &tools_config,
+        Some(HashMap::from([(
+            tool_name.clone(),
+            invalid_mcp_tool("lookup"),
+        )])),
+        /*deferred_mcp_tools*/ None,
+        &[],
+    );
+
+    assert_lacks_tool_name(&tools, "mcp__invalid__");
+    assert!(!registry.has_handler(&tool_name));
+}
+
+#[test]
 fn search_tool_description_lists_each_mcp_source_once() {
     let model_info = search_capable_model_info();
     let mut features = Features::with_defaults();
@@ -2566,6 +2597,16 @@ fn mcp_tool(name: &str, description: &str, input_schema: serde_json::Value) -> r
         icons: None,
         meta: None,
     }
+}
+
+fn invalid_mcp_tool(name: &str) -> rmcp::model::Tool {
+    mcp_tool(
+        name,
+        "Invalid MCP tool",
+        serde_json::json!({
+            "type": "null"
+        }),
+    )
 }
 
 fn tool_info_from_parts(name: &ToolName, tool: rmcp::model::Tool) -> ToolInfo {

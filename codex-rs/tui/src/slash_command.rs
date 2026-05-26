@@ -41,6 +41,7 @@ pub enum SlashCommand {
     Goal,
     Agent,
     Side,
+    Btw,
     Copy,
     Raw,
     Diff,
@@ -122,7 +123,9 @@ impl SlashCommand {
             SlashCommand::Plan => "switch to Plan mode",
             SlashCommand::Goal => "set or view the goal for a long-running task",
             SlashCommand::Agent | SlashCommand::MultiAgents => "switch the active agent thread",
-            SlashCommand::Side => "start a side conversation in an ephemeral fork",
+            SlashCommand::Side | SlashCommand::Btw => {
+                "start a side conversation in an ephemeral fork"
+            }
             SlashCommand::Permissions => "choose what Codex is allowed to do",
             SlashCommand::Keymap => "remap TUI shortcuts",
             SlashCommand::Vim => "toggle Vim mode for the composer",
@@ -165,6 +168,7 @@ impl SlashCommand {
                 | SlashCommand::Pets
                 | SlashCommand::Side
                 | SlashCommand::Loop
+                | SlashCommand::Btw
                 | SlashCommand::Resume
                 | SlashCommand::SandboxReadRoot
         )
@@ -231,7 +235,8 @@ impl SlashCommand {
             | SlashCommand::Quit
             | SlashCommand::Exit
             | SlashCommand::Side
-            | SlashCommand::Loop => true,
+            | SlashCommand::Loop
+            | SlashCommand::Btw => true,
             SlashCommand::Rollout => true,
             SlashCommand::TestApproval => true,
             SlashCommand::Realtime => true,

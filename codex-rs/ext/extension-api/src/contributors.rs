@@ -140,3 +140,29 @@ pub trait ToolLifecycleContributor: Send + Sync {
         Box::pin(std::future::ready(()))
     }
 }
+
+/// Extension contribution that can claim rendered approval-review prompts.
+#[async_trait::async_trait]
+pub trait ApprovalReviewContributor: Send + Sync {
+    async fn contribute(
+        &self,
+        session_store: &ExtensionData,
+        thread_store: &ExtensionData,
+        prompt: &str,
+    ) -> Option<ReviewDecision>;
+}
+
+/// Ordered post-processing contribution for one parsed turn item.
+///
+/// Implementations may mutate the item before it is emitted and may use the
+/// explicitly exposed thread- and turn-lifetime stores when they need durable
+/// extension-private state.
+#[async_trait::async_trait]
+pub trait TurnItemContributor: Send + Sync {
+    async fn contribute(
+        &self,
+        thread_store: &ExtensionData,
+        turn_store: &ExtensionData,
+        item: &mut TurnItem,
+    ) -> Result<(), String>;
+}

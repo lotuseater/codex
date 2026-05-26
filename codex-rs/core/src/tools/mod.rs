@@ -16,7 +16,6 @@ pub(crate) mod spec;
 pub(crate) mod spec_plan;
 pub(crate) mod spec_plan_types;
 pub(crate) mod tool_dispatch_trace;
-pub(crate) mod tool_family;
 pub(crate) mod tool_search_entry;
 
 use std::borrow::Cow;

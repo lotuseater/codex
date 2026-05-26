@@ -306,9 +306,10 @@ pub(crate) fn collect_tool_executors(
     {
         match &config.shell_type {
             ConfigShellToolType::UnifiedExec => {
-                executors.push(Arc::new(ShellCommandHandler::from(
-                    config.shell_command_backend,
-                )));
+                executors.push(override_tool_exposure(
+                    Arc::new(ShellCommandHandler::from(config.shell_command_backend)),
+                    ToolExposure::Hidden,
+                ));
             }
             ConfigShellToolType::Default
             | ConfigShellToolType::Local
@@ -456,16 +457,28 @@ pub(crate) fn collect_tool_executors(
 
     if let Some(mcp_tools) = params.mcp_tools {
         for tool in mcp_tools {
-            executors.push(Arc::new(McpHandler::new(tool.clone())));
+            match McpHandler::new(tool.clone()) {
+                Ok(handler) => executors.push(Arc::new(handler)),
+                Err(err) => warn!(
+                    "Skipping MCP tool `{}`: failed to build tool spec: {err}",
+                    tool.canonical_tool_name()
+                ),
+            }
         }
     }
 
     if let Some(deferred_mcp_tools) = params.deferred_mcp_tools {
         for tool in deferred_mcp_tools {
-            executors.push(Arc::new(McpHandler::with_exposure(
-                tool.clone(),
-                ToolExposure::Deferred,
-            )));
+            match McpHandler::new(tool.clone()) {
+                Ok(handler) => executors.push(override_tool_exposure(
+                    Arc::new(handler),
+                    ToolExposure::Deferred,
+                )),
+                Err(err) => warn!(
+                    "Skipping deferred MCP tool `{}`: failed to build tool spec: {err}",
+                    tool.canonical_tool_name()
+                ),
+            }
         }
     }
 

@@ -20,6 +20,7 @@ use crate::codex_delegate::run_codex_thread_one_shot;
 use crate::config::Constrained;
 use crate::review_format::format_review_findings_block;
 use crate::review_format::render_review_output_text;
+use crate::session::TurnInput;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use crate::state::TaskKind;
@@ -59,7 +60,7 @@ impl SessionTask for ReviewTask {
         self: Arc<Self>,
         session: Arc<SessionTaskContext>,
         ctx: Arc<TurnContext>,
-        input: Vec<UserInput>,
+        input: Vec<TurnInput>,
         cancellation_token: CancellationToken,
     ) -> Option<String> {
         session.session.services.session_telemetry.counter(
@@ -68,11 +69,13 @@ impl SessionTask for ReviewTask {
             &[],
         );
 
+        let user_input = collect_review_user_input(input);
+
         // Start sub-codex conversation and get the receiver for events.
         let output = match start_review_conversation(
             session.clone(),
             ctx.clone(),
-            input,
+            user_input,
             cancellation_token.clone(),
         )
         .await
@@ -89,6 +92,17 @@ impl SessionTask for ReviewTask {
     async fn abort(&self, session: Arc<SessionTaskContext>, ctx: Arc<TurnContext>) {
         exit_review_mode(session.clone_session(), /*review_output*/ None, ctx).await;
     }
+}
+
+fn collect_review_user_input(input: Vec<TurnInput>) -> Vec<UserInput> {
+    let mut user_input = Vec::new();
+    for item in input {
+        match item {
+            TurnInput::UserInput(mut content) => user_input.append(&mut content),
+            TurnInput::ResponseInputItem(_) => {}
+        }
+    }
+    user_input
 }
 
 async fn start_review_conversation(
@@ -295,9 +309,48 @@ fn normalize_review_template_line_endings(template: &str) -> Cow<'_, str> {
 
 #[cfg(test)]
 mod tests {
+    use super::collect_review_user_input;
     use super::normalize_review_template_line_endings;
     use super::render_review_exit_success;
+    use codex_protocol::models::ContentItem;
+    use codex_protocol::models::ResponseInputItem;
+    use codex_protocol::user_input::UserInput;
     use pretty_assertions::assert_eq;
+
+    use crate::session::TurnInput;
+
+    #[test]
+    fn collect_review_user_input_ignores_response_items_and_preserves_order() {
+        let first = UserInput::Text {
+            text: "review the staged changes".to_string(),
+            text_elements: Vec::new(),
+        };
+        let second = UserInput::Text {
+            text: "focus on correctness".to_string(),
+            text_elements: Vec::new(),
+        };
+
+        let user_input = collect_review_user_input(vec![
+            TurnInput::ResponseInputItem(ResponseInputItem::Message {
+                role: "assistant".to_string(),
+                content: vec![ContentItem::OutputText {
+                    text: "prior assistant context".to_string(),
+                }],
+                phase: None,
+            }),
+            TurnInput::UserInput(vec![first.clone()]),
+            TurnInput::ResponseInputItem(ResponseInputItem::Message {
+                role: "tool".to_string(),
+                content: vec![ContentItem::OutputText {
+                    text: "tool output".to_string(),
+                }],
+                phase: None,
+            }),
+            TurnInput::UserInput(vec![second.clone()]),
+        ]);
+
+        assert_eq!(user_input, vec![first, second]);
+    }
 
     #[test]
     fn render_review_exit_success_replaces_results_placeholder() {

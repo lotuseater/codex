@@ -85,6 +85,11 @@ impl ChatWidget {
         self.refresh_pending_input_preview();
     }
 
+    pub(crate) fn set_queue_submissions_until_session_configured(&mut self, queue: bool) {
+        self.bottom_pane
+            .set_queue_submissions(queue && !self.is_session_configured());
+    }
+
     pub(super) fn queue_user_message_with_options(
         &mut self,
         user_message: UserMessage,
@@ -188,7 +193,7 @@ impl ChatWidget {
             );
             return;
         }
-        self.set_collaboration_mask(collaboration_mode);
+        self.set_collaboration_mask_from_user_action(collaboration_mode);
         let should_queue = self.is_plan_streaming_in_tui();
         let user_message = UserMessage {
             text,

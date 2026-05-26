@@ -1507,32 +1507,6 @@ fn ask_for_approval_granular_is_marked_experimental() {
 }
 
 #[test]
-fn profile_v2_granular_approval_policy_is_marked_experimental() {
-    let reason = crate::experimental_api::ExperimentalApi::experimental_reason(&ProfileV2 {
-        model: None,
-        model_provider: None,
-        approval_policy: Some(AskForApproval::Granular {
-            sandbox_approval: true,
-            rules: false,
-            skill_approval: false,
-            request_permissions: true,
-            mcp_elicitations: false,
-        }),
-        approvals_reviewer: None,
-        service_tier: None,
-        model_reasoning_effort: None,
-        model_reasoning_summary: None,
-        model_verbosity: None,
-        web_search: None,
-        tools: None,
-        chatgpt_base_url: None,
-        additional: HashMap::new(),
-    });
-
-    assert_eq!(reason, Some("askForApproval.granular"));
-}
-
-#[test]
 fn config_granular_approval_policy_is_marked_experimental() {
     let reason = crate::experimental_api::ExperimentalApi::experimental_reason(&Config {
         model: None,
@@ -1554,8 +1528,6 @@ fn config_granular_approval_policy_is_marked_experimental() {
         forced_login_method: None,
         web_search: None,
         tools: None,
-        profile: None,
-        profiles: HashMap::new(),
         instructions: None,
         developer_instructions: None,
         compact_prompt: None,
@@ -1721,8 +1693,11 @@ fn config_requirements_granular_allowed_approval_policy_is_marked_experimental()
             }]),
             allowed_approvals_reviewers: None,
             allowed_sandbox_modes: None,
+            allowed_permissions: None,
             allowed_web_search_modes: None,
             allow_managed_hooks_only: None,
+            allow_appshots: None,
+            computer_use: None,
             feature_requirements: None,
             hooks: None,
             enforce_residency: None,
@@ -2509,6 +2484,7 @@ fn core_turn_item_into_thread_item_converts_supported_variants() {
         tool: "tool".to_string(),
         arguments: json!({"arg": "value"}),
         mcp_app_resource_uri: Some("app://connector".to_string()),
+        plugin_id: Some("sample@test".to_string()),
         status: CoreMcpToolCallStatus::InProgress,
         result: None,
         error: None,
@@ -2524,6 +2500,7 @@ fn core_turn_item_into_thread_item_converts_supported_variants() {
             status: McpToolCallStatus::InProgress,
             arguments: json!({"arg": "value"}),
             mcp_app_resource_uri: Some("app://connector".to_string()),
+            plugin_id: Some("sample@test".to_string()),
             result: None,
             error: None,
             duration_ms: None,
@@ -2536,6 +2513,7 @@ fn core_turn_item_into_thread_item_converts_supported_variants() {
         tool: "tool".to_string(),
         arguments: JsonValue::Null,
         mcp_app_resource_uri: None,
+        plugin_id: None,
         status: CoreMcpToolCallStatus::Completed,
         result: Some(CallToolResult {
             content: vec![json!({"type": "text", "text": "ok"})],
@@ -2556,6 +2534,7 @@ fn core_turn_item_into_thread_item_converts_supported_variants() {
             status: McpToolCallStatus::Completed,
             arguments: JsonValue::Null,
             mcp_app_resource_uri: None,
+            plugin_id: None,
             result: Some(Box::new(McpToolCallResult {
                 content: vec![json!({"type": "text", "text": "ok"})],
                 structured_content: Some(json!({"ok": true})),
@@ -3597,6 +3576,77 @@ fn turn_start_params_preserve_explicit_null_service_tier() {
     let serialized_without_override =
         serde_json::to_value(&without_override).expect("params should serialize");
     assert_eq!(serialized_without_override.get("serviceTier"), None);
+}
+
+#[test]
+fn thread_settings_update_params_preserve_explicit_null_service_tier() {
+    let params: ThreadSettingsUpdateParams = serde_json::from_value(json!({
+        "threadId": "thread_123",
+        "serviceTier": null
+    }))
+    .expect("params should deserialize");
+    assert_eq!(params.service_tier, Some(None));
+
+    let serialized = serde_json::to_value(&params).expect("params should serialize");
+    assert_eq!(
+        serialized.get("serviceTier"),
+        Some(&serde_json::Value::Null)
+    );
+
+    let without_override = ThreadSettingsUpdateParams {
+        thread_id: "thread_123".to_string(),
+        service_tier: None,
+        ..Default::default()
+    };
+    let serialized_without_override =
+        serde_json::to_value(&without_override).expect("params should serialize");
+    assert_eq!(serialized_without_override.get("serviceTier"), None);
+}
+
+#[test]
+fn thread_settings_update_params_preserve_field_level_experimental_gates() {
+    let permissions = ThreadSettingsUpdateParams {
+        thread_id: "thread_123".to_string(),
+        permissions: Some(":workspace".to_string()),
+        ..Default::default()
+    };
+    assert_eq!(
+        crate::experimental_api::ExperimentalApi::experimental_reason(&permissions),
+        Some("thread/settings/update.permissions")
+    );
+
+    let granular_approval = ThreadSettingsUpdateParams {
+        thread_id: "thread_123".to_string(),
+        approval_policy: Some(AskForApproval::Granular {
+            sandbox_approval: true,
+            rules: true,
+            skill_approval: false,
+            request_permissions: false,
+            mcp_elicitations: true,
+        }),
+        ..Default::default()
+    };
+    assert_eq!(
+        crate::experimental_api::ExperimentalApi::experimental_reason(&granular_approval),
+        Some("askForApproval.granular")
+    );
+
+    let collaboration_mode = ThreadSettingsUpdateParams {
+        thread_id: "thread_123".to_string(),
+        collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
+            mode: codex_protocol::config_types::ModeKind::Plan,
+            settings: codex_protocol::config_types::Settings {
+                model: "mock-model".to_string(),
+                reasoning_effort: None,
+                developer_instructions: None,
+            },
+        }),
+        ..Default::default()
+    };
+    assert_eq!(
+        crate::experimental_api::ExperimentalApi::experimental_reason(&collaboration_mode),
+        Some("thread/settings/update.collaborationMode")
+    );
 }
 
 #[test]

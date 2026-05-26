@@ -18,7 +18,10 @@ codex-tool-execution-api = { workspace = true }
 codex-tool-registry-api = { workspace = true }
 codex-tool-schema = { workspace = true }
 codex-utils-absolute-path = { workspace = true }
+codex-utils-output-truncation = { workspace = true }
 codex-utils-pty = { workspace = true }
+codex-utils-string = { workspace = true }
+jsonptr = { workspace = true }
 rmcp = { workspace = true, default-features = false, features = [
     "base64",
     "macros",
@@ -28,8 +31,10 @@ rmcp = { workspace = true, default-features = false, features = [
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tracing = { workspace = true }
+urlencoding = { workspace = true }
 
 [dev-dependencies]
+codex-utils-cargo-bin = { workspace = true }
 pretty_assertions = { workspace = true }
 
 [lib]

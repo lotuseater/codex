@@ -232,6 +232,7 @@ pub enum CompactionReason {
 #[serde(rename_all = "snake_case")]
 pub enum CompactionImplementation {
     Responses,
+    ResponsesCompactionV2,
     ResponsesCompact,
 }
 

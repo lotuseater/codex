@@ -1,6 +1,7 @@
 ---
 source: tui-render/src/history_cell/tests.rs
 assertion_line: 816
+source: tui/src/history_cell/tests.rs
 expression: rendered
 ---
 /mcp
@@ -9,5 +10,4 @@ expression: rendered
 
   • plugin_docs
     • Auth: Unsupported
-    • Command: docs-server --stdio
     • Tools: lookup
