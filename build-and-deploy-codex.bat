@@ -2,7 +2,7 @@
 setlocal
 
 set "SCRIPT_DIR=%~dp0"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%scripts\build-local-codex.ps1" -Mode FastRelease
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%scripts\build-local-codex.ps1" -Mode FastRelease %*
 set "EXIT_CODE=%ERRORLEVEL%"
 
 echo.
@@ -11,5 +11,5 @@ if not "%EXIT_CODE%"=="0" (
 ) else (
     echo build-and-deploy-codex completed successfully.
 )
-pause
+if /I not "%CODEX_BUILD_NO_PAUSE%"=="1" pause
 exit /b %EXIT_CODE%

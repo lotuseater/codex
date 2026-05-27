@@ -33,7 +33,10 @@ param(
 
     [switch]$UseSccache,
 
-    [switch]$ResetReleaseCacheOnProfileChange
+    [switch]$ResetReleaseCacheOnProfileChange,
+
+    [ValidateRange(0, 2147483647)]
+    [int]$TimeoutSeconds = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -224,6 +227,7 @@ function Get-RepoBuildProcesses {
     param([string]$Root)
 
     $codexRs = Join-Path $Root "codex-rs"
+    $buildToolNames = @("cargo.exe", "rustc.exe", "link.exe")
     $previousWhatIfPreference = $WhatIfPreference
     $WhatIfPreference = $false
     try {
@@ -236,8 +240,11 @@ function Get-RepoBuildProcesses {
 
     foreach ($process in $processes) {
         $commandLine = [string]$process.CommandLine
-        if ((Test-ContainsPathWithBoundary -Haystack $commandLine -Path $Root) -or
-            (Test-ContainsPathWithBoundary -Haystack $commandLine -Path $codexRs)) {
+        $isBuildTool = $buildToolNames -contains [string]$process.Name
+        $isCargoShell = ([string]$process.Name -eq "cmd.exe") -and ($commandLine -match '(^|[\s"\\])cargo(\.exe)?($|[\s"])')
+        $isRepoLocal = (Test-ContainsPathWithBoundary -Haystack $commandLine -Path $Root) -or
+            (Test-ContainsPathWithBoundary -Haystack $commandLine -Path $codexRs)
+        if (($isBuildTool -or $isCargoShell) -and $isRepoLocal) {
             $matching[[int]$process.ProcessId] = $true
             if ($process.ParentProcessId) {
                 $matching[[int]$process.ParentProcessId] = $true
@@ -440,7 +447,15 @@ function Invoke-ReleasePdbCleanup {
 
     $bytes = 0
     $removed = 0
-    foreach ($file in @(Get-ChildItem -LiteralPath $release -Recurse -Force -File -Filter "*.pdb" -ErrorAction SilentlyContinue)) {
+    try {
+        $pdbFiles = @(Get-ChildItem -LiteralPath $release -Recurse -Force -File -Filter "*.pdb" -ErrorAction Stop)
+    } catch [System.Management.Automation.ItemNotFoundException] {
+        return [ordered]@{ removed = 0; reclaimed_mb = 0 }
+    } catch [System.IO.DirectoryNotFoundException] {
+        return [ordered]@{ removed = 0; reclaimed_mb = 0 }
+    }
+
+    foreach ($file in $pdbFiles) {
         try {
             $bytes += $file.Length
             Remove-Item -LiteralPath $file.FullName -Force -ErrorAction Stop
@@ -1249,14 +1264,65 @@ function Ensure-ReleaseOnlyRustcWrapper {
     }
 }
 
+function Invoke-CmdWithOptionalTimeout {
+    param(
+        [string]$CommandLine,
+        [ValidateRange(0, 2147483647)]
+        [int]$TimeoutSeconds,
+        [string]$LogPath,
+        [string]$Root
+    )
+
+    if ($TimeoutSeconds -le 0) {
+        & cmd.exe /d /s /c $CommandLine
+        return $LASTEXITCODE
+    }
+
+    $timeoutMs = [Math]::Min([int64]$TimeoutSeconds * 1000L, [int]::MaxValue)
+    $cmdExe = if ($env:ComSpec) { $env:ComSpec } else { "cmd.exe" }
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $cmdExe
+    $startInfo.Arguments = "/d /s /c $CommandLine"
+    $startInfo.WorkingDirectory = (Get-Location).ProviderPath
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+
+    $process = [System.Diagnostics.Process]::Start($startInfo)
+    try {
+        if ($process.WaitForExit([int]$timeoutMs)) {
+            return $process.ExitCode
+        }
+
+        Write-Warning "Build command exceeded TimeoutSeconds=$TimeoutSeconds; stopping process tree rooted at PID $($process.Id)."
+        Write-BuildLogEvent -Path $LogPath -Phase "cargo-timeout" -Payload ([ordered]@{
+                timeout_seconds = $TimeoutSeconds
+                command = $CommandLine
+                process_id = $process.Id
+                memory = Get-PageFileSnapshot
+                active_build_processes = @(Get-RepoBuildProcesses -Root $Root)
+            })
+
+        & taskkill.exe /PID $process.Id /T /F *> $null
+        $process.WaitForExit(10000) | Out-Null
+        return 124
+    }
+    finally {
+        if ($process) {
+            $process.Dispose()
+        }
+    }
+}
+
 function Invoke-CodexBuild {
     param(
         [string]$Root,
         [string[]]$CargoArgs,
         [System.Collections.IDictionary]$EnvOverrides,
-        [string]$LogPath
+        [string]$LogPath,
+        [int]$TimeoutSeconds = 0
     )
 
+    $oldPath = $env:Path
     $cargoBin = Join-Path $HOME ".cargo\bin"
     if ((Test-Path -LiteralPath $cargoBin) -and -not $env:Path.Contains($cargoBin)) {
         $env:Path = "$cargoBin;$env:Path"
@@ -1287,8 +1353,7 @@ function Invoke-CodexBuild {
                     linker = $link.Source
                 })
             $cmdLine = "$cargoLine >> `"$LogPath`" 2>&1"
-            & cmd.exe /d /s /c $cmdLine
-            $exitCode = $LASTEXITCODE
+            $exitCode = Invoke-CmdWithOptionalTimeout -CommandLine $cmdLine -TimeoutSeconds $TimeoutSeconds -LogPath $LogPath -Root $Root
             Write-BuildLogEvent -Path $LogPath -Phase "cargo-exit" -Payload ([ordered]@{
                     exit_code = $exitCode
                     memory = Get-PageFileSnapshot
@@ -1308,8 +1373,7 @@ function Invoke-CodexBuild {
                 vs_dev_cmd = $vsDevCmd
             })
         $cmdLine = "call `"$vsDevCmd`" -arch=x64 -host_arch=x64 >nul && $cargoLine >> `"$LogPath`" 2>&1"
-        & cmd.exe /d /s /c $cmdLine
-        $exitCode = $LASTEXITCODE
+        $exitCode = Invoke-CmdWithOptionalTimeout -CommandLine $cmdLine -TimeoutSeconds $TimeoutSeconds -LogPath $LogPath -Root $Root
         Write-BuildLogEvent -Path $LogPath -Phase "cargo-exit" -Payload ([ordered]@{
                 exit_code = $exitCode
                 memory = Get-PageFileSnapshot
@@ -1326,6 +1390,7 @@ function Invoke-CodexBuild {
         foreach ($key in $EnvOverrides.Keys) {
             [Environment]::SetEnvironmentVariable($key, $previousEnv[$key], "Process")
         }
+        $env:Path = $oldPath
     }
 }
 
@@ -1621,7 +1686,6 @@ $buildStartedAt = Get-Date
 $localBuildStamp = $buildStartedAt.ToString("yyyy-MM-ddTHH:mm:sszzz")
 $plan.env_overrides["CODEX_LOCAL_BUILD_STAMP"] = $localBuildStamp
 $logPath = Assert-UnderRoot -Path (Join-Path $RepoRoot "logs\local-codex-build-$($Mode.ToLowerInvariant())-$stamp.log") -Root $RepoRoot -Label "build log"
-Ensure-ReleaseOnlyRustcWrapper -Root $RepoRoot
 if ([System.IO.Path]::DirectorySeparatorChar -eq "\") {
     $plan.env_overrides["CARGO_BUILD_RUSTC_WRAPPER"] = Join-Path $RepoRoot "scripts\cargo-release-only-rustc-wrapper.exe"
 }
@@ -1640,6 +1704,23 @@ if ($UseSccache) {
         $plan.env_overrides["SCCACHE_CACHE_SIZE"] = "2G"
     }
 }
+
+$buildRan = $false
+if (-not $PSCmdlet.ShouldProcess($RepoRoot, "run $($plan.description)")) {
+    [ordered]@{
+        status = "planned"
+        mode = $Mode
+        cargo_args = $plan.cargo_args
+        env_overrides = $plan.env_overrides
+        timeout_seconds = $TimeoutSeconds
+        log_path = $logPath
+        release_binary = $releaseBinary
+        deploy_skipped = [bool]$SkipDeploy
+    } | ConvertTo-Json -Depth 8
+    return
+}
+
+Ensure-ReleaseOnlyRustcWrapper -Root $RepoRoot
 
 $profileState = Get-ReleaseProfileState -RepoRoot $RepoRoot
 if ($profileState["stamp_exists"] -and -not $profileState["matches"]) {
@@ -1666,31 +1747,16 @@ if ($envPath) {
     Test-WrapperEnvSanity -WrapperEnvPath $envPath
 }
 
-$buildRan = $false
-if ($PSCmdlet.ShouldProcess($RepoRoot, "run $($plan.description)")) {
-    $exitCode = Invoke-CodexBuild -Root $RepoRoot -CargoArgs $plan.cargo_args -EnvOverrides $plan.env_overrides -LogPath $logPath
-    $buildRan = $true
-    if ($exitCode -ne 0) {
-        Show-FailureLines -Path $logPath
-        throw "cargo build failed with exit code $exitCode. Log: $logPath"
-    }
-    # Post-build housekeeping: free release/incremental (unused by the shared
-    # release deploy lane) so the next build starts with maximum headroom.
-    Invoke-PostBuildDiskCleanup -RepoRoot $RepoRoot -BuildMode $Mode
-    Write-ReleaseProfileStamp -RepoRoot $RepoRoot -ModeName $Mode -CargoArgs $plan.cargo_args | Out-Null
+$exitCode = Invoke-CodexBuild -Root $RepoRoot -CargoArgs $plan.cargo_args -EnvOverrides $plan.env_overrides -LogPath $logPath -TimeoutSeconds $TimeoutSeconds
+$buildRan = $true
+if ($exitCode -ne 0) {
+    Show-FailureLines -Path $logPath
+    throw "cargo build failed with exit code $exitCode. Log: $logPath"
 }
-else {
-    [ordered]@{
-        status = "planned"
-        mode = $Mode
-        cargo_args = $plan.cargo_args
-        env_overrides = $plan.env_overrides
-        log_path = $logPath
-        release_binary = $releaseBinary
-        deploy_skipped = [bool]$SkipDeploy
-    } | ConvertTo-Json -Depth 8
-    return
-}
+# Post-build housekeeping: free release/incremental (unused by the shared
+# release deploy lane) so the next build starts with maximum headroom.
+Invoke-PostBuildDiskCleanup -RepoRoot $RepoRoot -BuildMode $Mode
+Write-ReleaseProfileStamp -RepoRoot $RepoRoot -ModeName $Mode -CargoArgs $plan.cargo_args | Out-Null
 
 if ($buildRan -and -not (Test-Path -LiteralPath $releaseBinary)) {
     throw "Build did not produce $releaseBinary"
