@@ -2018,8 +2018,13 @@ fn custom_mcp_tool_approval_config_builder(
 }
 
 fn config_edits_builder_for_config(config: &Config) -> ConfigEditsBuilder {
-    ConfigEditsBuilder::new(config.codex_home.as_path())
-        .with_profile(config.active_profile.as_deref())
+    ConfigEditsBuilder::new(config.codex_home.as_path()).with_profile(
+        config
+            .permissions
+            .active_permission_profile()
+            .as_ref()
+            .map(|profile| profile.id.as_str()),
+    )
 }
 
 async fn persist_custom_mcp_tool_approval_with(

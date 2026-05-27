@@ -84,7 +84,7 @@ impl ResolvedPermissionProfile {
             return Self::legacy(permission_profile);
         };
 
-        let ActivePermissionProfile { id, extends } = active_permission_profile;
+        let ActivePermissionProfile { id, extends, .. } = active_permission_profile;
         if let Some(built_in_id) = BuiltInPermissionProfileId::from_str(&id) {
             Self::BuiltIn(BuiltInPermissionProfile {
                 id: built_in_id,
@@ -120,10 +120,12 @@ impl ResolvedPermissionProfile {
             Self::BuiltIn(profile) => Some(ActivePermissionProfile {
                 id: profile.id.as_str().to_string(),
                 extends: profile.extends.clone(),
+                modifications: Vec::new(),
             }),
             Self::Named(profile) => Some(ActivePermissionProfile {
                 id: profile.id.clone(),
                 extends: profile.extends.clone(),
+                modifications: Vec::new(),
             }),
         }
     }

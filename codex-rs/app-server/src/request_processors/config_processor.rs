@@ -10,6 +10,7 @@ use crate::outgoing_message::OutgoingMessageSender;
 use codex_analytics::AnalyticsEventsClient;
 use codex_app_server_protocol::AppListUpdatedNotification;
 use codex_app_server_protocol::ClientResponsePayload;
+use codex_app_server_protocol::ComputerUseRequirements;
 use codex_app_server_protocol::ConfigBatchWriteParams;
 use codex_app_server_protocol::ConfigReadParams;
 use codex_app_server_protocol::ConfigReadResponse;
@@ -445,6 +446,14 @@ fn map_requirements_toml_to_api(requirements: ConfigRequirementsToml) -> ConfigR
             .enforce_residency
             .map(map_residency_requirement_to_api),
         network: requirements.network.map(map_network_requirements_to_api),
+    }
+}
+
+fn map_computer_use_requirements_to_api(
+    computer_use: codex_config::ComputerUseRequirementsToml,
+) -> ComputerUseRequirements {
+    ComputerUseRequirements {
+        allow_locked_computer_use: computer_use.allow_locked_computer_use,
     }
 }
 

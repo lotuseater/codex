@@ -13,8 +13,8 @@ impl ToolExecutor<ToolInvocation> for Handler {
         ToolName::namespaced(MULTI_AGENT_V1_NAMESPACE, "send_input")
     }
 
-    fn spec(&self) -> ToolSpec {
-        create_send_input_tool_v1()
+    fn spec(&self) -> Option<ToolSpec> {
+        Some(create_send_input_tool_v1())
     }
 
     async fn handle(

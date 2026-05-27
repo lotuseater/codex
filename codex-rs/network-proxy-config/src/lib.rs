@@ -99,6 +99,46 @@ pub struct NetworkProxyConfig {
     pub network: NetworkProxySettings,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(default)]
+pub struct MitmHookConfig {
+    pub host: String,
+    #[serde(rename = "match", default)]
+    pub matcher: MitmHookMatchConfig,
+    #[serde(default)]
+    pub actions: MitmHookActionsConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(default)]
+pub struct MitmHookMatchConfig {
+    pub methods: Vec<String>,
+    pub path_prefixes: Vec<String>,
+    pub query: BTreeMap<String, Vec<String>>,
+    pub headers: BTreeMap<String, Vec<String>>,
+    pub body: Option<MitmHookBodyConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(default)]
+pub struct MitmHookActionsConfig {
+    pub strip_request_headers: Vec<String>,
+    pub inject_request_headers: Vec<InjectedHeaderConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(default)]
+pub struct InjectedHeaderConfig {
+    pub name: String,
+    pub secret_env_var: Option<String>,
+    pub secret_file: Option<String>,
+    pub prefix: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(transparent)]
+pub struct MitmHookBodyConfig(pub serde_json::Value);
+
 /// Variant order encodes effective precedence for duplicate patterns:
 /// `None < Allow < Deny`, so deny wins over allow when entries conflict.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -219,6 +259,8 @@ pub struct NetworkProxySettings {
     pub allow_local_binding: bool,
     #[serde(default)]
     pub mitm: bool,
+    #[serde(default)]
+    pub mitm_hooks: Vec<MitmHookConfig>,
 }
 
 impl Default for NetworkProxySettings {
@@ -237,6 +279,7 @@ impl Default for NetworkProxySettings {
             unix_sockets: None,
             allow_local_binding: false,
             mitm: false,
+            mitm_hooks: Vec::new(),
         }
     }
 }
@@ -677,6 +720,7 @@ mod tests {
                 unix_sockets: None,
                 allow_local_binding: false,
                 mitm: false,
+                mitm_hooks: Vec::new(),
             }
         );
     }
@@ -741,6 +785,7 @@ mod tests {
                     "unix_sockets": null,
                     "allow_local_binding": false,
                     "mitm": false,
+                    "mitm_hooks": [],
                 }
             })
         );

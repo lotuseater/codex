@@ -209,7 +209,6 @@ fn extensible_builtin_parent_profile_marker(profile_name: &str) -> Option<Permis
     )
     .then_some(PermissionProfileToml {
         description: None,
-        extends: None,
         workspace_roots: None,
         filesystem: None,
         network: None,

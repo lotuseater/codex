@@ -31,15 +31,15 @@ use codex_thread_store_api::ArchiveThreadParams;
 use codex_thread_store_api::CreateThreadParams;
 use codex_thread_store_api::ListThreadsParams;
 use codex_thread_store_api::ReadThreadParams;
+use codex_thread_store_api::SearchThreadsParams;
 use codex_thread_store_api::StoredThread;
 use codex_thread_store_api::StoredThreadHistory;
 use codex_thread_store_api::ThreadPage;
+use codex_thread_store_api::ThreadSearchPage;
 use codex_thread_store_api::ThreadStore;
 use codex_thread_store_api::ThreadStoreError;
 use codex_thread_store_api::ThreadStoreResult;
 use codex_thread_store_api::UpdateThreadMetadataParams;
-use codex_thread_store_api::SearchThreadsParams;
-use codex_thread_store_api::ThreadSearchPage;
 
 /// Local filesystem/SQLite-backed implementation of [`ThreadStore`].
 ///

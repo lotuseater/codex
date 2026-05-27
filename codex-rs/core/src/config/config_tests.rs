@@ -1140,7 +1140,6 @@ async fn permissions_profiles_proxy_policy_does_not_start_managed_network_proxy_
                     "dev".to_string(),
                     PermissionProfileToml {
                         description: None,
-                        extends: None,
                         workspace_roots: None,
                         filesystem: Some(FilesystemPermissionsToml {
                             glob_scan_max_depth: None,
@@ -1813,6 +1812,7 @@ async fn default_permissions_extended_profile_preserves_parent_metadata() -> std
         Some(ActivePermissionProfile {
             id: "dev".to_string(),
             extends: Some("base".to_string()),
+            modifications: Vec::new(),
         })
     );
     Ok(())
@@ -2463,6 +2463,7 @@ async fn default_permissions_profile_can_extend_builtin_workspace() -> std::io::
         Some(ActivePermissionProfile {
             id: "workspace-with-network".to_string(),
             extends: Some(BUILT_IN_PERMISSION_PROFILE_WORKSPACE.to_string()),
+            modifications: Vec::new(),
         })
     );
     Ok(())
@@ -2519,6 +2520,7 @@ async fn default_permissions_profile_can_extend_builtin_read_only() -> std::io::
         Some(ActivePermissionProfile {
             id: "read-only-with-network".to_string(),
             extends: Some(BUILT_IN_PERMISSION_PROFILE_READ_ONLY.to_string()),
+            modifications: Vec::new(),
         })
     );
     Ok(())
@@ -10168,13 +10170,9 @@ async fn smart_approvals_alias_is_ignored_in_profiles() -> std::io::Result<()> {
     let config_toml = r#"[profiles.guardian.features]
 smart_approvals = true
 "#;
-    std::fs::write(
-        codex_home.path().join(CONFIG_TOML_FILE),
-        config_toml,
-    )?;
+    std::fs::write(codex_home.path().join(CONFIG_TOML_FILE), config_toml)?;
 
-    let cfg: ConfigToml =
-        toml::from_str(config_toml).expect("TOML deserialization should succeed");
+    let cfg: ConfigToml = toml::from_str(config_toml).expect("TOML deserialization should succeed");
     let config = Config::load_from_base_config_with_overrides(
         cfg,
         ConfigOverrides {

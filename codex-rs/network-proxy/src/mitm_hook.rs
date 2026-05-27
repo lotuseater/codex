@@ -1,5 +1,6 @@
 #![cfg_attr(not(test), allow(dead_code))]
 
+use crate::config::InjectedHeaderConfig;
 use crate::config::NetworkProxyConfig;
 use crate::policy::normalize_host;
 use anyhow::Context as _;
@@ -11,56 +12,23 @@ use globset::GlobMatcher;
 use rama_http::HeaderValue;
 use rama_http::Request;
 use rama_http::header::HeaderName;
-use serde::Deserialize;
-use serde::Serialize;
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::path::Path;
 use url::form_urlencoded;
 
+#[cfg(test)]
+use crate::config::MitmHookActionsConfig;
+#[cfg(test)]
+use crate::config::MitmHookBodyConfig;
+#[cfg(test)]
+use crate::config::MitmHookConfig;
+#[cfg(test)]
+use crate::config::MitmHookMatchConfig;
+
 const PATTERN_PREFIX: &str = "pattern:";
 const LITERAL_PREFIX: &str = "literal:";
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
-#[serde(default)]
-pub struct MitmHookConfig {
-    pub host: String,
-    #[serde(rename = "match", default)]
-    pub matcher: MitmHookMatchConfig,
-    #[serde(default)]
-    pub actions: MitmHookActionsConfig,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
-#[serde(default)]
-pub struct MitmHookMatchConfig {
-    pub methods: Vec<String>,
-    pub path_prefixes: Vec<String>,
-    pub query: BTreeMap<String, Vec<String>>,
-    pub headers: BTreeMap<String, Vec<String>>,
-    pub body: Option<MitmHookBodyConfig>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
-#[serde(default)]
-pub struct MitmHookActionsConfig {
-    pub strip_request_headers: Vec<String>,
-    pub inject_request_headers: Vec<InjectedHeaderConfig>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
-#[serde(default)]
-pub struct InjectedHeaderConfig {
-    pub name: String,
-    pub secret_env_var: Option<String>,
-    pub secret_file: Option<String>,
-    pub prefix: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(transparent)]
-pub struct MitmHookBodyConfig(pub serde_json::Value);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MitmHook {

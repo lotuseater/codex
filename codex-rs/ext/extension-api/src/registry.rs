@@ -179,11 +179,8 @@ impl<C: Sync> ExtensionRegistry<C> {
         prompt: &str,
     ) -> Option<ReviewDecision> {
         for contributor in &self.approval_review_contributors {
-            if let Some(decision) = contributor
-                .contribute(session_store, thread_store, prompt)
-                .await
-            {
-                return Some(decision);
+            if let Some(decision) = contributor.contribute(session_store, thread_store, prompt) {
+                return Some(decision.await);
             }
         }
 

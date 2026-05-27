@@ -1,7 +1,8 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::function_tool::FunctionCallError;
+use codex_tool_execution_api::FunctionCallError;
+
 use crate::mcp_tool_call::handle_mcp_tool_call;
 use crate::original_image_detail::can_request_original_image_detail;
 use crate::tools::context::McpToolOutput;
@@ -17,16 +18,16 @@ use crate::tools::registry::ToolExecutor;
 use crate::tools::registry::ToolTelemetryTags;
 use crate::tools::tool_search_entry::ToolSearchInfo;
 use codex_mcp::ToolInfo;
+use codex_tool_registry_api::ToolSearchSourceInfo;
 use codex_tools::ResponsesApiNamespace;
 use codex_tools::ResponsesApiNamespaceTool;
 use codex_tools::ToolName;
-use codex_tools::ToolSearchSourceInfo;
 use codex_tools::ToolSpec;
 use codex_tools::mcp_tool_to_responses_api_tool;
-#[cfg(test)]
-use serde_json::json;
 use serde_json::Map;
 use serde_json::Value;
+#[cfg(test)]
+use serde_json::json;
 
 pub struct McpHandler {
     tool_info: ToolInfo,
@@ -40,14 +41,15 @@ impl McpHandler {
     }
 }
 
-#[async_trait::async_trait]
 impl ToolExecutor<ToolInvocation> for McpHandler {
+    type Output = Box<dyn crate::tools::context::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         self.tool_info.canonical_tool_name()
     }
 
-    fn spec(&self) -> ToolSpec {
-        self.spec.clone()
+    fn spec(&self) -> Option<ToolSpec> {
+        Some(self.spec.clone())
     }
 
     fn supports_parallel_tool_calls(&self) -> bool {
@@ -128,7 +130,7 @@ impl CoreToolRuntime for McpHandler {
 
         ToolSearchInfo::from_spec(
             build_mcp_search_text(&self.tool_info),
-            self.spec(),
+            self.spec.clone(),
             source_info,
         )
     }
@@ -321,10 +323,7 @@ mod tests {
                 cancellation_token: tokio_util::sync::CancellationToken::new(),
                 tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
                 call_id: "call-mcp-pre".to_string(),
-                tool_name: codex_tools::ToolName::namespaced(
-                    "mcp__memory__",
-                    "create_entities"
-                ),
+                tool_name: codex_tools::ToolName::namespaced("mcp__memory__", "create_entities"),
                 source: ToolCallSource::Direct,
                 payload,
             }),
@@ -356,10 +355,7 @@ mod tests {
                 cancellation_token: tokio_util::sync::CancellationToken::new(),
                 tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
                 call_id: "call-mcp-pre-builtin-like".to_string(),
-                tool_name: codex_tools::ToolName::namespaced(
-                    "mcp__foo__",
-                    "exec_command"
-                ),
+                tool_name: codex_tools::ToolName::namespaced("mcp__foo__", "exec_command"),
                 source: ToolCallSource::Direct,
                 payload,
             }),
@@ -387,10 +383,7 @@ mod tests {
                     cancellation_token: tokio_util::sync::CancellationToken::new(),
                     tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
                     call_id: "call-mcp-rewrite-builtin-like".to_string(),
-                    tool_name: codex_tools::ToolName::namespaced(
-                        "mcp__foo__",
-                        "exec_command",
-                    ),
+                    tool_name: codex_tools::ToolName::namespaced("mcp__foo__", "exec_command"),
                     source: ToolCallSource::Direct,
                     payload,
                 },
@@ -437,10 +430,7 @@ mod tests {
             cancellation_token: tokio_util::sync::CancellationToken::new(),
             tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
             call_id: "call-mcp-post".to_string(),
-            tool_name: codex_tools::ToolName::namespaced(
-                "mcp__filesystem__",
-                "read_file",
-            ),
+            tool_name: codex_tools::ToolName::namespaced("mcp__filesystem__", "read_file"),
             source: ToolCallSource::Direct,
             payload,
         };

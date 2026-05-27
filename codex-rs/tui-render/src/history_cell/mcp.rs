@@ -550,9 +550,8 @@ fn qualified_mcp_tool_name_prefix(server: &str) -> String {
 
 /// Build the `/mcp` history cell from server `McpServerStatus` responses.
 ///
-/// The server list comes directly from the app-server status response, sorted
-/// alphabetically. The TUI deliberately does not enrich these rows from
-/// client-local config because the app-server owns the remote MCP state.
+/// The server list merges the app-server status response with the effective
+/// display config so configured servers without tools are still visible.
 ///
 /// This mirrors the layout of [`new_mcp_tools_output`] but sources data from
 /// the paginated RPC response rather than the in-process `McpManager`. The
@@ -578,6 +577,15 @@ pub fn new_mcp_tools_output_from_statuses(
         lines.push("".into());
     }
 
+    let statuses_by_name: HashMap<&str, &McpServerStatus> = statuses
+        .iter()
+        .map(|status| (status.name.as_str(), *status))
+        .collect();
+    let mut server_names: Vec<String> = effective_servers.keys().cloned().collect();
+    server_names.extend(statuses.iter().map(|status| status.name.clone()));
+    server_names.sort();
+    server_names.dedup();
+
     for server in server_names {
         let cfg = effective_servers.get(server.as_str());
         let status = statuses_by_name.get(server.as_str()).copied();
@@ -599,16 +607,6 @@ pub fn new_mcp_tools_output_from_statuses(
         let auth_status = status
             .map(|status| status.auth_status)
             .unwrap_or(McpAuthStatus::Unsupported);
-    for status in statuses {
-        let header: Vec<Span<'static>> = vec!["  • ".into(), status.name.clone().into()];
-
-        lines.push(header.into());
-        let auth_status = match status.auth_status {
-            codex_app_server_protocol::McpAuthStatus::Unsupported => McpAuthStatus::Unsupported,
-            codex_app_server_protocol::McpAuthStatus::NotLoggedIn => McpAuthStatus::NotLoggedIn,
-            codex_app_server_protocol::McpAuthStatus::BearerToken => McpAuthStatus::BearerToken,
-            codex_app_server_protocol::McpAuthStatus::OAuth => McpAuthStatus::OAuth,
-        };
         lines.push(
             vec![
                 "    • Auth: ".into(),
@@ -682,7 +680,6 @@ pub fn new_mcp_tools_output_from_statuses(
         let mut names = status
             .map(|status| status.tools.keys().cloned().collect::<Vec<_>>())
             .unwrap_or_default();
-        let mut names = status.tools.keys().cloned().collect::<Vec<_>>();
         names.sort();
         if names.is_empty() {
             lines.push("    • Tools: (none)".into());
@@ -691,7 +688,9 @@ pub fn new_mcp_tools_output_from_statuses(
         }
 
         if matches!(detail, McpServerStatusDetail::Full) {
-            let server_resources = status.resources.clone();
+            let server_resources = status
+                .map(|status| status.resources.clone())
+                .unwrap_or_default();
             if server_resources.is_empty() {
                 lines.push("    • Resources: (none)".into());
             } else {
@@ -711,7 +710,9 @@ pub fn new_mcp_tools_output_from_statuses(
                 lines.push(spans.into());
             }
 
-            let server_templates = status.resource_templates.clone();
+            let server_templates = status
+                .map(|status| status.resource_templates.clone())
+                .unwrap_or_default();
             if server_templates.is_empty() {
                 lines.push("    • Resource templates: (none)".into());
             } else {

@@ -139,4 +139,3 @@ pub struct TerminalInteractionEvent {
     /// Stdin sent to the running session.
     pub stdin: String,
 }
-

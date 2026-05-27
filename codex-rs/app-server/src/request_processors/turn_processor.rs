@@ -1,4 +1,5 @@
 use super::*;
+use codex_core::CodexThreadSettingsOverrides;
 
 #[derive(Clone)]
 pub(crate) struct TurnRequestProcessor {
@@ -600,6 +601,7 @@ impl TurnRequestProcessor {
                     effort,
                     summary,
                     service_tier: service_tier.clone(),
+                    context_budget_mode: None,
                     collaboration_mode: collaboration_mode.clone(),
                     personality,
                 })

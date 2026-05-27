@@ -1114,14 +1114,14 @@ mod tests {
     async fn http_connect_accept_blocks_hooked_host_in_full_mode_without_mitm_state() {
         let mut policy = NetworkProxySettings {
             mitm: true,
-            mitm_hooks: vec![crate::mitm_hook::MitmHookConfig {
+            mitm_hooks: vec![crate::config::MitmHookConfig {
                 host: "api.github.com".to_string(),
-                matcher: crate::mitm_hook::MitmHookMatchConfig {
+                matcher: crate::config::MitmHookMatchConfig {
                     methods: vec!["POST".to_string()],
                     path_prefixes: vec!["/repos/openai/".to_string()],
-                    ..crate::mitm_hook::MitmHookMatchConfig::default()
+                    ..crate::config::MitmHookMatchConfig::default()
                 },
-                actions: crate::mitm_hook::MitmHookActionsConfig::default(),
+                actions: crate::config::MitmHookActionsConfig::default(),
             }],
             ..Default::default()
         };

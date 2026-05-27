@@ -1,10 +1,10 @@
+use crate::config::MitmHookConfig;
 use crate::config::NetworkDomainPermissions;
 use crate::config::NetworkMode;
 use crate::config::NetworkProxyConfig;
 use crate::config::NetworkUnixSocketPermissions;
 use crate::mitm::MitmState;
 use crate::mitm::MitmUpstreamConfig;
-use crate::mitm_hook::MitmHookConfig;
 use crate::mitm_hook::compile_mitm_hooks;
 use crate::mitm_hook::validate_mitm_hook_config;
 use crate::policy::DomainPattern;

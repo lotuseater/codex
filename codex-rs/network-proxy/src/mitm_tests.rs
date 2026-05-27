@@ -16,17 +16,17 @@ use rama_http::StatusCode;
 use rama_http::header::HeaderName;
 use tempfile::NamedTempFile;
 
-fn github_write_hook() -> crate::mitm_hook::MitmHookConfig {
-    crate::mitm_hook::MitmHookConfig {
+fn github_write_hook() -> crate::config::MitmHookConfig {
+    crate::config::MitmHookConfig {
         host: "api.github.com".to_string(),
-        matcher: crate::mitm_hook::MitmHookMatchConfig {
+        matcher: crate::config::MitmHookMatchConfig {
             methods: vec!["POST".to_string(), "PUT".to_string()],
             path_prefixes: vec!["/repos/openai/".to_string()],
-            ..crate::mitm_hook::MitmHookMatchConfig::default()
+            ..crate::config::MitmHookMatchConfig::default()
         },
-        actions: crate::mitm_hook::MitmHookActionsConfig {
+        actions: crate::config::MitmHookActionsConfig {
             strip_request_headers: vec!["authorization".to_string()],
-            inject_request_headers: vec![crate::mitm_hook::InjectedHeaderConfig {
+            inject_request_headers: vec![crate::config::InjectedHeaderConfig {
                 name: "authorization".to_string(),
                 secret_env_var: Some("CODEX_GITHUB_TOKEN".to_string()),
                 secret_file: None,

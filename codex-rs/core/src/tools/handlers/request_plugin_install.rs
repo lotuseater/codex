@@ -1,14 +1,11 @@
 use std::collections::HashSet;
 
-use codex_app_server_protocol::AppInfo;
+use codex_app_catalog_types::AppInfo;
 use codex_config::types::ToolSuggestDisabledTool;
 use codex_mcp::CODEX_APPS_MCP_SERVER_NAME;
-use codex_mcp_elicitation_api::McpElicitationObjectType;
-use codex_mcp_elicitation_api::McpElicitationSchema;
-use codex_mcp_elicitation_api::McpServerElicitationRequest;
-use codex_mcp_elicitation_api::McpServerElicitationRequestParams;
 use codex_rmcp_client::ElicitationAction;
 use codex_rmcp_client::ElicitationResponse;
+use codex_tool_execution_api::FunctionCallError;
 use codex_tools::DiscoverableTool;
 use codex_tools::DiscoverableToolAction;
 use codex_tools::DiscoverableToolType;
@@ -21,19 +18,17 @@ use codex_tools::RequestPluginInstallResult;
 use codex_tools::ToolName;
 use codex_tools::ToolSpec;
 use codex_tools::all_requested_connectors_picked_up;
-use codex_tools::build_request_plugin_install_meta;
+use codex_tools::build_request_plugin_install_elicitation_request;
 use codex_tools::collect_request_plugin_install_entries;
 use codex_tools::filter_request_plugin_install_discoverable_tools_for_client;
 use codex_tools::verified_connector_install_completed;
 use rmcp::model::RequestId;
 use serde_json::Value;
-use serde_json::json;
 use tracing::warn;
 
 use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
 use crate::connectors;
-use crate::function_tool::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
@@ -48,38 +43,6 @@ pub struct RequestPluginInstallHandler {
     tool_search_available: bool,
 }
 
-fn build_request_plugin_install_elicitation_request(
-    server_name: &str,
-    thread_id: String,
-    turn_id: String,
-    args: &RequestPluginInstallArgs,
-    suggest_reason: &str,
-    tool: &DiscoverableTool,
-) -> McpServerElicitationRequestParams {
-    let message = suggest_reason.to_string();
-
-    McpServerElicitationRequestParams {
-        thread_id,
-        turn_id: Some(turn_id),
-        server_name: server_name.to_string(),
-        request: McpServerElicitationRequest::Form {
-            meta: Some(json!(build_request_plugin_install_meta(
-                args.tool_type,
-                args.action_type,
-                suggest_reason,
-                tool,
-            ))),
-            message,
-            requested_schema: McpElicitationSchema {
-                schema_uri: None,
-                type_: McpElicitationObjectType::Object,
-                properties: Default::default(),
-                required: None,
-            },
-        },
-    }
-}
-
 impl RequestPluginInstallHandler {
     pub fn new(discoverable_tools: Vec<DiscoverableTool>, tool_search_available: bool) -> Self {
         Self {
@@ -91,17 +54,15 @@ impl RequestPluginInstallHandler {
     }
 }
 
-#[async_trait::async_trait]
 impl ToolExecutor<ToolInvocation> for RequestPluginInstallHandler {
+    type Output = Box<dyn crate::tools::context::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         ToolName::plain(REQUEST_PLUGIN_INSTALL_TOOL_NAME)
     }
 
-    fn spec(&self) -> ToolSpec {
-        create_request_plugin_install_tool(
-            &self.request_plugin_install_entries,
-            self.tool_search_available,
-        )
+    fn spec(&self) -> Option<ToolSpec> {
+        Some(create_request_plugin_install_tool())
     }
 
     fn supports_parallel_tool_calls(&self) -> bool {

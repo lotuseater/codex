@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
 use codex_extension_api::ExtensionToolExecutor;
-use codex_tools::ConversationHistory;
-use codex_tools::ToolCall as ExtensionToolCall;
+use codex_extension_api::ToolCall as ExtensionToolCall;
+use codex_tool_execution_api::FunctionCallError;
 use codex_tools::ToolName;
 use codex_tools::ToolSpec;
 use serde_json::Value;
 
-use crate::function_tool::FunctionCallError;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
@@ -35,13 +34,14 @@ impl ExtensionToolHandler {
     }
 }
 
-#[async_trait::async_trait]
 impl ToolExecutor<ToolInvocation> for ExtensionToolHandler {
+    type Output = Box<dyn ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         self.executor.tool_name()
     }
 
-    fn spec(&self) -> ToolSpec {
+    fn spec(&self) -> Option<ToolSpec> {
         self.executor.spec()
     }
 
@@ -93,14 +93,9 @@ impl CoreToolRuntime for ExtensionToolHandler {
 }
 
 async fn to_extension_call(invocation: &ToolInvocation) -> ExtensionToolCall {
-    let conversation_history =
-        ConversationHistory::new(invocation.session.clone_history().await.into_raw_items());
     ExtensionToolCall {
-        turn_id: invocation.turn.sub_id.clone(),
         call_id: invocation.call_id.clone(),
         tool_name: invocation.tool_name.clone(),
-        truncation_policy: invocation.turn.truncation_policy,
-        conversation_history,
         payload: invocation.payload.clone(),
     }
 }
@@ -124,9 +119,9 @@ mod tests {
     use tokio::sync::Mutex;
 
     use super::ExtensionToolHandler;
+    use crate::tools::context::ToolCallSource;
     use crate::tools::context::ToolInvocation;
     use crate::tools::context::ToolPayload;
-    use crate::tools::context::ToolCallSource;
     use crate::tools::hook_names::HookToolName;
     use crate::tools::registry::CoreToolRuntime;
     use crate::tools::registry::PostToolUsePayload;
@@ -140,13 +135,13 @@ mod tests {
     struct StubExtensionExecutor;
 
     #[async_trait::async_trait]
-    impl codex_extension_api::ToolExecutor<codex_tools::ToolCall> for StubExtensionExecutor {
+    impl codex_extension_api::ToolExecutor<ExtensionToolCall> for StubExtensionExecutor {
         fn tool_name(&self) -> ToolName {
             ToolName::plain("extension_echo")
         }
 
-        fn spec(&self) -> ToolSpec {
-            ToolSpec::Function(ResponsesApiTool {
+        fn spec(&self) -> Option<ToolSpec> {
+            Some(ToolSpec::Function(ResponsesApiTool {
                 name: "extension_echo".to_string(),
                 description: "Echoes arguments.".to_string(),
                 strict: true,
@@ -161,12 +156,12 @@ mod tests {
                 .expect("extension schema should parse"),
                 output_schema: None,
                 defer_loading: None,
-            })
+            }))
         }
 
         async fn handle(
             &self,
-            _call: codex_tools::ToolCall,
+            _call: ExtensionToolCall,
         ) -> Result<Box<dyn codex_tools::ToolOutput>, codex_tools::FunctionCallError> {
             Ok(Box::new(codex_tools::JsonToolOutput::new(
                 json!({ "ok": true }),
@@ -175,29 +170,31 @@ mod tests {
     }
 
     struct CapturingExtensionExecutor {
-        captured_call: Arc<Mutex<Option<codex_tools::ToolCall>>>,
+        captured_call: Arc<Mutex<Option<ExtensionToolCall>>>,
     }
 
     #[async_trait::async_trait]
-    impl codex_extension_api::ToolExecutor<codex_tools::ToolCall> for CapturingExtensionExecutor {
+    impl codex_extension_api::ToolExecutor<ExtensionToolCall> for CapturingExtensionExecutor {
         fn tool_name(&self) -> codex_tools::ToolName {
             codex_tools::ToolName::plain("extension_echo")
         }
 
-        fn spec(&self) -> codex_tools::ToolSpec {
-            codex_tools::ToolSpec::Function(codex_tools::ResponsesApiTool {
-                name: "extension_echo".to_string(),
-                description: "Captures arguments.".to_string(),
-                strict: false,
-                parameters: codex_tools::JsonSchema::default(),
-                output_schema: None,
-                defer_loading: None,
-            })
+        fn spec(&self) -> Option<codex_tools::ToolSpec> {
+            Some(codex_tools::ToolSpec::Function(
+                codex_tools::ResponsesApiTool {
+                    name: "extension_echo".to_string(),
+                    description: "Captures arguments.".to_string(),
+                    strict: false,
+                    parameters: codex_tools::JsonSchema::default(),
+                    output_schema: None,
+                    defer_loading: None,
+                },
+            ))
         }
 
         async fn handle(
             &self,
-            call: codex_tools::ToolCall,
+            call: ExtensionToolCall,
         ) -> Result<Box<dyn codex_tools::ToolOutput>, codex_tools::FunctionCallError> {
             *self.captured_call.lock().await = Some(call);
             Ok(Box::new(codex_tools::JsonToolOutput::new(

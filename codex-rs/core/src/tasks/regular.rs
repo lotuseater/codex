@@ -73,6 +73,7 @@ impl SessionTask for RegularTask {
             let last_agent_message = run_turn(
                 Arc::clone(&sess),
                 Arc::clone(&ctx),
+                session.turn_extension_data(),
                 next_input,
                 prewarmed_client_session.take(),
                 cancellation_token.child_token(),

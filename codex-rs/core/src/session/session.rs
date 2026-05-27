@@ -329,11 +329,9 @@ impl SessionConfiguration {
                     })?;
                 config
                     .permissions
-                    .set_permission_profile_from_session_snapshot(
-                        PermissionProfileSnapshot::active(
-                            permission_profile,
-                            active_permission_profile,
-                        ),
+                    .set_permission_profile_with_active_profile(
+                        permission_profile,
+                        Some(active_permission_profile),
                     )?;
                 next_configuration.original_config_do_not_use = Arc::new(config);
             }

@@ -110,7 +110,6 @@ pub struct ImageGenerationEndEvent {
     pub saved_path: Option<AbsolutePathBuf>,
 }
 
-
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct McpStartupUpdateEvent {
     /// Server name being started.
@@ -163,4 +162,3 @@ impl fmt::Display for McpAuthStatus {
         f.write_str(text)
     }
 }
-

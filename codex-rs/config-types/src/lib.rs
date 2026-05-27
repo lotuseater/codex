@@ -27,6 +27,14 @@ pub enum ContextBudgetMode {
     Slow,
 }
 
+#[derive(Debug, Default, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum AutoCompactTokenLimitScope {
+    #[default]
+    BodyAfterPrefix,
+    Total,
+}
+
 impl fmt::Display for ContextBudgetMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let value = match self {
@@ -419,6 +427,8 @@ pub enum ServiceTier {
     Flex,
 }
 
+pub const SERVICE_TIER_DEFAULT_REQUEST_VALUE: &str = "default";
+
 impl ServiceTier {
     pub const fn request_value(self) -> &'static str {
         match self {
@@ -770,6 +780,7 @@ pub enum HookEventName {
     SessionStart,
     UserPromptSubmit,
     SubagentStart,
+    SubagentStop,
     Stop,
 }
 

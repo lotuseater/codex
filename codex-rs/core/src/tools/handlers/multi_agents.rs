@@ -68,11 +68,11 @@ pub(crate) fn parse_agent_id_targets(
 
 fn multi_agent_tool_search_info(
     search_text: &str,
-    spec: codex_tool_registry_api::ToolSpec,
+    spec: Option<codex_tool_registry_api::ToolSpec>,
 ) -> Option<ToolSearchInfo> {
     ToolSearchInfo::from_spec(
         search_text.to_string(),
-        spec,
+        spec?,
         Some(ToolSearchSourceInfo {
             name: MULTI_AGENT_TOOL_SEARCH_SOURCE_NAME.to_string(),
             description: Some(MULTI_AGENT_TOOL_SEARCH_SOURCE_DESCRIPTION.to_string()),

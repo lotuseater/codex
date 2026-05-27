@@ -257,9 +257,8 @@ impl NetworkConfigAccumulator {
                 hooks: Some(self.mitm_hooks),
                 actions: Some(actions.clone()),
             };
-            mitm.validate_action_references(&actions)
-                .map_err(anyhow::Error::msg)?;
-            self.config.network.mitm_hooks = mitm.to_runtime_hooks(Some(&actions));
+            mitm.validate().map_err(anyhow::Error::msg)?;
+            self.config.network.mitm_hooks = mitm.to_mitm_hooks();
         }
 
         self.config.network.mitm = self.config.network.mode == NetworkMode::Limited

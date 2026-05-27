@@ -28,12 +28,12 @@ pub use tool_lifecycle::ToolStartInput;
 pub use tools::ExtensionToolExecutor;
 pub use tools::ExtensionToolFuture;
 pub use tools::ExtensionToolOutput;
-pub use turn_lifecycle::TurnAbortReason;
-pub use turn_lifecycle::TurnAbortInput;
-pub use turn_lifecycle::TurnStartInput;
-pub use turn_lifecycle::TurnStopInput;
 pub use turn_item::TurnItemContributionFuture;
 pub use turn_item::TurnItemContributor;
+pub use turn_lifecycle::TurnAbortInput;
+pub use turn_lifecycle::TurnAbortReason;
+pub use turn_lifecycle::TurnStartInput;
+pub use turn_lifecycle::TurnStopInput;
 
 /// Extension contribution that adds prompt fragments during prompt assembly.
 pub trait ContextContributor: Send + Sync {
@@ -139,30 +139,4 @@ pub trait ToolLifecycleContributor: Send + Sync {
     fn on_tool_finish<'a>(&'a self, _input: ToolFinishInput<'a>) -> ToolLifecycleFuture<'a> {
         Box::pin(std::future::ready(()))
     }
-}
-
-/// Extension contribution that can claim rendered approval-review prompts.
-#[async_trait::async_trait]
-pub trait ApprovalReviewContributor: Send + Sync {
-    async fn contribute(
-        &self,
-        session_store: &ExtensionData,
-        thread_store: &ExtensionData,
-        prompt: &str,
-    ) -> Option<ReviewDecision>;
-}
-
-/// Ordered post-processing contribution for one parsed turn item.
-///
-/// Implementations may mutate the item before it is emitted and may use the
-/// explicitly exposed thread- and turn-lifetime stores when they need durable
-/// extension-private state.
-#[async_trait::async_trait]
-pub trait TurnItemContributor: Send + Sync {
-    async fn contribute(
-        &self,
-        thread_store: &ExtensionData,
-        turn_store: &ExtensionData,
-        item: &mut TurnItem,
-    ) -> Result<(), String>;
 }

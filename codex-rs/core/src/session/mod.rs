@@ -181,9 +181,9 @@ use crate::compact::collect_user_messages;
 use crate::config::Config;
 use crate::config::Constrained;
 use crate::config::ConstraintResult;
-use crate::config::resolved_permission_profile::PermissionProfileState;
 use crate::config::StartedNetworkProxy;
 use crate::config::resolve_web_search_mode_for_turn;
+use crate::config::resolved_permission_profile::PermissionProfileState;
 use crate::context_manager::ContextManager;
 use crate::context_manager::TotalTokenUsageBreakdown;
 use crate::thread_rollout_truncation::initial_history_has_prior_user_turns;
@@ -345,6 +345,7 @@ use codex_protocol::protocol::ModelVerificationEvent;
 use codex_protocol::protocol::NetworkApprovalContext;
 use codex_protocol::protocol::NonSteerableTurnKind;
 use codex_protocol::protocol::Op;
+use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::protocol::RateLimitSnapshot;
 use codex_protocol::protocol::RequestUserInputEvent;
 use codex_protocol::protocol::ReviewDecision;
@@ -824,7 +825,12 @@ fn is_enterprise_default_service_tier_plan(plan_type: AccountPlanType) -> bool {
 fn session_permission_profile_state_from_config(
     config: &Config,
 ) -> CodexResult<PermissionProfileState> {
-    Ok(config.permissions.permission_profile_state().clone())
+    Ok(PermissionProfileState::from_constrained_active_profile(
+        config.permissions.permission_profile.clone(),
+        config.permissions.active_permission_profile(),
+        Vec::new(),
+    )
+    .map_err(|err| CodexErr::Fatal(format!("failed to resolve permission profile state: {err}")))?)
 }
 
 #[cfg(test)]
@@ -1121,6 +1127,7 @@ impl Session {
                 }],
                 final_output_json_schema: None,
                 responsesapi_client_metadata: None,
+                thread_settings: ThreadSettingsOverrides::default(),
             },
             /*mirror_user_text_to_realtime*/ None,
         )

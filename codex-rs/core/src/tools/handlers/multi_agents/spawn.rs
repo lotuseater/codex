@@ -29,8 +29,8 @@ impl ToolExecutor<ToolInvocation> for Handler {
         ToolName::namespaced(MULTI_AGENT_V1_NAMESPACE, "spawn_agent")
     }
 
-    fn spec(&self) -> ToolSpec {
-        create_spawn_agent_tool_v1(self.options.clone())
+    fn spec(&self) -> Option<ToolSpec> {
+        Some(create_spawn_agent_tool_v1(self.options.clone()))
     }
 
     async fn handle(

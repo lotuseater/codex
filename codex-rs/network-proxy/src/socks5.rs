@@ -544,11 +544,11 @@ fn policy_denied_error(reason: &str, details: &PolicyDecisionDetails<'_>) -> io:
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::MitmHookConfig;
+    use crate::config::MitmHookMatchConfig;
     use crate::config::NetworkMode;
     use crate::config::NetworkProxyConfig;
     use crate::config::NetworkProxySettings;
-    use crate::mitm_hook::MitmHookConfig;
-    use crate::mitm_hook::MitmHookMatchConfig;
     use crate::network_policy::test_support::POLICY_DECISION_EVENT_NAME;
     use crate::network_policy::test_support::capture_events;
     use crate::network_policy::test_support::find_event_by_name;

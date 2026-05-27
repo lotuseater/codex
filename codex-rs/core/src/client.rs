@@ -107,14 +107,14 @@ use tracing::trace;
 use tracing::warn;
 
 use crate::attestation::X_OAI_ATTESTATION_HEADER;
-use codex_core_api::AttestationContext;
-use codex_core_api::AttestationProvider;
 use crate::client_common::Prompt;
 use crate::client_common::ResponseEvent;
 use crate::client_common::ResponseStream;
 use crate::feedback_tags;
 use crate::util::emit_feedback_auth_recovery_tags;
 use codex_api::map_api_error;
+use codex_core_api::AttestationContext;
+use codex_core_api::AttestationProvider;
 use codex_feedback::FeedbackRequestTags;
 use codex_feedback::emit_feedback_request_tags_with_auth_env;
 use codex_login::auth_env_telemetry::AuthEnvTelemetry;
@@ -947,7 +947,7 @@ impl Drop for ModelClientSession {
 }
 
 impl ModelClientSession {
-    fn reset_websocket_session(&mut self) {
+    pub(crate) fn reset_websocket_session(&mut self) {
         self.websocket_session.connection = None;
         self.websocket_session.last_request = None;
         self.websocket_session.last_response_rx = None;

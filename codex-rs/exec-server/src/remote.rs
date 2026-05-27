@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::env;
 use std::time::Duration;
 
 use reqwest::StatusCode;
@@ -12,6 +11,7 @@ use tokio_tungstenite::connect_async;
 use tracing::warn;
 use uuid::Uuid;
 
+use codex_api::SharedAuthProvider;
 use codex_utils_rustls_provider::ensure_rustls_crypto_provider;
 
 use crate::ExecServerError;
@@ -19,16 +19,13 @@ use crate::ExecServerRuntimePaths;
 use crate::relay::run_multiplexed_environment;
 use crate::server::ConnectionProcessor;
 
-pub const CODEX_EXEC_SERVER_REMOTE_BEARER_TOKEN_ENV_VAR: &str =
-    "CODEX_EXEC_SERVER_REMOTE_BEARER_TOKEN";
-
 const PROTOCOL_VERSION: &str = "codex-exec-server-v1";
 const ERROR_BODY_PREVIEW_BYTES: usize = 4096;
 
 #[derive(Clone)]
 struct EnvironmentRegistryClient {
     base_url: String,
-    bearer_token: String,
+    auth_provider: SharedAuthProvider,
     http: reqwest::Client,
 }
 
@@ -36,7 +33,7 @@ impl std::fmt::Debug for EnvironmentRegistryClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EnvironmentRegistryClient")
             .field("base_url", &self.base_url)
-            .field("bearer_token", &"<redacted>")
+            .field("auth_provider", &"<redacted>")
             .finish_non_exhaustive()
     }
 }
@@ -46,7 +43,7 @@ impl EnvironmentRegistryClient {
         let base_url = normalize_base_url(base_url)?;
         Ok(Self {
             base_url,
-            bearer_token,
+            auth_provider,
             http: reqwest::Client::new(),
         })
     }
@@ -54,17 +51,10 @@ impl EnvironmentRegistryClient {
     async fn register_environment(
         &self,
         environment_id: &str,
+        request: &ExecutorRegistryRegisterExecutorRequest,
     ) -> Result<EnvironmentRegistryRegistrationResponse, ExecServerError> {
-        let response = self
-            .http
-            .post(endpoint_url(
-                &self.base_url,
-                &format!("/cloud/environment/{environment_id}/register"),
-            ))
-            .headers(self.auth_provider.to_auth_headers())
-            .send()
-            .await?;
-        self.parse_json_response(response).await
+        let path = format!("/cloud/environment/{environment_id}/register");
+        self.post_json(&path, request).await
     }
 
     async fn post_json<T, R>(&self, path: &str, request: &T) -> Result<R, ExecServerError>
@@ -75,7 +65,7 @@ impl EnvironmentRegistryClient {
         let response = self
             .http
             .post(endpoint_url(&self.base_url, path))
-            .bearer_auth(&self.bearer_token)
+            .headers(self.auth_provider.to_auth_headers())
             .json(request)
             .send()
             .await?;
@@ -116,7 +106,8 @@ pub struct RemoteEnvironmentConfig {
     pub base_url: String,
     pub environment_id: String,
     pub name: String,
-    bearer_token: String,
+    executor_id: String,
+    auth_provider: SharedAuthProvider,
 }
 
 impl std::fmt::Debug for RemoteEnvironmentConfig {
@@ -125,7 +116,8 @@ impl std::fmt::Debug for RemoteEnvironmentConfig {
             .field("base_url", &self.base_url)
             .field("environment_id", &self.environment_id)
             .field("name", &self.name)
-            .field("bearer_token", &"<redacted>")
+            .field("executor_id", &self.executor_id)
+            .field("auth_provider", &"<redacted>")
             .finish()
     }
 }
@@ -141,7 +133,8 @@ impl RemoteEnvironmentConfig {
             base_url,
             environment_id,
             name: "codex-exec-server".to_string(),
-            bearer_token,
+            executor_id: Uuid::new_v4().to_string(),
+            auth_provider,
         })
     }
 
@@ -183,10 +176,13 @@ pub async fn run_remote_environment(
         EnvironmentRegistryClient::new(config.base_url.clone(), config.auth_provider.clone())?;
     let processor = ConnectionProcessor::new(runtime_paths);
     let registration_id = Uuid::new_v4();
+    let registration_request = config.registration_request(registration_id);
     let mut backoff = Duration::from_secs(1);
 
     loop {
-        let response = client.register_environment(&config.environment_id).await?;
+        let response = client
+            .register_environment(&config.environment_id, &registration_request)
+            .await?;
         eprintln!(
             "codex exec-server remote environment registered with environment_id {}",
             response.environment_id
@@ -294,7 +290,6 @@ fn preview_error_body(body: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
-    use serde_json::json;
     use wiremock::Mock;
     use wiremock::MockServer;
     use wiremock::ResponseTemplate;
@@ -305,6 +300,26 @@ mod tests {
 
     use super::*;
 
+    #[derive(Debug)]
+    struct StaticRegistryAuthProvider;
+
+    impl codex_api::AuthProvider for StaticRegistryAuthProvider {
+        fn add_auth_headers(&self, headers: &mut http::HeaderMap) {
+            let _ = headers.insert(
+                http::header::AUTHORIZATION,
+                http::HeaderValue::from_static("Bearer registry-token"),
+            );
+            let _ = headers.insert(
+                "chatgpt-account-id",
+                http::HeaderValue::from_static("workspace-123"),
+            );
+        }
+    }
+
+    fn static_registry_auth_provider() -> codex_api::SharedAuthProvider {
+        std::sync::Arc::new(StaticRegistryAuthProvider)
+    }
+
     #[tokio::test]
     async fn register_environment_posts_with_auth_provider_headers() {
         let server = MockServer::start().await;
@@ -314,12 +329,14 @@ mod tests {
             static_registry_auth_provider(),
         )
         .expect("config");
+        let registration_id = Uuid::from_u128(0x12345678123456781234567812345678);
         let request = config.registration_request(registration_id);
         let expected_request = serde_json::to_value(&request).expect("serialize request");
         Mock::given(method("POST"))
             .and(path("/cloud/environment/environment-requested/register"))
             .and(header("authorization", "Bearer registry-token"))
             .and(header("chatgpt-account-id", "workspace-123"))
+            .and(body_json(expected_request))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "environment_id": "env-1",
                 "url": "wss://rendezvous.test/cloud-agent/default/ws/environment/env-1?role=environment&sig=abc"
@@ -330,7 +347,7 @@ mod tests {
             .expect("client");
 
         let response = client
-            .register_environment(&config.environment_id)
+            .register_environment(&config.environment_id, &request)
             .await
             .expect("register environment");
 

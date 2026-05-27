@@ -42,6 +42,7 @@ use codex_protocol::protocol::ReviewRequest;
 use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::ThreadMemoryMode;
 use codex_protocol::protocol::ThreadRolledBackEvent;
+use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::WarningEvent;
 use codex_protocol::request_permissions::RequestPermissionsResponse;
@@ -94,6 +95,73 @@ pub async fn override_turn_context(sess: &Session, sub_id: String, updates: Sess
         })
         .await;
     }
+}
+
+/// Converts persistent [`ThreadSettingsOverrides`] (from `Op::UserInput` /
+/// `Op::ThreadSettings`) into a [`SessionSettingsUpdate`]. When the overrides
+/// carry `model`/`effort` but no explicit `collaboration_mode`, the active
+/// session's collaboration mode is folded in with those updates — mirroring the
+/// `Op::UserInputWithTurnContext` arm.
+async fn settings_update_from_thread_settings(
+    sess: &Arc<Session>,
+    thread_settings: ThreadSettingsOverrides,
+) -> SessionSettingsUpdate {
+    let ThreadSettingsOverrides {
+        cwd,
+        workspace_roots,
+        profile_workspace_roots,
+        approval_policy,
+        approvals_reviewer,
+        sandbox_policy,
+        permission_profile,
+        active_permission_profile,
+        windows_sandbox_level,
+        model,
+        effort,
+        summary,
+        service_tier,
+        collaboration_mode,
+        personality,
+    } = thread_settings;
+    let collaboration_mode = if let Some(collab_mode) = collaboration_mode {
+        Some(collab_mode)
+    } else if model.is_some() || effort.is_some() {
+        let state = sess.state.lock().await;
+        Some(
+            state
+                .session_configuration
+                .collaboration_mode
+                .with_updates(model, effort, /*developer_instructions*/ None),
+        )
+    } else {
+        None
+    };
+    SessionSettingsUpdate {
+        cwd,
+        workspace_roots,
+        profile_workspace_roots,
+        approval_policy,
+        approvals_reviewer,
+        sandbox_policy,
+        permission_profile,
+        active_permission_profile,
+        windows_sandbox_level,
+        collaboration_mode,
+        reasoning_summary: summary,
+        service_tier,
+        context_budget_mode: None,
+        final_output_json_schema: None,
+        environments: None,
+        personality,
+        app_server_client_name: None,
+        app_server_client_version: None,
+    }
+}
+
+/// Applies persistent thread-settings overrides without starting a turn.
+pub async fn thread_settings(sess: &Arc<Session>, sub_id: String, settings: ThreadSettingsOverrides) {
+    let updates = settings_update_from_thread_settings(sess, settings).await;
+    override_turn_context(sess, sub_id, updates).await;
 }
 
 pub async fn user_input_or_turn(sess: &Arc<Session>, sub_id: String, op: Op) {
@@ -228,15 +296,13 @@ pub(super) async fn user_input_or_turn_inner(
             environments,
             final_output_json_schema,
             responsesapi_client_metadata,
-        } => (
-            items,
-            SessionSettingsUpdate {
-                final_output_json_schema: Some(final_output_json_schema),
-                environments,
-                ..Default::default()
-            },
-            responsesapi_client_metadata,
-        ),
+            thread_settings,
+        } => {
+            let mut updates = settings_update_from_thread_settings(sess, thread_settings).await;
+            updates.final_output_json_schema = Some(final_output_json_schema);
+            updates.environments = environments;
+            (items, updates, responsesapi_client_metadata)
+        }
         _ => unreachable!(),
     };
 
@@ -825,6 +891,12 @@ pub(super) async fn submission_loop(
                 | Op::UserInputWithTurnContext { .. }
                 | Op::UserTurn { .. } => {
                     user_input_or_turn(&sess, sub.id.clone(), sub.op).await;
+                    false
+                }
+                Op::ThreadSettings {
+                    thread_settings: settings,
+                } => {
+                    thread_settings(&sess, sub.id.clone(), settings).await;
                     false
                 }
                 Op::InterAgentCommunication { communication } => {

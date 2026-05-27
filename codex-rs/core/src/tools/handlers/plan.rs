@@ -57,8 +57,8 @@ impl ToolExecutor<ToolInvocation> for PlanHandler {
         ToolName::plain("update_plan")
     }
 
-    fn spec(&self) -> ToolSpec {
-        create_update_plan_tool()
+    fn spec(&self) -> Option<ToolSpec> {
+        Some(create_update_plan_tool())
     }
 
     async fn handle(

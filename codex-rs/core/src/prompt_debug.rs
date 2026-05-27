@@ -10,8 +10,8 @@ use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::user_input::UserInput;
 use codex_thread_store::thread_store_from_config;
-use codex_thread_store_api::UnsupportedLiveThreadFactory;
 use codex_thread_store_api::ThreadStoreSelection;
+use codex_thread_store_api::UnsupportedLiveThreadFactory;
 use tokio_util::sync::CancellationToken;
 
 use crate::config::Config;

@@ -308,7 +308,7 @@ pub(crate) fn collect_tool_executors(
             ConfigShellToolType::UnifiedExec => {
                 executors.push(override_tool_exposure(
                     Arc::new(ShellCommandHandler::from(config.shell_command_backend)),
-                    ToolExposure::Hidden,
+                    ToolExposure::DirectModelOnly,
                 ));
             }
             ConfigShellToolType::Default

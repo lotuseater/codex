@@ -1,6 +1,5 @@
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::protocol::TokenUsage;
-use codex_protocol::protocol::TurnAbortReason;
 
 use crate::ExtensionData;
 

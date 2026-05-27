@@ -31,6 +31,7 @@ use codex_protocol::models::ResponseInputItem;
 use codex_protocol::protocol::EventMsg;
 use codex_tool_execution_api::FunctionCallError;
 use codex_tool_execution_api::ToolName;
+use codex_tool_execution_api::ToolOutputPayload;
 use codex_tool_registry_api::ToolSpec;
 use futures::future::BoxFuture;
 use serde_json::Value;
@@ -312,11 +313,15 @@ impl ToolOutput for PostToolUseFeedbackOutput {
         self.original.success_for_logging()
     }
 
-    fn to_response_item(&self, call_id: &str, payload: &ToolPayload) -> ResponseInputItem {
+    fn to_response_item(
+        &self,
+        call_id: &str,
+        payload: &dyn ToolOutputPayload,
+    ) -> ResponseInputItem {
         self.model_visible.to_response_item(call_id, payload)
     }
 
-    fn code_mode_result(&self, payload: &ToolPayload) -> Value {
+    fn code_mode_result(&self, payload: &dyn ToolOutputPayload) -> Value {
         self.original.code_mode_result(payload)
     }
 }
@@ -373,7 +378,7 @@ impl ToolExecutor<ToolInvocation> for ExposureOverride {
         self.handler.tool_name()
     }
 
-    fn spec(&self) -> ToolSpec {
+    fn spec(&self) -> Option<ToolSpec> {
         self.handler.spec()
     }
 
@@ -382,7 +387,7 @@ impl ToolExecutor<ToolInvocation> for ExposureOverride {
     }
 
     fn supports_parallel_tool_calls(&self) -> bool {
-        self.exposure != ToolExposure::Hidden && self.handler.supports_parallel_tool_calls()
+        self.exposure == ToolExposure::Direct && self.handler.supports_parallel_tool_calls()
     }
 
     async fn handle(

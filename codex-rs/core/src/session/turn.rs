@@ -24,6 +24,7 @@ use crate::context_reduction_adapter::context_reduction_reason_to_compaction_rea
 use crate::context_reduction_adapter::model_auto_compact_limits;
 use crate::context_reduction_adapter::semantic_compact_input;
 use crate::feedback_tags;
+use crate::goals::GoalRuntimeEvent;
 use crate::hook_runtime::inspect_pending_input;
 use crate::hook_runtime::record_additional_contexts;
 use crate::hook_runtime::record_pending_input;
@@ -89,7 +90,6 @@ use codex_features::Feature;
 use codex_git_utils::get_git_repo_root;
 use codex_prompt_reducer::PromptReductionConfig;
 use codex_prompt_reducer::PromptReductionStats;
-use codex_protocol::config_types::AutoCompactTokenLimitScope;
 use codex_protocol::config_types::ModeKind;
 use codex_protocol::config_types::ServiceTier;
 use codex_protocol::error::CodexErr;
@@ -165,6 +165,16 @@ pub(crate) async fn run_turn(
         return None;
     }
 
+    let user_input = input
+        .iter()
+        .filter_map(|item| match item {
+            TurnInput::UserInput(content) => Some(content.as_slice()),
+            TurnInput::ResponseInputItem(_) => None,
+        })
+        .flatten()
+        .cloned()
+        .collect::<Vec<_>>();
+
     let auto_compact_limit = auto_compact_token_limit(&turn_context);
     let mut client_session =
         prewarmed_client_session.unwrap_or_else(|| sess.services.model_client.new_session());
@@ -205,8 +215,9 @@ pub(crate) async fn run_turn(
         .await;
     // Structured plugin:// mentions are resolved from the current session's
     // enabled plugins, then converted into turn-scoped guidance below.
+    let user_input = flattened_user_input(&input);
     let mentioned_plugins =
-        collect_explicit_plugin_mentions(&input, loaded_plugins.capability_summaries());
+        collect_explicit_plugin_mentions(&user_input, loaded_plugins.capability_summaries());
     let mcp_tools = if turn_context.apps_enabled() || !mentioned_plugins.is_empty() {
         // Plugin mentions need raw MCP/app inventory even when app tools
         // are normally hidden so we can describe the plugin's currently
@@ -247,7 +258,7 @@ pub(crate) async fn run_turn(
         });
     let mentioned_skills = skills_outcome.as_ref().map_or_else(Vec::new, |outcome| {
         collect_explicit_skill_mentions(
-            &input,
+            &user_input,
             &outcome.skills,
             &outcome.disabled_paths,
             &connector_slug_counts,
@@ -307,7 +318,7 @@ pub(crate) async fn run_turn(
         .filter_map(crate::plugins::PluginCapabilitySummary::telemetry_metadata)
         .collect::<Vec<_>>();
 
-    let mut explicitly_enabled_connectors = collect_explicit_app_ids(&input);
+    let mut explicitly_enabled_connectors = collect_explicit_app_ids(&user_input);
     explicitly_enabled_connectors.extend(collect_explicit_app_ids_from_skill_items(
         &skill_items,
         &available_connectors,
@@ -363,9 +374,14 @@ pub(crate) async fn run_turn(
             .analytics_events_client
             .track_plugin_used(tracking.clone(), plugin);
     }
-    let initial_input_outcome =
-        run_hooks_and_record_inputs(&sess, &turn_context, input.clone(), false, additional_contexts)
-            .await;
+    let initial_input_outcome = run_hooks_and_record_inputs(
+        &sess,
+        &turn_context,
+        input.clone(),
+        false,
+        additional_contexts,
+    )
+    .await;
     if initial_input_outcome.blocked_without_accepted_input() {
         return None;
     }
@@ -426,14 +442,9 @@ pub(crate) async fn run_turn(
         };
 
         if !pending_input.is_empty() {
-            let pending_input_outcome = run_hooks_and_record_inputs(
-                &sess,
-                &turn_context,
-                pending_input,
-                true,
-                Vec::new(),
-            )
-            .await;
+            let pending_input_outcome =
+                run_hooks_and_record_inputs(&sess, &turn_context, pending_input, true, Vec::new())
+                    .await;
             if pending_input_outcome.blocked_without_accepted_input() {
                 if pending_input_outcome.requeued_input {
                     continue;
@@ -461,7 +472,7 @@ pub(crate) async fn run_turn(
             Arc::clone(&turn_diff_tracker),
             &mut client_session,
             turn_metadata_header.as_deref(),
-            sampling_request_input,
+            sampling_request_input.clone(),
             &explicitly_enabled_connectors,
             skills_outcome,
             cancellation_token.child_token(),
@@ -662,18 +673,25 @@ pub(crate) async fn run_turn(
 }
 
 fn user_prompt_messages(input: &[TurnInput]) -> Vec<String> {
-    let user_input = input
+    flattened_user_input(input)
+        .into_iter()
+        .filter_map(|item| match item {
+            UserInput::Text { text, .. } => Some(text),
+            _ => None,
+        })
+        .collect()
+}
+
+fn flattened_user_input(input: &[TurnInput]) -> Vec<UserInput> {
+    input
         .iter()
         .filter_map(|item| match item {
-            TurnInput::UserInput(user_input) => Some(user_input.clone()),
+            TurnInput::UserInput(content) => Some(content.as_slice()),
             TurnInput::ResponseInputItem(_) => None,
         })
-        .collect::<Vec<_>>();
-    if user_input.is_empty() {
-        Vec::new()
-    } else {
-        collect_user_messages(&ResponseInputItem::from(user_input))
-    }
+        .flatten()
+        .cloned()
+        .collect()
 }
 
 #[derive(Default)]
@@ -951,34 +969,15 @@ async fn auto_compact_token_status(
     turn_context: &TurnContext,
 ) -> AutoCompactTokenStatus {
     let active_context_tokens = sess.get_total_token_usage().await;
-    let mut auto_compact_window_ordinal = None;
-    let mut auto_compact_window_prefill_tokens = None;
-    let (auto_compact_scope_tokens, auto_compact_scope_limit, full_context_window_limit) =
-        match turn_context.config.model_auto_compact_token_limit_scope {
-            AutoCompactTokenLimitScope::Total => (
-                active_context_tokens,
-                turn_context
-                    .model_info
-                    .auto_compact_token_limit()
-                    .unwrap_or(i64::MAX),
-                None,
-            ),
-            AutoCompactTokenLimitScope::BodyAfterPrefix => {
-                let window = sess.auto_compact_window_snapshot().await;
-                auto_compact_window_ordinal = Some(window.ordinal);
-                auto_compact_window_prefill_tokens = window.prefill_input_tokens;
-                let baseline = window.prefill_input_tokens.unwrap_or(active_context_tokens);
-                (
-                    active_context_tokens.saturating_sub(baseline),
-                    turn_context
-                        .config
-                        .model_auto_compact_token_limit
-                        .or_else(|| turn_context.model_info.auto_compact_token_limit())
-                        .unwrap_or(i64::MAX),
-                    turn_context.model_context_window(),
-                )
-            }
-        };
+    let auto_compact_window_ordinal = None;
+    let auto_compact_window_prefill_tokens = None;
+    let auto_compact_scope_tokens = active_context_tokens;
+    let auto_compact_scope_limit = turn_context
+        .config
+        .model_auto_compact_token_limit
+        .or_else(|| turn_context.model_info.auto_compact_token_limit())
+        .unwrap_or(i64::MAX);
+    let full_context_window_limit = None;
     let full_context_window_limit_reached =
         full_context_window_limit.is_some_and(|full_context_window_limit| {
             active_context_tokens >= full_context_window_limit
@@ -1147,18 +1146,12 @@ async fn maybe_run_previous_model_inline_compact(
         return Ok(false);
     };
     let active_context_tokens = sess.get_total_token_usage().await;
-    let previous_model_limit_reached =
-        match turn_context.config.model_auto_compact_token_limit_scope {
-        AutoCompactTokenLimitScope::Total => {
-            let new_auto_compact_limit = turn_context
-                .model_info
-                .auto_compact_token_limit()
-                .unwrap_or(i64::MAX);
-            active_context_tokens > new_auto_compact_limit
-                || active_context_tokens >= new_context_window
-        }
-        AutoCompactTokenLimitScope::BodyAfterPrefix => active_context_tokens >= new_context_window,
-    };
+    let new_auto_compact_limit = turn_context
+        .model_info
+        .auto_compact_token_limit()
+        .unwrap_or(i64::MAX);
+    let previous_model_limit_reached = active_context_tokens > new_auto_compact_limit
+        || active_context_tokens >= new_context_window;
     let should_run = previous_model_limit_reached
         && previous_model_turn_context.model_info.slug != turn_context.model_info.slug
         && old_context_window > new_context_window;

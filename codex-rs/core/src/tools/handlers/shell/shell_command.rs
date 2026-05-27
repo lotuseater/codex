@@ -133,11 +133,11 @@ impl ToolExecutor<ToolInvocation> for ShellCommandHandler {
         ToolName::plain("shell_command")
     }
 
-    fn spec(&self) -> ToolSpec {
-        create_shell_command_tool(CommandToolOptions {
+    fn spec(&self) -> Option<ToolSpec> {
+        Some(create_shell_command_tool(CommandToolOptions {
             allow_login_shell: self.options.allow_login_shell,
             exec_permission_approvals_enabled: self.options.exec_permission_approvals_enabled,
-        })
+        }))
     }
 
     fn supports_parallel_tool_calls(&self) -> bool {

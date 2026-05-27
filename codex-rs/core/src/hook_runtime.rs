@@ -36,7 +36,7 @@ use codex_protocol::protocol::HookStartedEvent;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::user_input::UserInput;
-use codex_thread_store::ReadThreadParams;
+use codex_thread_store_api::ReadThreadParams;
 use serde_json::Value;
 
 use crate::context::ContextualUserFragment;

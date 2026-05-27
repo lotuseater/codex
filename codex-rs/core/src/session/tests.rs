@@ -3933,7 +3933,6 @@ async fn active_profile_update_rebuilds_network_proxy_config() -> std::io::Resul
                 "locked-down".to_string(),
                 PermissionProfileToml {
                     description: None,
-                    extends: None,
                     workspace_roots: None,
                     filesystem: Some(FilesystemPermissionsToml {
                         glob_scan_max_depth: None,

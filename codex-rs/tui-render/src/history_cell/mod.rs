@@ -45,17 +45,10 @@ use crate::wrapping::RtOptions;
 use crate::wrapping::adaptive_wrap_line;
 use crate::wrapping::adaptive_wrap_lines;
 use base64::Engine;
-use codex_app_server_protocol::AskForApproval;
-use codex_app_server_protocol::McpAuthStatus;
-use codex_app_server_protocol::McpServerStatus;
-use codex_app_server_protocol::McpServerStatusDetail;
-use codex_app_server_protocol::ToolRequestUserInputAnswer;
-use codex_app_server_protocol::ToolRequestUserInputQuestion;
 #[cfg(test)]
 use codex_config::types::McpServerTransportConfig;
 #[cfg(test)]
 use codex_mcp::qualified_mcp_tool_name_prefix;
-use codex_otel::RuntimeMetricsSummary;
 use codex_protocol::account::PlanType;
 use codex_protocol::approvals::ExecPolicyAmendment;
 use codex_protocol::approvals::NetworkPolicyAmendment;
@@ -76,7 +69,6 @@ use codex_protocol::protocol::McpAuthStatus;
 use codex_protocol::user_input::TextElement;
 use codex_runtime_metrics_types::RuntimeMetricsSummary;
 use codex_utils_absolute_path::AbsolutePathBuf;
-#[cfg(test)]
 use codex_utils_cli::format_env_display;
 use image::DynamicImage;
 use image::ImageReader;

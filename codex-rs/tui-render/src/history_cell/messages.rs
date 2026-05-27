@@ -293,7 +293,7 @@ impl HistoryCell for AgentMessageCell {
             let mut subsequent_indent = Line::from("  ");
             subsequent_indent
                 .spans
-                .extend(crate::insert_history::leading_whitespace_prefix(line).spans);
+                .extend(leading_whitespace_prefix(line).spans);
             let line_wrapped = adaptive_wrap_line(
                 line,
                 RtOptions::new(width as usize)
@@ -312,6 +312,27 @@ impl HistoryCell for AgentMessageCell {
     fn is_stream_continuation(&self) -> bool {
         !self.is_first_line
     }
+}
+
+fn leading_whitespace_prefix(line: &Line<'_>) -> Line<'static> {
+    let mut spans = Vec::new();
+    for span in &line.spans {
+        let prefix_end = span
+            .content
+            .char_indices()
+            .find_map(|(idx, ch)| (!ch.is_whitespace()).then_some(idx))
+            .unwrap_or(span.content.len());
+        if prefix_end > 0 {
+            spans.push(Span::styled(
+                span.content[..prefix_end].to_string(),
+                span.style,
+            ));
+        }
+        if prefix_end < span.content.len() {
+            break;
+        }
+    }
+    Line::from(spans).style(line.style)
 }
 
 /// A consolidated agent message cell that stores raw markdown source and re-renders from it.

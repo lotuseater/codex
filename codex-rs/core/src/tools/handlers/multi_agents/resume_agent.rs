@@ -14,8 +14,8 @@ impl ToolExecutor<ToolInvocation> for Handler {
         ToolName::namespaced(MULTI_AGENT_V1_NAMESPACE, "resume_agent")
     }
 
-    fn spec(&self) -> ToolSpec {
-        create_resume_agent_tool()
+    fn spec(&self) -> Option<ToolSpec> {
+        Some(create_resume_agent_tool())
     }
 
     async fn handle(

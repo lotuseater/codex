@@ -15,6 +15,7 @@ use codex_protocol::protocol::RequestUserInputEvent;
 use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
+use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::protocol::Submission;
 use codex_protocol::protocol::ThreadSource;
 use codex_protocol::request_permissions::PermissionGrantScope;
@@ -194,6 +195,7 @@ pub(crate) async fn run_codex_thread_one_shot(
         items: input,
         final_output_json_schema,
         responsesapi_client_metadata: None,
+        thread_settings: ThreadSettingsOverrides::default(),
     })
     .await?;
 

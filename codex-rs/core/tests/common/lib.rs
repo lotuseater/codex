@@ -32,6 +32,9 @@ pub use protocol_fixtures::load_sse_fixture_with_id_from_str;
 pub use protocol_fixtures::stdio_server_bin;
 #[cfg(target_os = "linux")]
 pub use runtime_harness::find_codex_linux_sandbox_exe;
+pub use runtime_harness::format_with_current_shell;
+pub use runtime_harness::format_with_current_shell_display_non_login;
+pub use runtime_harness::format_with_current_shell_non_login;
 pub use runtime_harness::sandbox_env_var;
 pub use runtime_harness::sandbox_network_env_var;
 

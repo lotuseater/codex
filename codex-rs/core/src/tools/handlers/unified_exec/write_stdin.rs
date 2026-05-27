@@ -38,8 +38,8 @@ impl ToolExecutor<ToolInvocation> for WriteStdinHandler {
         ToolName::plain("write_stdin")
     }
 
-    fn spec(&self) -> ToolSpec {
-        create_write_stdin_tool()
+    fn spec(&self) -> Option<ToolSpec> {
+        Some(create_write_stdin_tool())
     }
 
     async fn handle(

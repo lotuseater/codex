@@ -14,14 +14,14 @@ use super::helpers::distinct_thread_metadata_title;
 use super::helpers::set_thread_name_from_title;
 use super::helpers::stored_thread_from_rollout_item;
 use super::list_threads::list_rollout_threads;
-use crate::ListThreadsParams;
-use crate::SearchThreadsParams;
-use crate::SortDirection;
-use crate::StoredThreadSearchResult;
-use crate::ThreadSearchPage;
-use crate::ThreadSortKey;
-use crate::ThreadStoreError;
-use crate::ThreadStoreResult;
+use codex_thread_store_api::ListThreadsParams;
+use codex_thread_store_api::SearchThreadsParams;
+use codex_thread_store_api::SortDirection;
+use codex_thread_store_api::StoredThreadSearchResult;
+use codex_thread_store_api::ThreadSearchPage;
+use codex_thread_store_api::ThreadSortKey;
+use codex_thread_store_api::ThreadStoreError;
+use codex_thread_store_api::ThreadStoreResult;
 
 struct ThreadSearchItem {
     item: codex_rollout::ThreadItem,
