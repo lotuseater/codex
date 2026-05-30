@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -70,6 +71,9 @@ pub enum Op {
         /// Optional turn-scoped Responses API `client_metadata`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         responsesapi_client_metadata: Option<HashMap<String, String>>,
+        /// Client-supplied context fragments keyed by an opaque source identifier.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        additional_context: BTreeMap<String, AdditionalContextEntry>,
         /// Persistent thread-settings overrides to apply before the input.
         #[serde(default, flatten)]
         thread_settings: ThreadSettingsOverrides,
@@ -433,6 +437,7 @@ impl From<Vec<UserInput>> for Op {
             items: value,
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
             thread_settings: ThreadSettingsOverrides::default(),
         }
     }

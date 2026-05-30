@@ -87,6 +87,7 @@
         assert_eq!(
             first.items[0],
             ThreadItem::UserMessage {
+                client_id: None,
                 id: "item-1".into(),
                 content: vec![
                     UserInput::Text {
@@ -125,6 +126,7 @@
         assert_eq!(
             second.items[0],
             ThreadItem::UserMessage {
+                client_id: None,
                 id: "item-4".into(),
                 content: vec![UserInput::Text {
                     text: "Second turn".into(),
@@ -163,6 +165,7 @@
         assert_eq!(
             turns[0].items[0],
             ThreadItem::UserMessage {
+                client_id: None,
                 id: "item-1".into(),
                 content: vec![
                     UserInput::Text {
@@ -229,6 +232,7 @@
         assert_eq!(
             turns[0].items[0],
             ThreadItem::UserMessage {
+                client_id: None,
                 id: "item-1".into(),
                 content: vec![UserInput::Text {
                     text: "hello".into(),
@@ -310,6 +314,7 @@
                 items_view: TurnItemsView::Full,
                 items: vec![
                     ThreadItem::UserMessage {
+                        client_id: None,
                         id: "item-1".into(),
                         content: vec![UserInput::Text {
                             text: "generate an image".into(),
@@ -429,6 +434,7 @@
         assert_eq!(
             first_turn.items[0],
             ThreadItem::UserMessage {
+                client_id: None,
                 id: "item-1".into(),
                 content: vec![UserInput::Text {
                     text: "Please do the thing".into(),
@@ -452,6 +458,7 @@
         assert_eq!(
             second_turn.items[0],
             ThreadItem::UserMessage {
+                client_id: None,
                 id: "item-3".into(),
                 content: vec![UserInput::Text {
                     text: "Let's try again".into(),
@@ -527,6 +534,7 @@
             turns[0].items,
             vec![
                 ThreadItem::UserMessage {
+                    client_id: None,
                     id: "item-1".into(),
                     content: vec![UserInput::Text {
                         text: "First".into(),
@@ -545,6 +553,7 @@
             turns[1].items,
             vec![
                 ThreadItem::UserMessage {
+                    client_id: None,
                     id: "item-3".into(),
                     content: vec![UserInput::Text {
                         text: "Third".into(),
@@ -643,6 +652,7 @@
             turns[0].items,
             vec![
                 ThreadItem::UserMessage {
+                    client_id: None,
                     id: "item-1".into(),
                     content: vec![UserInput::Text {
                         text: "Start".into(),
@@ -650,6 +660,7 @@
                     }],
                 },
                 ThreadItem::UserMessage {
+                    client_id: None,
                     id: "item-2".into(),
                     content: vec![UserInput::Text {
                         text: "Steer".into(),
@@ -1323,6 +1334,7 @@
         assert_eq!(
             turns[1].items[0],
             ThreadItem::UserMessage {
+                client_id: None,
                 id: "item-2".into(),
                 content: vec![UserInput::Text {
                     text: "second".into(),
@@ -1379,6 +1391,7 @@
             snapshot.items,
             vec![
                 ThreadItem::UserMessage {
+                    client_id: None,
                     id: "item-1".into(),
                     content: vec![UserInput::Text {
                         text: "apply patch".into(),
@@ -1447,6 +1460,7 @@
             snapshot.items,
             vec![
                 ThreadItem::UserMessage {
+                    client_id: None,
                     id: "item-1".into(),
                     content: vec![UserInput::Text {
                         text: "apply patch".into(),
@@ -1996,6 +2010,7 @@
                 duration_ms: None,
                 items_view: TurnItemsView::Full,
                 items: vec![ThreadItem::UserMessage {
+                    client_id: None,
                     id: "item-1".into(),
                     content: vec![UserInput::Text {
                         text: "hello".into(),
