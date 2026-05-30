@@ -97,6 +97,12 @@ pub(crate) struct SessionConfiguration {
     /// Personality preference for the model.
     pub(super) personality: Option<Personality>,
 
+    /// Bundled fork-specific session feature state. Kept mirrored with the
+    /// `collaboration_mode`/`context_budget_mode`/`personality` fields above so
+    /// existing readers of those fields keep working while readers migrate to
+    /// the bundle.
+    pub(super) fork_features: ForkFeaturesState,
+
     /// Base instructions for the session.
     pub(super) base_instructions: String,
 
@@ -379,6 +385,13 @@ impl SessionConfiguration {
         if let Some(app_server_client_version) = updates.app_server_client_version.clone() {
             next_configuration.app_server_client_version = Some(app_server_client_version);
         }
+        // Keep the fork-feature bundle mirrored with the canonical scalar fields
+        // above, which remain the source of truth during the additive migration.
+        next_configuration.fork_features = ForkFeaturesState::new(
+            next_configuration.collaboration_mode.clone(),
+            next_configuration.context_budget_mode,
+            next_configuration.personality,
+        );
         Ok(next_configuration)
     }
 
@@ -428,6 +441,11 @@ pub(crate) struct SessionSettingsUpdate {
     pub(crate) personality: Option<Personality>,
     pub(crate) app_server_client_name: Option<String>,
     pub(crate) app_server_client_version: Option<String>,
+    /// Optional-delta mirror of the fork feature bundle. Defaults to all-`None`;
+    /// callers continue to set the `collaboration_mode`/`context_budget_mode`/
+    /// `personality` fields above, which remain the source of truth merged in
+    /// `apply`. Reserved for readers/writers migrating to the bundle.
+    pub(crate) fork_features: ForkFeaturesUpdate,
 }
 
 pub(crate) struct AppServerClientMetadata {

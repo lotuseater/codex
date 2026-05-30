@@ -177,13 +177,18 @@ pub(crate) async fn make_session_configuration_for_tests() -> SessionConfigurati
 
     SessionConfiguration {
         provider: config.model_provider.clone(),
-        collaboration_mode,
+        collaboration_mode: collaboration_mode.clone(),
         model_reasoning_summary: config.model_reasoning_summary,
         developer_instructions: config.developer_instructions.clone(),
         user_instructions: config.user_instructions.clone(),
         service_tier: None,
         context_budget_mode: config.context_budget_mode,
         personality: config.personality,
+        fork_features: ForkFeaturesState::new(
+            collaboration_mode,
+            config.context_budget_mode,
+            config.personality,
+        ),
         base_instructions: config
             .base_instructions
             .clone()

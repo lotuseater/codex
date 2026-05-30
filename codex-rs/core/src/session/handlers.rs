@@ -155,6 +155,7 @@ async fn settings_update_from_thread_settings(
         personality,
         app_server_client_name: None,
         app_server_client_version: None,
+        fork_features: Default::default(),
     }
 }
 
@@ -229,6 +230,7 @@ pub(super) async fn user_input_or_turn_inner(
                     personality,
                     app_server_client_name: None,
                     app_server_client_version: None,
+                    fork_features: Default::default(),
                 },
                 None,
             )
@@ -287,6 +289,7 @@ pub(super) async fn user_input_or_turn_inner(
                     personality,
                     app_server_client_name: None,
                     app_server_client_version: None,
+                    fork_features: Default::default(),
                 },
                 responsesapi_client_metadata,
             )
