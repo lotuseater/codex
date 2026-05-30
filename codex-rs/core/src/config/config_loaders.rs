@@ -811,10 +811,11 @@ impl Config {
                 None => Some(service_tier),
             }
         });
-        let context_budget_mode = context_budget_mode_override
-            .or(config_profile.context_budget_mode)
-            .or(cfg.context_budget_mode)
-            .unwrap_or(ContextBudgetMode::Slow);
+        let context_budget_mode = resolve_context_budget_mode(
+            context_budget_mode_override,
+            config_profile.context_budget_mode,
+            cfg.context_budget_mode,
+        );
 
         let compact_prompt = compact_prompt.or(cfg.compact_prompt).and_then(|value| {
             let trimmed = value.trim();

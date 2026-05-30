@@ -19,9 +19,7 @@ use crate::compact_remote::run_inline_remote_auto_compact_task;
 use crate::compact_remote_v2::run_inline_remote_auto_compact_task as run_inline_remote_auto_compact_task_v2;
 use crate::connectors;
 use crate::context::ContextualUserFragment;
-use crate::context_reduction_adapter::auto_compact_budget_mode;
 use crate::context_reduction_adapter::context_reduction_reason_to_compaction_reason;
-use crate::context_reduction_adapter::model_auto_compact_limits;
 use crate::context_reduction_adapter::semantic_compact_input;
 use crate::feedback_tags;
 use crate::goals::GoalRuntimeEvent;
@@ -44,6 +42,9 @@ use crate::mentions::collect_tool_mentions_from_messages;
 use crate::plugins::build_plugin_injections;
 use crate::resolve_skill_dependencies_for_turn;
 use crate::session::TurnInput;
+use crate::session::context_budget_adapter::PostSamplingCompactionDecision;
+use crate::session::context_budget_adapter::auto_compact_token_limit;
+use crate::session::context_budget_adapter::post_sampling_compaction_decision;
 use crate::session::desktop_automation::desktop_automation_context_for_prompt;
 use crate::session::desktop_automation::merge_desktop_automation_context;
 use crate::session::first_moves::first_moves_context_for_fresh_turn;
@@ -77,14 +78,10 @@ use codex_analytics::TurnResolvedConfigFact;
 use codex_analytics::build_track_events_context;
 use codex_async_utils::OrCancelExt;
 use codex_config::types::PromptReductionModeToml;
-use codex_context_reduction::AutoCompactTokenLimitInput;
 use codex_context_reduction::ContextReductionReason;
 use codex_context_reduction::PRUNE_NUDGE_PROMPT;
 use codex_context_reduction::PostSamplingAutoCompactAction;
-use codex_context_reduction::PostSamplingAutoCompactInput;
 use codex_context_reduction::SemanticCompactDecision;
-use codex_context_reduction::auto_compact_token_limit_for_mode;
-use codex_context_reduction::post_sampling_auto_compact_action;
 use codex_context_reduction::restored_session_auto_compact_token_limit;
 use codex_features::Feature;
 use codex_git_utils::get_git_repo_root;
@@ -498,39 +495,19 @@ pub(crate) async fn run_turn(
                 can_drain_pending_input = true;
                 let has_pending_input = sess.has_pending_input().await;
                 let needs_follow_up = model_needs_follow_up || has_pending_input;
-                let total_usage_tokens = sess.get_total_token_usage().await;
-                let visible_context_percent_used = sess.visible_context_percent_used().await;
-                let token_limit_reached = total_usage_tokens >= auto_compact_limit;
-                let semantic_compact_decision = if token_limit_reached {
-                    SemanticCompactDecision::Skip
-                } else {
-                    sess.semantic_compact_decision(semantic_compact_input(
-                        &turn_context,
-                        total_usage_tokens,
-                        auto_compact_limit,
-                        visible_context_percent_used,
-                    ))
-                    .await
-                };
-                let early_context_pressure_reached = matches!(
-                    semantic_compact_decision,
-                    SemanticCompactDecision::Compact {
-                        reason: ContextReductionReason::EarlyContextPressure
-                    }
-                );
-                let auto_compact_action =
-                    post_sampling_auto_compact_action(PostSamplingAutoCompactInput {
-                        needs_follow_up,
-                        total_usage_tokens,
-                        auto_compact_limit,
-                        semantic_compact_decision,
-                    });
-                let compaction_reason = match auto_compact_action {
-                    Some(PostSamplingAutoCompactAction::BeforeFollowUp(reason)) => {
-                        Some(context_reduction_reason_to_compaction_reason(reason))
-                    }
-                    Some(PostSamplingAutoCompactAction::AfterFinalResponse(_)) | None => None,
-                };
+                let PostSamplingCompactionDecision {
+                    total_usage_tokens,
+                    token_limit_reached,
+                    early_context_pressure_reached,
+                    auto_compact_action,
+                    compaction_reason,
+                } = post_sampling_compaction_decision(
+                    sess.as_ref(),
+                    turn_context.as_ref(),
+                    auto_compact_limit,
+                    needs_follow_up,
+                )
+                .await;
 
                 let estimated_token_count =
                     sess.get_estimated_token_count(turn_context.as_ref()).await;
@@ -1303,14 +1280,6 @@ fn format_compaction_phase(phase: CompactionPhase) -> &'static str {
         CompactionPhase::MidTurn => "mid-turn continuation",
         CompactionPhase::PostTurn => "post-turn cleanup",
     }
-}
-
-pub(crate) fn auto_compact_token_limit(turn_context: &TurnContext) -> i64 {
-    auto_compact_token_limit_for_mode(AutoCompactTokenLimitInput {
-        model_limits: model_auto_compact_limits(&turn_context.model_info),
-        runtime_context_window: turn_context.model_context_window(),
-        budget_mode: auto_compact_budget_mode(turn_context.config.context_budget_mode),
-    })
 }
 
 pub(super) fn collect_explicit_app_ids_from_skill_items(

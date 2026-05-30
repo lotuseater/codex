@@ -110,13 +110,9 @@ impl App {
                 // Leaving alt-screen may blank the inline viewport; force a redraw either way.
                 tui.frame_requester().schedule_frame();
             }
-            AppEvent::AutoLoop(update) => {
-                self.handle_auto_loop_update(update);
-                tui.frame_requester().schedule_frame();
-            }
+            AppEvent::AutoLoop(update) => event_dispatch_local::on_auto_loop(self, tui, update),
             AppEvent::SubmitAutoLoopAfterSelfReview => {
-                self.handle_auto_loop_after_self_review();
-                tui.frame_requester().schedule_frame();
+                event_dispatch_local::on_submit_auto_loop_after_self_review(self, tui)
             }
             AppEvent::ResumeSessionByIdOrName(id_or_name) => {
                 match crate::lookup_session_target_with_app_server(app_server, &id_or_name).await? {
@@ -1425,43 +1421,7 @@ impl App {
                 }
             }
             AppEvent::PersistContextBudgetModeSelection { mode } => {
-                self.refresh_status_line();
-                let profile = self.active_profile.as_deref();
-                self.config.context_budget_mode = mode;
-                match ConfigEditsBuilder::new(&self.config.codex_home)
-                    .with_profile(profile)
-                    .set_context_budget_mode(mode)
-                    .apply()
-                    .await
-                {
-                    Ok(()) => {
-                        let status =
-                            if mode == codex_protocol::config_types::ContextBudgetMode::Slow {
-                                "on"
-                            } else {
-                                "off"
-                            };
-                        let mut message = format!("Slow mode set to {status}");
-                        if let Some(profile) = profile {
-                            message.push_str(" for ");
-                            message.push_str(profile);
-                            message.push_str(" profile");
-                        }
-                        self.chat_widget.add_info_message(message, /*hint*/ None);
-                    }
-                    Err(err) => {
-                        tracing::error!(error = %err, "failed to persist slow mode selection");
-                        if let Some(profile) = profile {
-                            self.chat_widget.add_error_message(format!(
-                                "Failed to save Slow mode for profile `{profile}`: {err}"
-                            ));
-                        } else {
-                            self.chat_widget.add_error_message(format!(
-                                "Failed to save default Slow mode: {err}"
-                            ));
-                        }
-                    }
-                }
+                event_dispatch_local::on_persist_context_budget_mode_selection(self, mode).await
             }
             AppEvent::PersistRealtimeAudioDeviceSelection { kind, name } => {
                 let builder = match kind {

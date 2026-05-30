@@ -20,28 +20,19 @@ use tracing::info_span;
 use tracing::trace;
 use tracing::warn;
 
-use crate::compact::InitialContextInjection;
-use crate::compact::is_compaction_max_output_tokens;
 use crate::config::Config;
 use crate::context::ContextualUserFragment;
-use crate::context_reduction_adapter::context_reduction_reason_to_compaction_reason;
-use crate::context_reduction_adapter::semantic_compact_input;
 use crate::goals::GoalRuntimeEvent;
 use crate::hook_runtime::inspect_pending_input;
 use crate::hook_runtime::record_additional_contexts;
 use crate::hook_runtime::record_pending_input;
 use crate::session::TurnInput;
 use crate::session::session::Session;
-use crate::session::turn::auto_compact_token_limit;
-use crate::session::turn::run_auto_compact;
 use crate::session::turn_context::TurnContext;
 use crate::state::ActiveTurn;
 use crate::state::RunningTask;
 use crate::state::TaskKind;
-use codex_analytics::CompactionPhase;
-use codex_analytics::CompactionReason;
 use codex_analytics::TurnTokenUsageFact;
-use codex_context_reduction::SemanticCompactDecision;
 use codex_extension_api::ExtensionData;
 use codex_login::AuthManager;
 use codex_models_manager::manager::SharedModelsManager;
@@ -897,97 +888,6 @@ impl Session {
                 warn!("failed to apply goal runtime maybe-continue event: {err}");
             }
         }
-    }
-
-    async fn maybe_run_post_turn_semantic_compact(
-        self: &Arc<Self>,
-        turn_context: &Arc<TurnContext>,
-    ) -> anyhow::Result<()> {
-        let total_usage_tokens = self.get_total_token_usage().await;
-        let auto_compact_limit = auto_compact_token_limit(turn_context);
-        let visible_context_percent_used = self.visible_context_percent_used().await;
-        let reason = if total_usage_tokens >= auto_compact_limit {
-            if self
-                .is_post_turn_compact_max_output_suppressed(total_usage_tokens, auto_compact_limit)
-                .await
-            {
-                return Ok(());
-            }
-            Some(CompactionReason::ContextLimit)
-        } else {
-            match self
-                .semantic_compact_decision(semantic_compact_input(
-                    turn_context,
-                    total_usage_tokens,
-                    auto_compact_limit,
-                    visible_context_percent_used,
-                ))
-                .await
-            {
-                SemanticCompactDecision::Compact { reason } => {
-                    Some(context_reduction_reason_to_compaction_reason(reason))
-                }
-                SemanticCompactDecision::Skip => None,
-            }
-        };
-
-        let Some(reason) = reason else {
-            return Ok(());
-        };
-        if self.has_pending_input().await {
-            return Ok(());
-        }
-        let mut client_session = self.services.model_client.new_session();
-        let compact_result = if reason == CompactionReason::SemanticCheckpoint {
-            let git_outcome = self
-                .semantic_checkpoint_git_sync(turn_context, reason)
-                .await;
-            if git_outcome.should_warn() {
-                self.send_event(
-                    turn_context.as_ref(),
-                    EventMsg::Warning(WarningEvent {
-                        message: git_outcome.summary(),
-                    }),
-                )
-                .await;
-            }
-            let scratchpad = self
-                .write_semantic_compact_scratchpad(turn_context, reason, &git_outcome.summary())
-                .await;
-            let compact_result = run_auto_compact(
-                self,
-                turn_context,
-                &mut client_session,
-                InitialContextInjection::DoNotInject,
-                reason,
-                CompactionPhase::PostTurn,
-            )
-            .await;
-            self.cleanup_semantic_compact_scratchpad(scratchpad);
-            compact_result
-        } else {
-            run_auto_compact(
-                self,
-                turn_context,
-                &mut client_session,
-                InitialContextInjection::DoNotInject,
-                reason,
-                CompactionPhase::PostTurn,
-            )
-            .await
-        };
-        if reason == CompactionReason::ContextLimit
-            && let Err(err) = &compact_result
-            && is_compaction_max_output_tokens(err)
-        {
-            self.record_post_turn_compact_max_output_suppression(
-                total_usage_tokens,
-                auto_compact_limit,
-            )
-            .await;
-        }
-        compact_result?;
-        Ok(())
     }
 
     async fn take_active_turn(&self) -> Option<ActiveTurn> {

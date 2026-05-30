@@ -205,6 +205,7 @@ mod auto_loop;
 mod background_requests;
 mod config_persistence;
 mod event_dispatch;
+mod event_dispatch_local;
 mod history_ui;
 mod input;
 mod loaded_threads;

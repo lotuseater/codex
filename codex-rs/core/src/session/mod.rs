@@ -202,6 +202,7 @@ mod checkpoint_git;
 mod checkpoint_scratchpad;
 mod config_lock;
 mod context_budget;
+mod context_budget_adapter;
 mod desktop_automation;
 mod first_moves;
 mod fork_features;

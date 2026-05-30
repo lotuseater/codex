@@ -128,10 +128,6 @@ pub enum Feature {
     ShellSnapshot,
     /// Removed legacy git commit attribution guidance flag.
     CodexGitCommit,
-    /// Enable semantic pre-turn auto-compaction at logical continuation checkpoints.
-    SemanticAutoCompact,
-    /// Enable git commit and push at semantic compaction checkpoints.
-    SemanticCheckpointGitSync,
     /// Enable runtime metrics snapshots via a manual reader.
     RuntimeMetrics,
     /// Persist rollout metadata to a local SQLite database.
@@ -246,12 +242,23 @@ pub enum Feature {
     RemoteCompactionV2,
     /// Enable workspace dependency support.
     WorkspaceDependencies,
+
+    // ---- fork-local features (keep grouped to avoid upstream merge conflicts) ----
+    // New fork-specific variants go in THIS block, at the end of the enum, so that
+    // upstream additions land in their own (upstream) positions above and do not
+    // textually collide with ours. Order within this block is not load-bearing
+    // (serialization keys off the string `key`, not the enum discriminant).
+    /// Enable semantic pre-turn auto-compaction at logical continuation checkpoints.
+    SemanticAutoCompact,
+    /// Enable git commit and push at semantic compaction checkpoints.
+    SemanticCheckpointGitSync,
     /// Enable compact context operation tools.
     ContextOps,
     /// Shadow safe shell discovery commands with compact context operations.
     ContextOpsShadow,
     /// Replace proven read-only shell outputs with compact context operation output.
     ContextOpsReplace,
+    // ---- end fork-local features ----
 }
 
 impl Feature {
@@ -790,18 +797,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: false,
     },
     FeatureSpec {
-        id: Feature::SemanticAutoCompact,
-        key: "semantic_auto_compact",
-        stage: Stage::Stable,
-        default_enabled: true,
-    },
-    FeatureSpec {
-        id: Feature::SemanticCheckpointGitSync,
-        key: "semantic_checkpoint_git_sync",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
         id: Feature::RuntimeMetrics,
         key: "runtime_metrics",
         stage: Stage::UnderDevelopment,
@@ -1201,6 +1196,22 @@ pub const FEATURES: &[FeatureSpec] = &[
         stage: Stage::Stable,
         default_enabled: true,
     },
+    // ---- fork-local features (keep grouped to avoid upstream merge conflicts) ----
+    // Mirrors the trailing fork-local block in the `Feature` enum above. New
+    // fork-specific FeatureSpec entries go HERE so upstream additions append in
+    // their own positions and do not textually collide with ours.
+    FeatureSpec {
+        id: Feature::SemanticAutoCompact,
+        key: "semantic_auto_compact",
+        stage: Stage::Stable,
+        default_enabled: true,
+    },
+    FeatureSpec {
+        id: Feature::SemanticCheckpointGitSync,
+        key: "semantic_checkpoint_git_sync",
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
+    },
     FeatureSpec {
         id: Feature::ContextOps,
         key: "context_ops",
@@ -1219,6 +1230,7 @@ pub const FEATURES: &[FeatureSpec] = &[
         stage: Stage::UnderDevelopment,
         default_enabled: true,
     },
+    // ---- end fork-local features ----
 ];
 
 pub fn unstable_features_warning_message(

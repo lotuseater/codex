@@ -143,30 +143,7 @@ pub fn output_schema() -> Value {
             "rollout_summary": { "type": "string" },
             "rollout_slug": { "type": ["string", "null"] },
             "raw_memory": { "type": "string" },
-            "metadata": {
-                "type": "object",
-                "properties": {
-                    "project_key": { "type": ["string", "null"] },
-                    "problem_families": { "type": "array", "items": { "type": "string" } },
-                    "symptoms": { "type": "array", "items": { "type": "string" } },
-                    "edit_surfaces": { "type": "array", "items": { "type": "string" } },
-                    "verified_commands": { "type": "array", "items": { "type": "string" } },
-                    "failure_modes": { "type": "array", "items": { "type": "string" } },
-                    "routing_keywords": { "type": "array", "items": { "type": "string" } },
-                    "staleness_notes": { "type": "array", "items": { "type": "string" } }
-                },
-                "required": [
-                    "project_key",
-                    "problem_families",
-                    "symptoms",
-                    "edit_surfaces",
-                    "verified_commands",
-                    "failure_modes",
-                    "routing_keywords",
-                    "staleness_notes"
-                ],
-                "additionalProperties": false
-            }
+            "metadata": crate::metadata::metadata_schema_fragment()
         },
         "required": ["rollout_summary", "rollout_slug", "raw_memory", "metadata"],
         "additionalProperties": false
@@ -342,26 +319,9 @@ mod job {
         output.raw_memory = redact_secrets(output.raw_memory);
         output.rollout_summary = redact_secrets(output.rollout_summary);
         output.rollout_slug = output.rollout_slug.map(redact_secrets);
-        output.metadata = redact_stage_one_metadata(output.metadata);
+        output.metadata = crate::metadata::redact_stage_one_metadata(output.metadata);
 
         Ok((output, token_usage))
-    }
-
-    fn redact_stage_one_metadata(metadata: Stage1MemoryMetadata) -> Stage1MemoryMetadata {
-        Stage1MemoryMetadata {
-            project_key: metadata.project_key.map(redact_secrets),
-            problem_families: redact_metadata_strings(metadata.problem_families),
-            symptoms: redact_metadata_strings(metadata.symptoms),
-            edit_surfaces: redact_metadata_strings(metadata.edit_surfaces),
-            verified_commands: redact_metadata_strings(metadata.verified_commands),
-            failure_modes: redact_metadata_strings(metadata.failure_modes),
-            routing_keywords: redact_metadata_strings(metadata.routing_keywords),
-            staleness_notes: redact_metadata_strings(metadata.staleness_notes),
-        }
-    }
-
-    fn redact_metadata_strings(values: Vec<String>) -> Vec<String> {
-        values.into_iter().map(redact_secrets).collect()
     }
 
     mod result {
@@ -631,35 +591,6 @@ mod job {
             .expect("stage-one output without metadata should deserialize");
 
             assert_eq!(output.metadata, Stage1MemoryMetadata::default());
-        }
-
-        #[test]
-        fn stage_one_metadata_is_redacted_before_persistence() {
-            let metadata = Stage1MemoryMetadata {
-                project_key: Some("token=abcdef1234567890".to_string()),
-                symptoms: vec!["observed sk-abcdefghijklmnopqrstuvwxyz123456".to_string()],
-                verified_commands: vec![
-                    "curl -H 'Authorization: Bearer abcdefghijklmnop'".to_string(),
-                ],
-                routing_keywords: vec!["password=hunter222222".to_string()],
-                ..Stage1MemoryMetadata::default()
-            };
-
-            let redacted = redact_stage_one_metadata(metadata);
-
-            assert_eq!(
-                redacted.project_key.as_deref(),
-                Some("token=[REDACTED_SECRET]")
-            );
-            assert_eq!(redacted.symptoms, vec!["observed [REDACTED_SECRET]"]);
-            assert_eq!(
-                redacted.verified_commands,
-                vec!["curl -H 'Authorization: Bearer [REDACTED_SECRET]'"]
-            );
-            assert_eq!(
-                redacted.routing_keywords,
-                vec!["password=[REDACTED_SECRET]"]
-            );
         }
     }
 }

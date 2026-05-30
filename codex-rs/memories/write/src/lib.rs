@@ -7,6 +7,7 @@
 mod control;
 mod extensions;
 mod guard;
+mod metadata;
 mod metrics;
 mod phase1;
 mod phase2;
