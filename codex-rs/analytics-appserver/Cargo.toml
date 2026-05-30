@@ -1,0 +1,36 @@
+[package]
+edition.workspace = true
+license.workspace = true
+name = "codex-analytics-appserver"
+version.workspace = true
+
+[lib]
+doctest = false
+name = "codex_analytics_appserver"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+codex-analytics = { workspace = true }
+codex-app-server-protocol = { workspace = true }
+codex-git-utils = { workspace = true }
+codex-login = { workspace = true }
+codex-protocol = { workspace = true }
+hex = { workspace = true }
+os_info = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sha1 = { workspace = true }
+tokio = { workspace = true, features = [
+    "macros",
+    "rt-multi-thread",
+] }
+tracing = { workspace = true, features = ["log"] }
+
+[dev-dependencies]
+codex-plugin = { workspace = true }
+codex-utils-absolute-path = { workspace = true }
+pretty_assertions = { workspace = true }

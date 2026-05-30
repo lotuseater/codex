@@ -1,0 +1,23 @@
+{
+  "name": null,
+  "status": "ok",
+  "spec": "<inline>",
+  "log": "C:\\Users\\Oleh\\Documents\\GitHub\\open_ai\\codex\\codex-rs\\.codex\\workflow-batch\\call_nqREAOIUBbKdCcXRcHIiHdFV-events.jsonl",
+  "vars": {},
+  "steps_total": 1,
+  "steps_failed": 0,
+  "steps_skipped": 0,
+  "steps": [
+    {
+      "id": "step_1",
+      "status": "ok",
+      "elapsed_ms": 0,
+      "rc": null,
+      "stdout_digest": "4f8b6d9e632ee0090e789c60a54f1fc71f0c3077",
+      "stdout_preview": "use crate::agents_md::AgentsMdManager;\nuse crate::config::edit::ConfigEdit;\nuse crate::config::edit::ConfigEditsBuilder;\nuse crate::path_utils::normalize_for_native_workdir;\nuse cr...[truncated]",
+      "stderr_preview": null,
+      "note": null,
+      "iteration": null
+    }
+  ]
+}

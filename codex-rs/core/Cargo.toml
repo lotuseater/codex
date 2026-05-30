@@ -270,7 +270,6 @@ codex-config = { workspace = true }
 codex-context-pack = { workspace = true }
 codex-context-reduction = { workspace = true }
 codex-context-ops-impl = { workspace = true }
-codex-core-api = { workspace = true }
 codex-core-plugins = { workspace = true }
 codex-core-skills = { workspace = true }
 codex-desktop-automation = { workspace = true }
@@ -312,6 +311,7 @@ codex-terminal-detection = { workspace = true }
 codex-thread-manager-api = { workspace = true }
 codex-thread-store = { workspace = true }
 codex-thread-store-api = { workspace = true }
+codex-tools = { workspace = true }
 codex-tool-execution-api = { workspace = true }
 codex-tool-registry-api = { workspace = true }
 codex-tool-schema = { workspace = true }

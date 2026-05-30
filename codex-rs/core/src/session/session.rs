@@ -913,6 +913,7 @@ impl Session {
                     Arc::clone(&auth_manager),
                     config.chatgpt_base_url.trim_end_matches('/').to_string(),
                     config.analytics_enabled,
+                    Box::new(codex_analytics::CustomFactReducer::default()),
                 )
             });
             let session_id = if session_configuration.session_source.is_non_root_agent() {

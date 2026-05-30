@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::app_event::AppEvent;
+use crate::legacy_core::config::PermissionProfileSnapshot;
 
 impl ChatWidget {
     /// Set the approval policy in the widget's config copy.
@@ -19,17 +20,13 @@ impl ChatWidget {
     }
 
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-    pub(crate) fn set_permission_profile_with_active_profile(
+    pub(crate) fn set_permission_profile_from_session_snapshot(
         &mut self,
-        permission_profile: PermissionProfile,
-        active_permission_profile: Option<ActivePermissionProfile>,
+        snapshot: PermissionProfileSnapshot,
     ) -> ConstraintResult<()> {
         self.config
             .permissions
-            .set_permission_profile_with_active_profile(
-                permission_profile,
-                active_permission_profile,
-            )?;
+            .set_permission_profile_from_session_snapshot(snapshot)?;
         self.refresh_status_surfaces();
         Ok(())
     }
@@ -783,6 +780,7 @@ impl ChatWidget {
                 /*effort*/ None,
                 /*summary*/ None,
                 /*service_tier*/ None,
+                /*context_budget_mode*/ None,
                 Some(self.effective_collaboration_mode()),
                 /*personality*/ None,
             ),

@@ -1,0 +1,45 @@
+{
+  "name": null,
+  "status": "ok",
+  "spec": "<inline>",
+  "log": "C:\\Users\\Oleh\\Documents\\GitHub\\open_ai\\codex\\codex-rs\\.codex\\workflow-batch\\call_dlJe73z8tcsd5JemxuhnXQAA-events.jsonl",
+  "vars": {},
+  "steps_total": 3,
+  "steps_failed": 0,
+  "steps_skipped": 0,
+  "steps": [
+    {
+      "id": "step_1",
+      "status": "ok",
+      "elapsed_ms": 0,
+      "rc": null,
+      "stdout_digest": "a81086b933042d00e13c4f6e8ecf9d0efa4668d9",
+      "stdout_preview": "//! Defines the protocol for a Codex session between a client and an agent.\n//!\n//! Uses a SQ (Submission Queue) / EQ (Event Queue) pattern to asynchronously communicate\n//! betwee...[truncated]",
+      "stderr_preview": null,
+      "note": null,
+      "iteration": null
+    },
+    {
+      "id": "step_2",
+      "status": "ok",
+      "elapsed_ms": 0,
+      "rc": null,
+      "stdout_digest": "c2309f8d1ff8a86be9a59df00cb888ac613d3d54",
+      "stdout_preview": "use crate::agent::AgentStatus;\nuse crate::config::ConstraintResult;\nuse crate::goals::ExternalGoalSet;\nuse crate::goals::GoalRuntimeEvent;\nuse crate::session::Codex;\nuse crate::ses...[truncated]",
+      "stderr_preview": null,
+      "note": null,
+      "iteration": null
+    },
+    {
+      "id": "step_3",
+      "status": "ok",
+      "elapsed_ms": 0,
+      "rc": null,
+      "stdout_digest": "467b3f401693c67f4a785bd7d0e8effbb53e7bb9",
+      "stdout_preview": "//! Thread manager command boundary.\n//!\n//! This crate owns the command/result DTOs for thread orchestration without\n//! depending on concrete sessions, stores, app-server protoco...[truncated]",
+      "stderr_preview": null,
+      "note": null,
+      "iteration": null
+    }
+  ]
+}

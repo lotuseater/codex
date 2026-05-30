@@ -3,6 +3,7 @@ use std::sync::atomic::Ordering;
 
 use axum::http::HeaderValue;
 use codex_analytics::AppServerRpcTransport;
+use codex_analytics_appserver::AppServerAnalyticsExt;
 use codex_login::default_client::SetOriginatorError;
 use codex_login::default_client::USER_AGENT_SUFFIX;
 use codex_login::default_client::get_codex_user_agent;

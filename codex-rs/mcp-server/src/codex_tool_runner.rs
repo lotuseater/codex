@@ -21,6 +21,7 @@ use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::ExecApprovalRequestEvent;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::Submission;
+use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::protocol::TurnCompleteEvent;
 use codex_protocol::user_input::UserInput;
 use rmcp::model::CallToolResult;
@@ -116,6 +117,7 @@ pub async fn run_codex_tool_session(
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            thread_settings: ThreadSettingsOverrides::default(),
         },
         trace: None,
     };
@@ -165,6 +167,7 @@ pub async fn run_codex_tool_session_reply(
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            thread_settings: ThreadSettingsOverrides::default(),
         })
         .await
     {

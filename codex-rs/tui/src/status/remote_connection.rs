@@ -20,7 +20,7 @@ pub(crate) fn remote_connection_status_value(
     };
     let address = match endpoint {
         RemoteAppServerEndpoint::WebSocket { websocket_url, .. } => {
-            sanitized_websocket_display_address(websocket_url)
+            sanitized_websocket_display_address(websocket_url.as_str())
                 .unwrap_or_else(|| "<invalid websocket URL>".to_string())
         }
         RemoteAppServerEndpoint::UnixSocket { socket_path } => {

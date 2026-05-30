@@ -1,4 +1,5 @@
 use super::*;
+use codex_analytics_appserver::AppServerAnalyticsExt;
 use codex_core::CodexThreadSettingsOverrides;
 
 #[derive(Clone)]

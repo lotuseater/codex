@@ -73,20 +73,6 @@ pub(crate) use mcp_server_elicitation::McpServerElicitationOverlay;
 pub(crate) use request_user_input::RequestUserInputOverlay;
 pub(crate) use status_line_style::status_line_from_segments;
 mod bottom_pane_view;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct LocalImageAttachment {
-    pub(crate) placeholder: String,
-    pub(crate) path: PathBuf,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct MentionBinding {
-    /// Mention token text without the leading `$`.
-    pub(crate) mention: String,
-    /// Canonical mention target (for example `app://...` or absolute SKILL.md path).
-    pub(crate) path: String,
-}
 mod chat_composer;
 mod chat_composer_history;
 mod command_popup;
@@ -147,34 +133,15 @@ pub(crate) use feedback_view::FeedbackNoteView;
 pub(crate) use hooks_browser_view::HooksBrowserView;
 pub(crate) use selection_tabs::SelectionTab;
 
-/// How long the "press again to quit" hint stays visible.
-///
-/// This is shared between:
-/// - `ChatWidget`: arming the double-press quit shortcut.
-/// - `BottomPane`/`ChatComposer`: rendering and expiring the footer hint.
-///
-/// Keeping a single value ensures Ctrl+C and Ctrl+D behave identically.
-pub(crate) const QUIT_SHORTCUT_TIMEOUT: Duration = Duration::from_secs(1);
-
-const APPROVAL_PROMPT_TYPING_IDLE_DELAY: Duration = Duration::from_secs(1);
-
-/// Whether Ctrl+C/Ctrl+D require a second press to quit.
-///
-/// This UX experiment was enabled by default, but requiring a double press to quit feels janky in
-/// practice (especially for users accustomed to shells and other TUIs). Disable it for now while we
-/// rethink a better quit/interrupt design.
-pub(crate) const DOUBLE_PRESS_QUIT_SHORTCUT_ENABLED: bool = false;
-
-/// The result of offering a cancellation key to a bottom-pane surface.
-///
-/// This is primarily used for Ctrl+C routing: active views can consume the key to dismiss
-/// themselves, and the caller can decide what higher-level action (if any) to take when the key is
-/// not handled locally.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CancellationEvent {
-    Handled,
-    NotHandled,
-}
+mod config;
+mod rendering;
+mod types;
+use types::*;
+pub(crate) use types::CancellationEvent;
+pub(crate) use types::DOUBLE_PRESS_QUIT_SHORTCUT_ENABLED;
+pub(crate) use types::LocalImageAttachment;
+pub(crate) use types::MentionBinding;
+pub(crate) use types::QUIT_SHORTCUT_TIMEOUT;
 
 use crate::bottom_pane::prompt_args::parse_slash_name;
 pub(crate) use chat_composer::ChatComposer;
@@ -188,11 +155,6 @@ pub(crate) use experimental_features_view::ExperimentalFeatureItem;
 pub(crate) use experimental_features_view::ExperimentalFeaturesView;
 pub(crate) use list_selection_view::SelectionAction;
 pub(crate) use list_selection_view::SelectionItem;
-
-struct DelayedApprovalRequest {
-    request: ApprovalRequest,
-    features: Features,
-}
 
 /// Pane displayed in the lower half of the chat UI.
 ///
@@ -294,39 +256,6 @@ impl BottomPane {
         }
     }
 
-    pub fn set_skills(&mut self, skills: Option<Vec<SkillMetadata>>) {
-        self.composer.set_skill_mentions(skills);
-        self.request_redraw();
-    }
-
-    /// Update image-paste behavior for the active composer and repaint immediately.
-    ///
-    /// Callers use this to keep composer affordances aligned with model capabilities.
-    pub fn set_image_paste_enabled(&mut self, enabled: bool) {
-        self.composer.set_image_paste_enabled(enabled);
-        self.request_redraw();
-    }
-
-    pub fn set_connectors_snapshot(&mut self, snapshot: Option<ConnectorsSnapshot>) {
-        self.composer.set_connector_mentions(snapshot);
-        self.request_redraw();
-    }
-
-    pub fn set_plugin_mentions(&mut self, plugins: Option<Vec<PluginCapabilitySummary>>) {
-        self.composer.set_plugin_mentions(plugins);
-        self.request_redraw();
-    }
-
-    pub fn set_plugins_command_enabled(&mut self, enabled: bool) {
-        self.composer.set_plugins_command_enabled(enabled);
-        self.request_redraw();
-    }
-
-    pub fn set_mentions_v2_enabled(&mut self, enabled: bool) {
-        self.composer.set_mentions_v2_enabled(enabled);
-        self.request_redraw();
-    }
-
     pub fn take_mention_bindings(&mut self) -> Vec<MentionBinding> {
         self.composer.take_mention_bindings()
     }
@@ -343,116 +272,12 @@ impl BottomPane {
         self.composer.record_pending_slash_command_history();
     }
 
-    /// Replace all bottom-pane keymap caches from one resolved runtime keymap.
-    ///
-    /// The bottom pane owns several input surfaces: composer, overlays, and
-    /// selection views. Applying one snapshot through this method keeps those
-    /// surfaces synchronized after config reloads or interactive remaps. Callers
-    /// should not update the composer directly unless they deliberately want
-    /// overlays and selection views to continue using the previous bindings.
-    pub fn set_keymap_bindings(&mut self, keymap: &RuntimeKeymap) {
-        self.keymap = keymap.clone();
-        self.composer.set_keymap_bindings(keymap);
-        self.request_redraw();
-    }
-
     /// Clear pending attachments and mention bindings e.g. when a slash command doesn't submit text.
     pub(crate) fn drain_pending_submission_state(&mut self) {
         let _ = self.take_recent_submission_images_with_placeholders();
         let _ = self.take_remote_image_urls();
         let _ = self.take_recent_submission_mention_bindings();
         let _ = self.take_mention_bindings();
-    }
-
-    pub fn set_collaboration_modes_enabled(&mut self, enabled: bool) {
-        self.composer.set_collaboration_modes_enabled(enabled);
-        self.request_redraw();
-    }
-
-    pub fn set_connectors_enabled(&mut self, enabled: bool) {
-        self.composer.set_connectors_enabled(enabled);
-    }
-
-    #[cfg(target_os = "windows")]
-    pub fn set_windows_degraded_sandbox_active(&mut self, enabled: bool) {
-        self.composer.set_windows_degraded_sandbox_active(enabled);
-        self.request_redraw();
-    }
-
-    pub fn set_collaboration_mode_indicator(
-        &mut self,
-        indicator: Option<CollaborationModeIndicator>,
-    ) {
-        self.composer.set_collaboration_mode_indicator(indicator);
-        self.request_redraw();
-    }
-
-    pub fn set_goal_status_indicator(&mut self, indicator: Option<GoalStatusIndicator>) {
-        self.composer.set_goal_status_indicator(indicator);
-        self.request_redraw();
-    }
-
-    pub fn set_ide_context_active(&mut self, active: bool) {
-        self.composer.set_ide_context_active(active);
-        self.request_redraw();
-    }
-
-    pub fn set_personality_command_enabled(&mut self, enabled: bool) {
-        self.composer.set_personality_command_enabled(enabled);
-        self.request_redraw();
-    }
-
-    pub fn set_service_tier_commands_enabled(&mut self, enabled: bool) {
-        self.composer.set_service_tier_commands_enabled(enabled);
-        self.request_redraw();
-    }
-
-    pub fn set_service_tier_commands(&mut self, commands: Vec<ServiceTierCommand>) {
-        self.composer.set_service_tier_commands(commands);
-        self.request_redraw();
-    }
-
-    pub fn set_goal_command_enabled(&mut self, enabled: bool) {
-        self.composer.set_goal_command_enabled(enabled);
-        self.request_redraw();
-    }
-
-    pub fn set_realtime_conversation_enabled(&mut self, enabled: bool) {
-        self.composer.set_realtime_conversation_enabled(enabled);
-        self.request_redraw();
-    }
-
-    pub fn set_audio_device_selection_enabled(&mut self, enabled: bool) {
-        self.composer.set_audio_device_selection_enabled(enabled);
-        self.request_redraw();
-    }
-
-    pub(crate) fn set_side_conversation_active(&mut self, active: bool) {
-        self.composer.set_side_conversation_active(active);
-        self.request_redraw();
-    }
-
-    pub(crate) fn set_placeholder_text(&mut self, placeholder: String) {
-        self.composer.set_placeholder_text(placeholder);
-        self.request_redraw();
-    }
-
-    /// Update the key hint shown next to queued messages so it matches the
-    /// binding that `ChatWidget` actually listens for.
-    pub(crate) fn set_queued_message_edit_binding(&mut self, binding: Option<KeyBinding>) {
-        self.pending_input_preview.set_edit_binding(binding);
-        self.request_redraw();
-    }
-
-    pub(crate) fn set_vim_enabled(&mut self, enabled: bool) {
-        self.composer.set_vim_enabled(enabled);
-        self.request_redraw();
-    }
-
-    pub(crate) fn toggle_vim_enabled(&mut self) -> bool {
-        let enabled = self.composer.toggle_vim_enabled();
-        self.request_redraw();
-        enabled
     }
 
     pub fn status_widget(&self) -> Option<&StatusIndicatorWidget> {
@@ -1597,105 +1422,6 @@ impl BottomPane {
         self.composer.prepare_inline_args_submission(record_history)
     }
 
-    fn as_renderable(&'_ self) -> RenderableItem<'_> {
-        self.as_renderable_with_composer_right_reserve(/*composer_right_reserve*/ 0)
-    }
-
-    fn as_renderable_with_composer_right_reserve(
-        &'_ self,
-        composer_right_reserve: u16,
-    ) -> RenderableItem<'_> {
-        if let Some(view) = self.active_view() {
-            RenderableItem::Borrowed(view)
-        } else {
-            let mut flex = FlexRenderable::new();
-            if let Some(status) = &self.status {
-                flex.push(/*flex*/ 0, RenderableItem::Borrowed(status));
-            }
-            // Avoid double-surfacing the same summary and avoid adding an extra
-            // row while the status line is already visible.
-            if self.status.is_none() && !self.unified_exec_footer.is_empty() {
-                flex.push(
-                    /*flex*/ 0,
-                    RenderableItem::Borrowed(&self.unified_exec_footer),
-                );
-            }
-            let has_pending_thread_approvals = !self.pending_thread_approvals.is_empty();
-            let has_pending_input = !self.pending_input_preview.queued_messages.is_empty()
-                || !self.pending_input_preview.pending_steers.is_empty()
-                || !self.pending_input_preview.rejected_steers.is_empty();
-            let has_status_or_footer =
-                self.status.is_some() || !self.unified_exec_footer.is_empty();
-            let has_inline_previews = has_pending_thread_approvals || has_pending_input;
-            if has_inline_previews && has_status_or_footer {
-                flex.push(/*flex*/ 0, RenderableItem::Owned("".into()));
-            }
-            flex.push(
-                /*flex*/ 1,
-                RenderableItem::Borrowed(&self.pending_thread_approvals),
-            );
-            if has_pending_thread_approvals && has_pending_input {
-                flex.push(/*flex*/ 0, RenderableItem::Owned("".into()));
-            }
-            flex.push(
-                /*flex*/ 1,
-                RenderableItem::Borrowed(&self.pending_input_preview),
-            );
-            if !has_inline_previews && has_status_or_footer {
-                flex.push(/*flex*/ 0, RenderableItem::Owned("".into()));
-            }
-            let mut flex2 = FlexRenderable::new();
-            flex2.push(/*flex*/ 1, RenderableItem::Owned(flex.into()));
-            let composer: RenderableItem<'_> = if composer_right_reserve == 0 {
-                RenderableItem::Borrowed(&self.composer)
-            } else {
-                RenderableItem::Owned(Box::new(ChatComposerRightReserveRenderable {
-                    composer: &self.composer,
-                    right_reserve: composer_right_reserve,
-                }))
-            };
-            flex2.push(/*flex*/ 0, composer);
-            RenderableItem::Owned(Box::new(flex2))
-        }
-    }
-
-    pub(crate) fn render_with_composer_right_reserve(
-        &self,
-        area: Rect,
-        buf: &mut Buffer,
-        composer_right_reserve: u16,
-    ) {
-        self.as_renderable_with_composer_right_reserve(composer_right_reserve)
-            .render(area, buf);
-    }
-
-    pub(crate) fn desired_height_with_composer_right_reserve(
-        &self,
-        width: u16,
-        composer_right_reserve: u16,
-    ) -> u16 {
-        self.as_renderable_with_composer_right_reserve(composer_right_reserve)
-            .desired_height(width)
-    }
-
-    pub(crate) fn cursor_pos_with_composer_right_reserve(
-        &self,
-        area: Rect,
-        composer_right_reserve: u16,
-    ) -> Option<(u16, u16)> {
-        self.as_renderable_with_composer_right_reserve(composer_right_reserve)
-            .cursor_pos(area)
-    }
-
-    pub(crate) fn cursor_style_with_composer_right_reserve(
-        &self,
-        area: Rect,
-        composer_right_reserve: u16,
-    ) -> crossterm::cursor::SetCursorStyle {
-        self.as_renderable_with_composer_right_reserve(composer_right_reserve)
-            .cursor_style(area)
-    }
-
     pub(crate) fn set_status_line(&mut self, status_line: Option<Line<'static>>) {
         if self.composer.set_status_line(status_line) {
             self.request_redraw();
@@ -1737,36 +1463,6 @@ impl BottomPane {
     }
 }
 
-struct ChatComposerRightReserveRenderable<'a> {
-    composer: &'a chat_composer::ChatComposer,
-    right_reserve: u16,
-}
-
-impl Renderable for ChatComposerRightReserveRenderable<'_> {
-    fn render(&self, area: Rect, buf: &mut Buffer) {
-        self.composer.render_with_mask_and_textarea_right_reserve(
-            area,
-            buf,
-            /*mask_char*/ None,
-            self.right_reserve,
-        );
-    }
-
-    fn desired_height(&self, width: u16) -> u16 {
-        self.composer
-            .desired_height_with_textarea_right_reserve(width, self.right_reserve)
-    }
-
-    fn cursor_pos(&self, area: Rect) -> Option<(u16, u16)> {
-        self.composer
-            .cursor_pos_with_textarea_right_reserve(area, self.right_reserve)
-    }
-
-    fn cursor_style(&self, area: Rect) -> crossterm::cursor::SetCursorStyle {
-        self.composer.cursor_style(area)
-    }
-}
-
 #[cfg(not(target_os = "linux"))]
 impl BottomPane {
     pub(crate) fn insert_recording_meter_placeholder(&mut self, text: &str) -> String {
@@ -1789,22 +1485,6 @@ impl BottomPane {
         self.composer.remove_recording_meter_placeholder(id);
         self.composer.sync_popups();
         self.request_redraw();
-    }
-}
-
-impl Renderable for BottomPane {
-    fn render(&self, area: Rect, buf: &mut Buffer) {
-        self.as_renderable().render(area, buf);
-    }
-    fn desired_height(&self, width: u16) -> u16 {
-        self.as_renderable().desired_height(width)
-    }
-    fn cursor_pos(&self, area: Rect) -> Option<(u16, u16)> {
-        self.as_renderable().cursor_pos(area)
-    }
-
-    fn cursor_style(&self, area: Rect) -> crossterm::cursor::SetCursorStyle {
-        self.as_renderable().cursor_style(area)
     }
 }
 

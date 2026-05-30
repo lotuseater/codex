@@ -1,14 +1,4 @@
-use crate::events::AppServerRpcTransport;
-use crate::events::CodexRuntimeMetadata;
 use crate::events::GuardianReviewEventParams;
-use codex_app_server_protocol::ClientRequest;
-use codex_app_server_protocol::ClientResponsePayload;
-use codex_app_server_protocol::InitializeParams;
-use codex_app_server_protocol::JSONRPCErrorError;
-use codex_app_server_protocol::RequestId;
-use codex_app_server_protocol::ServerNotification;
-use codex_app_server_protocol::ServerRequest;
-use codex_app_server_protocol::ServerResponse;
 use codex_plugin::PluginTelemetryMetadata;
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::config_types::ModeKind;
@@ -25,7 +15,6 @@ use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SkillScope;
 use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::protocol::TokenUsage;
-use codex_protocol::request_permissions::RequestPermissionsResponse;
 use serde::Serialize;
 use std::path::PathBuf;
 
@@ -135,13 +124,13 @@ pub struct CodexTurnSteerEvent {
     pub created_at: u64,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, serde::Deserialize)]
 pub enum AnalyticsJsonRpcError {
     TurnSteer(TurnSteerRequestError),
     Input(InputError),
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, serde::Deserialize)]
 pub enum TurnSteerRequestError {
     NoActiveTurn,
     ExpectedTurnMismatch,
@@ -149,7 +138,7 @@ pub enum TurnSteerRequestError {
     NonSteerableCompact,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, serde::Deserialize)]
 pub enum InputError {
     Empty,
     TooLarge,
@@ -278,55 +267,19 @@ pub struct CodexCompactionEvent {
     pub duration_ms: Option<u64>,
 }
 
-#[allow(dead_code)]
-pub(crate) enum AnalyticsFact {
-    Initialize {
-        connection_id: u64,
-        params: InitializeParams,
-        product_client_id: String,
-        runtime: CodexRuntimeMetadata,
-        rpc_transport: AppServerRpcTransport,
-    },
-    ClientRequest {
-        connection_id: u64,
-        request_id: RequestId,
-        request: Box<ClientRequest>,
-    },
-    ClientResponse {
-        connection_id: u64,
-        request_id: RequestId,
-        response: Box<ClientResponsePayload>,
-    },
-    ErrorResponse {
-        connection_id: u64,
-        request_id: RequestId,
-        error: JSONRPCErrorError,
-        error_type: Option<AnalyticsJsonRpcError>,
-    },
-    ServerRequest {
-        connection_id: u64,
-        request: Box<ServerRequest>,
-    },
-    ServerResponse {
-        completed_at_ms: u64,
-        response: Box<ServerResponse>,
-    },
-    EffectivePermissionsApprovalResponse {
-        completed_at_ms: u64,
-        request_id: RequestId,
-        response: Box<RequestPermissionsResponse>,
-    },
-    ServerRequestAborted {
-        completed_at_ms: u64,
-        request_id: RequestId,
-    },
-    Notification(Box<ServerNotification>),
+pub enum AnalyticsFact {
+    /// An opaque, app-server-shaped fact. The payload is produced and
+    /// interpreted by the `codex-analytics-appserver` crate; this crate never
+    /// inspects it and only forwards it to the injected reducer. Keeping it
+    /// opaque is what lets `codex-analytics` stay free of
+    /// `codex-app-server-protocol`.
+    AppServer(serde_json::Value),
     // Facts that do not naturally exist on the app-server protocol surface, or
     // would require non-trivial protocol reshaping on this branch.
     Custom(CustomAnalyticsFact),
 }
 
-pub(crate) enum CustomAnalyticsFact {
+pub enum CustomAnalyticsFact {
     SubAgentThreadStarted(SubAgentThreadStartedInput),
     Compaction(Box<CodexCompactionEvent>),
     GuardianReview(Box<GuardianReviewEventParams>),
@@ -340,22 +293,22 @@ pub(crate) enum CustomAnalyticsFact {
     PluginStateChanged(PluginStateChangedInput),
 }
 
-pub(crate) struct SkillInvokedInput {
+pub struct SkillInvokedInput {
     pub tracking: TrackEventsContext,
     pub invocations: Vec<SkillInvocation>,
 }
 
-pub(crate) struct AppMentionedInput {
+pub struct AppMentionedInput {
     pub tracking: TrackEventsContext,
     pub mentions: Vec<AppInvocation>,
 }
 
-pub(crate) struct AppUsedInput {
+pub struct AppUsedInput {
     pub tracking: TrackEventsContext,
     pub app: AppInvocation,
 }
 
-pub(crate) struct HookRunInput {
+pub struct HookRunInput {
     pub tracking: TrackEventsContext,
     pub hook: HookRunFact,
 }
@@ -366,18 +319,18 @@ pub struct HookRunFact {
     pub status: HookRunStatus,
 }
 
-pub(crate) struct PluginUsedInput {
+pub struct PluginUsedInput {
     pub tracking: TrackEventsContext,
     pub plugin: PluginTelemetryMetadata,
 }
 
-pub(crate) struct PluginStateChangedInput {
+pub struct PluginStateChangedInput {
     pub plugin: PluginTelemetryMetadata,
     pub state: PluginState,
 }
 
 #[derive(Clone, Copy)]
-pub(crate) enum PluginState {
+pub enum PluginState {
     Installed,
     Uninstalled,
     Enabled,

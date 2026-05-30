@@ -1102,6 +1102,47 @@ impl FileSystemSandboxPolicy {
         self
     }
 
+    /// Replaces symbolic `:project_roots` entries with concrete entries for
+    /// each workspace root.
+    ///
+    /// Each `ProjectRoots { subpath }` entry expands into one concrete entry
+    /// per workspace root (resolving `subpath` against the root). All other
+    /// entries are preserved unchanged.
+    pub fn materialize_project_roots_with_workspace_roots(
+        mut self,
+        workspace_roots: &[AbsolutePathBuf],
+    ) -> Self {
+        let mut entries = Vec::with_capacity(self.entries.len());
+        for entry in self.entries {
+            match entry.path {
+                FileSystemPath::Special {
+                    value: FileSystemSpecialPath::ProjectRoots { subpath },
+                } => {
+                    entries.extend(workspace_roots.iter().map(|root| FileSystemSandboxEntry {
+                        path: FileSystemPath::Path {
+                            path: match subpath.as_ref() {
+                                Some(subpath) => AbsolutePathBuf::resolve_path_against_base(
+                                    subpath,
+                                    root.as_path(),
+                                ),
+                                None => root.clone(),
+                            },
+                        },
+                        access: entry.access,
+                    }));
+                }
+                path => {
+                    entries.push(FileSystemSandboxEntry {
+                        path,
+                        access: entry.access,
+                    });
+                }
+            }
+        }
+        self.entries = entries;
+        self
+    }
+
     pub fn with_additional_readable_roots(
         mut self,
         cwd: &Path,
@@ -3796,6 +3837,30 @@ impl PermissionProfile {
         Self::Managed {
             file_system: ManagedFileSystemPermissions::from_sandbox_policy(&file_system),
             network,
+        }
+    }
+
+    /// Replaces symbolic `:project_roots` entries with concrete entries for
+    /// each workspace root, leaving every other permission unchanged.
+    pub fn materialize_project_roots_with_workspace_roots(
+        self,
+        workspace_roots: &[AbsolutePathBuf],
+    ) -> Self {
+        match self {
+            Self::Managed {
+                file_system,
+                network,
+            } => {
+                let file_system = file_system
+                    .to_sandbox_policy()
+                    .materialize_project_roots_with_workspace_roots(workspace_roots);
+                Self::Managed {
+                    file_system: ManagedFileSystemPermissions::from_sandbox_policy(&file_system),
+                    network,
+                }
+            }
+            Self::Disabled => Self::Disabled,
+            Self::External { network } => Self::External { network },
         }
     }
 

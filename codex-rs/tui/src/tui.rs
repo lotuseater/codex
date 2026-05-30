@@ -1004,7 +1004,7 @@ fn ensure_virtual_terminal_processing() -> Result<()> {
     use windows_sys::Win32::System::Console::SetConsoleMode;
 
     fn enable_for_handle(handle: HANDLE) -> Result<()> {
-        if handle == INVALID_HANDLE_VALUE || handle == 0 {
+        if handle == INVALID_HANDLE_VALUE || handle.is_null() {
             return Ok(());
         }
 

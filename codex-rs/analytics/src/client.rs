@@ -1,11 +1,6 @@
-use crate::events::AppServerRpcTransport;
 use crate::events::GuardianReviewAnalyticsResult;
 use crate::events::GuardianReviewTrackContext;
-use crate::events::TrackEventRequest;
-use crate::events::TrackEventsRequest;
-use crate::events::current_runtime_metadata;
 use crate::facts::AnalyticsFact;
-use crate::facts::AnalyticsJsonRpcError;
 use crate::facts::AppInvocation;
 use crate::facts::AppMentionedInput;
 use crate::facts::AppUsedInput;
@@ -20,20 +15,12 @@ use crate::facts::SubAgentThreadStartedInput;
 use crate::facts::TrackEventsContext;
 use crate::facts::TurnResolvedConfigFact;
 use crate::facts::TurnTokenUsageFact;
-use crate::reducer::AnalyticsReducer;
-use codex_app_server_protocol::ClientRequest;
-use codex_app_server_protocol::ClientResponsePayload;
-use codex_app_server_protocol::InitializeParams;
-use codex_app_server_protocol::JSONRPCErrorError;
-use codex_app_server_protocol::RequestId;
-use codex_app_server_protocol::ServerNotification;
-use codex_app_server_protocol::ServerRequest;
-use codex_app_server_protocol::ServerResponse;
+use crate::reducer_api::AnalyticsReducer;
+use crate::reducer_api::TrackEvent;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_login::default_client::create_client;
 use codex_plugin::PluginTelemetryMetadata;
-use codex_protocol::request_permissions::RequestPermissionsResponse;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -57,10 +44,13 @@ pub struct AnalyticsEventsClient {
 }
 
 impl AnalyticsEventsQueue {
-    pub(crate) fn new(auth_manager: Arc<AuthManager>, base_url: String) -> Self {
+    pub(crate) fn new(
+        auth_manager: Arc<AuthManager>,
+        base_url: String,
+        mut reducer: Box<dyn AnalyticsReducer>,
+    ) -> Self {
         let (sender, mut receiver) = mpsc::channel(ANALYTICS_EVENTS_QUEUE_SIZE);
         tokio::spawn(async move {
-            let mut reducer = AnalyticsReducer::default();
             while let Some(input) = receiver.recv().await {
                 let mut events = Vec::new();
                 reducer.ingest(input, &mut events).await;
@@ -120,10 +110,12 @@ impl AnalyticsEventsClient {
         auth_manager: Arc<AuthManager>,
         base_url: String,
         analytics_enabled: Option<bool>,
+        reducer: Box<dyn AnalyticsReducer>,
     ) -> Self {
         Self {
-            queue: (analytics_enabled != Some(false))
-                .then(|| AnalyticsEventsQueue::new(Arc::clone(&auth_manager), base_url)),
+            queue: (analytics_enabled != Some(false)).then(|| {
+                AnalyticsEventsQueue::new(Arc::clone(&auth_manager), base_url, reducer)
+            }),
         }
     }
 
@@ -145,22 +137,6 @@ impl AnalyticsEventsClient {
                 invocations,
             },
         )));
-    }
-
-    pub fn track_initialize(
-        &self,
-        connection_id: u64,
-        params: InitializeParams,
-        product_client_id: String,
-        rpc_transport: AppServerRpcTransport,
-    ) {
-        self.record_fact(AnalyticsFact::Initialize {
-            connection_id,
-            params,
-            product_client_id,
-            runtime: current_runtime_metadata(),
-            rpc_transport,
-        });
     }
 
     pub fn track_subagent_thread_started(&self, input: SubAgentThreadStartedInput) {
@@ -187,25 +163,6 @@ impl AnalyticsEventsClient {
         self.record_fact(AnalyticsFact::Custom(CustomAnalyticsFact::AppMentioned(
             AppMentionedInput { tracking, mentions },
         )));
-    }
-
-    pub fn track_request(
-        &self,
-        connection_id: u64,
-        request_id: RequestId,
-        request: &ClientRequest,
-    ) {
-        if !matches!(
-            request,
-            ClientRequest::TurnStart { .. } | ClientRequest::TurnSteer { .. }
-        ) {
-            return;
-        }
-        self.record_fact(AnalyticsFact::ClientRequest {
-            connection_id,
-            request_id,
-            request: Box::new(request.clone()),
-        });
     }
 
     pub fn track_app_used(&self, tracking: TrackEventsContext, app: AppInvocation) {
@@ -292,106 +249,17 @@ impl AnalyticsEventsClient {
         ));
     }
 
-    pub(crate) fn record_fact(&self, input: AnalyticsFact) {
+    /// Enqueue a fact for the background reducer. Public so the
+    /// `codex-analytics-appserver` crate's app-server tracking extension can
+    /// submit its opaque [`AnalyticsFact::AppServer`] payloads.
+    pub fn record_fact(&self, input: AnalyticsFact) {
         if let Some(queue) = self.queue.as_ref() {
             queue.try_send(input);
         }
     }
-
-    pub fn track_response(
-        &self,
-        connection_id: u64,
-        request_id: RequestId,
-        response: ClientResponsePayload,
-    ) {
-        if !matches!(
-            response,
-            ClientResponsePayload::ThreadStart(_)
-                | ClientResponsePayload::ThreadResume(_)
-                | ClientResponsePayload::ThreadFork(_)
-                | ClientResponsePayload::TurnStart(_)
-                | ClientResponsePayload::TurnSteer(_)
-        ) {
-            return;
-        }
-        self.record_fact(AnalyticsFact::ClientResponse {
-            connection_id,
-            request_id,
-            response: Box::new(response),
-        });
-    }
-
-    pub fn track_error_response(
-        &self,
-        connection_id: u64,
-        request_id: RequestId,
-        error: JSONRPCErrorError,
-        error_type: Option<AnalyticsJsonRpcError>,
-    ) {
-        self.record_fact(AnalyticsFact::ErrorResponse {
-            connection_id,
-            request_id,
-            error,
-            error_type,
-        });
-    }
-
-    pub fn track_server_request(&self, connection_id: u64, request: ServerRequest) {
-        self.record_fact(AnalyticsFact::ServerRequest {
-            connection_id,
-            request: Box::new(request),
-        });
-    }
-
-    pub fn track_server_response(&self, completed_at_ms: u64, response: ServerResponse) {
-        self.record_fact(AnalyticsFact::ServerResponse {
-            completed_at_ms,
-            response: Box::new(response),
-        });
-    }
-
-    pub fn track_effective_permissions_approval_response(
-        &self,
-        completed_at_ms: u64,
-        request_id: RequestId,
-        response: RequestPermissionsResponse,
-    ) {
-        self.record_fact(AnalyticsFact::EffectivePermissionsApprovalResponse {
-            completed_at_ms,
-            request_id,
-            response: Box::new(response),
-        });
-    }
-
-    pub fn track_server_request_aborted(&self, completed_at_ms: u64, request_id: RequestId) {
-        self.record_fact(AnalyticsFact::ServerRequestAborted {
-            completed_at_ms,
-            request_id,
-        });
-    }
-
-    pub fn track_notification(&self, notification: ServerNotification) {
-        if !matches!(
-            notification,
-            ServerNotification::TurnStarted(_)
-                | ServerNotification::TurnCompleted(_)
-                | ServerNotification::TurnDiffUpdated(_)
-                | ServerNotification::ItemStarted(_)
-                | ServerNotification::ItemCompleted(_)
-                | ServerNotification::ItemGuardianApprovalReviewStarted(_)
-                | ServerNotification::ItemGuardianApprovalReviewCompleted(_)
-        ) {
-            return;
-        }
-        self.record_fact(AnalyticsFact::Notification(Box::new(notification)));
-    }
 }
 
-async fn send_track_events(
-    auth_manager: &AuthManager,
-    base_url: &str,
-    events: Vec<TrackEventRequest>,
-) {
+async fn send_track_events(auth_manager: &AuthManager, base_url: &str, events: Vec<TrackEvent>) {
     if events.is_empty() {
         return;
     }
@@ -410,7 +278,7 @@ async fn send_track_events(
     }
 }
 
-fn track_event_request_batches(events: Vec<TrackEventRequest>) -> Vec<Vec<TrackEventRequest>> {
+fn track_event_request_batches(events: Vec<TrackEvent>) -> Vec<Vec<TrackEvent>> {
     let mut batches = Vec::new();
     let mut current_batch = Vec::new();
 
@@ -433,12 +301,14 @@ fn track_event_request_batches(events: Vec<TrackEventRequest>) -> Vec<Vec<TrackE
     batches
 }
 
-async fn send_track_events_request(auth: &CodexAuth, url: &str, events: Vec<TrackEventRequest>) {
+async fn send_track_events_request(auth: &CodexAuth, url: &str, events: Vec<TrackEvent>) {
     if events.is_empty() {
         return;
     }
 
-    let payload = TrackEventsRequest { events };
+    let event_bodies: Vec<serde_json::Value> =
+        events.into_iter().map(TrackEvent::into_body).collect();
+    let payload = serde_json::json!({ "events": event_bodies });
 
     let response = create_client()
         .post(url)
@@ -463,5 +333,96 @@ async fn send_track_events_request(auth: &CodexAuth, url: &str, events: Vec<Trac
 }
 
 #[cfg(test)]
-#[path = "client_tests.rs"]
-mod tests;
+mod queue_dedupe_tests {
+    //! Per-turn dedupe behavior of [`AnalyticsEventsQueue`]. These live here
+    //! (rather than in `codex-analytics-appserver`) because they construct the
+    //! crate-private `AnalyticsEventsQueue` by field, which is only possible
+    //! within this crate.
+
+    use super::AnalyticsEventsQueue;
+    use crate::facts::AppInvocation;
+    use crate::facts::InvocationType;
+    use crate::facts::TrackEventsContext;
+    use codex_plugin::AppConnectorId;
+    use codex_plugin::PluginCapabilitySummary;
+    use codex_plugin::PluginId;
+    use codex_plugin::PluginTelemetryMetadata;
+    use std::collections::HashSet;
+    use std::sync::Arc;
+    use std::sync::Mutex;
+    use tokio::sync::mpsc;
+
+    fn sample_plugin_metadata() -> PluginTelemetryMetadata {
+        PluginTelemetryMetadata {
+            plugin_id: PluginId::parse("sample@test").expect("valid plugin id"),
+            remote_plugin_id: None,
+            capability_summary: Some(PluginCapabilitySummary {
+                config_name: "sample@test".to_string(),
+                display_name: "sample".to_string(),
+                description: None,
+                has_skills: true,
+                mcp_server_names: vec!["mcp-1".to_string(), "mcp-2".to_string()],
+                app_connector_ids: vec![
+                    AppConnectorId("calendar".to_string()),
+                    AppConnectorId("drive".to_string()),
+                ],
+            }),
+        }
+    }
+
+    #[test]
+    fn app_used_dedupe_is_keyed_by_turn_and_connector() {
+        let (sender, _receiver) = mpsc::channel(1);
+        let queue = AnalyticsEventsQueue {
+            sender,
+            app_used_emitted_keys: Arc::new(Mutex::new(HashSet::new())),
+            plugin_used_emitted_keys: Arc::new(Mutex::new(HashSet::new())),
+        };
+        let app = AppInvocation {
+            connector_id: Some("calendar".to_string()),
+            app_name: Some("Calendar".to_string()),
+            invocation_type: Some(InvocationType::Implicit),
+        };
+
+        let turn_1 = TrackEventsContext {
+            model_slug: "gpt-5".to_string(),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+        };
+        let turn_2 = TrackEventsContext {
+            model_slug: "gpt-5".to_string(),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-2".to_string(),
+        };
+
+        assert_eq!(queue.should_enqueue_app_used(&turn_1, &app), true);
+        assert_eq!(queue.should_enqueue_app_used(&turn_1, &app), false);
+        assert_eq!(queue.should_enqueue_app_used(&turn_2, &app), true);
+    }
+
+    #[test]
+    fn plugin_used_dedupe_is_keyed_by_turn_and_plugin() {
+        let (sender, _receiver) = mpsc::channel(1);
+        let queue = AnalyticsEventsQueue {
+            sender,
+            app_used_emitted_keys: Arc::new(Mutex::new(HashSet::new())),
+            plugin_used_emitted_keys: Arc::new(Mutex::new(HashSet::new())),
+        };
+        let plugin = sample_plugin_metadata();
+
+        let turn_1 = TrackEventsContext {
+            model_slug: "gpt-5".to_string(),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+        };
+        let turn_2 = TrackEventsContext {
+            model_slug: "gpt-5".to_string(),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-2".to_string(),
+        };
+
+        assert_eq!(queue.should_enqueue_plugin_used(&turn_1, &plugin), true);
+        assert_eq!(queue.should_enqueue_plugin_used(&turn_1, &plugin), false);
+        assert_eq!(queue.should_enqueue_plugin_used(&turn_2, &plugin), true);
+    }
+}

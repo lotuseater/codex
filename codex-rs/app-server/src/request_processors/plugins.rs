@@ -1060,7 +1060,8 @@ impl PluginRequestProcessor {
                 let remote_plugin_service_config = RemotePluginServiceConfig {
                     chatgpt_base_url: config.chatgpt_base_url.clone(),
                 };
-                validate_remote_plugin_id(&plugin_name)?;
+                validate_remote_plugin_id(&plugin_name)
+                    .map_err(|err| invalid_request(err.message))?;
                 let remote_detail = codex_core_plugins::remote::fetch_remote_plugin_detail(
                     &remote_plugin_service_config,
                     auth.as_ref(),
@@ -1107,7 +1108,7 @@ impl PluginRequestProcessor {
                 "remote plugin skill read is not enabled for marketplace {remote_marketplace_name}"
             )));
         }
-        validate_remote_plugin_id(&remote_plugin_id)?;
+        validate_remote_plugin_id(&remote_plugin_id).map_err(|err| invalid_request(err.message))?;
         if skill_name.is_empty() {
             return Err(invalid_request(
                 "invalid remote plugin skill name: cannot be empty",
@@ -1430,7 +1431,7 @@ impl PluginRequestProcessor {
                 "remote plugin install is not enabled for marketplace {remote_marketplace_name}"
             )));
         }
-        validate_remote_plugin_id(&remote_plugin_id)?;
+        validate_remote_plugin_id(&remote_plugin_id).map_err(|err| invalid_request(err.message))?;
 
         let auth = self.auth_manager.auth().await;
         let remote_plugin_service_config = RemotePluginServiceConfig {
@@ -1778,7 +1779,7 @@ impl PluginRequestProcessor {
         if !config.features.enabled(Feature::Plugins) {
             return Err(invalid_request("remote plugin uninstall is not enabled"));
         }
-        validate_remote_plugin_id(&plugin_id)?;
+        validate_remote_plugin_id(&plugin_id).map_err(|err| invalid_request(err.message))?;
 
         let auth = self.auth_manager.auth().await;
         let remote_plugin_service_config = RemotePluginServiceConfig {

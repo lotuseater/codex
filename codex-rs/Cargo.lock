@@ -1865,10 +1865,32 @@ dependencies = [
 name = "codex-analytics"
 version = "0.0.0"
 dependencies = [
- "codex-app-server-protocol",
+ "async-trait",
  "codex-git-utils",
  "codex-login",
  "codex-model-provider",
+ "codex-plugin",
+ "codex-protocol",
+ "codex-utils-absolute-path",
+ "hex",
+ "os_info",
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+ "sha1 0.11.0",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "codex-analytics-appserver"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "codex-analytics",
+ "codex-app-server-protocol",
+ "codex-git-utils",
+ "codex-login",
  "codex-plugin",
  "codex-protocol",
  "codex-utils-absolute-path",
@@ -1952,6 +1974,7 @@ dependencies = [
  "chrono",
  "clap",
  "codex-analytics",
+ "codex-analytics-appserver",
  "codex-app-catalog-types",
  "codex-app-server-protocol",
  "codex-app-server-transport",
@@ -2181,6 +2204,13 @@ dependencies = [
  "tokio",
  "tree-sitter",
  "tree-sitter-bash",
+]
+
+[[package]]
+name = "codex-architecture-check"
+version = "0.0.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]
@@ -2619,10 +2649,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "codex-context-budget"
-version = "0.0.0"
-
-[[package]]
 name = "codex-context-ops-impl"
 version = "0.0.0"
 dependencies = [
@@ -2678,7 +2704,6 @@ dependencies = [
  "codex-context-ops-impl",
  "codex-context-pack",
  "codex-context-reduction",
- "codex-core-api",
  "codex-core-plugins",
  "codex-core-skills",
  "codex-core-test-runtime",
@@ -2729,6 +2754,7 @@ dependencies = [
  "codex-tool-execution-api",
  "codex-tool-registry-api",
  "codex-tool-schema",
+ "codex-tools",
  "codex-turn-diff",
  "codex-utils-absolute-path",
  "codex-utils-cache",
@@ -2795,25 +2821,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "codex-core-api"
-version = "0.0.0"
-dependencies = [
- "codex-analytics",
- "codex-arg0",
- "codex-config",
- "codex-config-types",
- "codex-core-domain-types",
- "codex-extension-api",
- "codex-features",
- "codex-login",
- "codex-model-provider-info",
- "codex-models-manager",
- "codex-protocol",
- "codex-utils-absolute-path",
- "http 1.4.0",
-]
-
-[[package]]
 name = "codex-core-domain-types"
 version = "0.0.0"
 dependencies = [
@@ -2827,8 +2834,8 @@ dependencies = [
  "anyhow",
  "chrono",
  "codex-analytics",
- "codex-app-server-protocol",
  "codex-config",
+ "codex-config-types",
  "codex-core-skills",
  "codex-exec-server",
  "codex-git-utils",
@@ -3322,6 +3329,7 @@ dependencies = [
  "codex-protocol",
  "codex-tool-execution-api",
  "codex-tool-registry-api",
+ "codex-tools",
 ]
 
 [[package]]
@@ -3792,10 +3800,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "codex-model-client-api"
-version = "0.0.0"
-
-[[package]]
 name = "codex-model-provider"
 version = "0.0.0"
 dependencies = [
@@ -4221,10 +4225,6 @@ name = "codex-runtime-metrics-types"
 version = "0.0.0"
 
 [[package]]
-name = "codex-runtime-ports"
-version = "0.0.0"
-
-[[package]]
 name = "codex-sandboxing"
 version = "0.0.0"
 dependencies = [
@@ -4279,70 +4279,6 @@ name = "codex-session-api"
 version = "0.0.0"
 dependencies = [
  "codex-protocol",
- "serde",
-]
-
-[[package]]
-name = "codex-session-events"
-version = "0.0.0"
-dependencies = [
- "codex-session-api",
- "serde",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "codex-session-factory"
-version = "0.0.0"
-dependencies = [
- "codex-session-api",
- "codex-session-runtime-api",
- "serde",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "codex-session-input"
-version = "0.0.0"
-dependencies = [
- "serde",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "codex-session-policy"
-version = "0.0.0"
-dependencies = [
- "codex-session-api",
- "serde",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "codex-session-runtime"
-version = "0.0.0"
-dependencies = [
- "codex-session-api",
- "codex-session-events",
- "codex-session-runtime-api",
-]
-
-[[package]]
-name = "codex-session-runtime-api"
-version = "0.0.0"
-dependencies = [
- "codex-session-api",
- "codex-session-events",
- "codex-session-input",
- "serde",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "codex-session-state"
-version = "0.0.0"
-dependencies = [
- "codex-session-api",
  "serde",
 ]
 
@@ -4420,10 +4356,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "codex-state-db-api"
-version = "0.0.0"
-
-[[package]]
 name = "codex-stdio-to-uds"
 version = "0.0.0"
 dependencies = [
@@ -4446,10 +4378,6 @@ dependencies = [
  "serde",
  "serde_json",
 ]
-
-[[package]]
-name = "codex-telemetry-api"
-version = "0.0.0"
 
 [[package]]
 name = "codex-terminal-detection"
@@ -4571,10 +4499,18 @@ dependencies = [
  "anyhow",
  "clap",
  "codex-app-server-protocol",
+ "codex-arg0",
+ "codex-config",
+ "codex-config-types",
  "codex-core",
- "codex-core-api",
  "codex-exec-server",
+ "codex-extension-api",
+ "codex-features",
+ "codex-login",
+ "codex-model-provider-info",
+ "codex-protocol",
  "codex-thread-store",
+ "codex-utils-absolute-path",
  "serde_json",
  "tracing",
 ]
@@ -4631,6 +4567,7 @@ dependencies = [
  "codex-tool-registry-api",
  "codex-utils-absolute-path",
  "codex-utils-pty",
+ "serde",
  "serde_json",
  "thiserror 2.0.18",
  "tracing",
@@ -4847,10 +4784,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "codex-turn-api"
-version = "0.0.0"
-
-[[package]]
 name = "codex-turn-diff"
 version = "0.0.0"
 dependencies = [
@@ -4861,58 +4794,6 @@ dependencies = [
  "similar 3.1.0",
  "tempfile",
  "uuid",
-]
-
-[[package]]
-name = "codex-turn-events"
-version = "0.0.0"
-dependencies = [
- "codex-turn-api",
- "codex-turn-state",
-]
-
-[[package]]
-name = "codex-turn-loop"
-version = "0.0.0"
-dependencies = [
- "codex-turn-api",
- "codex-turn-events",
- "codex-turn-loop-api",
- "codex-turn-policy",
- "codex-turn-state",
- "codex-turn-tool-bridge",
-]
-
-[[package]]
-name = "codex-turn-loop-api"
-version = "0.0.0"
-dependencies = [
- "codex-turn-api",
- "codex-turn-events",
- "codex-turn-state",
-]
-
-[[package]]
-name = "codex-turn-policy"
-version = "0.0.0"
-dependencies = [
- "codex-turn-api",
- "codex-turn-state",
-]
-
-[[package]]
-name = "codex-turn-state"
-version = "0.0.0"
-dependencies = [
- "codex-turn-api",
-]
-
-[[package]]
-name = "codex-turn-tool-bridge"
-version = "0.0.0"
-dependencies = [
- "codex-turn-api",
- "codex-turn-events",
 ]
 
 [[package]]
@@ -12329,6 +12210,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3fbf2ae1b8bc8e02df939598064d22402220cd5bbcca1c76f7d6a310974d5615"
 dependencies = [
  "dyn-clone",
+ "indexmap 2.14.0",
  "schemars_derive 0.8.22",
  "serde",
  "serde_json",

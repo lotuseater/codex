@@ -2,6 +2,7 @@
 members = [
     "aws-auth",
     "analytics",
+    "analytics-appserver",
     "agent-graph-store",
     "agent-identity",
     "agent-policy",
@@ -27,13 +28,6 @@ members = [
     "first-moves",
     "repo-context-scout",
     "session/session-api",
-    "session/session-events",
-    "session/session-factory",
-    "session/session-input",
-    "session/session-policy",
-    "session/session-runtime",
-    "session/session-runtime-api",
-    "session/session-state",
     "install-context",
     "input-queue",
     "codex-backend-openapi-models",
@@ -49,7 +43,6 @@ members = [
     "config",
     "config-types",
     "context-domain/compaction-policy",
-    "context-domain/context-budget",
     "context-domain/history-api",
     "context-domain/prompt-context",
     "context-pack",
@@ -60,7 +53,6 @@ members = [
     "shell-escalation",
     "skills",
     "core",
-    "core-api",
     "core-test-suites/*/",
     "core-domain/types",
     "core-plugins",
@@ -111,10 +103,6 @@ members = [
     "response-debug-context",
     "runtime-metrics-types",
     "runtime-domain/auth-api",
-    "runtime-domain/model-client-api",
-    "runtime-domain/runtime-ports",
-    "runtime-domain/state-db-api",
-    "runtime-domain/telemetry-api",
     "sandboxing",
     "self-review",
     "stdio-to-uds",
@@ -157,6 +145,7 @@ members = [
     "test-support/core-runtime",
     "test-support/lightweight",
     "test-support/responses",
+    "tests/architecture-check",
     "thread-config-remote",
     "thread-manager-sample",
     "thread/thread-api",
@@ -169,13 +158,6 @@ members = [
     "tools-domain/tool-handler-api",
     "tools-domain/tool-registry-api",
     "tool-schema",
-    "turn/turn-api",
-    "turn/turn-events",
-    "turn/turn-loop",
-    "turn/turn-loop-api",
-    "turn/turn-policy",
-    "turn/turn-state",
-    "turn/turn-tool-bridge",
     "turn-diff",
     "tui-render",
     "uds",
@@ -198,6 +180,7 @@ license = "Apache-2.0"
 # Internal
 app_test_support = { path = "app-server/tests/common" }
 codex-analytics = { path = "analytics" }
+codex-analytics-appserver = { path = "analytics-appserver" }
 codex-auth-api = { path = "runtime-domain/auth-api" }
 codex-agent-graph-store = { path = "agent-graph-store" }
 codex-agent-identity = { path = "agent-identity" }
@@ -233,12 +216,10 @@ codex-config-types = { path = "config-types" }
 codex-compaction-policy = { path = "context-domain/compaction-policy" }
 codex-cognos-ops = { path = "cognos-ops" }
 codex-connectors = { path = "connectors" }
-codex-context-budget = { path = "context-domain/context-budget" }
 codex-context-pack = { path = "context-pack" }
 codex-context-reduction = { path = "context-reduction" }
 codex-context-ops-impl = { path = "context-ops-impl" }
 codex-core = { path = "core" }
-codex-core-api = { path = "core-api" }
 codex-core-domain-types = { path = "core-domain/types" }
 codex-core-plugins = { path = "core-plugins" }
 codex-core-skills = { path = "core-skills" }
@@ -278,7 +259,6 @@ codex-mcp = { path = "codex-mcp" }
 codex-mcp-elicitation-api = { path = "mcp/elicitation-api" }
 codex-mcp-server = { path = "mcp-server" }
 codex-model-provider-info = { path = "model-provider-info" }
-codex-model-client-api = { path = "runtime-domain/model-client-api" }
 codex-models-manager = { path = "models-manager" }
 codex-network-proxy-config = { path = "network-proxy-config" }
 codex-network-proxy = { path = "network-proxy" }
@@ -298,7 +278,6 @@ codex-reasoning-logic = { path = "reasoning-logic" }
 codex-responses-api-proxy = { path = "responses-api-proxy" }
 codex-response-debug-context = { path = "response-debug-context" }
 codex-runtime-metrics-types = { path = "runtime-metrics-types" }
-codex-runtime-ports = { path = "runtime-domain/runtime-ports" }
 codex-rmcp-client = { path = "rmcp-client" }
 codex-rollout = { path = "rollout" }
 codex-rollout-trace = { path = "rollout-trace" }
@@ -306,20 +285,11 @@ codex-sandboxing = { path = "sandboxing" }
 codex-self-review = { path = "self-review" }
 codex-secrets = { path = "secrets" }
 codex-session-api = { path = "session/session-api" }
-codex-session-events = { path = "session/session-events" }
-codex-session-factory = { path = "session/session-factory" }
-codex-session-input = { path = "session/session-input" }
-codex-session-policy = { path = "session/session-policy" }
-codex-session-runtime = { path = "session/session-runtime" }
-codex-session-runtime-api = { path = "session/session-runtime-api" }
-codex-session-state = { path = "session/session-state" }
 codex-shell-command = { path = "shell-command" }
 codex-shell-escalation = { path = "shell-escalation" }
 codex-skills = { path = "skills" }
 codex-state = { path = "state" }
-codex-state-db-api = { path = "runtime-domain/state-db-api" }
 codex-task-memory = { path = "task-memory" }
-codex-telemetry-api = { path = "runtime-domain/telemetry-api" }
 codex-stdio-to-uds = { path = "stdio-to-uds" }
 codex-terminal-detection = { path = "terminal-detection" }
 codex-test-binary-support = { path = "test-binary-support" }
@@ -340,13 +310,6 @@ codex-tool-handler-api = { path = "tools-domain/tool-handler-api" }
 codex-tool-registry-api = { path = "tools-domain/tool-registry-api" }
 codex-tools = { path = "tools" }
 codex-workflow-batch = { path = "workflow-batch" }
-codex-turn-api = { path = "turn/turn-api" }
-codex-turn-events = { path = "turn/turn-events" }
-codex-turn-loop = { path = "turn/turn-loop" }
-codex-turn-loop-api = { path = "turn/turn-loop-api" }
-codex-turn-policy = { path = "turn/turn-policy" }
-codex-turn-state = { path = "turn/turn-state" }
-codex-turn-tool-bridge = { path = "turn/turn-tool-bridge" }
 codex-turn-diff = { path = "turn-diff" }
 codex-tui-render = { path = "tui-render" }
 codex-tui = { path = "tui" }

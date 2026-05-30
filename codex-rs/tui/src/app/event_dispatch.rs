@@ -1237,6 +1237,7 @@ impl App {
                                         /*effort*/ None,
                                         /*summary*/ None,
                                         /*service_tier*/ None,
+                                        /*context_budget_mode*/ None,
                                         /*collaboration_mode*/ None,
                                         /*personality*/ None,
                                     ),

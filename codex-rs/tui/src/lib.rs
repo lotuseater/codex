@@ -3,6 +3,7 @@
 // alternate‑screen mode starts; that file opts‑out locally via `allow`.
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 #![deny(clippy::disallowed_methods)]
+pub use crate::startup_error::LocalStateDbStartupError;
 use crate::legacy_core::check_execpolicy_for_warnings;
 use crate::legacy_core::config::Config;
 use crate::legacy_core::config::ConfigBuilder;
@@ -111,6 +112,7 @@ mod clipboard_copy;
 mod clipboard_paste;
 mod collaboration_modes;
 mod color;
+mod config_update;
 mod connector_labels;
 pub(crate) mod custom_terminal;
 mod pets;
@@ -169,6 +171,7 @@ mod session_state;
 mod shimmer;
 mod skills_helpers;
 mod slash_command;
+mod startup_error;
 mod startup_hooks_review;
 mod status;
 mod status_indicator_widget;
@@ -313,6 +316,7 @@ async fn start_embedded_app_server(
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum AppServerTarget {
     Embedded,
+    LocalDaemon { endpoint: RemoteAppServerEndpoint },
     Remote { endpoint: RemoteAppServerEndpoint },
 }
 
@@ -520,7 +524,9 @@ async fn start_app_server(
         )
         .await
         .map(AppServerClient::InProcess),
-        AppServerTarget::Remote { endpoint } => connect_remote_app_server(endpoint.clone()).await,
+        AppServerTarget::LocalDaemon { endpoint } | AppServerTarget::Remote { endpoint } => {
+            connect_remote_app_server(endpoint.clone()).await
+        }
     }
 }
 
@@ -808,6 +814,55 @@ fn latest_session_cwd_filter<'a>(
     }
 }
 
+fn app_server_target_for_launch(
+    explicit_remote_endpoint: Option<RemoteAppServerEndpoint>,
+    default_daemon_socket: Option<AbsolutePathBuf>,
+    can_reuse_implicit_local_daemon: bool,
+) -> AppServerTarget {
+    match explicit_remote_endpoint {
+        Some(endpoint) => AppServerTarget::Remote { endpoint },
+        None if can_reuse_implicit_local_daemon => {
+            default_daemon_socket.map_or(AppServerTarget::Embedded, |socket_path| {
+                AppServerTarget::LocalDaemon {
+                    endpoint: RemoteAppServerEndpoint::UnixSocket { socket_path },
+                }
+            })
+        }
+        None => AppServerTarget::Embedded,
+    }
+}
+
+fn loader_overrides_are_default(loader_overrides: &LoaderOverrides) -> bool {
+    let loader_overrides_are_default = loader_overrides.user_config_path.is_none()
+        && loader_overrides.user_config_profile.is_none()
+        && loader_overrides.managed_config_path.is_none()
+        && loader_overrides.system_config_path.is_none()
+        && loader_overrides.system_requirements_path.is_none()
+        && !loader_overrides.ignore_managed_requirements
+        && !loader_overrides.ignore_user_config
+        && !loader_overrides.ignore_user_and_project_exec_policy_rules
+        && loader_overrides
+            .macos_managed_config_requirements_base64
+            .is_none();
+    #[cfg(target_os = "macos")]
+    let loader_overrides_are_default =
+        loader_overrides_are_default && loader_overrides.managed_preferences_base64.is_none();
+    loader_overrides_are_default
+}
+
+fn can_reuse_implicit_local_daemon(
+    cli_kv_overrides: &[(String, toml::Value)],
+    loader_overrides: &LoaderOverrides,
+    strict_config: bool,
+    has_non_replayable_launch_overrides: bool,
+) -> bool {
+    // A reused daemon cannot adopt this invocation's full launch config state.
+    cli_kv_overrides.is_empty()
+        && loader_overrides_are_default(loader_overrides)
+        && !strict_config
+        && !has_non_replayable_launch_overrides
+}
+
 pub async fn run_main(
     mut cli: Cli,
     arg0_paths: Arg0DispatchPaths,
@@ -859,17 +914,28 @@ pub async fn run_main(
         }
     };
 
-    let remote_endpoint = match explicit_remote_endpoint {
-        Some(endpoint) => Some(endpoint),
-        None => maybe_probe_default_daemon_socket(&codex_home)
-            .await
-            .map(|socket_path| RemoteAppServerEndpoint::UnixSocket { socket_path }),
+    let reuse_implicit_local_daemon = can_reuse_implicit_local_daemon(
+        &cli_kv_overrides,
+        &loader_overrides,
+        strict_config,
+        cli.bypass_hook_trust,
+    );
+    let default_daemon = if explicit_remote_endpoint.is_none() && reuse_implicit_local_daemon {
+        maybe_probe_default_daemon_socket(&codex_home).await
+    } else {
+        None
     };
-    let app_server_target = remote_endpoint
-        .clone()
-        .map_or(AppServerTarget::Embedded, |endpoint| {
-            AppServerTarget::Remote { endpoint }
-        });
+    let app_server_target = app_server_target_for_launch(
+        explicit_remote_endpoint,
+        default_daemon,
+        reuse_implicit_local_daemon,
+    );
+    let remote_endpoint = match &app_server_target {
+        AppServerTarget::Embedded => None,
+        AppServerTarget::LocalDaemon { endpoint } | AppServerTarget::Remote { endpoint } => {
+            Some(endpoint.clone())
+        }
+    };
     let remote_cwd_override = cli
         .cwd
         .clone()
@@ -1034,7 +1100,9 @@ pub async fn run_main(
     );
     let state_db = match &app_server_target {
         AppServerTarget::Embedded => state_db::init(&config).await,
-        AppServerTarget::Remote { .. } => state_db::get_state_db(&config).await,
+        AppServerTarget::LocalDaemon { .. } | AppServerTarget::Remote { .. } => {
+            state_db::get_state_db(&config).await
+        }
     };
 
     #[allow(clippy::print_stderr)]
@@ -1258,7 +1326,9 @@ async fn run_ratatui_app(
         Ok(app_server) => AppServerSession::new(
             app_server,
             match &app_server_target {
-                AppServerTarget::Embedded => ThreadParamsMode::Embedded,
+                AppServerTarget::Embedded | AppServerTarget::LocalDaemon { .. } => {
+                    ThreadParamsMode::Embedded
+                }
                 AppServerTarget::Remote { .. } => ThreadParamsMode::Remote,
             },
         ),
@@ -1347,7 +1417,7 @@ async fn run_ratatui_app(
         // If the user made an explicit trust decision, or we showed the login flow, reload config
         // so current process state reflects persisted trust/auth changes.
         if onboarding_result.directory_trust_persisted
-            || (show_login_screen && !uses_remote_workspace)
+            || (show_login_screen && !remote_mode)
         {
             load_config_or_exit(
                 cli_kv_overrides.clone(),
@@ -1625,7 +1695,9 @@ async fn run_ratatui_app(
             Ok(app_server) => AppServerSession::new(
                 app_server,
                 match &app_server_target {
-                    AppServerTarget::Embedded => ThreadParamsMode::Embedded,
+                    AppServerTarget::Embedded | AppServerTarget::LocalDaemon { .. } => {
+                        ThreadParamsMode::Embedded
+                    }
                     AppServerTarget::Remote { .. } => ThreadParamsMode::Remote,
                 },
             )

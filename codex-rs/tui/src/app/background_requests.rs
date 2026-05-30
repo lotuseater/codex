@@ -555,7 +555,7 @@ impl App {
         }
 
         let effective_servers =
-            history_cell::mcp_server_display_configs_from_config(config.mcp_servers.get());
+            history_cell::mcp_server_display_configs_from_config(self.config.mcp_servers.get());
         let statuses = history_cell::mcp_server_statuses_from_app_server(statuses);
         self.chat_widget
             .add_to_history(history_cell::new_mcp_tools_output_from_statuses(

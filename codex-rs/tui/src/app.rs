@@ -526,6 +526,7 @@ pub(crate) struct App {
     /// Config is stored here so we can recreate ChatWidgets as needed.
     pub(crate) config: Config,
     pub(crate) state_db: Option<StateDbHandle>,
+    pub(crate) active_profile: Option<String>,
     cli_kv_overrides: Vec<(String, TomlValue)>,
     harness_overrides: ConfigOverrides,
     loader_overrides: LoaderOverrides,
@@ -1005,6 +1006,11 @@ See the Codex keymap documentation for supported actions and examples."
         #[cfg(not(debug_assertions))]
         let upgrade_version = crate::updates::get_upgrade_version(&config);
 
+        let active_profile = config
+            .permissions
+            .active_permission_profile()
+            .map(|profile| profile.id);
+
         let mut app = Self {
             model_catalog,
             session_telemetry: session_telemetry.clone(),
@@ -1013,6 +1019,7 @@ See the Codex keymap documentation for supported actions and examples."
             workspace_command_runner: Some(workspace_command_runner),
             config,
             state_db,
+            active_profile,
             cli_kv_overrides,
             harness_overrides,
             loader_overrides,

@@ -1,14 +1,13 @@
 use crate::store::PLUGINS_CACHE_DIR;
 use crate::store::PluginStore;
-use codex_app_server_protocol::JSONRPCErrorError;
-use codex_app_server_protocol::PluginAuthPolicy;
-use codex_app_server_protocol::PluginAvailability;
-use codex_app_server_protocol::PluginInstallPolicy;
-use codex_app_server_protocol::PluginInterface;
-use codex_app_server_protocol::SkillInterface;
 use codex_login::CodexAuth;
 use codex_login::default_client::build_reqwest_client;
 use codex_plugin::PluginId;
+use codex_protocol::plugin::PluginAuthPolicy;
+use codex_protocol::plugin::PluginAvailability;
+use codex_protocol::plugin::PluginInstallPolicy;
+use codex_protocol::plugin::PluginInterface;
+use codex_protocol::plugin::SkillInterface;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use reqwest::RequestBuilder;
 use serde::Deserialize;
@@ -64,7 +63,6 @@ const OPENAI_CURATED_REMOTE_COLLECTION_KEY: &str = "vertical";
 const REMOTE_PLUGIN_CATALOG_TIMEOUT: Duration = Duration::from_secs(30);
 const REMOTE_PLUGIN_LIST_PAGE_LIMIT: u32 = 200;
 const MAX_REMOTE_DEFAULT_PROMPT_LEN: usize = 128;
-const INVALID_REQUEST_ERROR_CODE: i64 = -32600;
 const REMOTE_INSTALLED_MARKETPLACE_DISPLAY_ORDER: [(&str, &str); 5] = [
     (
         REMOTE_GLOBAL_MARKETPLACE_NAME,
@@ -186,14 +184,23 @@ pub fn is_valid_remote_plugin_id(plugin_id: &str) -> bool {
             .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' || ch == '~')
 }
 
-pub fn validate_remote_plugin_id(plugin_id: &str) -> Result<(), JSONRPCErrorError> {
+/// Error returned when a remote plugin id fails validation.
+///
+/// This is a plain core-plugins domain error so that this crate does not depend
+/// on the higher `codex-app-server-protocol` JSON-RPC error type. The sole
+/// caller (`codex-app-server`) maps this into a JSON-RPC `invalid_request`
+/// (code `-32600`) error at its request-processing boundary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InvalidRemotePluginId {
+    pub message: String,
+}
+
+pub fn validate_remote_plugin_id(plugin_id: &str) -> Result<(), InvalidRemotePluginId> {
     if !is_valid_remote_plugin_id(plugin_id) {
-        return Err(JSONRPCErrorError {
-            code: INVALID_REQUEST_ERROR_CODE,
+        return Err(InvalidRemotePluginId {
             message:
                 "invalid remote plugin id: only ASCII letters, digits, `_`, `-`, and `~` are allowed"
                     .to_string(),
-            data: None,
         });
     }
 

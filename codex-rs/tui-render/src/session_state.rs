@@ -6,6 +6,8 @@
 use std::path::PathBuf;
 
 use codex_protocol::ThreadId;
+use codex_protocol::config_types::CollaborationMode;
+use codex_protocol::config_types::Personality;
 use codex_protocol::models::ActivePermissionProfile;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AskForApproval;
@@ -45,6 +47,8 @@ pub struct ThreadSessionState {
     pub runtime_workspace_roots: Vec<AbsolutePathBuf>,
     pub instruction_source_paths: Vec<AbsolutePathBuf>,
     pub reasoning_effort: Option<codex_protocol::openai_models::ReasoningEffort>,
+    pub collaboration_mode: Option<Box<CollaborationMode>>,
+    pub personality: Option<Personality>,
     pub message_history: Option<MessageHistoryMetadata>,
     pub network_proxy: Option<SessionNetworkProxyRuntime>,
     pub rollout_path: Option<PathBuf>,

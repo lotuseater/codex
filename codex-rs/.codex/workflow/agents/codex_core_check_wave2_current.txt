@@ -1,0 +1,767 @@
+    Blocking waiting for file lock on build directory
+warning: unused import: `std::path::PathBuf`
+ --> protocol\src\protocol\exec_command.rs:1:5
+  |
+1 | use std::path::PathBuf;
+  |     ^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `McpInvocation` is never constructed
+  --> protocol\src\protocol\mcp_tool.rs:15:12
+   |
+15 | pub struct McpInvocation {
+   |            ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `McpToolCallBeginEvent` is never constructed
+  --> protocol\src\protocol\mcp_tool.rs:25:12
+   |
+25 | pub struct McpToolCallBeginEvent {
+   |            ^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `McpToolCallEndEvent` is never constructed
+  --> protocol\src\protocol\mcp_tool.rs:35:12
+   |
+35 | pub struct McpToolCallEndEvent {
+   |            ^^^^^^^^^^^^^^^^^^^
+
+warning: struct `DynamicToolCallResponseEvent` is never constructed
+  --> protocol\src\protocol\mcp_tool.rs:49:12
+   |
+49 | pub struct DynamicToolCallResponseEvent {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `is_success` is never used
+  --> protocol\src\protocol\mcp_tool.rs:75:12
+   |
+74 | impl McpToolCallEndEvent {
+   | ------------------------ method in this implementation
+75 |     pub fn is_success(&self) -> bool {
+   |            ^^^^^^^^^^
+
+warning: struct `WebSearchBeginEvent` is never constructed
+  --> protocol\src\protocol\mcp_tool.rs:84:12
+   |
+84 | pub struct WebSearchBeginEvent {
+   |            ^^^^^^^^^^^^^^^^^^^
+
+warning: struct `WebSearchEndEvent` is never constructed
+  --> protocol\src\protocol\mcp_tool.rs:89:12
+   |
+89 | pub struct WebSearchEndEvent {
+   |            ^^^^^^^^^^^^^^^^^
+
+warning: struct `ImageGenerationBeginEvent` is never constructed
+  --> protocol\src\protocol\mcp_tool.rs:96:12
+   |
+96 | pub struct ImageGenerationBeginEvent {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `ImageGenerationEndEvent` is never constructed
+   --> protocol\src\protocol\mcp_tool.rs:101:12
+    |
+101 | pub struct ImageGenerationEndEvent {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `codex-protocol` (lib) generated 10 warnings (run `cargo fix --lib -p codex-protocol` to apply 1 suggestion)
+warning: unused import: `codex_config_types::Profile`
+   --> app-server-protocol\src\protocol\v1.rs:192:9
+    |
+192 | pub use codex_config_types::Profile;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `codex-app-server-protocol` (lib) generated 1 warning (run `cargo fix --lib -p codex-app-server-protocol` to apply 1 suggestion)
+warning: unreachable pattern
+    --> otel\src\events\session_telemetry.rs:1181:13
+     |
+1176 |             ResponseEvent::Incomplete { .. } => "incomplete".into(),
+     |             -------------------------------- matches all the relevant values
+...
+1181 |             ResponseEvent::Incomplete { .. } => "incomplete".into(),
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no value can reach this
+     |
+     = note: `#[warn(unreachable_patterns)]` (part of `#[warn(unused)]`) on by default
+
+warning: `codex-otel` (lib) generated 1 warning
+warning: function `tool_spec_to_code_mode_tool_definition` is never used
+  --> tools-domain\tool-registry-api\src\code_mode.rs:60:15
+   |
+60 | pub(crate) fn tool_spec_to_code_mode_tool_definition(
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `create_wait_tool` is never used
+  --> tools-domain\tool-registry-api\src\code_mode.rs:95:15
+   |
+95 | pub(crate) fn create_wait_tool() -> ToolSpec {
+   |               ^^^^^^^^^^^^^^^^
+
+warning: function `create_code_mode_tool` is never used
+   --> tools-domain\tool-registry-api\src\code_mode.rs:140:15
+    |
+140 | pub(crate) fn create_code_mode_tool(
+    |               ^^^^^^^^^^^^^^^^^^^^^
+
+warning: `codex-tool-registry-api` (lib) generated 3 warnings
+    Checking codex-core v0.0.0 (C:\Users\Oleh\Documents\GitHub\open_ai\codex\codex-rs\core)
+error[E0432]: unresolved import `codex_thread_store::ReadThreadParams`
+  --> core\src\hook_runtime.rs:39:5
+   |
+39 | use codex_thread_store::ReadThreadParams;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `ReadThreadParams` in the root
+   |
+   = note: struct `crate::session::turn_context::ReadThreadParams` exists but is inaccessible
+help: a similar name exists in the module
+   |
+39 - use codex_thread_store::ReadThreadParams;
+39 + use codex_thread_store::SearchThreadsParams;
+   |
+help: consider importing this struct instead
+   |
+39 | use codex_thread_store_api::ReadThreadParams;
+   |                       ++++
+
+error[E0432]: unresolved import `codex_app_server_protocol`
+ --> core\src\tools\handlers\request_plugin_install.rs:3:5
+  |
+3 | use codex_app_server_protocol::AppInfo;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^ use of unresolved module or unlinked crate `codex_app_server_protocol`
+  |
+  = help: if you wanted to use a crate named `codex_app_server_protocol`, use `cargo add codex_app_server_protocol` to add it to your `Cargo.toml`
+
+error[E0432]: unresolved import `codex_tools::build_request_plugin_install_meta`
+  --> core\src\tools\handlers\request_plugin_install.rs:24:5
+   |
+24 | use codex_tools::build_request_plugin_install_meta;
+   |     ^^^^^^^^^^^^^---------------------------------
+   |     |            |
+   |     |            help: a similar name exists in the module: `create_request_plugin_install_tool`
+   |     no `build_request_plugin_install_meta` in the root
+
+error[E0433]: failed to resolve: use of undeclared type `PermissionProfileSnapshot`
+   --> core\src\session\session.rs:333:25
+    |
+333 |                         PermissionProfileSnapshot::active(
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^ use of undeclared type `PermissionProfileSnapshot`
+    |
+help: a struct with a similar name exists
+    |
+333 -                         PermissionProfileSnapshot::active(
+333 +                         PermissionProfileState::active(
+    |
+help: consider importing this struct
+    |
+  1 + use crate::config::resolved_permission_profile::PermissionProfileSnapshot;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `GoalRuntimeEvent`
+   --> core\src\session\turn.rs:181:45
+    |
+181 |                         .goal_runtime_apply(GoalRuntimeEvent::UsageLimitReached {
+    |                                             ^^^^^^^^^^^^^^^^ use of undeclared type `GoalRuntimeEvent`
+    |
+help: consider importing this enum
+    |
+  1 + use crate::goals::GoalRuntimeEvent;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `GoalRuntimeEvent`
+   --> core\src\session\turn.rs:545:57
+    |
+545 | ...                   .goal_runtime_apply(GoalRuntimeEvent::UsageLimitReached {
+    |                                           ^^^^^^^^^^^^^^^^ use of undeclared type `GoalRuntimeEvent`
+    |
+help: consider importing this enum
+    |
+  1 + use crate::goals::GoalRuntimeEvent;
+    |
+
+warning: unused import: `codex_config::loader::project_trust_key`
+  --> core\src\config\mod.rs:42:5
+   |
+42 | use codex_config::loader::project_trust_key;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+error[E0599]: no method named `stored_values` found for struct `code_mode::CodeModeService` in the current scope
+  --> core\src\tools\code_mode\execute_handler.rs:46:14
+   |
+42 |           let stored_values = exec
+   |  _____________________________-
+43 | |             .session
+44 | |             .services
+45 | |             .code_mode_service
+46 | |             .stored_values()
+   | |             -^^^^^^^^^^^^^ method not found in `code_mode::CodeModeService`
+   | |_____________|
+   |
+   |
+  ::: core\src\tools\code_mode\mod.rs:58:1
+   |
+58 |   pub(crate) struct CodeModeService {
+   |   --------------------------------- method `stored_values` not found for this struct
+
+error[E0560]: struct `ExecuteRequest` has no field named `stored_values`
+  --> core\src\tools\code_mode\execute_handler.rs:71:17
+   |
+71 |                 stored_values,
+   |                 ^^^^^^^^^^^^^ `ExecuteRequest` does not have this field
+   |
+   = note: all struct fields are already assigned
+
+warning: use of deprecated field `session::turn_context::TurnContext::cwd`: use the selected turn environment cwd instead
+  --> core\src\session\context_budget.rs:84:59
+   |
+84 |         let worktree = match checkpoint_git::worktree_key(turn_context.cwd.as_ref()) {
+   |                                                           ^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated field `session::turn_context::TurnContext::cwd`: use the selected turn environment cwd instead
+  --> core\src\session\context_budget.rs:94:54
+   |
+94 |             return match checkpoint_git::dirty_paths(turn_context.cwd.as_ref()) {
+   |                                                      ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated field `session::turn_context::TurnContext::cwd`: use the selected turn environment cwd instead
+   --> core\src\session\context_budget.rs:109:13
+    |
+109 |             turn_context.cwd.as_ref(),
+    |             ^^^^^^^^^^^^^^^^
+
+error[E0624]: method `reset_websocket_session` is private
+   --> core\src\compact.rs:310:20
+    |
+310 |     client_session.reset_websocket_session();
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^ private method
+    |
+   ::: core\src\client.rs:950:5
+    |
+950 |     fn reset_websocket_session(&mut self) {
+    |     ------------------------------------- private method defined here
+
+error[E0560]: struct `codex_tool_execution_api::ToolCall` has no field named `turn_id`
+   --> core\src\tools\handlers\extension_tools.rs:100:9
+    |
+100 |         turn_id: invocation.turn.sub_id.clone(),
+    |         ^^^^^^^ `codex_tool_execution_api::ToolCall` does not have this field
+    |
+    = note: all struct fields are already assigned
+
+error[E0560]: struct `codex_tool_execution_api::ToolCall` has no field named `truncation_policy`
+   --> core\src\tools\handlers\extension_tools.rs:103:9
+    |
+103 |         truncation_policy: invocation.turn.truncation_policy,
+    |         ^^^^^^^^^^^^^^^^^ `codex_tool_execution_api::ToolCall` does not have this field
+    |
+    = note: all struct fields are already assigned
+
+error[E0560]: struct `codex_tool_execution_api::ToolCall` has no field named `conversation_history`
+   --> core\src\tools\handlers\extension_tools.rs:104:9
+    |
+104 |         conversation_history,
+    |         ^^^^^^^^^^^^^^^^^^^^ `codex_tool_execution_api::ToolCall` does not have this field
+    |
+    = note: all struct fields are already assigned
+
+error[E0026]: struct `ConfigRequirements` does not have fields named `allow_appshots`, `computer_use`
+    --> core\src\config\mod.rs:2387:13
+     |
+2387 |             allow_appshots: _,
+     |             ^^^^^^^^^^^^^^
+2388 |             computer_use: _,
+     |             ^^^^^^^^^^^^ struct `ConfigRequirements` does not have these fields
+
+error[E0425]: cannot find function `dedupe_absolute_paths` in this scope
+    --> core\src\config\mod.rs:2625:9
+     |
+2625 |         dedupe_absolute_paths(&mut workspace_roots);
+     |         ^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find function `dedupe_absolute_paths` in this scope
+    --> core\src\config\mod.rs:2714:13
+     |
+2714 |             dedupe_absolute_paths(&mut configured_workspace_roots);
+     |             ^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0599]: no method named `with_materialized_project_roots_for_workspace_roots` found for struct `codex_protocol::models::FileSystemSandboxPolicy` in the current scope
+    --> core\src\config\mod.rs:2716:18
+     |
+2715 |               file_system_sandbox_policy = file_system_sandbox_policy
+     |  __________________________________________-
+2716 | |                 .with_materialized_project_roots_for_workspace_roots(&configured_workspace_roots);
+     | |_________________-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+help: there is a method `materialize_project_roots_with_cwd` with a similar name
+     |
+2716 -                 .with_materialized_project_roots_for_workspace_roots(&configured_workspace_roots);
+2716 +                 .materialize_project_roots_with_cwd(&configured_workspace_roots);
+     |
+
+error[E0609]: no field `extends` on type `&PermissionProfileToml`
+    --> core\src\config\mod.rs:2776:49
+     |
+2776 |                     .and_then(|profile| profile.extends.clone());
+     |                                                 ^^^^^^^ unknown field
+     |
+     = note: available fields are: `description`, `workspace_roots`, `filesystem`, `network`
+
+error[E0063]: missing field `modifications` in initializer of `codex_protocol::models::ActivePermissionProfile`
+    --> core\src\config\mod.rs:2777:22
+     |
+2777 |                 Some(ActivePermissionProfile {
+     |                      ^^^^^^^^^^^^^^^^^^^^^^^ missing `modifications`
+
+error[E0282]: type annotations needed
+   --> core\src\tools\handlers\request_plugin_install.rs:340:51
+    |
+340 |           DiscoverableTool::Connector(connector) => refresh_missing_requested_connectors(
+    |  ___________________________________________________^
+341 | |             session,
+342 | |             turn,
+343 | |             auth,
+...   |
+347 | |         .await
+    | |______________^ cannot infer type
+
+error[E0277]: the size for values of type `[AppInfo]` cannot be known at compilation time
+   --> core\src\tools\handlers\request_plugin_install.rs:348:23
+    |
+348 |         .is_some_and(|accessible_connectors| {
+    |                       ^^^^^^^^^^^^^^^^^^^^^ doesn't have a size known at compile-time
+    |
+    = help: the trait `Sized` is not implemented for `[AppInfo]`
+    = note: all function arguments must have a statically known size
+
+warning: use of deprecated field `session::turn_context::TurnContext::cwd`: use the selected turn environment cwd instead
+   --> core\src\session\first_moves.rs:106:23
+    |
+106 |         project_root: turn_context.cwd.as_path(),
+    |                       ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated field `session::turn_context::TurnContext::cwd`: use the selected turn environment cwd instead
+   --> core\src\session\first_moves.rs:207:27
+    |
+207 |             project_root: turn_context.cwd.as_path(),
+    |                           ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated field `session::turn_context::TurnContext::cwd`: use the selected turn environment cwd instead
+   --> core\src\session\first_moves.rs:248:24
+    |
+248 |     let project_root = turn_context.cwd.to_path_buf();
+    |                        ^^^^^^^^^^^^^^^^
+
+error[E0624]: method `reset_websocket_session` is private
+   --> core\src\session\turn.rs:193:24
+    |
+193 |         client_session.reset_websocket_session();
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^ private method
+    |
+   ::: core\src\client.rs:950:5
+    |
+950 |     fn reset_websocket_session(&mut self) {
+    |     ------------------------------------- private method defined here
+
+error[E0308]: mismatched types
+   --> core\src\session\turn.rs:209:42
+    |
+209 |         collect_explicit_plugin_mentions(&input, loaded_plugins.capability_summaries());
+    |         -------------------------------- ^^^^^^ expected `&[UserInput]`, found `&Vec<TurnInput>`
+    |         |
+    |         arguments to this function are incorrect
+    |
+    = note: expected reference `&[codex_core_api::UserInput]`
+               found reference `&Vec<TurnInput>`
+note: function defined here
+   --> core\src\plugins\mentions.rs:63:15
+    |
+ 63 | pub(crate) fn collect_explicit_plugin_mentions(
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 64 |     input: &[UserInput],
+    |     -------------------
+
+error[E0308]: mismatched types
+   --> core\src\session\turn.rs:250:13
+    |
+249 |         collect_explicit_skill_mentions(
+    |         ------------------------------- arguments to this function are incorrect
+250 |             &input,
+    |             ^^^^^^ expected `&[UserInput]`, found `&Vec<TurnInput>`
+    |
+    = note: expected reference `&[codex_core_api::UserInput]`
+               found reference `&Vec<TurnInput>`
+note: function defined here
+   --> C:\Users\Oleh\Documents\GitHub\open_ai\codex\codex-rs\core-skills\src\injection.rs:115:8
+    |
+115 | pub fn collect_explicit_skill_mentions(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0308]: mismatched types
+   --> core\src\session\turn.rs:310:70
+    |
+310 |     let mut explicitly_enabled_connectors = collect_explicit_app_ids(&input);
+    |                                             ------------------------ ^^^^^^ expected `&[UserInput]`, found `&Vec<TurnInput>`
+    |                                             |
+    |                                             arguments to this function are incorrect
+    |
+    = note: expected reference `&[codex_core_api::UserInput]`
+               found reference `&Vec<TurnInput>`
+note: function defined here
+   --> core\src\plugins\mentions.rs:41:15
+    |
+ 41 | pub(crate) fn collect_explicit_app_ids(input: &[UserInput]) -> HashSet<String> {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^ -------------------
+
+warning: use of deprecated field `session::turn_context::TurnContext::cwd`: use the selected turn environment cwd instead
+   --> core\src\session\turn.rs:348:31
+    |
+348 |             .context_for_turn(turn_context.cwd.as_path(), prompt.as_str())
+    |                               ^^^^^^^^^^^^^^^^
+
+error[E0624]: method `reset_websocket_session` is private
+   --> core\src\session\turn.rs:558:40
+    |
+558 |                         client_session.reset_websocket_session();
+    |                                        ^^^^^^^^^^^^^^^^^^^^^^^ private method
+    |
+   ::: core\src\client.rs:950:5
+    |
+950 |     fn reset_websocket_session(&mut self) {
+    |     ------------------------------------- private method defined here
+
+error[E0609]: no field `model_auto_compact_token_limit_scope` on type `std::sync::Arc<config::Config>`
+   --> core\src\session\turn.rs:957:35
+    |
+957 |         match turn_context.config.model_auto_compact_token_limit_scope {
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unknown field
+    |
+help: a field with a similar name exists
+    |
+957 -         match turn_context.config.model_auto_compact_token_limit_scope {
+957 +         match turn_context.config.model_auto_compact_token_limit {
+    |
+
+error[E0599]: no method named `auto_compact_window_snapshot` found for reference `&session::session::Session` in the current scope
+   --> core\src\session\turn.rs:967:35
+    |
+967 |                 let window = sess.auto_compact_window_snapshot().await;
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ method not found in `&session::session::Session`
+
+error[E0609]: no field `model_auto_compact_token_limit_scope` on type `std::sync::Arc<config::Config>`
+    --> core\src\session\turn.rs:1151:35
+     |
+1151 |         match turn_context.config.model_auto_compact_token_limit_scope {
+     |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unknown field
+     |
+help: a field with a similar name exists
+     |
+1151 -         match turn_context.config.model_auto_compact_token_limit_scope {
+1151 +         match turn_context.config.model_auto_compact_token_limit {
+     |
+
+warning: use of deprecated field `session::turn_context::TurnContext::cwd`: use the selected turn environment cwd instead
+    --> core\src\session\mod.rs:3115:48
+     |
+3115 |                     .record_assistant_proposal(turn_context.cwd.as_path(), &message)
+     |                                                ^^^^^^^^^^^^^^^^
+
+error[E0061]: this function takes 6 arguments but 5 arguments were supplied
+   --> core\src\tasks\regular.rs:73:38
+    |
+ 73 |             let last_agent_message = run_turn(
+    |                                      ^^^^^^^^
+...
+ 76 |                 next_input,
+    |                 ---------- argument #3 of type `std::sync::Arc<ExtensionData>` is missing
+    |
+note: function defined here
+   --> core\src\session\turn.rs:156:21
+    |
+156 | pub(crate) async fn run_turn(
+    |                     ^^^^^^^^
+...
+159 |     turn_extension_data: Arc<codex_extension_api::ExtensionData>,
+    |     ------------------------------------------------------------
+help: provide the argument
+    |
+ 73 |             let last_agent_message = run_turn(
+ 74 |                 Arc::clone(&sess),
+ 75 |                 Arc::clone(&ctx),
+ 76 ~                 /* std::sync::Arc<ExtensionData> */,
+ 77 ~                 next_input,
+    |
+
+warning: use of deprecated field `session::turn_context::TurnContext::cwd`: use the selected turn environment cwd instead
+   --> core\src\session\first_moves.rs:168:55
+    |
+168 |         .render_context_pack(&ContextPackRequest::new(turn_context.cwd.as_path(), prompt))
+    |                                                       ^^^^^^^^^^^^^^^^
+
+error[E0599]: no method named `set_permission_profile_from_session_snapshot` found for struct `config::Permissions` in the current scope
+   --> core\src\session\session.rs:332:22
+    |
+330 | /                 config
+331 | |                     .permissions
+332 | |                     .set_permission_profile_from_session_snapshot(
+    | |_____________________-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+   ::: core\src\config\mod.rs:282:1
+    |
+282 |   pub struct Permissions {
+    |   ---------------------- method `set_permission_profile_from_session_snapshot` not found for this struct
+    |
+help: there is a method `set_permission_profile` with a similar name
+    |
+332 -                     .set_permission_profile_from_session_snapshot(
+332 +                     .set_permission_profile(
+    |
+
+error[E0277]: the trait bound `codex_protocol::models::ResponseInputItem: From<Vec<Vec<codex_core_api::UserInput>>>` is not satisfied
+   --> core\src\session\turn.rs:675:32
+    |
+675 |         collect_user_messages(&ResponseInputItem::from(user_input))
+    |                                ^^^^^^^^^^^^^^^^^ the trait `From<Vec<Vec<codex_core_api::UserInput>>>` is not implemented for `codex_protocol::models::ResponseInputItem`
+    |
+help: the trait `From<Vec<Vec<codex_core_api::UserInput>>>` is not implemented for `codex_protocol::models::ResponseInputItem`
+      but trait `From<Vec<codex_core_api::UserInput>>` is implemented for it
+   --> C:\Users\Oleh\Documents\GitHub\open_ai\codex\codex-rs\protocol\src\models.rs:593:1
+    |
+593 | impl From<Vec<UserInput>> for ResponseInputItem {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = help: for that trait implementation, expected `codex_core_api::UserInput`, found `Vec<codex_core_api::UserInput>`
+
+error[E0308]: mismatched types
+   --> core\src\session\turn.rs:675:31
+    |
+675 |         collect_user_messages(&ResponseInputItem::from(user_input))
+    |         --------------------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `&[ResponseItem]`, found `&ResponseInputItem`
+    |         |
+    |         arguments to this function are incorrect
+    |
+    = note: expected reference `&[codex_protocol::models::ResponseItem]`
+               found reference `&codex_protocol::models::ResponseInputItem`
+note: function defined here
+   --> core\src\compact.rs:414:15
+    |
+414 | pub(crate) fn collect_user_messages(items: &[ResponseItem]) -> Vec<String> {
+    |               ^^^^^^^^^^^^^^^^^^^^^ ----------------------
+
+error[E0599]: no method named `permission_profile_state` found for struct `config::Permissions` in the current scope
+   --> core\src\session\mod.rs:827:27
+    |
+827 |     Ok(config.permissions.permission_profile_state().clone())
+    |                           ^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+   ::: core\src\config\mod.rs:282:1
+    |
+282 | pub struct Permissions {
+    | ---------------------- method `permission_profile_state` not found for this struct
+    |
+help: there is a method `permission_profile` with a similar name
+    |
+827 -     Ok(config.permissions.permission_profile_state().clone())
+827 +     Ok(config.permissions.permission_profile().clone())
+    |
+
+error[E0560]: struct `PermissionProfileToml` has no field named `extends`
+   --> core\src\config\permissions.rs:212:9
+    |
+212 |         extends: None,
+    |         ^^^^^^^ `PermissionProfileToml` does not have this field
+    |
+    = note: all struct fields are already assigned
+
+error[E0027]: pattern does not mention field `modifications`
+  --> core\src\config\resolved_permission_profile.rs:87:13
+   |
+87 |         let ActivePermissionProfile { id, extends } = active_permission_profile;
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ missing field `modifications`
+   |
+help: include the missing field in the pattern
+   |
+87 |         let ActivePermissionProfile { id, extends, modifications } = active_permission_profile;
+   |                                                  +++++++++++++++
+help: if you don't care about this missing field, you can explicitly ignore it
+   |
+87 |         let ActivePermissionProfile { id, extends, modifications: _ } = active_permission_profile;
+   |                                                  ++++++++++++++++++
+help: or always ignore missing fields here
+   |
+87 |         let ActivePermissionProfile { id, extends, .. } = active_permission_profile;
+   |                                                  ++++
+
+error[E0063]: missing field `modifications` in initializer of `codex_protocol::models::ActivePermissionProfile`
+   --> core\src\config\resolved_permission_profile.rs:120:44
+    |
+120 |             Self::BuiltIn(profile) => Some(ActivePermissionProfile {
+    |                                            ^^^^^^^^^^^^^^^^^^^^^^^ missing `modifications`
+
+error[E0063]: missing field `modifications` in initializer of `codex_protocol::models::ActivePermissionProfile`
+   --> core\src\config\resolved_permission_profile.rs:124:42
+    |
+124 |             Self::Named(profile) => Some(ActivePermissionProfile {
+    |                                          ^^^^^^^^^^^^^^^^^^^^^^^ missing `modifications`
+
+error[E0609]: no field `tool_namespace` on type `MultiAgentV2Config`
+    --> core\src\config\mod.rs:2082:21
+     |
+2082 |         .or(default.tool_namespace);
+     |                     ^^^^^^^^^^^^^^ unknown field
+     |
+     = note: available fields are: `max_concurrent_threads_per_session`, `min_wait_timeout_ms`, `max_wait_timeout_ms`, `default_wait_timeout_ms`, `usage_hint_enabled` ... and 5 others
+
+error[E0560]: struct `MultiAgentV2Config` has no field named `tool_namespace`
+    --> core\src\config\mod.rs:2101:9
+     |
+2101 |         tool_namespace,
+     |         ^^^^^^^^^^^^^^ `MultiAgentV2Config` does not have this field
+     |
+     = note: all struct fields are already assigned
+
+error[E0609]: no field `profiles` on type `&codex_config::config_requirements::PermissionsRequirementsToml`
+    --> core\src\config\mod.rs:3681:41
+     |
+3681 |         .map(|permissions| &permissions.profiles)
+     |                                         ^^^^^^^^ unknown field
+     |
+     = note: available field is: `filesystem`
+
+error[E0282]: type annotations needed
+    --> core\src\config\mod.rs:3682:18
+     |
+3682 |         .filter(|profiles| !profiles.is_empty());
+     |                  ^^^^^^^^   -------- type must be known at this point
+     |
+help: consider giving this closure parameter an explicit type
+     |
+3682 |         .filter(|profiles: /* Type */| !profiles.is_empty());
+     |                          ++++++++++++
+
+error[E0282]: type annotations needed
+    --> core\src\config\mod.rs:3689:39
+     |
+3689 |         if merged_permissions.entries.contains_key(profile_id) {
+     |                                       ^^^^^^^^^^^^ cannot infer type of the type parameter `Q` declared on the method `contains_key`
+...
+3699 |             .insert(profile_id.clone(), managed_profile.clone());
+     |                     ---------- type must be known at this point
+     |
+help: consider specifying the generic argument
+     |
+3689 |         if merged_permissions.entries.contains_key::<Q>(profile_id) {
+     |                                                   +++++
+
+error[E0282]: type annotations needed
+    --> core\src\config\mod.rs:3699:41
+     |
+3699 |             .insert(profile_id.clone(), managed_profile.clone());
+     |                                         ^^^^^^^^^^^^^^^ cannot infer type
+
+error[E0609]: no field `allowed_permissions` on type `&'a ConfigRequirementsToml`
+    --> core\src\config\mod.rs:3725:65
+     |
+3725 |         requirements_force_profile_selection: requirements_toml.allowed_permissions.is_some(),
+     |                                                                 ^^^^^^^^^^^^^^^^^^^ unknown field
+     |
+     = note: available fields are: `allowed_approval_policies`, `allowed_approvals_reviewers`, `allowed_sandbox_modes`, `remote_sandbox_config`, `allowed_web_search_modes` ... and 11 others
+
+error[E0609]: no field `allowed_permissions` on type `&'a ConfigRequirementsToml`
+    --> core\src\config\mod.rs:3735:49
+     |
+3735 |     let allowed_permissions = requirements_toml.allowed_permissions.as_ref();
+     |                                                 ^^^^^^^^^^^^^^^^^^^ unknown field
+     |
+     = note: available fields are: `allowed_approval_policies`, `allowed_approvals_reviewers`, `allowed_sandbox_modes`, `remote_sandbox_config`, `allowed_web_search_modes` ... and 11 others
+
+error[E0282]: type annotations needed
+    --> core\src\config\mod.rs:3740:13
+     |
+3740 |         && !allowed_permissions
+     |             ^^^^^^^^^^^^^^^^^^^ cannot infer type
+
+error[E0609]: no field `allowed_permissions` on type `&ConfigRequirementsToml`
+    --> core\src\config\mod.rs:3770:55
+     |
+3770 |     let Some(allowed_permissions) = requirements_toml.allowed_permissions.as_ref() else {
+     |                                                       ^^^^^^^^^^^^^^^^^^^ unknown field
+     |
+     = note: available fields are: `allowed_approval_policies`, `allowed_approvals_reviewers`, `allowed_sandbox_modes`, `remote_sandbox_config`, `allowed_web_search_modes` ... and 11 others
+
+error[E0282]: type annotations needed
+    --> core\src\config\mod.rs:3773:8
+     |
+3773 |     if allowed_permissions.is_empty() {
+     |        ^^^^^^^^^^^^^^^^^^^ cannot infer type
+
+error[E0599]: no method named `validate_action_references` found for struct `NetworkMitmToml` in the current scope
+   --> core\src\network_proxy_loader.rs:260:18
+    |
+260 |             mitm.validate_action_references(&actions)
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^ method not found in `NetworkMitmToml`
+
+error[E0599]: no method named `to_runtime_hooks` found for struct `NetworkMitmToml` in the current scope
+   --> core\src\network_proxy_loader.rs:262:51
+    |
+262 |             self.config.network.mitm_hooks = mitm.to_runtime_hooks(Some(&actions));
+    |                                                   ^^^^^^^^^^^^^^^^ method not found in `NetworkMitmToml`
+
+error[E0609]: no field `active_profile` on type `&config::Config`
+    --> core\src\mcp_tool_call.rs:2022:30
+     |
+2022 |         .with_profile(config.active_profile.as_deref())
+     |                              ^^^^^^^^^^^^^^ unknown field
+     |
+     = note: available fields are: `config_layer_stack`, `startup_warnings`, `model`, `service_tier`, `context_budget_mode` ... and 95 others
+
+warning: use of deprecated method `session::turn_context::TurnContext::resolve_path`: resolve paths from the selected turn environment cwd instead
+   --> core\src\tools\handlers\first_moves.rs:131:21
+    |
+131 |     invocation.turn.resolve_path(project_root).to_path_buf()
+    |                     ^^^^^^^^^^^^
+
+error[E0308]: mismatched types
+   --> core\src\tools\handlers\mcp.rs:134:13
+    |
+131 |         ToolSearchInfo::from_spec(
+    |         ------------------------- arguments to this function are incorrect
+...
+134 |             source_info,
+    |             ^^^^^^^^^^^ expected `ToolSearchSourceInfo`, found `codex_tools::ToolSearchSourceInfo`
+    |
+    = note: `codex_tools::ToolSearchSourceInfo` and `ToolSearchSourceInfo` have similar names, but are actually distinct types
+note: `codex_tools::ToolSearchSourceInfo` is defined in crate `codex_tools`
+   --> C:\Users\Oleh\Documents\GitHub\open_ai\codex\codex-rs\tools\src\tool_discovery.rs:22:1
+    |
+ 22 | pub struct ToolSearchSourceInfo {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: `ToolSearchSourceInfo` is defined in crate `codex_tool_registry_api`
+   --> C:\Users\Oleh\Documents\GitHub\open_ai\codex\codex-rs\tools-domain\tool-registry-api\src\tool_discovery.rs:23:1
+    |
+ 23 | pub struct ToolSearchSourceInfo {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: associated function defined here
+   --> core\src\tools\tool_search_entry.rs:20:19
+    |
+ 20 |     pub(crate) fn from_spec(
+    |                   ^^^^^^^^^
+...
+ 23 |         source_info: Option<ToolSearchSourceInfo>,
+    |         -----------------------------------------
+
+warning: unused import: `crate::tools::context::ToolOutput`
+  --> core\src\tools\handlers\shell\shell_command.rs:15:5
+   |
+15 | use crate::tools::context::ToolOutput;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Some errors have detailed explanations: E0026, E0027, E0061, E0063, E0277, E0282, E0308, E0425, E0432...
+For more information about an error, try `rustc --explain E0026`.
+warning: `codex-core` (lib) generated 12 warnings
+error: could not compile `codex-core` (lib) due to 52 previous errors; 12 warnings emitted
+NativeCommandExitException: Program "cargo.exe" ended with non-zero exit code: 101 (0x00000065).

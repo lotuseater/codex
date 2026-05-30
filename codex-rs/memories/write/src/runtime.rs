@@ -24,6 +24,7 @@ use codex_protocol::protocol::InitialHistory;
 use codex_protocol::protocol::InternalSessionSource;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::SessionSource;
+use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::protocol::ThreadSource;
 use codex_protocol::protocol::TokenUsage;
 use codex_protocol::user_input::UserInput;
@@ -261,6 +262,7 @@ impl MemoryStartupContext {
                 environments: None,
                 final_output_json_schema: None,
                 responsesapi_client_metadata: None,
+                thread_settings: ThreadSettingsOverrides::default(),
             })
             .await
         {

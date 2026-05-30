@@ -1,0 +1,2 @@
+{"event":"workflow_start","name":null,"spec":"<inline>","ts":1779818756.6177378}
+{"event":"read_file","id":"step_1","path":"C:\\Users\\Oleh\\Documents\\GitHub\\open_ai\\codex\\codex-rs\\core/src/config/mod.rs","iteration":null,"ts":1779818756.6197693}

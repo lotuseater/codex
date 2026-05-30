@@ -22,44 +22,44 @@ use codex_core::config::ThreadStoreConfig;
 use codex_core::config::find_codex_home;
 use codex_core::init_state_db;
 use codex_core::resolve_installation_id;
-use codex_core_api::AbsolutePathBuf;
-use codex_core_api::AltScreenMode;
-use codex_core_api::ApprovalsReviewer;
-use codex_core_api::Arg0DispatchPaths;
-use codex_core_api::AskForApproval;
-use codex_core_api::AuthCredentialsStoreMode;
-use codex_core_api::AuthManager;
-use codex_core_api::ConfigLayerStack;
-use codex_core_api::ContextBudgetMode;
-use codex_core_api::EventMsg;
-use codex_core_api::Feature;
-use codex_core_api::Features;
-use codex_core_api::History;
-use codex_core_api::MemoriesConfig;
-use codex_core_api::ModelAvailabilityNuxConfig;
-use codex_core_api::Notice;
-use codex_core_api::OAuthCredentialsStoreMode;
-use codex_core_api::OPENAI_PROVIDER_ID;
-use codex_core_api::Op;
-use codex_core_api::OtelConfig;
-use codex_core_api::PermissionProfile;
-use codex_core_api::ProjectConfig;
-use codex_core_api::RealtimeAudioConfig;
-use codex_core_api::RealtimeConfig;
-use codex_core_api::SessionPickerViewMode;
-use codex_core_api::SessionSource;
-use codex_core_api::ShellEnvironmentPolicy;
-use codex_core_api::ToolSuggestConfig;
-use codex_core_api::TuiKeymap;
-use codex_core_api::TuiNotificationSettings;
-use codex_core_api::TuiPetAnchor;
-use codex_core_api::UriBasedFileOpener;
-use codex_core_api::UserInput;
-use codex_core_api::WebSearchMode;
-use codex_core_api::arg0_dispatch_or_else;
-use codex_core_api::built_in_model_providers;
-use codex_core_api::empty_extension_registry;
-use codex_core_api::set_default_originator;
+use codex_arg0::Arg0DispatchPaths;
+use codex_arg0::arg0_dispatch_or_else;
+use codex_config::ConfigLayerStack;
+use codex_config::config_toml::ProjectConfig;
+use codex_config::config_toml::RealtimeAudioConfig;
+use codex_config::config_toml::RealtimeConfig;
+use codex_config::types::AuthCredentialsStoreMode;
+use codex_config::types::History;
+use codex_config::types::MemoriesConfig;
+use codex_config::types::ModelAvailabilityNuxConfig;
+use codex_config::types::Notice;
+use codex_config::types::OAuthCredentialsStoreMode;
+use codex_config::types::OtelConfig;
+use codex_config::types::SessionPickerViewMode;
+use codex_config::types::ToolSuggestConfig;
+use codex_config::types::TuiKeymap;
+use codex_config::types::TuiNotificationSettings;
+use codex_config::types::TuiPetAnchor;
+use codex_config::types::UriBasedFileOpener;
+use codex_config_types::AltScreenMode;
+use codex_config_types::ApprovalsReviewer;
+use codex_config_types::ContextBudgetMode;
+use codex_config_types::WebSearchMode;
+use codex_extension_api::empty_extension_registry;
+use codex_features::Feature;
+use codex_features::Features;
+use codex_login::AuthManager;
+use codex_login::default_client::set_default_originator;
+use codex_model_provider_info::OPENAI_PROVIDER_ID;
+use codex_model_provider_info::built_in_model_providers;
+use codex_protocol::models::PermissionProfile;
+use codex_protocol::protocol::AskForApproval;
+use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::Op;
+use codex_protocol::protocol::SessionSource;
+use codex_protocol::protocol::ThreadSettingsOverrides;
+use codex_protocol::user_input::UserInput;
+use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_exec_server::EnvironmentManager;
 use codex_exec_server::ExecServerRuntimePaths;
 use codex_thread_store::StoreLiveThreadFactory;
@@ -193,16 +193,11 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         model_provider_id,
         model_provider,
         personality: None,
-        permissions: Permissions {
-            approval_policy: Constrained::allow_any(AskForApproval::Never),
-            permission_profile: Constrained::allow_any(PermissionProfile::read_only()),
-            active_permission_profile: None,
-            network: None,
-            allow_login_shell: true,
-            shell_environment_policy: ShellEnvironmentPolicy::default(),
-            windows_sandbox_mode: None,
-            windows_sandbox_private_desktop: false,
-        },
+        permissions: Permissions::from_approval_and_profile(
+            Constrained::allow_any(AskForApproval::Never),
+            Constrained::allow_any(PermissionProfile::read_only()),
+        )
+        .context("build permissions")?,
         approvals_reviewer: ApprovalsReviewer::User,
         enforce_residency: Constrained::allow_any(/*initial_value*/ None),
         hide_agent_reasoning: false,
@@ -235,6 +230,7 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         tui_session_picker_view: SessionPickerViewMode::Dense,
         tui_vim_mode_default: false,
         cwd: cwd.clone(),
+        workspace_roots: vec![cwd.clone()],
         cli_auth_credentials_store_mode: AuthCredentialsStoreMode::File,
         mcp_servers: Constrained::allow_any(HashMap::new()),
         mcp_oauth_credentials_store_mode: OAuthCredentialsStoreMode::File,
@@ -325,6 +321,7 @@ async fn run_turn(thread: &CodexThread, thread_id: &str, prompt: String) -> anyh
             environments: None,
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            thread_settings: ThreadSettingsOverrides::default(),
         })
         .await
         .context("submit user input")?;
