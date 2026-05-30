@@ -119,6 +119,10 @@ pub(super) async fn spawn_review_thread(
     let session_source = parent_turn_context.session_source.clone();
 
     let per_turn_config = Arc::new(per_turn_config);
+    // Sourced from the review turn's own config (the value the turn reads at
+    // turn time); `ContextBudgetMode` is `Copy`, so capturing it before
+    // `per_turn_config` is moved into the `config` field is cheap and faithful.
+    let review_context_budget_mode = per_turn_config.context_budget_mode;
     let review_turn_id = sub_id.to_string();
     let turn_metadata_state = Arc::new(TurnMetadataState::new(
         sess.session_id().to_string(),
@@ -157,6 +161,14 @@ pub(super) async fn spawn_review_thread(
         compact_prompt: parent_turn_context.compact_prompt.clone(),
         collaboration_mode: parent_turn_context.collaboration_mode.clone(),
         personality: parent_turn_context.personality,
+        // Mirror the scalar fields: collaboration_mode/personality from the parent
+        // turn, context_budget_mode from this review turn's own config (captured
+        // above). Review turns inherit these from the parent unchanged.
+        fork_features: ForkFeaturesState::new(
+            parent_turn_context.collaboration_mode.clone(),
+            review_context_budget_mode,
+            parent_turn_context.personality,
+        ),
         approval_policy: parent_turn_context.approval_policy.clone(),
         permission_profile: parent_turn_context.permission_profile(),
         network: parent_turn_context.network.clone(),

@@ -82,6 +82,11 @@ pub struct TurnContext {
     pub(crate) user_instructions: Option<String>,
     pub(crate) collaboration_mode: CollaborationMode,
     pub(crate) personality: Option<Personality>,
+    /// Bundled fork-specific feature state. Kept mirrored with the
+    /// `collaboration_mode`/`personality` fields above (and the
+    /// `config.context_budget_mode` value read at turn time) so existing
+    /// readers keep working while readers migrate to the bundle.
+    pub(crate) fork_features: ForkFeaturesState,
     pub(crate) approval_policy: Constrained<AskForApproval>,
     pub(crate) permission_profile: PermissionProfile,
     pub(crate) network: Option<NetworkProxy>,
@@ -290,8 +295,18 @@ impl TurnContext {
             developer_instructions: self.developer_instructions.clone(),
             compact_prompt: self.compact_prompt.clone(),
             user_instructions: self.user_instructions.clone(),
-            collaboration_mode,
+            collaboration_mode: collaboration_mode.clone(),
             personality: self.personality,
+            // Mirror the scalar fields. `with_model` only changes the model /
+            // reasoning effort, so `context_budget_mode` and `personality` are
+            // carried over unchanged; `context_budget_mode` is sourced from
+            // `self.config` (the same value the turn reads today), which this
+            // method does not modify.
+            fork_features: ForkFeaturesState::new(
+                collaboration_mode,
+                self.config.context_budget_mode,
+                self.personality,
+            ),
             approval_policy: self.approval_policy.clone(),
             permission_profile: self.permission_profile.clone(),
             network: self.network.clone(),
@@ -636,6 +651,11 @@ impl Session {
             user_instructions: session_configuration.user_instructions.clone(),
             collaboration_mode: session_configuration.collaboration_mode.clone(),
             personality: session_configuration.personality,
+            // Mirror the scalar fields above. `session_configuration.fork_features`
+            // is kept in lockstep with its `collaboration_mode`/`context_budget_mode`/
+            // `personality` scalars, so this carries identical values (and
+            // `context_budget_mode` matches `config.context_budget_mode` for this turn).
+            fork_features: session_configuration.fork_features.clone(),
             approval_policy: session_configuration.approval_policy.clone(),
             permission_profile: session_configuration.permission_profile(),
             network,
