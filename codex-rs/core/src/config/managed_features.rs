@@ -269,27 +269,6 @@ fn explicit_feature_settings_in_config(cfg: &ConfigToml) -> Vec<(String, Feature
             enabled,
         ));
     }
-    for (profile_name, profile) in &cfg.profiles {
-        if let Some(features) = profile.features.as_ref() {
-            for (key, enabled) in features.entries() {
-                if let Some(feature) = feature_for_key(&key) {
-                    explicit_settings.push((
-                        format!("profiles.{profile_name}.features.{key}"),
-                        feature,
-                        enabled,
-                    ));
-                }
-            }
-        }
-        if let Some(enabled) = profile.experimental_use_unified_exec_tool {
-            explicit_settings.push((
-                format!("profiles.{profile_name}.experimental_use_unified_exec_tool"),
-                Feature::UnifiedExec,
-                enabled,
-            ));
-        }
-    }
-
     explicit_settings
 }
 

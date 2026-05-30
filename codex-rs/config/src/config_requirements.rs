@@ -19,6 +19,7 @@ use crate::Constrained;
 use crate::ConstraintError;
 use crate::ManagedHooksRequirementsToml;
 use crate::mcp_types::AppToolApproval;
+use crate::types::WindowsSandboxModeToml;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RequirementSource {
@@ -86,6 +87,7 @@ pub struct ConfigRequirements {
     pub approval_policy: ConstrainedWithSource<AskForApproval>,
     pub approvals_reviewer: ConstrainedWithSource<ApprovalsReviewer>,
     pub permission_profile: ConstrainedWithSource<PermissionProfile>,
+    pub windows_sandbox_mode: ConstrainedWithSource<Option<WindowsSandboxModeToml>>,
     pub web_search_mode: ConstrainedWithSource<WebSearchMode>,
     pub allow_managed_hooks_only: Option<Sourced<bool>>,
     pub allow_appshots: Option<Sourced<bool>>,
@@ -116,6 +118,10 @@ impl Default for ConfigRequirements {
             ),
             permission_profile: ConstrainedWithSource::new(
                 Constrained::allow_any(PermissionProfile::read_only()),
+                /*source*/ None,
+            ),
+            windows_sandbox_mode: ConstrainedWithSource::new(
+                Constrained::allow_any(/*initial_value*/ None),
                 /*source*/ None,
             ),
             web_search_mode: ConstrainedWithSource::new(
@@ -242,14 +248,14 @@ impl NetworkUnixSocketPermissionsToml {
 #[serde(rename_all = "lowercase")]
 pub enum NetworkUnixSocketPermissionToml {
     Allow,
-    None,
+    Deny,
 }
 
 impl std::fmt::Display for NetworkUnixSocketPermissionToml {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let permission = match self {
             Self::Allow => "allow",
-            Self::None => "none",
+            Self::Deny => "deny",
         };
         f.write_str(permission)
     }
@@ -591,6 +597,17 @@ impl fmt::Display for WebSearchModeRequirement {
 }
 
 #[derive(Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+pub struct WindowsRequirementsToml {
+    pub allowed_sandbox_implementations: Option<Vec<WindowsSandboxModeToml>>,
+}
+
+impl WindowsRequirementsToml {
+    pub fn is_empty(&self) -> bool {
+        self.allowed_sandbox_implementations.is_none()
+    }
+}
+
+#[derive(Deserialize, Debug, Clone, Default, PartialEq, Eq)]
 pub struct FeatureRequirementsToml {
     #[serde(flatten)]
     pub entries: BTreeMap<String, bool>,
@@ -707,6 +724,7 @@ pub struct ConfigRequirementsToml {
     pub allow_managed_hooks_only: Option<bool>,
     pub allow_appshots: Option<bool>,
     pub computer_use: Option<ComputerUseRequirementsToml>,
+    pub windows: Option<WindowsRequirementsToml>,
     #[serde(rename = "features", alias = "feature_requirements")]
     pub feature_requirements: Option<FeatureRequirementsToml>,
     pub hooks: Option<ManagedHooksRequirementsToml>,
@@ -759,6 +777,7 @@ pub struct ConfigRequirementsWithSources {
     pub allow_managed_hooks_only: Option<Sourced<bool>>,
     pub allow_appshots: Option<Sourced<bool>>,
     pub computer_use: Option<Sourced<ComputerUseRequirementsToml>>,
+    pub windows: Option<Sourced<WindowsRequirementsToml>>,
     pub feature_requirements: Option<Sourced<FeatureRequirementsToml>>,
     pub hooks: Option<Sourced<ManagedHooksRequirementsToml>>,
     pub mcp_servers: Option<Sourced<BTreeMap<String, McpServerRequirement>>>,
@@ -799,6 +818,7 @@ impl ConfigRequirementsWithSources {
             allow_managed_hooks_only: _,
             allow_appshots: _,
             computer_use: _,
+            windows: _,
             feature_requirements: _,
             hooks: _,
             mcp_servers: _,
@@ -832,6 +852,7 @@ impl ConfigRequirementsWithSources {
                 allow_managed_hooks_only,
                 allow_appshots,
                 computer_use,
+                windows,
                 feature_requirements,
                 hooks,
                 mcp_servers,
@@ -863,6 +884,7 @@ impl ConfigRequirementsWithSources {
             allow_managed_hooks_only,
             allow_appshots,
             computer_use,
+            windows,
             feature_requirements,
             hooks,
             mcp_servers,
@@ -884,6 +906,7 @@ impl ConfigRequirementsWithSources {
             allow_managed_hooks_only: allow_managed_hooks_only.map(|sourced| sourced.value),
             allow_appshots: allow_appshots.map(|sourced| sourced.value),
             computer_use: computer_use.map(|sourced| sourced.value),
+            windows: windows.map(|sourced| sourced.value),
             feature_requirements: feature_requirements.map(|sourced| sourced.value),
             hooks: hooks.map(|sourced| sourced.value),
             mcp_servers: mcp_servers.map(|sourced| sourced.value),
@@ -975,6 +998,10 @@ impl ConfigRequirementsToml {
                 .as_ref()
                 .is_none_or(ComputerUseRequirementsToml::is_empty)
             && self
+                .windows
+                .as_ref()
+                .is_none_or(WindowsRequirementsToml::is_empty)
+            && self
                 .feature_requirements
                 .as_ref()
                 .is_none_or(FeatureRequirementsToml::is_empty)
@@ -1017,7 +1044,8 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
             allowed_web_search_modes,
             allow_managed_hooks_only,
             allow_appshots,
-            computer_use: _,
+            computer_use,
+            windows,
             feature_requirements,
             hooks,
             mcp_servers,
@@ -1124,6 +1152,44 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
             }
             None => ConstrainedWithSource::new(
                 Constrained::allow_any(default_permission_profile),
+                /*source*/ None,
+            ),
+        };
+        let windows_sandbox_mode = match windows {
+            Some(Sourced {
+                value:
+                    WindowsRequirementsToml {
+                        allowed_sandbox_implementations: Some(implementations),
+                    },
+                source: requirement_source,
+            }) => {
+                if implementations.is_empty() {
+                    return Err(ConstraintError::empty_field(
+                        "windows.allowed_sandbox_implementations",
+                    ));
+                }
+                // Prefer elevated when both Windows sandbox implementations are allowed.
+                let initial_value = if implementations.contains(&WindowsSandboxModeToml::Elevated) {
+                    WindowsSandboxModeToml::Elevated
+                } else {
+                    WindowsSandboxModeToml::Unelevated
+                };
+
+                let requirement_source_for_error = requirement_source.clone();
+                let constrained =
+                    Constrained::new(Some(initial_value), move |candidate| match candidate {
+                        Some(candidate) if implementations.contains(candidate) => Ok(()),
+                        _ => Err(ConstraintError::InvalidValue {
+                            field_name: "windows.sandbox",
+                            candidate: format!("{candidate:?}"),
+                            allowed: format!("{implementations:?}"),
+                            requirement_source: requirement_source_for_error.clone(),
+                        }),
+                    })?;
+                ConstrainedWithSource::new(constrained, Some(requirement_source))
+            }
+            Some(_) | None => ConstrainedWithSource::new(
+                Constrained::allow_any(/*initial_value*/ None),
                 /*source*/ None,
             ),
         };
@@ -1252,6 +1318,7 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
             approval_policy,
             approvals_reviewer,
             permission_profile,
+            windows_sandbox_mode,
             web_search_mode,
             allow_managed_hooks_only,
             allow_appshots,
@@ -1331,6 +1398,7 @@ mod tests {
             allow_managed_hooks_only,
             allow_appshots,
             computer_use,
+            windows,
             feature_requirements,
             hooks,
             mcp_servers,
@@ -1357,8 +1425,8 @@ mod tests {
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
             allow_appshots: allow_appshots
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
-            computer_use: computer_use
-                .map(|value| Sourced::new(value, RequirementSource::Unknown)),
+            computer_use: computer_use.map(|value| Sourced::new(value, RequirementSource::Unknown)),
+            windows: windows.map(|value| Sourced::new(value, RequirementSource::Unknown)),
             feature_requirements: feature_requirements
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
             hooks: hooks.map(|value| Sourced::new(value, RequirementSource::Unknown)),
@@ -1439,6 +1507,7 @@ mod tests {
             allow_managed_hooks_only: Some(true),
             allow_appshots: Some(false),
             computer_use: Some(computer_use.clone()),
+            windows: None,
             feature_requirements: Some(feature_requirements.clone()),
             hooks: None,
             mcp_servers: None,
@@ -1479,6 +1548,7 @@ mod tests {
                 )),
                 allow_appshots: Some(Sourced::new(/*value*/ false, enforce_source.clone(),)),
                 computer_use: Some(Sourced::new(computer_use, enforce_source.clone())),
+                windows: None,
                 feature_requirements: Some(Sourced::new(
                     feature_requirements,
                     enforce_source.clone(),
@@ -1522,6 +1592,9 @@ mod tests {
                 allowed_sandbox_modes: None,
                 allowed_web_search_modes: None,
                 allow_managed_hooks_only: None,
+                allow_appshots: None,
+                computer_use: None,
+                windows: None,
                 feature_requirements: None,
                 hooks: None,
                 mcp_servers: None,
@@ -1570,6 +1643,9 @@ mod tests {
                 allowed_sandbox_modes: None,
                 allowed_web_search_modes: None,
                 allow_managed_hooks_only: None,
+                allow_appshots: None,
+                computer_use: None,
+                windows: None,
                 feature_requirements: None,
                 hooks: None,
                 mcp_servers: None,
@@ -2214,6 +2290,71 @@ allowed_approvals_reviewers = ["user"]
     }
 
     #[test]
+    fn deserialize_allowed_windows_sandbox_implementations() -> Result<()> {
+        let toml_str = r#"
+            [windows]
+            allowed_sandbox_implementations = ["elevated"]
+        "#;
+        let config: ConfigRequirementsToml = from_str(toml_str)?;
+        let requirements: ConfigRequirements = with_unknown_source(config).try_into()?;
+
+        assert_eq!(
+            requirements.windows_sandbox_mode.value(),
+            Some(WindowsSandboxModeToml::Elevated)
+        );
+        assert!(
+            requirements
+                .windows_sandbox_mode
+                .can_set(&Some(WindowsSandboxModeToml::Elevated))
+                .is_ok()
+        );
+        assert!(
+            requirements
+                .windows_sandbox_mode
+                .can_set(&Some(WindowsSandboxModeToml::Unelevated))
+                .is_err()
+        );
+        assert!(requirements.windows_sandbox_mode.can_set(&None).is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn empty_allowed_windows_sandbox_implementations_is_rejected() -> Result<()> {
+        let toml_str = r#"
+            [windows]
+            allowed_sandbox_implementations = []
+        "#;
+        let config: ConfigRequirementsToml = from_str(toml_str)?;
+
+        assert_eq!(
+            ConfigRequirements::try_from(with_unknown_source(config)),
+            Err(ConstraintError::EmptyField {
+                field_name: "windows.allowed_sandbox_implementations".to_string(),
+            })
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn allowed_windows_sandbox_implementations_prefer_elevated_fallback() -> Result<()> {
+        let toml_str = r#"
+            [windows]
+            allowed_sandbox_implementations = ["unelevated", "elevated"]
+        "#;
+        let config: ConfigRequirementsToml = from_str(toml_str)?;
+        let requirements: ConfigRequirements = with_unknown_source(config).try_into()?;
+
+        assert_eq!(
+            requirements.windows_sandbox_mode.value(),
+            Some(WindowsSandboxModeToml::Elevated)
+        );
+
+        Ok(())
+    }
+
+    #[test]
     fn deserialize_legacy_allowed_approvals_reviewer() -> Result<()> {
         let toml_str = r#"
             allowed_approvals_reviewers = ["guardian_subagent", "user"]
@@ -2736,6 +2877,7 @@ command = "python3 /enterprise/hooks/pre.py"
 
             [experimental_network.unix_sockets]
             "/tmp/example.sock" = "allow"
+            "/tmp/blocked.sock" = "deny"
         "#;
 
         let source = RequirementSource::CloudRequirements;
@@ -2780,10 +2922,16 @@ command = "python3 /enterprise/hooks/pre.py"
         assert_eq!(
             sourced_network.value.unix_sockets.as_ref(),
             Some(&NetworkUnixSocketPermissionsToml {
-                entries: BTreeMap::from([(
-                    "/tmp/example.sock".to_string(),
-                    NetworkUnixSocketPermissionToml::Allow,
-                )]),
+                entries: BTreeMap::from([
+                    (
+                        "/tmp/blocked.sock".to_string(),
+                        NetworkUnixSocketPermissionToml::Deny,
+                    ),
+                    (
+                        "/tmp/example.sock".to_string(),
+                        NetworkUnixSocketPermissionToml::Allow,
+                    ),
+                ]),
             })
         );
         assert_eq!(sourced_network.value.allow_local_binding, Some(false));
@@ -2921,7 +3069,7 @@ command = "python3 /enterprise/hooks/pre.py"
                 ),
                 (
                     "/tmp/ignored.sock".to_string(),
-                    NetworkUnixSocketPermissionToml::None,
+                    NetworkUnixSocketPermissionToml::Deny,
                 ),
             ]),
         };

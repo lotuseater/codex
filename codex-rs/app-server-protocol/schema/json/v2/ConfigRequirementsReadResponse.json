@@ -130,6 +130,15 @@
             "null"
           ]
         },
+        "allowedWindowsSandboxImplementations": {
+          "items": {
+            "$ref": "#/definitions/WindowsSandboxSetupMode"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
         "computerUse": {
           "anyOf": [
             {
@@ -489,7 +498,7 @@
     "NetworkUnixSocketPermission": {
       "enum": [
         "allow",
-        "none"
+        "deny"
       ],
       "type": "string"
     },
@@ -512,6 +521,13 @@
         "disabled",
         "cached",
         "live"
+      ],
+      "type": "string"
+    },
+    "WindowsSandboxSetupMode": {
+      "enum": [
+        "elevated",
+        "unelevated"
       ],
       "type": "string"
     }

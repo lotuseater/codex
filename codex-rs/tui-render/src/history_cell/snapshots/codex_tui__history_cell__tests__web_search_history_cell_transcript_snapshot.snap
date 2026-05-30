@@ -3,5 +3,5 @@ source: tui-render/src/history_cell/tests.rs
 assertion_line: 1070
 expression: rendered
 ---
-• Searched example search query with several generic words to
-  exercise wrapping
+• Searched the web for example search query with several generic
+  words to exercise wrapping

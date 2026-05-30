@@ -9,9 +9,9 @@ use async_trait::async_trait;
 use chrono::Utc;
 use codex_protocol::ThreadId;
 use codex_protocol::dynamic_tools::DynamicToolSpec;
+use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::RolloutItem;
-use codex_protocol::protocol::SandboxPolicy;
 use codex_thread_store_api::LoadThreadHistoryParams;
 use codex_thread_store_api::ReadThreadByRolloutPathParams;
 use codex_thread_store_api::ReadThreadDynamicToolsParams;
@@ -383,9 +383,9 @@ fn stored_thread_from_state(
         approval_mode: metadata
             .and_then(|metadata| metadata.approval_mode)
             .unwrap_or(AskForApproval::Never),
-        sandbox_policy: metadata
-            .and_then(|metadata| metadata.sandbox_policy.clone())
-            .unwrap_or_else(SandboxPolicy::new_read_only_policy),
+        permission_profile: metadata
+            .and_then(|metadata| metadata.permission_profile.clone())
+            .unwrap_or_else(PermissionProfile::read_only),
         token_usage: metadata.and_then(|metadata| metadata.token_usage.clone()),
         first_user_message: metadata.and_then(|metadata| metadata.first_user_message.clone()),
         history,

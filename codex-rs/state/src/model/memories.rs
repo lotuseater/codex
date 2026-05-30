@@ -1,4 +1,3 @@
-use anyhow::Result;
 use chrono::DateTime;
 use chrono::Utc;
 use codex_protocol::ThreadId;
@@ -117,63 +116,6 @@ impl From<MemoryJobStatusCountRow> for MemoryJobStatusCount {
             count: u64::try_from(row.count).unwrap_or(0),
         }
     }
-}
-
-#[derive(Debug)]
-pub(crate) struct Stage1OutputRow {
-    thread_id: String,
-    rollout_path: String,
-    source_updated_at: i64,
-    raw_memory: String,
-    rollout_summary: String,
-    rollout_slug: Option<String>,
-    metadata_json: String,
-    cwd: String,
-    git_branch: Option<String>,
-    generated_at: i64,
-}
-
-impl Stage1OutputRow {
-    pub(crate) fn try_from_row(row: &SqliteRow) -> Result<Self> {
-        Ok(Self {
-            thread_id: row.try_get("thread_id")?,
-            rollout_path: row.try_get("rollout_path")?,
-            source_updated_at: row.try_get("source_updated_at")?,
-            raw_memory: row.try_get("raw_memory")?,
-            rollout_summary: row.try_get("rollout_summary")?,
-            rollout_slug: row.try_get("rollout_slug")?,
-            metadata_json: row
-                .try_get("metadata_json")
-                .unwrap_or_else(|_| "{}".to_string()),
-            cwd: row.try_get("cwd")?,
-            git_branch: row.try_get("git_branch")?,
-            generated_at: row.try_get("generated_at")?,
-        })
-    }
-}
-
-impl TryFrom<Stage1OutputRow> for Stage1Output {
-    type Error = anyhow::Error;
-
-    fn try_from(row: Stage1OutputRow) -> std::result::Result<Self, Self::Error> {
-        Ok(Self {
-            thread_id: ThreadId::try_from(row.thread_id)?,
-            rollout_path: PathBuf::from(row.rollout_path),
-            source_updated_at: epoch_seconds_to_datetime(row.source_updated_at)?,
-            raw_memory: row.raw_memory,
-            rollout_summary: row.rollout_summary,
-            rollout_slug: row.rollout_slug,
-            metadata: Stage1MemoryMetadata::from_json_str(&row.metadata_json)?,
-            cwd: PathBuf::from(row.cwd),
-            git_branch: row.git_branch,
-            generated_at: epoch_seconds_to_datetime(row.generated_at)?,
-        })
-    }
-}
-
-fn epoch_seconds_to_datetime(secs: i64) -> Result<DateTime<Utc>> {
-    DateTime::<Utc>::from_timestamp(secs, 0)
-        .ok_or_else(|| anyhow::anyhow!("invalid unix timestamp: {secs}"))
 }
 
 /// Result of trying to claim a stage-1 memory extraction job.

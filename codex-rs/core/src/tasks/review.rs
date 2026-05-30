@@ -98,8 +98,8 @@ fn collect_review_user_input(input: Vec<TurnInput>) -> Vec<UserInput> {
     let mut user_input = Vec::new();
     for item in input {
         match item {
-            TurnInput::UserInput(mut content) => user_input.append(&mut content),
-            TurnInput::ResponseInputItem(_) => {}
+            TurnInput::UserInput { mut content, .. } => user_input.append(&mut content),
+            TurnInput::ResponseItem(_) => {}
         }
     }
     user_input
@@ -313,7 +313,7 @@ mod tests {
     use super::normalize_review_template_line_endings;
     use super::render_review_exit_success;
     use codex_protocol::models::ContentItem;
-    use codex_protocol::models::ResponseInputItem;
+    use codex_protocol::models::ResponseItem;
     use codex_protocol::user_input::UserInput;
     use pretty_assertions::assert_eq;
 
@@ -331,22 +331,30 @@ mod tests {
         };
 
         let user_input = collect_review_user_input(vec![
-            TurnInput::ResponseInputItem(ResponseInputItem::Message {
+            TurnInput::ResponseItem(ResponseItem::Message {
+                id: None,
                 role: "assistant".to_string(),
                 content: vec![ContentItem::OutputText {
                     text: "prior assistant context".to_string(),
                 }],
                 phase: None,
             }),
-            TurnInput::UserInput(vec![first.clone()]),
-            TurnInput::ResponseInputItem(ResponseInputItem::Message {
+            TurnInput::UserInput {
+                content: vec![first.clone()],
+                client_id: None,
+            },
+            TurnInput::ResponseItem(ResponseItem::Message {
+                id: None,
                 role: "tool".to_string(),
                 content: vec![ContentItem::OutputText {
                     text: "tool output".to_string(),
                 }],
                 phase: None,
             }),
-            TurnInput::UserInput(vec![second.clone()]),
+            TurnInput::UserInput {
+                content: vec![second.clone()],
+                client_id: None,
+            },
         ]);
 
         assert_eq!(user_input, vec![first, second]);

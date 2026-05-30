@@ -116,6 +116,7 @@ pub async fn prune(context: &MemoryStartupContext, config: &Config) {
     if let Some(db) = context.state_db() {
         let max_unused_days = config.memories.max_unused_days;
         match db
+            .memories()
             .prune_stage1_outputs_for_retention(max_unused_days, crate::stage_one::PRUNE_BATCH_SIZE)
             .await
         {
@@ -128,7 +129,7 @@ pub async fn prune(context: &MemoryStartupContext, config: &Config) {
             }
             Err(err) => {
                 warn!(
-                    "state db prune_stage1_outputs_for_retention failed during memories startup: {err}"
+                    "memories db prune_stage1_outputs_for_retention failed during memories startup: {err}"
                 );
             }
         }
@@ -166,6 +167,7 @@ async fn claim_startup_jobs(
         .collect::<Vec<_>>();
 
     match state_db
+        .memories()
         .claim_stage1_jobs_for_startup(
             context.thread_id(),
             codex_state::Stage1StartupClaimParams {
@@ -181,7 +183,9 @@ async fn claim_startup_jobs(
     {
         Ok(claims) => Some(claims),
         Err(err) => {
-            warn!("state db claim_stage1_jobs_for_startup failed during memories startup: {err}");
+            warn!(
+                "memories db claim_stage1_jobs_for_startup failed during memories startup: {err}"
+            );
             None
         }
     }
@@ -207,7 +211,7 @@ async fn run_jobs(
     claimed_candidates: Vec<codex_state::Stage1JobClaim>,
     stage_one_context: StageOneRequestContext,
 ) -> Vec<JobResult> {
-    futures::stream::iter(claimed_candidates.into_iter())
+    futures::stream::iter(claimed_candidates)
         .map(|claim| {
             let context = Arc::clone(&context);
             let config = Arc::clone(&config);
@@ -336,6 +340,7 @@ mod job {
             tracing::warn!("Phase 1 job failed for thread {thread_id}: {reason}");
             if let Some(state_db) = context.state_db() {
                 let _ = state_db
+                    .memories()
                     .mark_stage1_job_failed(
                         thread_id,
                         ownership_token,
@@ -356,6 +361,7 @@ mod job {
             };
 
             if state_db
+                .memories()
                 .mark_stage1_job_succeeded_no_output(thread_id, ownership_token)
                 .await
                 .unwrap_or(false)
@@ -381,6 +387,7 @@ mod job {
             };
 
             if state_db
+                .memories()
                 .mark_stage1_job_succeeded_with_metadata(
                     thread_id,
                     ownership_token,

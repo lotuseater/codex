@@ -10,3 +10,8 @@ pub use codex_tool_schema::JsonSchema;
 pub use codex_tool_schema::JsonSchemaPrimitiveType;
 pub use codex_tool_schema::JsonSchemaType;
 pub use codex_tool_schema::parse_tool_input_schema;
+pub use codex_tool_schema::parse_tool_input_schema_without_compaction;
+
+#[cfg(test)]
+#[path = "json_schema_tests.rs"]
+mod tests;

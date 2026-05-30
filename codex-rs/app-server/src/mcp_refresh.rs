@@ -114,6 +114,7 @@ mod tests {
     use codex_core::config::ThreadStoreConfig;
     use codex_core::init_state_db;
     use codex_exec_server::EnvironmentManager;
+    use codex_extension_api::NoopExtensionEventSink;
     use codex_login::AuthManager;
     use codex_login::CodexAuth;
     use codex_protocol::protocol::SessionSource;
@@ -197,10 +198,14 @@ mod tests {
         let thread_manager = Arc::new_cyclic(|thread_manager| {
             ThreadManager::new(
                 &good_config,
-                auth_manager,
+                auth_manager.clone(),
                 SessionSource::Exec,
                 Arc::new(EnvironmentManager::default_for_tests()),
-                thread_extensions(guardian_agent_spawner(thread_manager.clone())),
+                thread_extensions(
+                    guardian_agent_spawner(thread_manager.clone()),
+                    Arc::new(NoopExtensionEventSink),
+                    auth_manager.clone(),
+                ),
                 /*analytics_events_client*/ None,
                 thread_store,
                 Arc::new(StoreLiveThreadFactory::new()),

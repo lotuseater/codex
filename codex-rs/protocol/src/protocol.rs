@@ -3,6 +3,7 @@
 //! Uses a SQ (Submission Queue) / EQ (Event Queue) pattern to asynchronously communicate
 //! between user and agent.
 
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -153,6 +154,9 @@ pub struct Submission {
     pub id: String,
     /// Payload
     pub op: Op,
+    /// Client-provided id for the user message represented by `Op::UserInput`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_user_message_id: Option<String>,
     /// Optional W3C trace carrier propagated across async submission handoffs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trace: Option<W3cTraceContext>,
@@ -192,6 +196,21 @@ pub struct ThreadSettingsOverrides {
     pub collaboration_mode: Option<CollaborationMode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub personality: Option<Personality>,
+}
+
+/// Source classification for client-supplied context.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AdditionalContextKind {
+    Untrusted,
+    Application,
+}
+
+/// Client-supplied context keyed by an opaque source identifier.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
+pub struct AdditionalContextEntry {
+    pub value: String,
+    pub kind: AdditionalContextKind,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, JsonSchema)]
@@ -1175,6 +1194,7 @@ mod tests {
             items: Vec::new(),
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
             thread_settings: ThreadSettingsOverrides::default(),
         };
 
@@ -1195,6 +1215,7 @@ mod tests {
                 items: Vec::new(),
                 final_output_json_schema: None,
                 responsesapi_client_metadata: None,
+                additional_context: Default::default(),
                 thread_settings: ThreadSettingsOverrides::default(),
             }
         );
@@ -1255,6 +1276,7 @@ mod tests {
             items: Vec::new(),
             final_output_json_schema: Some(schema.clone()),
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
             thread_settings: ThreadSettingsOverrides::default(),
         };
 
@@ -1281,6 +1303,7 @@ mod tests {
                 "fiber_run_id".to_string(),
                 "fiber-123".to_string(),
             )])),
+            additional_context: Default::default(),
             thread_settings: ThreadSettingsOverrides::default(),
         };
 
@@ -1323,6 +1346,7 @@ mod tests {
     #[test]
     fn user_message_event_serializes_empty_metadata_vectors() -> Result<()> {
         let event = UserMessageEvent {
+            client_id: None,
             message: "hello".to_string(),
             images: None,
             image_details: Vec::new(),
@@ -1344,6 +1368,64 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn user_message_event_deserializes_without_image_detail_fields() -> Result<()> {
+        let event: UserMessageEvent = serde_json::from_value(json!({
+            "message": "hello",
+            "images": ["https://example.com/image.png"],
+            "local_images": ["/tmp/local.png"],
+            "text_elements": [],
+        }))?;
+
+        assert_eq!(event.message, "hello");
+        assert_eq!(
+            event.images,
+            Some(vec!["https://example.com/image.png".to_string()])
+        );
+        assert_eq!(event.image_details, Vec::<Option<ImageDetail>>::new());
+        assert_eq!(event.local_images, vec![PathBuf::from("/tmp/local.png")]);
+        assert_eq!(event.local_image_details, Vec::<Option<ImageDetail>>::new());
+        assert_eq!(event.text_elements, Vec::new());
+
+        Ok(())
+    }
+
+    #[test]
+    fn user_message_item_legacy_event_preserves_image_details() {
+        let local_path = PathBuf::from("/tmp/local.png");
+        let mut item = UserMessageItem::new(&[
+            crate::user_input::UserInput::Image {
+                image_url: "https://example.com/first.png".to_string(),
+                detail: Some(ImageDetail::Original),
+            },
+            crate::user_input::UserInput::Image {
+                image_url: "https://example.com/second.png".to_string(),
+                detail: None,
+            },
+            crate::user_input::UserInput::LocalImage {
+                path: local_path.clone(),
+                detail: Some(ImageDetail::Original),
+            },
+        ]);
+        item.client_id = Some("client-message-1".to_string());
+
+        let EventMsg::UserMessage(event) = item.as_legacy_event() else {
+            panic!("expected user message event");
+        };
+
+        assert_eq!(
+            event.images,
+            Some(vec![
+                "https://example.com/first.png".to_string(),
+                "https://example.com/second.png".to_string(),
+            ])
+        );
+        assert_eq!(event.client_id, Some("client-message-1".to_string()));
+        assert_eq!(event.image_details, vec![Some(ImageDetail::Original)]);
+        assert_eq!(event.local_images, vec![local_path]);
+        assert_eq!(event.local_image_details, vec![Some(ImageDetail::Original)]);
     }
 
     #[test]
@@ -1388,6 +1470,7 @@ mod tests {
             turn_id: None,
             trace_id: None,
             cwd: test_path_buf("/tmp"),
+            workspace_roots: None,
             current_date: None,
             timezone: None,
             approval_policy: AskForApproval::Never,

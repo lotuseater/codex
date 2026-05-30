@@ -1,5 +1,3 @@
-#![allow(clippy::unwrap_used)]
-
 #[path = "prompt_caching_tools.rs"]
 mod prompt_caching_tools;
 #[path = "prompt_caching_prefixes.rs"]

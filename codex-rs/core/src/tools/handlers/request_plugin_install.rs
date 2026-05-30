@@ -13,13 +13,11 @@ use codex_tools::REQUEST_PLUGIN_INSTALL_PERSIST_ALWAYS_VALUE;
 use codex_tools::REQUEST_PLUGIN_INSTALL_PERSIST_KEY;
 use codex_tools::REQUEST_PLUGIN_INSTALL_TOOL_NAME;
 use codex_tools::RequestPluginInstallArgs;
-use codex_tools::RequestPluginInstallEntry;
 use codex_tools::RequestPluginInstallResult;
 use codex_tools::ToolName;
 use codex_tools::ToolSpec;
 use codex_tools::all_requested_connectors_picked_up;
 use codex_tools::build_request_plugin_install_elicitation_request;
-use codex_tools::collect_request_plugin_install_entries;
 use codex_tools::filter_request_plugin_install_discoverable_tools_for_client;
 use codex_tools::verified_connector_install_completed;
 use rmcp::model::RequestId;
@@ -39,16 +37,14 @@ use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
 
 pub struct RequestPluginInstallHandler {
-    request_plugin_install_entries: Vec<RequestPluginInstallEntry>,
+    discoverable_tools: Vec<DiscoverableTool>,
     tool_search_available: bool,
 }
 
 impl RequestPluginInstallHandler {
     pub fn new(discoverable_tools: Vec<DiscoverableTool>, tool_search_available: bool) -> Self {
         Self {
-            request_plugin_install_entries: collect_request_plugin_install_entries(
-                &discoverable_tools,
-            ),
+            discoverable_tools,
             tool_search_available,
         }
     }
@@ -69,10 +65,6 @@ impl ToolExecutor<ToolInvocation> for RequestPluginInstallHandler {
         true
     }
 
-    #[expect(
-        clippy::await_holding_invalid_type,
-        reason = "plugin install discovery reads through the session-owned manager guard"
-    )]
     async fn handle(
         &self,
         invocation: ToolInvocation,
@@ -115,31 +107,10 @@ impl ToolExecutor<ToolInvocation> for RequestPluginInstallHandler {
             ));
         }
 
-        let auth = session.services.auth_manager.auth().await;
-        let manager = session.services.mcp_connection_manager.read().await;
-        let mcp_tools = manager.list_all_tools().await;
-        drop(manager);
-        let accessible_connectors = connectors::with_app_enabled_state(
-            connectors::accessible_connectors_from_mcp_tools(&mcp_tools),
-            &turn.config,
+        let discoverable_tools = filter_request_plugin_install_discoverable_tools_for_client(
+            self.discoverable_tools.clone(),
+            turn.app_server_client_name.as_deref(),
         );
-        let discoverable_tools = connectors::list_tool_suggest_discoverable_tools_with_auth(
-            &turn.config,
-            auth.as_ref(),
-            &accessible_connectors,
-        )
-        .await
-        .map(|discoverable_tools| {
-            filter_request_plugin_install_discoverable_tools_for_client(
-                discoverable_tools,
-                turn.app_server_client_name.as_deref(),
-            )
-        })
-        .map_err(|err| {
-            FunctionCallError::RespondToModel(format!(
-                "plugin install requests are unavailable right now: {err}"
-            ))
-        })?;
 
         let tool = discoverable_tools
             .into_iter()
@@ -177,6 +148,7 @@ impl ToolExecutor<ToolInvocation> for RequestPluginInstallHandler {
             .as_ref()
             .is_some_and(|response| response.action == ElicitationAction::Accept);
 
+        let auth = session.services.auth_manager.auth().await;
         let completed = if user_confirmed {
             verify_request_plugin_install_completed(&session, &turn, &tool, auth.as_ref()).await
         } else {

@@ -361,14 +361,17 @@ pub fn empty_mcp_output() -> PlainHistoryCell {
         "  • No MCP servers configured.".italic().into(),
         Line::from(vec![
             "    See the ".into(),
-            "\u{1b}]8;;https://developers.openai.com/codex/mcp\u{7}MCP docs\u{1b}]8;;\u{7}"
-                .underlined(),
+            crate::terminal_hyperlinks::osc8_hyperlink(
+                "https://developers.openai.com/codex/mcp",
+                "MCP docs",
+            )
+            .underlined(),
             " to configure them.".into(),
         ])
         .style(Style::default().add_modifier(Modifier::DIM)),
     ];
 
-    PlainHistoryCell { lines }
+    PlainHistoryCell::new(lines)
 }
 
 #[cfg(test)]
@@ -393,7 +396,7 @@ pub fn new_mcp_tools_output(
     }
 
     let mut servers: Vec<_> = effective_servers.iter().collect();
-    servers.sort_by(|(a, _), (b, _)| a.cmp(b));
+    servers.sort_by_key(|(server, _)| *server);
 
     for (server, cfg) in servers {
         let prefix = qualified_mcp_tool_name_prefix(server);
@@ -464,7 +467,7 @@ pub fn new_mcp_tools_output(
                     && !headers.is_empty()
                 {
                     let mut pairs: Vec<_> = headers.iter().collect();
-                    pairs.sort_by(|(a, _), (b, _)| a.cmp(b));
+                    pairs.sort_by_key(|(name, _)| *name);
                     let display = pairs
                         .into_iter()
                         .map(|(name, _)| format!("{name}=*****"))
@@ -476,7 +479,7 @@ pub fn new_mcp_tools_output(
                     && !headers.is_empty()
                 {
                     let mut pairs: Vec<_> = headers.iter().collect();
-                    pairs.sort_by(|(a, _), (b, _)| a.cmp(b));
+                    pairs.sort_by_key(|(name, _)| *name);
                     let display = pairs
                         .into_iter()
                         .map(|(name, var)| format!("{name}={var}"))

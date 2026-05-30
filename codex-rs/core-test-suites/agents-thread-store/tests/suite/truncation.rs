@@ -22,6 +22,7 @@ use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
+use codex_core_test_runtime::wait_for_mcp_server;
 use codex_protocol::user_input::UserInput;
 use serde_json::Value;
 use serde_json::json;
@@ -343,7 +344,7 @@ async fn mcp_tool_call_output_exceeds_limit_truncated_for_model() -> Result<()> 
 
     let call_id = "rmcp-truncated";
     let server_name = "rmcp";
-    let namespace = format!("mcp__{server_name}__");
+    let namespace = format!("mcp__{server_name}");
 
     // Build a very large message to exceed 10KiB once serialized.
     let large_msg = "long-message-with-newlines-".repeat(6000);
@@ -409,6 +410,7 @@ async fn mcp_tool_call_output_exceeds_limit_truncated_for_model() -> Result<()> 
         config.tool_output_token_limit = Some(500);
     });
     let fixture = builder.build(&server).await?;
+    wait_for_mcp_server(&fixture.codex, server_name).await?;
 
     fixture
         .submit_turn_with_permission_profile(
@@ -445,7 +447,7 @@ async fn mcp_image_output_preserves_image_and_no_text_summary() -> Result<()> {
 
     let call_id = "rmcp-image-no-trunc";
     let server_name = "rmcp";
-    let namespace = format!("mcp__{server_name}__");
+    let namespace = format!("mcp__{server_name}");
 
     mount_sse_once(
         &server,
@@ -507,6 +509,7 @@ async fn mcp_image_output_preserves_image_and_no_text_summary() -> Result<()> {
             .expect("test mcp servers should accept any configuration");
     });
     let fixture = builder.build(&server).await?;
+    wait_for_mcp_server(&fixture.codex, server_name).await?;
     let session_model = fixture.session_configured.model.clone();
     let permission_profile = PermissionProfile::read_only();
     let sandbox_policy = permission_profile.to_legacy_sandbox_policy(fixture.cwd.path())?;
@@ -727,7 +730,7 @@ async fn mcp_tool_call_output_not_truncated_with_custom_limit() -> Result<()> {
 
     let call_id = "rmcp-untruncated";
     let server_name = "rmcp";
-    let namespace = format!("mcp__{server_name}__");
+    let namespace = format!("mcp__{server_name}");
     let large_msg = "a".repeat(80_000);
     let args_json = serde_json::json!({ "message": large_msg });
 
@@ -790,6 +793,7 @@ async fn mcp_tool_call_output_not_truncated_with_custom_limit() -> Result<()> {
             .expect("test mcp servers should accept any configuration");
     });
     let fixture = builder.build(&server).await?;
+    wait_for_mcp_server(&fixture.codex, server_name).await?;
 
     fixture
         .submit_turn_with_permission_profile(

@@ -58,6 +58,12 @@ pub(crate) trait CoreToolRuntime: Send + Sync {
         )
     }
 
+    /// Whether cancellation should let the handler finish teardown before the
+    /// host returns an aborted tool response.
+    fn waits_for_runtime_cancellation(&self) -> bool {
+        false
+    }
+
     fn telemetry_tags<'a>(
         &'a self,
         _invocation: &'a ToolInvocation,
@@ -407,6 +413,10 @@ impl CoreToolRuntime for ExposureOverride {
         self.handler.matches_kind(payload)
     }
 
+    fn waits_for_runtime_cancellation(&self) -> bool {
+        self.handler.waits_for_runtime_cancellation()
+    }
+
     fn pre_tool_use_payload(&self, invocation: &ToolInvocation) -> Option<PreToolUsePayload> {
         self.handler.pre_tool_use_payload(invocation)
     }
@@ -543,6 +553,11 @@ impl ToolRegistry {
         Some(tool.supports_parallel_tool_calls())
     }
 
+    pub(crate) fn waits_for_runtime_cancellation(&self, name: &ToolName) -> Option<bool> {
+        let tool = self.tool(name)?;
+        Some(tool.waits_for_runtime_cancellation())
+    }
+
     #[allow(dead_code)]
     pub(crate) async fn dispatch_any(
         &self,
@@ -659,10 +674,12 @@ impl ToolRegistry {
                 PreToolUseHookResult::Blocked(message) => {
                     let err = FunctionCallError::RespondToModel(message);
                     dispatch_trace.record_failed(&err);
-                    if let Some(terminal_outcome_reached) = &terminal_outcome_reached {
-                        terminal_outcome_reached.store(true, Ordering::Release);
-                    }
-                    notify_tool_finish(&invocation, ToolCallOutcome::Blocked).await;
+                    notify_tool_finish_if_unclaimed(
+                        &invocation,
+                        terminal_outcome_reached.as_deref(),
+                        ToolCallOutcome::Blocked,
+                    )
+                    .await;
                     return Err(err);
                 }
                 PreToolUseHookResult::Continue {
@@ -673,11 +690,9 @@ impl ToolRegistry {
                     }
                     Err(err) => {
                         dispatch_trace.record_failed(&err);
-                        if let Some(terminal_outcome_reached) = &terminal_outcome_reached {
-                            terminal_outcome_reached.store(true, Ordering::Release);
-                        }
-                        notify_tool_finish(
+                        notify_tool_finish_if_unclaimed(
                             &invocation,
+                            terminal_outcome_reached.as_deref(),
                             ToolCallOutcome::Failed {
                                 handler_executed: false,
                             },
@@ -800,18 +815,21 @@ impl ToolRegistry {
                 handler_executed: true,
             },
         };
-        if let Some(terminal_outcome_reached) = &terminal_outcome_reached {
-            terminal_outcome_reached.store(true, Ordering::Release);
-        }
-        notify_tool_finish(&invocation, lifecycle_outcome).await;
+        let finished = notify_tool_finish_if_unclaimed(
+            &invocation,
+            terminal_outcome_reached.as_deref(),
+            lifecycle_outcome,
+        )
+        .await;
 
-        if let Err(err) = invocation
-            .session
-            .goal_runtime_apply(GoalRuntimeEvent::ToolCompleted {
-                turn_context: invocation.turn.as_ref(),
-                tool_name: tool_name.name.as_str(),
-            })
-            .await
+        if finished
+            && let Err(err) = invocation
+                .session
+                .goal_runtime_apply(GoalRuntimeEvent::ToolCompleted {
+                    turn_context: invocation.turn.as_ref(),
+                    tool_name: tool_name.name.as_str(),
+                })
+                .await
         {
             warn!("failed to account thread goal progress after tool call: {err}");
         }
@@ -836,6 +854,19 @@ impl ToolRegistry {
             }
         }
     }
+}
+
+async fn notify_tool_finish_if_unclaimed(
+    invocation: &ToolInvocation,
+    terminal_outcome_reached: Option<&AtomicBool>,
+    outcome: ToolCallOutcome,
+) -> bool {
+    if terminal_outcome_reached.is_some_and(|reached| reached.swap(true, Ordering::AcqRel)) {
+        return false;
+    }
+
+    notify_tool_finish(invocation, outcome).await;
+    true
 }
 
 async fn handle_any_tool(

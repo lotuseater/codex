@@ -15,6 +15,7 @@ pub use approval_review::ApprovalReviewContributor;
 pub use approval_review::ApprovalReviewFuture;
 pub use prompt::PromptFragment;
 pub use prompt::PromptSlot;
+pub use thread_lifecycle::ThreadIdleInput;
 pub use thread_lifecycle::ThreadResumeInput;
 pub use thread_lifecycle::ThreadStartInput;
 pub use thread_lifecycle::ThreadStopInput;
@@ -32,6 +33,7 @@ pub use turn_item::TurnItemContributionFuture;
 pub use turn_item::TurnItemContributor;
 pub use turn_lifecycle::TurnAbortInput;
 pub use turn_lifecycle::TurnAbortReason;
+pub use turn_lifecycle::TurnErrorInput;
 pub use turn_lifecycle::TurnStartInput;
 pub use turn_lifecycle::TurnStopInput;
 
@@ -58,6 +60,13 @@ pub trait ThreadLifecycleContributor<C: Sync>: Send + Sync {
     /// Called after the host constructs a runtime from persisted history.
     async fn on_thread_resume(&self, _input: ThreadResumeInput<'_>) {}
 
+    /// Called after the host has drained immediately pending thread work.
+    ///
+    /// Implementations may use host capabilities captured by the extension to
+    /// submit follow-up input. The host remains responsible for deciding
+    /// whether that input starts a turn, is queued, or is ignored.
+    async fn on_thread_idle(&self, _input: ThreadIdleInput<'_>) {}
+
     /// Called before the host drops the thread runtime and thread-scoped store.
     async fn on_thread_stop(&self, _input: ThreadStopInput<'_>) {}
 }
@@ -78,6 +87,9 @@ pub trait TurnLifecycleContributor: Send + Sync {
 
     /// Called after the host aborts a running turn.
     async fn on_turn_abort(&self, _input: TurnAbortInput<'_>) {}
+
+    /// Called when the host observes an error for a running turn.
+    async fn on_turn_error(&self, _input: TurnErrorInput<'_>) {}
 }
 
 /// Contributor for host-owned configuration changes.

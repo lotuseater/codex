@@ -301,6 +301,7 @@ struct ItemReviewSummary {
 
 #[derive(Clone)]
 struct ThreadMetadataState {
+    session_id: String,
     thread_source: Option<ThreadSource>,
     initialization_mode: ThreadInitializationMode,
     subagent_source: Option<String>,
@@ -309,6 +310,7 @@ struct ThreadMetadataState {
 
 impl ThreadMetadataState {
     fn from_thread_metadata(
+        session_id: String,
         session_source: &SessionSource,
         thread_source: Option<ThreadSource>,
         initialization_mode: ThreadInitializationMode,
@@ -327,6 +329,7 @@ impl ThreadMetadataState {
             | SessionSource::Unknown => (None, None),
         };
         Self {
+            session_id,
             thread_source,
             initialization_mode,
             subagent_source,
@@ -521,8 +524,8 @@ impl AppServerReducer {
         input: GuardianReviewEventParams,
         out: &mut Vec<TrackEventRequest>,
     ) {
-        let Some(connection_state) =
-            self.thread_connection_or_warn(AnalyticsDropSite::guardian(&input))
+        let Some((connection_state, thread_metadata)) =
+            self.thread_context_or_warn(AnalyticsDropSite::guardian(&input))
         else {
             return;
         };
@@ -530,6 +533,7 @@ impl AppServerReducer {
             GuardianReviewEventRequest {
                 event_type: "codex_guardian_review",
                 event_params: GuardianReviewEventPayload {
+                    session_id: thread_metadata.session_id.clone(),
                     app_server_client: connection_state.app_server_client.clone(),
                     runtime: connection_state.runtime.clone(),
                     guardian_review: input,
@@ -1108,11 +1112,13 @@ impl AppServerReducer {
             .source
             .try_into()
             .unwrap_or(SessionSource::Unknown);
+        let session_id = thread.session_id;
         let thread_id = thread.id;
         let Some(connection_state) = self.connections.get(&connection_id) else {
             return;
         };
         let thread_metadata = ThreadMetadataState::from_thread_metadata(
+            session_id.clone(),
             &session_source,
             thread.thread_source.map(Into::into),
             initialization_mode,
@@ -1129,6 +1135,7 @@ impl AppServerReducer {
                 event_type: "codex_thread_initialized",
                 event_params: ThreadInitializedEventParams {
                     thread_id,
+                    session_id,
                     app_server_client: connection_state.app_server_client.clone(),
                     runtime: connection_state.runtime.clone(),
                     model,
@@ -1158,6 +1165,7 @@ impl AppServerReducer {
                 event_type: "codex_compaction_event",
                 event_params: codex_compaction_event_params(
                     input,
+                    thread_metadata.session_id.clone(),
                     connection_state.app_server_client.clone(),
                     connection_state.runtime.clone(),
                     thread_metadata.thread_source,
@@ -1260,6 +1268,7 @@ impl AppServerReducer {
             event_type: "codex_turn_steer_event",
             event_params: CodexTurnSteerEventParams {
                 thread_id: pending_request.thread_id,
+                session_id: thread_metadata.session_id.clone(),
                 expected_turn_id: Some(pending_request.expected_turn_id),
                 accepted_turn_id,
                 app_server_client: connection_state.app_server_client.clone(),
@@ -2330,6 +2339,7 @@ fn codex_turn_event_params(
     let token_usage = turn_state.token_usage.clone();
     CodexTurnEventParams {
         thread_id,
+        session_id: thread_metadata.session_id.clone(),
         turn_id,
         app_server_client,
         runtime,

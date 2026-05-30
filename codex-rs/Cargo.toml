@@ -20,7 +20,6 @@ members = [
     "app-server-client",
     "app-server-protocol",
     "app-server-test-client",
-    "debug-client",
     "apply-patch",
     "arg0",
     "feedback",
@@ -66,7 +65,9 @@ members = [
     "execpolicy-legacy",
     "ext/extension-api",
     "ext/guardian",
+    "ext/image-generation",
     "ext/memories",
+    "ext/web-search",
     "external-agent-migration",
     "external-agent-sessions",
     "keyring-store",
@@ -80,7 +81,6 @@ members = [
     "mcp/elicitation-api",
     "mcp-server",
     "memories/context",
-    "memories/mcp",
     "memories/read",
     "memories/write",
     "model-provider-info",
@@ -230,6 +230,7 @@ codex-exec-server = { path = "exec-server" }
 codex-execpolicy = { path = "execpolicy", default-features = false }
 codex-extension-api = { path = "ext/extension-api" }
 codex-guardian = { path = "ext/guardian" }
+codex-image-generation-extension = { path = "ext/image-generation" }
 codex-external-agent-migration = { path = "external-agent-migration" }
 codex-external-agent-sessions = { path = "external-agent-sessions" }
 codex-experimental-api-macros = { path = "codex-experimental-api-macros" }
@@ -251,8 +252,8 @@ codex-lmstudio = { path = "lmstudio" }
 codex-login = { path = "login" }
 codex-message-history = { path = "message-history" }
 codex-memories-context = { path = "memories/context" }
-codex-memories-mcp = { path = "memories/mcp" }
 codex-memories-extension = { path = "ext/memories" }
+codex-web-search-extension = { path = "ext/web-search" }
 codex-memories-read = { path = "memories/read" }
 codex-memories-write = { path = "memories/write" }
 codex-mcp = { path = "codex-mcp" }
@@ -446,10 +447,10 @@ rcgen = { version = "0.14", default-features = false, features = [
     "aws_lc_rs",
     "pem",
 ] }
-regex = "1"
-regex-lite = "0.1"
+regex = "1.12.3"
+regex-lite = "0.1.8"
 reqwest = { version = "0.12", default-features = false, features = ["cookies", "rustls-tls"] }
-rmcp = { version = "0.15.0", default-features = false }
+rmcp = { version = "1.7.0", default-features = false }
 runfiles = { git = "https://github.com/dzbarsky/rules_rust", rev = "b56cbaa8465e74127f1ea216f813cd377295ad81" }
 rustls = { version = "0.23", default-features = false, features = [
     "ring",
@@ -475,19 +476,20 @@ serde_json = "1"
 serde_path_to_error = "0.1"
 serde_with = "3.17"
 serde_yaml = "0.9"
-serial_test = "3"
+serial_test = "3.2.0"
 sha1 = "0.11"
 sha2 = "0.11"
-shlex = "1"
+shlex = "1.3.0"
 similar = "3"
-socket2 = "0.6"
-sqlx = { version = "0.8.6", default-features = false, features = [
+socket2 = "0.6.1"
+sqlx = { version = "0.9.0", default-features = false, features = [
     "chrono",
     "json",
     "macros",
     "migrate",
-    "runtime-tokio-rustls",
-    "sqlite",
+    "runtime-tokio",
+    "tls-rustls",
+    "sqlite-bundled",
     "time",
     "uuid",
 ] }

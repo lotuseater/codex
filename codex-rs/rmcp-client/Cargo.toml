@@ -11,6 +11,7 @@ workspace = true
 anyhow = { workspace = true }
 axum = { workspace = true, default-features = false, features = [
     "http1",
+    "json",
     "tokio",
 ] }
 base64 = { workspace = true }
@@ -29,7 +30,7 @@ oauth2 = "5"
 reqwest = { workspace = true, features = [
     "json",
     "stream",
-    "rustls-tls",
+    "rustls",
 ] }
 rmcp = { workspace = true, default-features = false, features = [
     "auth",

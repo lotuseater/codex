@@ -36,7 +36,8 @@ pub fn create_create_goal_tool() -> ToolSpec {
         (
             "token_budget".to_string(),
             JsonSchema::integer(Some(
-                "Optional positive token budget for the new active goal.".to_string(),
+                "Positive token budget for the new goal. Omit unless explicitly requested."
+                    .to_string(),
             )),
         ),
     ]);

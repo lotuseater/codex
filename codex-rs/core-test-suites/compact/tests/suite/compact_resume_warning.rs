@@ -29,6 +29,7 @@ fn resume_history(
         turn_id: Some(turn_id.clone()),
         trace_id: None,
         cwd: config.cwd.to_path_buf(),
+        workspace_roots: None,
         current_date: None,
         timezone: None,
         approval_policy: config.permissions.approval_policy.value(),
@@ -61,6 +62,7 @@ fn resume_history(
                 collaboration_mode_kind: ModeKind::Default,
             })),
             RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
+                client_id: None,
                 message: "seed".to_string(),
                 images: None,
                 local_images: vec![],

@@ -12,6 +12,7 @@ use codex_config::config_toml::AgentRoleToml;
 use codex_config::config_toml::AgentsToml;
 use codex_config::config_toml::AutoReviewToml;
 use codex_config::config_toml::ConfigToml;
+use codex_config::config_toml::ExperimentalRequestUserInput;
 use codex_config::config_toml::FirstMovesModeToml;
 use codex_config::config_toml::FirstMovesPrewarmToml;
 use codex_config::config_toml::ProjectConfig;

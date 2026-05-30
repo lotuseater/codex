@@ -89,6 +89,52 @@ const fn default_hide_agent_reasoning() -> Option<bool> {
     Some(false)
 }
 
+const fn default_true() -> bool {
+    true
+}
+
+/// Backward-compatible shape for ChatGPT workspace login restrictions in config.toml.
+#[derive(Serialize, Debug, Clone, PartialEq, JsonSchema)]
+#[serde(untagged)]
+pub enum ForcedChatgptWorkspaceIds {
+    Single(String),
+    Multiple(Vec<String>),
+}
+
+impl ForcedChatgptWorkspaceIds {
+    pub fn into_vec(self) -> Vec<String> {
+        match self {
+            Self::Single(value) => vec![value],
+            Self::Multiple(values) => values,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ForcedChatgptWorkspaceIds {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Repr {
+            Single(String),
+            Multiple(Vec<String>),
+        }
+
+        match Repr::deserialize(deserializer)? {
+            Repr::Single(value) if value.contains(',') => Err(D::Error::custom(
+                "forced_chatgpt_workspace_id must be a single workspace ID string or a TOML list \
+of strings; comma-separated strings are not supported. Use \
+`forced_chatgpt_workspace_id = [\"123e4567-e89b-42d3-a456-426614174000\", \
+\"123e4567-e89b-42d3-a456-426614174001\"]` instead.",
+            )),
+            Repr::Single(value) => Ok(Self::Single(value)),
+            Repr::Multiple(values) => Ok(Self::Multiple(values)),
+        }
+    }
+}
+
 /// Base config deserialized from ~/.codex/config.toml.
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, JsonSchema)]
 #[schemars(deny_unknown_fields)]
@@ -629,6 +675,14 @@ pub struct ToolsToml {
         deserialize_with = "deserialize_optional_web_search_tool_config"
     )]
     pub web_search: Option<WebSearchToolConfig>,
+    pub experimental_request_user_input: Option<ExperimentalRequestUserInput>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct ExperimentalRequestUserInput {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
@@ -946,27 +1000,6 @@ impl ConfigToml {
 
         None
     }
-
-    pub fn get_config_profile(
-        &self,
-        override_profile: Option<String>,
-    ) -> Result<ConfigProfile, std::io::Error> {
-        let profile = override_profile.or_else(|| self.profile.clone());
-
-        match profile {
-            Some(key) => {
-                if let Some(profile) = self.profiles.get(key.as_str()) {
-                    return Ok(profile.clone());
-                }
-
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!("config profile `{key}` not found"),
-                ))
-            }
-            None => Ok(ConfigProfile::default()),
-        }
-    }
 }
 
 /// Canonicalize the path and convert it to a string to be used as a key in the
@@ -1007,7 +1040,7 @@ fn project_config_for_lookup_key(
         .iter()
         .filter(|(key, _)| normalize_project_lookup_key((*key).clone()) == lookup_key)
         .collect();
-    normalized_matches.sort_by(|(left, _), (right, _)| left.cmp(right));
+    normalized_matches.sort_by_key(|(key, _)| *key);
     normalized_matches
         .first()
         .map(|(_, project_config)| (**project_config).clone())

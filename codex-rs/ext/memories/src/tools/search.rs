@@ -3,6 +3,7 @@ use codex_extension_api::ToolCall;
 use codex_extension_api::ToolExecutor;
 use codex_extension_api::ToolName;
 use codex_extension_api::ToolSpec;
+use codex_otel::MetricsClient;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
@@ -14,6 +15,9 @@ use crate::backend::MemoriesBackend;
 use crate::backend::SearchMatchMode;
 use crate::backend::SearchMemoriesRequest;
 use crate::backend::SearchMemoriesResponse;
+use crate::metrics::record_tool_call;
+use crate::metrics::scope_from_optional_path;
+use crate::metrics::truncated_tag;
 
 use super::backend_error_to_function_call;
 use super::clamp_max_results;
@@ -40,6 +44,7 @@ struct SearchArgs {
 #[derive(Clone)]
 pub(super) struct SearchTool<B> {
     pub(super) backend: B,
+    pub(super) metrics_client: Option<MetricsClient>,
 }
 
 impl<B> ToolExecutor<ToolCall> for SearchTool<B>
@@ -66,12 +71,19 @@ where
         Output = Result<Self::Output, codex_extension_api::FunctionCallError>,
     > + Send {
         let backend = self.backend.clone();
+        let metrics_client = self.metrics_client.clone();
         async move {
             let args: SearchArgs = parse_args(&call)?;
-            let response = backend
-                .search(args.into_request())
-                .await
-                .map_err(backend_error_to_function_call)?;
+            let scope = scope_from_optional_path(args.path.as_deref(), "all");
+            let response = backend.search(args.into_request()).await;
+            record_tool_call(
+                metrics_client.as_ref(),
+                SEARCH_TOOL_NAME,
+                scope,
+                response.is_ok(),
+                truncated_tag(response.as_ref().ok().map(|response| response.truncated)),
+            );
+            let response = response.map_err(backend_error_to_function_call)?;
             let output: Box<dyn codex_extension_api::ToolOutput> =
                 Box::new(JsonToolOutput::new(json!(response)));
             Ok(output)

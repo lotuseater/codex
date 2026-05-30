@@ -45,13 +45,11 @@ use codex_otel::TURN_TOOL_CALL_METRIC;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::TokenUsage;
 use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::TurnAbortedEvent;
 use codex_protocol::protocol::TurnCompleteEvent;
 use codex_protocol::protocol::WarningEvent;
-use codex_protocol::user_input::UserInput;
 
 use codex_features::Feature;
 use codex_protocol::models::ContentItem;
@@ -63,6 +61,7 @@ pub(crate) use user_shell::UserShellCommandTask;
 pub(crate) use user_shell::execute_user_shell_command;
 
 const GRACEFULL_INTERRUPTION_TIMEOUT_MS: u64 = 100;
+const TASK_COMPACT_METRIC: &str = "codex.task.compact";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum InterruptedTurnHistoryMarker {
@@ -146,6 +145,18 @@ fn emit_turn_memory_metric(
     );
 }
 
+pub(crate) fn emit_compact_metric(
+    session_telemetry: &SessionTelemetry,
+    compact_type: &'static str,
+    manual: bool,
+) {
+    session_telemetry.counter(
+        TASK_COMPACT_METRIC,
+        /*inc*/ 1,
+        &[("type", compact_type), ("manual", bool_tag(manual))],
+    );
+}
+
 fn bool_tag(value: bool) -> &'static str {
     if value { "true" } else { "false" }
 }
@@ -198,11 +209,6 @@ pub(crate) trait SessionTask: Send + Sync + 'static {
     /// Returns the tracing name for a spawned task span.
     fn span_name(&self) -> &'static str;
 
-    /// Returns whether turn token usage should be recorded on this task's turn span.
-    fn records_turn_token_usage_on_span(&self) -> bool {
-        false
-    }
-
     /// Executes the task until completion or cancellation.
     ///
     /// Implementations typically stream protocol events using `session` and
@@ -240,8 +246,6 @@ pub(crate) trait AnySessionTask: Send + Sync + 'static {
 
     fn span_name(&self) -> &'static str;
 
-    fn records_turn_token_usage_on_span(&self) -> bool;
-
     fn run(
         self: Arc<Self>,
         session: Arc<SessionTaskContext>,
@@ -267,10 +271,6 @@ where
 
     fn span_name(&self) -> &'static str {
         SessionTask::span_name(self)
-    }
-
-    fn records_turn_token_usage_on_span(&self) -> bool {
-        SessionTask::records_turn_token_usage_on_span(self)
     }
 
     fn run(
@@ -302,7 +302,7 @@ impl Session {
     pub async fn spawn_task<T: SessionTask>(
         self: &Arc<Self>,
         turn_context: Arc<TurnContext>,
-        input: Vec<UserInput>,
+        input: Vec<TurnInput>,
         task: T,
     ) {
         self.abort_all_tasks(TurnAbortReason::Replaced).await;
@@ -313,7 +313,7 @@ impl Session {
     pub(crate) async fn start_task<T: SessionTask>(
         self: &Arc<Self>,
         turn_context: Arc<TurnContext>,
-        input: Vec<UserInput>,
+        input: Vec<TurnInput>,
         task: T,
     ) {
         let task: Arc<dyn AnySessionTask> = Arc::new(task);
@@ -352,7 +352,12 @@ impl Session {
             warn!("failed to apply goal runtime turn-start event: {err}");
         }
         let queued_response_items = self.take_queued_response_items_for_next_turn().await;
-        let mailbox_items = self.get_pending_input().await;
+        let mut pending_items = queued_response_items
+            .into_iter()
+            .map(ResponseItem::from)
+            .map(TurnInput::ResponseItem)
+            .collect::<Vec<_>>();
+        pending_items.extend(self.input_queue.get_pending_input(&self.active_turn).await);
         let turn_state = {
             let mut active = self.active_turn.lock().await;
             let turn = active.get_or_insert_with(ActiveTurn::default);
@@ -360,11 +365,6 @@ impl Session {
             Arc::clone(&turn.turn_state)
         };
         turn_state.lock().await.token_usage_at_turn_start = token_usage_at_turn_start.clone();
-        let mut pending_items = queued_response_items
-            .into_iter()
-            .map(TurnInput::ResponseInputItem)
-            .collect::<Vec<_>>();
-        pending_items.extend(mailbox_items);
         self.input_queue
             .extend_pending_input_for_turn_state(turn_state.as_ref(), pending_items)
             .await;
@@ -382,11 +382,7 @@ impl Session {
         ));
         let ctx = Arc::clone(&turn_context);
         let task_for_run = Arc::clone(&task);
-        let task_input = if input.is_empty() {
-            Vec::new()
-        } else {
-            vec![TurnInput::UserInput(input)]
-        };
+        let task_input = input;
         let task_cancellation_token = cancellation_token.child_token();
         // Task-owned turn spans keep a core-owned span open for the
         // full task lifecycle after the submission dispatch span ends.
@@ -457,8 +453,7 @@ impl Session {
 
     /// Starts a regular turn when the session is idle and pending work is waiting.
     ///
-    /// Pending work currently includes queued next-turn items and mailbox mail marked with
-    /// `trigger_turn`.
+    /// Pending work currently includes mailbox mail marked with `trigger_turn`.
     ///
     /// This helper generates a fresh sub-id for the synthetic turn before delegating to the
     /// explicit-sub-id variant.
@@ -470,14 +465,14 @@ impl Session {
     /// Starts a regular turn with the provided sub-id when pending work should wake an idle
     /// session.
     ///
-    /// The turn is created only when there are queued next-turn items or mailbox mail marked with
-    /// `trigger_turn`, and only if the session is currently idle.
+    /// The turn is created only when there is mailbox mail marked with `trigger_turn`, and only
+    /// if the session is currently idle.
     pub(crate) async fn maybe_start_turn_for_pending_work_with_sub_id(
         self: &Arc<Self>,
         sub_id: String,
     ) {
         if !self.has_queued_response_items_for_next_turn().await
-            && !self.has_trigger_turn_mailbox_items().await
+            && !self.input_queue.has_trigger_turn_mailbox_items().await
         {
             return;
         }
@@ -805,9 +800,19 @@ impl Session {
                 .get_pending_input()
                 .await
                 .into_iter()
-                .map(|input| match input {
-                    TurnInput::UserInput(input) => ResponseInputItem::from(input),
-                    TurnInput::ResponseInputItem(input) => input,
+                .filter_map(|input| match input {
+                    TurnInput::UserInput { content, .. } => {
+                        Some(ResponseInputItem::from(content))
+                    }
+                    // MERGE(core/session worker): upstream's `TurnInput::ResponseItem`
+                    // wraps a `ResponseItem`, for which no `ResponseItem ->
+                    // ResponseInputItem` conversion exists. These items were already
+                    // recorded as conversation items when first injected, so they do
+                    // not need to be re-queued here; drop them instead of attempting a
+                    // lossy reverse conversion. Revisit if the `TurnInput` /
+                    // `idle_pending_input` types are reconciled across input_queue.rs +
+                    // session_mailbox.rs.
+                    TurnInput::ResponseItem(_) => None,
                 })
                 .collect();
             if !pending_after_compact.is_empty() {
@@ -836,14 +841,12 @@ impl Session {
             .turn_timing_state
             .time_to_first_token_ms()
             .await;
-        if should_clear_active_turn {
-            self.emit_turn_stop_lifecycle(turn_context.extension_data.as_ref())
-                .await;
-        }
+        self.emit_turn_stop_lifecycle(turn_context.extension_data.as_ref())
+            .await;
         if let Err(err) = self
             .goal_runtime_apply(GoalRuntimeEvent::TurnFinished {
                 turn_context: turn_context.as_ref(),
-                turn_completed: should_clear_active_turn,
+                turn_completed: true,
             })
             .await
         {
@@ -863,31 +866,28 @@ impl Session {
             .await
             .clear_turn(&turn_context.sub_id);
 
-        if should_clear_active_turn {
-            let cleared_active_turn = {
-                let mut active = self.active_turn.lock().await;
-                if let Some(active_turn) = active.as_ref()
-                    && active_turn.tasks.is_empty()
-                    && turn_state
-                        .as_ref()
-                        .is_some_and(|turn_state| Arc::ptr_eq(&active_turn.turn_state, turn_state))
-                {
-                    *active = None;
-                    true
-                } else {
-                    false
-                }
-            };
-            if !cleared_active_turn {
-                return;
-            }
-            if let Err(err) = self
-                .goal_runtime_apply(GoalRuntimeEvent::MaybeContinueIfIdle)
-                .await
+        let cleared_active_turn = {
+            let mut active = self.active_turn.lock().await;
+            if let Some(active_turn) = active.as_ref()
+                && active_turn.tasks.is_empty()
+                && Arc::ptr_eq(&active_turn.turn_state, &turn_state)
             {
-                warn!("failed to apply goal runtime maybe-continue event: {err}");
+                *active = None;
+                true
+            } else {
+                false
             }
+        };
+        if !cleared_active_turn {
+            return;
         }
+        if let Err(err) = self
+            .goal_runtime_apply(GoalRuntimeEvent::MaybeContinueIfIdle)
+            .await
+        {
+            warn!("failed to apply goal runtime maybe-continue event: {err}");
+        }
+        self.emit_thread_idle_lifecycle_if_idle().await;
     }
 
     async fn take_active_turn(&self) -> Option<ActiveTurn> {
@@ -938,10 +938,11 @@ impl Session {
                 InterruptedTurnHistoryMarker::from_config(task.turn_context.config.as_ref()),
             )
         {
-            self.record_into_history(std::slice::from_ref(&marker), task.turn_context.as_ref())
-                .await;
-            self.persist_rollout_items(&[RolloutItem::ResponseItem(marker)])
-                .await;
+            self.record_conversation_items(
+                task.turn_context.as_ref(),
+                std::slice::from_ref(&marker),
+            )
+            .await;
             // Ensure the marker is durably visible before emitting TurnAborted: some clients
             // synchronously re-read the rollout on receipt of the abort event.
             if let Err(err) = self.flush_rollout().await {

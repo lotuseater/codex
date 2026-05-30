@@ -23,7 +23,6 @@ use codex_otel::HOOK_RUN_DURATION_METRIC;
 use codex_otel::HOOK_RUN_METRIC;
 use codex_protocol::items::TurnItem;
 use codex_protocol::items::UserMessageItem;
-use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
@@ -502,7 +501,7 @@ pub(crate) async fn inspect_pending_input(
     pending_input_item: &TurnInput,
 ) -> HookRuntimeOutcome {
     match pending_input_item {
-        TurnInput::UserInput(content) => {
+        TurnInput::UserInput { content, .. } => {
             let request = UserPromptSubmitRequest {
                 session_id: sess.session_id().into(),
                 turn_id: turn_context.sub_id.clone(),
@@ -524,7 +523,7 @@ pub(crate) async fn inspect_pending_input(
             )
             .await
         }
-        TurnInput::ResponseInputItem(_) => HookRuntimeOutcome {
+        TurnInput::ResponseItem(_) => HookRuntimeOutcome {
             should_stop: false,
             additional_contexts: Vec::new(),
         },
@@ -536,7 +535,15 @@ pub(crate) async fn run_user_prompt_submit_hooks(
     turn_context: &Arc<TurnContext>,
     prompt: Vec<UserInput>,
 ) -> HookRuntimeOutcome {
-    inspect_pending_input(sess, turn_context, &TurnInput::UserInput(prompt)).await
+    inspect_pending_input(
+        sess,
+        turn_context,
+        &TurnInput::UserInput {
+            content: prompt,
+            client_id: None,
+        },
+    )
+    .await
 }
 
 pub(crate) async fn record_pending_input(
@@ -546,18 +553,16 @@ pub(crate) async fn record_pending_input(
     additional_contexts: Vec<String>,
 ) {
     match pending_input {
-        TurnInput::UserInput(content) => {
-            let response_item: ResponseItem = ResponseInputItem::from(content.clone()).into();
+        TurnInput::UserInput { content, client_id } => {
             sess.record_user_prompt_and_emit_turn_item(
                 turn_context.as_ref(),
                 content.as_slice(),
-                response_item,
+                client_id,
             )
             .await;
         }
-        TurnInput::ResponseInputItem(input) => {
-            let response_item = ResponseItem::from(input);
-            sess.record_conversation_items(turn_context, std::slice::from_ref(&response_item))
+        TurnInput::ResponseItem(item) => {
+            sess.record_conversation_items(turn_context, std::slice::from_ref(&item))
                 .await;
         }
     }

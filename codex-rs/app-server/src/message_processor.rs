@@ -8,6 +8,7 @@ use crate::attestation::app_server_attestation_provider;
 use crate::config_manager::ConfigManager;
 use crate::connection_rpc_gate::ConnectionRpcGate;
 use crate::error_code::invalid_request;
+use crate::extensions::app_server_extension_event_sink;
 use crate::extensions::guardian_agent_spawner;
 use crate::extensions::thread_extensions;
 use crate::fs_watch::FsWatchManager;
@@ -326,7 +327,11 @@ impl MessageProcessor {
                 auth_manager.clone(),
                 session_source,
                 environment_manager,
-                thread_extensions(guardian_agent_spawner(thread_manager.clone())),
+                thread_extensions(
+                    guardian_agent_spawner(thread_manager.clone()),
+                    app_server_extension_event_sink(outgoing.clone()),
+                    auth_manager.clone(),
+                ),
                 Some(analytics_events_client.clone()),
                 Arc::clone(&thread_store),
                 live_thread_factory.clone(),
@@ -366,6 +371,8 @@ impl MessageProcessor {
             app_list_shutdown_token,
         );
         let catalog_processor = CatalogRequestProcessor::new(
+            outgoing.clone(),
+            Arc::clone(&skills_watcher),
             auth_manager.clone(),
             Arc::clone(&thread_manager),
             Arc::clone(&config),
@@ -1120,6 +1127,9 @@ impl MessageProcessor {
             }
             ClientRequest::SkillsList { params, .. } => {
                 self.catalog_processor.skills_list(params).await
+            }
+            ClientRequest::SkillsExtraRootsSet { params, .. } => {
+                self.catalog_processor.skills_extra_roots_set(params).await
             }
             ClientRequest::HooksList { params, .. } => {
                 self.catalog_processor.hooks_list(params).await
