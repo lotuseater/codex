@@ -262,11 +262,21 @@ limit $queryLimit;
         }
 
         $path = [string]$row.path
-        $bytes = $null
-        if (-not [string]::IsNullOrWhiteSpace($path) -and (Test-Path -LiteralPath $path -PathType Leaf)) {
-            $file = Get-Item -LiteralPath $path
-            $bytes = $file.Length
+        $file = $null
+        if (-not [string]::IsNullOrWhiteSpace($path)) {
+            try {
+                if (Test-Path -LiteralPath $path -PathType Leaf) {
+                    $file = Get-Item -LiteralPath $path
+                }
+            }
+            catch {
+                $file = $null
+            }
         }
+        if ($null -eq $file) {
+            continue
+        }
+        $bytes = $file.Length
 
         $updated = $null
         try {
@@ -274,6 +284,9 @@ limit $queryLimit;
         }
         catch {
             $updated = $null
+        }
+        if ($null -eq $updated -or $file.LastWriteTime -gt $updated) {
+            $updated = $file.LastWriteTime
         }
 
         [void]$results.Add([pscustomobject]@{
