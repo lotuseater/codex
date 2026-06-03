@@ -172,6 +172,7 @@ pub(crate) struct CodexRuntimeMetadata {
 #[derive(Serialize)]
 pub(crate) struct ThreadInitializedEventParams {
     pub(crate) thread_id: String,
+    pub(crate) session_id: String,
     pub(crate) app_server_client: CodexAppServerClientMetadata,
     pub(crate) runtime: CodexRuntimeMetadata,
     pub(crate) model: String,
@@ -197,6 +198,7 @@ pub(crate) struct GuardianReviewEventRequest {
 
 #[derive(Serialize)]
 pub(crate) struct GuardianReviewEventPayload {
+    pub(crate) session_id: String,
     pub(crate) app_server_client: CodexAppServerClientMetadata,
     pub(crate) runtime: CodexRuntimeMetadata,
     #[serde(flatten)]
@@ -515,6 +517,7 @@ pub(crate) struct CodexHookRunEventRequest {
 #[derive(Serialize)]
 pub(crate) struct CodexCompactionEventParams {
     pub(crate) thread_id: String,
+    pub(crate) session_id: String,
     pub(crate) turn_id: String,
     pub(crate) app_server_client: CodexAppServerClientMetadata,
     pub(crate) runtime: CodexRuntimeMetadata,
@@ -544,6 +547,7 @@ pub(crate) struct CodexCompactionEventRequest {
 #[derive(Serialize)]
 pub(crate) struct CodexTurnEventParams {
     pub(crate) thread_id: String,
+    pub(crate) session_id: String,
     pub(crate) turn_id: String,
     // TODO(rhan-oai): Populate once queued/default submission type is plumbed from
     // the turn/start callsites instead of always being reported as None.
@@ -598,6 +602,7 @@ pub(crate) struct CodexTurnEventRequest {
 #[derive(Serialize)]
 pub(crate) struct CodexTurnSteerEventParams {
     pub(crate) thread_id: String,
+    pub(crate) session_id: String,
     pub(crate) expected_turn_id: Option<String>,
     pub(crate) accepted_turn_id: Option<String>,
     pub(crate) app_server_client: CodexAppServerClientMetadata,
@@ -857,6 +862,7 @@ pub(crate) fn subagent_thread_started_event_request(
 
 pub(crate) fn codex_compaction_event_params(
     input: CodexCompactionEvent,
+    session_id: String,
     app_server_client: CodexAppServerClientMetadata,
     runtime: CodexRuntimeMetadata,
     thread_source: Option<ThreadSource>,
@@ -865,6 +871,7 @@ pub(crate) fn codex_compaction_event_params(
 ) -> CodexCompactionEventParams {
     CodexCompactionEventParams {
         thread_id: input.thread_id,
+        session_id,
         turn_id: input.turn_id,
         app_server_client,
         runtime,
