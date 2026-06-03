@@ -209,6 +209,12 @@ pub(crate) trait SessionTask: Send + Sync + 'static {
     /// Returns the tracing name for a spawned task span.
     fn span_name(&self) -> &'static str;
 
+    /// Whether this task records the turn's token usage onto its span when it
+    /// finishes. Only model-driven turn tasks have token usage to record.
+    fn records_turn_token_usage_on_span(&self) -> bool {
+        false
+    }
+
     /// Executes the task until completion or cancellation.
     ///
     /// Implementations typically stream protocol events using `session` and
@@ -246,6 +252,8 @@ pub(crate) trait AnySessionTask: Send + Sync + 'static {
 
     fn span_name(&self) -> &'static str;
 
+    fn records_turn_token_usage_on_span(&self) -> bool;
+
     fn run(
         self: Arc<Self>,
         session: Arc<SessionTaskContext>,
@@ -271,6 +279,10 @@ where
 
     fn span_name(&self) -> &'static str {
         SessionTask::span_name(self)
+    }
+
+    fn records_turn_token_usage_on_span(&self) -> bool {
+        SessionTask::records_turn_token_usage_on_span(self)
     }
 
     fn run(
@@ -868,9 +880,10 @@ impl Session {
 
         let cleared_active_turn = {
             let mut active = self.active_turn.lock().await;
-            if let Some(active_turn) = active.as_ref()
+            if let Some(turn_state) = turn_state.as_ref()
+                && let Some(active_turn) = active.as_ref()
                 && active_turn.tasks.is_empty()
-                && Arc::ptr_eq(&active_turn.turn_state, &turn_state)
+                && Arc::ptr_eq(&active_turn.turn_state, turn_state)
             {
                 *active = None;
                 true

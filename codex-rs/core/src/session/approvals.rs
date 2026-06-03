@@ -5,6 +5,7 @@
 //! and persisting exec/network policy amendments.
 
 use super::*;
+use codex_protocol::models::ContentItem;
 
 impl Session {
     /// Adds an execpolicy amendment to both the in-memory and on-disk policies so future

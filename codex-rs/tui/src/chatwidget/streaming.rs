@@ -424,7 +424,7 @@ impl ChatWidget {
             self.bottom_pane.hide_status_indicator();
             self.transcript.active_cell =
                 Some(Box::new(history_cell::StreamingAgentTailCell::new(
-                    tail_lines,
+                    crate::terminal_hyperlinks::visible_lines(tail_lines),
                     controller.tail_starts_stream(),
                 )));
             self.bump_active_cell_revision();
@@ -440,7 +440,7 @@ impl ChatWidget {
 
             self.bottom_pane.hide_status_indicator();
             self.transcript.active_cell = Some(Box::new(history_cell::StreamingPlanTailCell::new(
-                tail_lines,
+                crate::terminal_hyperlinks::visible_lines(tail_lines),
                 !controller.tail_starts_stream(),
             )));
             self.bump_active_cell_revision();

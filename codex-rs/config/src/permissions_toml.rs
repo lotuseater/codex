@@ -446,7 +446,7 @@ impl NetworkToml {
                     NetworkUnixSocketPermissionToml::Allow => {
                         ProxyNetworkUnixSocketPermission::Allow
                     }
-                    NetworkUnixSocketPermissionToml::Deny => ProxyNetworkUnixSocketPermission::Deny,
+                    NetworkUnixSocketPermissionToml::Deny => ProxyNetworkUnixSocketPermission::None,
                 };
                 proxy_unix_sockets.entries.insert(path.clone(), permission);
             }

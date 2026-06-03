@@ -159,6 +159,8 @@ use super::chat_composer_history::ChatComposerHistory;
 use super::chat_composer_history::HistoryEntry;
 use super::chat_composer_history::HistoryEntryResponse;
 use super::command_popup::CommandItem;
+use super::command_popup::CommandPopup;
+use super::command_popup::CommandPopupFlags;
 use super::file_search_popup::FileSearchPopup;
 use super::footer::CollaborationModeIndicator;
 use super::footer::FooterKeyHints;
@@ -191,9 +193,12 @@ use super::paste_burst::CharDecision;
 use super::paste_burst::PasteBurst;
 use super::skill_popup::MentionItem;
 use super::skill_popup::SkillPopup;
+use super::prompt_args::parse_slash_name;
 use super::slash_commands::BuiltinCommandFlags;
 use super::slash_commands::ServiceTierCommand;
 use super::slash_commands::SlashCommandItem;
+use super::slash_commands::find_slash_command;
+use super::slash_commands::has_slash_command_prefix;
 use crate::bottom_pane::paste_burst::FlushResult;
 use crate::key_hint::KeyBindingListExt;
 use crate::keymap::EditorKeymap;
@@ -470,6 +475,8 @@ pub(crate) struct ComposerDraftSnapshot {
 
 #[derive(Clone, Debug)]
 struct ComposerMentionBinding {
+    /// Visible mention sigil (`$` or `@`). Composer-inserted mentions are always `$`.
+    sigil: char,
     mention: String,
     path: String,
 }

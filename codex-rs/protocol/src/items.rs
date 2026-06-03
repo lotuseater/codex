@@ -249,7 +249,6 @@ impl UserMessageItem {
         // Legacy user-message events flatten only text inputs into `message` and
         // rebase text element ranges onto that concatenated text.
         EventMsg::UserMessage(UserMessageEvent {
-            client_id: self.client_id.clone(),
             message: self.message(),
             images: Some(self.image_urls()),
             image_details: self.image_details(),

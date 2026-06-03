@@ -83,16 +83,15 @@ pub use turn_lifecycle::*;
 pub use agent_reasoning::{
     AgentReasoningEvent, AgentReasoningRawContentEvent, AgentReasoningSectionBreakEvent,
 };
-pub use event_msg::EventMsg;
-pub use op::Op;
 pub use collaboration::{
     CollabAgentInteractionBeginEvent, CollabAgentInteractionEndEvent, CollabAgentRef,
     CollabAgentSpawnBeginEvent, CollabAgentSpawnEndEvent, CollabAgentStatusEntry,
     CollabCloseBeginEvent, CollabCloseEndEvent, CollabCompactBeginEvent, CollabCompactEndEvent,
-    CollabResumeBeginEvent, CollabResumeEndEvent, CollabRestartBeginEvent, CollabRestartEndEvent,
+    CollabRestartBeginEvent, CollabRestartEndEvent, CollabResumeBeginEvent, CollabResumeEndEvent,
     CollabWaitingBeginEvent, CollabWaitingEndEvent,
 };
 pub use errors_and_warnings::{ErrorEvent, StreamErrorEvent, StreamInfoEvent, WarningEvent};
+pub use event_msg::EventMsg;
 pub use exec_command::{
     ExecCommandBeginEvent, ExecCommandEndEvent, ExecCommandOutputDeltaEvent, ExecCommandSource,
     ExecCommandStatus, ExecOutputStream, TerminalInteractionEvent, ViewImageToolCallEvent,
@@ -101,6 +100,7 @@ pub use mcp_tool::{
     McpAuthStatus, McpStartupCompleteEvent, McpStartupFailure, McpStartupStatus,
     McpStartupUpdateEvent,
 };
+pub use op::Op;
 pub use patch_and_plan::{
     PatchApplyBeginEvent, PatchApplyEndEvent, PatchApplyStatus, PatchApplyUpdatedEvent,
 };
@@ -1346,7 +1346,6 @@ mod tests {
     #[test]
     fn user_message_event_serializes_empty_metadata_vectors() -> Result<()> {
         let event = UserMessageEvent {
-            client_id: None,
             message: "hello".to_string(),
             images: None,
             image_details: Vec::new(),
@@ -1422,7 +1421,6 @@ mod tests {
                 "https://example.com/second.png".to_string(),
             ])
         );
-        assert_eq!(event.client_id, Some("client-message-1".to_string()));
         assert_eq!(event.image_details, vec![Some(ImageDetail::Original)]);
         assert_eq!(event.local_images, vec![local_path]);
         assert_eq!(event.local_image_details, vec![Some(ImageDetail::Original)]);
@@ -1541,5 +1539,4 @@ mod tests {
         assert_eq!(deserialized, event);
         Ok(())
     }
-
 }

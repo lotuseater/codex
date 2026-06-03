@@ -375,7 +375,7 @@ impl NetworkApprovalService {
         let active_turn = session.active_turn.lock().await;
         active_turn
             .as_ref()
-            .and_then(|turn| turn.task.as_ref())
+            .and_then(|turn| turn.tasks.values().next())
             .map(|task| Arc::clone(&task.turn_context))
     }
 

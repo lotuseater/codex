@@ -94,6 +94,7 @@ impl Config {
             web_search_mode: mut constrained_web_search_mode,
             allow_managed_hooks_only: _,
             allow_appshots: _,
+            windows_sandbox_mode: _,
             feature_requirements,
             managed_hooks: _,
             mcp_servers,
@@ -143,7 +144,15 @@ impl Config {
             additional_writable_roots,
             workspace_roots: workspace_roots_override,
         } = overrides;
-        let config_profile = cfg.get_config_profile(config_profile_key)?;
+        let config_profile = match config_profile_key.or_else(|| cfg.profile.clone()) {
+            Some(key) => cfg.profiles.get(key.as_str()).cloned().ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("config profile `{key}` not found"),
+                )
+            })?,
+            None => codex_config::profile_toml::ConfigProfile::default(),
+        };
         let bypass_hook_trust = bypass_hook_trust.unwrap_or_default();
 
         if bypass_hook_trust {

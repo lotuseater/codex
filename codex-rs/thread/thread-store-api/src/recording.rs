@@ -7,9 +7,9 @@ use async_trait::async_trait;
 use chrono::Utc;
 use codex_protocol::ThreadId;
 use codex_protocol::dynamic_tools::DynamicToolSpec;
+use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::RolloutItem;
-use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::SessionSource;
 
 use crate::AppendThreadItemsParams;
@@ -29,8 +29,8 @@ use crate::StoredThread;
 use crate::StoredThreadHistory;
 use crate::ThreadMetadataPatch;
 use crate::ThreadPage;
-use crate::ThreadPersistenceServices;
 use crate::ThreadPersistenceMetadata;
+use crate::ThreadPersistenceServices;
 use crate::ThreadStore;
 use crate::ThreadStoreError;
 use crate::ThreadStoreFuture;
@@ -198,11 +198,11 @@ impl RecordingThread {
                 .approval_mode
                 .clone()
                 .unwrap_or(AskForApproval::Never),
-            sandbox_policy: self
+            permission_profile: self
                 .patch
-                .sandbox_policy
+                .permission_profile
                 .clone()
-                .unwrap_or(SandboxPolicy::DangerFullAccess),
+                .unwrap_or_else(PermissionProfile::read_only),
             token_usage: self.patch.token_usage.clone(),
             first_user_message: self.patch.first_user_message.clone(),
             history: include_history.then(|| StoredThreadHistory {
@@ -332,11 +332,7 @@ impl ThreadStore for RecordingThreadStore {
         let mut state = self.lock();
         state.calls.read_thread_dynamic_tools += 1;
         let thread = state.thread(params.thread_id)?;
-        Ok(thread
-            .patch
-            .dynamic_tools
-            .clone()
-            .or_else(|| Some(thread.dynamic_tools.clone())))
+        Ok(Some(thread.dynamic_tools.clone()))
     }
 
     async fn read_thread_by_rollout_path(

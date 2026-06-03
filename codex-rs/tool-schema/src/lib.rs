@@ -159,6 +159,20 @@ pub fn parse_tool_input_schema(input_schema: &JsonValue) -> Result<JsonSchema, s
     Ok(schema)
 }
 
+/// Parse the tool `input_schema` without applying schema sanitization.
+pub fn parse_tool_input_schema_without_compaction(
+    input_schema: &JsonValue,
+) -> Result<JsonSchema, serde_json::Error> {
+    let schema: JsonSchema = serde_json::from_value(input_schema.clone())?;
+    if matches!(
+        schema.schema_type,
+        Some(JsonSchemaType::Single(JsonSchemaPrimitiveType::Null))
+    ) {
+        return Err(singleton_null_schema_error());
+    }
+    Ok(schema)
+}
+
 /// Sanitize a JSON Schema (as serde_json::Value) so it can fit our limited
 /// schema representation. This function:
 /// - Ensures every typed schema object has a `"type"` when required.

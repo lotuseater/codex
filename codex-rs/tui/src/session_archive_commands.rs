@@ -11,7 +11,6 @@ use crate::legacy_core::config::ConfigBuilder;
 use crate::legacy_core::config::ConfigOverrides;
 use crate::legacy_core::config::load_config_as_toml_with_cli_and_load_options;
 use crate::legacy_core::config::resolve_oss_provider;
-use crate::legacy_core::config::resolve_profile_v2_config_path;
 use codex_app_server_protocol::Thread as AppServerThread;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadSortKey;
@@ -31,6 +30,27 @@ use color_eyre::eyre::WrapErr;
 use color_eyre::eyre::eyre;
 
 use super::RemoteAppServerEndpoint;
+
+/// Suffix for a layered `--profile-v2` config file (`<name>.config.toml`).
+const CONFIG_PROFILE_V2_SUFFIX: &str = ".config.toml";
+
+/// Resolve the `--profile-v2` config path under `codex_home`.
+///
+/// This mirrors the canonical helper that previously lived in
+/// `codex_core::config` (re-exported here via `legacy_core::config`). The
+/// upstream merge moved that body into the CLI dispatch layer as a private
+/// function and dropped the core export, so the thin path-join is reproduced
+/// here to keep `--profile-v2` session-archive launches resolving to
+/// `$CODEX_HOME/<name>.config.toml` exactly as before.
+fn resolve_profile_v2_config_path(
+    codex_home: &std::path::Path,
+    profile_name: &codex_config::ProfileV2Name,
+) -> codex_utils_absolute_path::AbsolutePathBuf {
+    codex_utils_absolute_path::AbsolutePathBuf::resolve_path_against_base(
+        format!("{profile_name}{CONFIG_PROFILE_V2_SUFFIX}"),
+        codex_home,
+    )
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionArchiveAction {

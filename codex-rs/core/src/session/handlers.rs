@@ -248,9 +248,7 @@ pub(super) async fn user_input_or_turn_inner(
     let accepted_items = match sess
         .steer_input(
             items.clone(),
-            additional_context.clone(),
             /*expected_turn_id*/ None,
-            client_user_message_id.clone(),
             responsesapi_client_metadata.clone(),
         )
         .await

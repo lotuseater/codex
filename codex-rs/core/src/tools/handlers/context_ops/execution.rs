@@ -120,6 +120,7 @@ async fn run_local_sandboxed_command(
         },
         &invocation.turn.permission_profile(),
         &turn_environment.cwd,
+        /*windows_sandbox_workspace_roots*/ &[],
         &invocation.turn.codex_linux_sandbox_exe,
         invocation.turn.features.use_legacy_landlock(),
         /*stdout_stream*/ None,

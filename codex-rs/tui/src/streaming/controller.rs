@@ -39,11 +39,13 @@ use crate::history_cell::HistoryCell;
 use crate::history_cell::HistoryRenderMode;
 use crate::history_cell::raw_lines_from_source;
 use crate::history_cell::{self};
-use crate::markdown::render_markdown_agent_with_links_and_cwd;
+use crate::markdown::append_markdown_agent_with_cwd;
 use crate::style::proposed_plan_style;
 use crate::terminal_hyperlinks::HyperlinkLine;
+use crate::terminal_hyperlinks::annotate_web_urls;
 use crate::terminal_hyperlinks::plain_hyperlink_lines;
 use crate::terminal_hyperlinks::prefix_hyperlink_lines;
+use crate::terminal_hyperlinks::visible_lines;
 use ratatui::prelude::Stylize;
 use ratatui::text::Line;
 use std::path::Path;
@@ -56,6 +58,22 @@ use super::table_holdback::TableHoldbackScanner;
 use super::table_holdback::TableHoldbackState;
 #[cfg(test)]
 use super::table_holdback::table_holdback_state;
+
+/// Render agent markdown to web-link-annotated lines, resolving local file links relative to `cwd`.
+///
+/// Upstream's `tui-render` markdown path produces plain `Line`s; this fork keeps OSC 8 web links
+/// flowing through the streaming pipeline by annotating the rendered lines with their web URLs
+/// (the same recovery `WebHyperlinkHistoryCell` performs). The resulting `HyperlinkLine`s keep their
+/// link ranges aligned through subsequent wrapping/remap in the stream controller.
+fn render_markdown_agent_with_links_and_cwd(
+    markdown_source: &str,
+    width: Option<usize>,
+    cwd: Option<&Path>,
+) -> Vec<HyperlinkLine> {
+    let mut lines = Vec::new();
+    append_markdown_agent_with_cwd(markdown_source, width, cwd, &mut lines);
+    annotate_web_urls(lines)
+}
 
 // ---------------------------------------------------------------------------
 // StreamCore — shared bookkeeping for both stream controllers
@@ -554,13 +572,14 @@ impl StreamController {
         if lines.is_empty() {
             return None;
         }
-        Some(Box::new(
-            history_cell::AgentMessageCell::new_hyperlink_lines(lines, {
+        Some(Box::new(history_cell::AgentMessageCell::new(
+            visible_lines(lines),
+            {
                 let header_emitted = self.header_emitted;
                 self.header_emitted = true;
                 !header_emitted
-            }),
-        ))
+            },
+        )))
     }
 }
 // ---------------------------------------------------------------------------
@@ -690,7 +709,7 @@ impl PlanStreamController {
         self.top_padding_emitted = true;
 
         Some(Box::new(history_cell::new_proposed_plan_stream(
-            out_lines,
+            visible_lines(out_lines),
             is_stream_continuation,
         )))
     }

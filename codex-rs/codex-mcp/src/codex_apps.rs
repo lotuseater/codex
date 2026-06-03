@@ -94,7 +94,7 @@ pub fn codex_apps_tools_cache_status(
         codex_home: codex_home.to_path_buf(),
         user_key,
     };
-    let cache_path = cache_context.cache_path();
+    let cache_path = cache_context.tools_cache_path();
     let metadata = std::fs::metadata(&cache_path).ok();
     let byte_size = metadata.as_ref().map(std::fs::Metadata::len);
     let modified_at = metadata

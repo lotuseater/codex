@@ -976,7 +976,7 @@ impl Session {
                 mcp_connection_manager: Arc::new(RwLock::new(
                     McpConnectionManager::new_uninitialized_with_permission_profile(
                         &config.permissions.approval_policy,
-                        config.permissions.permission_profile(),
+                        &config.permissions.permission_profile(),
                         config.prefix_mcp_tool_names(),
                     ),
                 )),

@@ -8,10 +8,10 @@ use serde_json::Value;
 use ts_rs::TS;
 
 use crate::ThreadId;
-use crate::dynamic_tools::DynamicToolSpec;
 use crate::config_types::CollaborationMode;
 use crate::config_types::Personality;
 use crate::config_types::ReasoningSummary as ReasoningSummaryConfig;
+use crate::dynamic_tools::DynamicToolSpec;
 use crate::models::BaseInstructions;
 use crate::models::ContentItem;
 use crate::models::PermissionProfile;

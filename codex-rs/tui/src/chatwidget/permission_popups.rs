@@ -14,7 +14,17 @@ impl ChatWidget {
 
     /// Open a popup to choose the permissions mode.
     pub(crate) fn open_permissions_popup(&mut self) {
-        if self.config.explicit_permission_profile_mode {
+        // The fork tracked an explicit `explicit_permission_profile_mode` flag on
+        // `Config` to decide between the named-profile picker and the legacy
+        // approval-preset picker. That flag was dropped from `Config` upstream;
+        // the surviving runtime signal for "this session is driven by a named
+        // permission profile" is an active permission profile, so route on that.
+        if self
+            .config
+            .permissions
+            .active_permission_profile()
+            .is_some()
+        {
             self.open_permission_profiles_popup();
             return;
         }

@@ -174,9 +174,16 @@ impl CodexThread {
         trace: Option<W3cTraceContext>,
         client_user_message_id: Option<String>,
     ) -> CodexResult<String> {
+        let id = uuid::Uuid::now_v7().to_string();
         self.codex
-            .submit_user_input_with_client_user_message_id(op, trace, client_user_message_id)
-            .await
+            .submit_with_id(Submission {
+                id: id.clone(),
+                op,
+                client_user_message_id,
+                trace,
+            })
+            .await?;
+        Ok(id)
     }
 
     /// Persist whether this thread is eligible for future memory generation.
@@ -187,19 +194,13 @@ impl CodexThread {
     pub async fn steer_input(
         &self,
         input: Vec<UserInput>,
-        additional_context: BTreeMap<String, AdditionalContextEntry>,
+        _additional_context: BTreeMap<String, AdditionalContextEntry>,
         expected_turn_id: Option<&str>,
-        client_user_message_id: Option<String>,
+        _client_user_message_id: Option<String>,
         responsesapi_client_metadata: Option<HashMap<String, String>>,
     ) -> Result<String, SteerInputError> {
         self.codex
-            .steer_input(
-                input,
-                additional_context,
-                expected_turn_id,
-                client_user_message_id,
-                responsesapi_client_metadata,
-            )
+            .steer_input(input, expected_turn_id, responsesapi_client_metadata)
             .await
     }
 

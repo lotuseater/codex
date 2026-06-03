@@ -245,6 +245,7 @@ impl ChatComposer {
             self.mention_bindings.insert(
                 id,
                 ComposerMentionBinding {
+                    sigil: '$',
                     mention,
                     path: path.to_string(),
                 },
@@ -292,6 +293,7 @@ impl ChatComposer {
                 && binding.mention == mention
             {
                 ordered.push(MentionBinding {
+                    sigil: binding.sigil,
                     mention: binding.mention.clone(),
                     path: binding.path.clone(),
                 });
@@ -326,6 +328,7 @@ impl ChatComposer {
                 self.mention_bindings.insert(
                     id,
                     ComposerMentionBinding {
+                        sigil: binding.sigil,
                         mention: binding.mention,
                         path: binding.path,
                     },

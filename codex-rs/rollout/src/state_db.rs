@@ -8,6 +8,7 @@ use crate::sqlite_metrics;
 use chrono::DateTime;
 use chrono::Utc;
 use codex_protocol::ThreadId;
+use codex_protocol::dynamic_tools::DynamicToolSpec;
 use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::SessionSource;
 pub use codex_state::LogEntry;
@@ -670,6 +671,31 @@ pub async fn touch_thread_updated_at(
             warn!("state db touch_thread_updated_at failed during {stage} for {thread_id}: {err}");
             false
         })
+}
+
+pub async fn get_dynamic_tools(
+    context: Option<&codex_state::StateRuntime>,
+    thread_id: ThreadId,
+    stage: &str,
+) -> Option<Vec<DynamicToolSpec>> {
+    let Some(ctx) = context else {
+        return None;
+    };
+
+    let metadata = ctx.get_thread(thread_id).await.unwrap_or_else(|err| {
+        warn!("state db get_thread failed during {stage} for {thread_id}: {err}");
+        None
+    })?;
+
+    let meta_line = crate::read_session_meta_line(metadata.rollout_path.as_path())
+        .await
+        .map_err(|err| {
+            warn!("failed to read session metadata during {stage} for {thread_id}: {err}");
+            err
+        })
+        .ok()?;
+
+    meta_line.meta.dynamic_tools
 }
 
 #[cfg(test)]

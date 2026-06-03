@@ -1,5 +1,7 @@
 use super::*;
 use codex_analytics_appserver::AppServerAnalyticsExt;
+use codex_app_server_protocol::AdditionalContextEntry;
+use codex_app_server_protocol::AdditionalContextKind;
 use codex_core::CodexThreadSettingsOverrides;
 use codex_protocol::protocol::AdditionalContextEntry as CoreAdditionalContextEntry;
 use codex_protocol::protocol::AdditionalContextKind as CoreAdditionalContextKind;

@@ -200,6 +200,7 @@ impl ChatComposer {
                 && binding.mention == mention
             {
                 ordered.push(MentionBinding {
+                    sigil: binding.sigil,
                     mention: binding.mention,
                     path: binding.path,
                 });
@@ -353,6 +354,14 @@ impl ChatComposer {
             }
             HistoryEntryResponse::Ignored => false,
         }
+    }
+
+    /// Seed local ↑/↓ recall with a user message restored from a replayed/resumed session.
+    ///
+    /// Replayed submissions are recorded like local submissions but also tracked so the replay
+    /// seed can be distinguished from genuinely new in-session input.
+    pub(crate) fn record_replayed_user_message_history(&mut self, entry: HistoryEntry) {
+        self.history.record_replayed_submission(entry);
     }
 
 }

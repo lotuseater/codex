@@ -274,7 +274,7 @@ pub async fn stats(project_root: &Path, codex_home: &Path) -> Result<FirstMovesS
     })
 }
 
-async fn scalar_i64(pool: &SqlitePool, query: &str) -> i64 {
+async fn scalar_i64(pool: &SqlitePool, query: &'static str) -> i64 {
     sqlx::query_scalar::<_, i64>(query)
         .fetch_one(pool)
         .await
@@ -299,7 +299,7 @@ async fn open_or_create_db(path: &Path) -> Result<SqlitePool> {
         .connect_with(options)
         .await?;
     for statement in SCHEMA_STATEMENTS {
-        sqlx::query(statement).execute(&pool).await?;
+        sqlx::query(*statement).execute(&pool).await?;
     }
     Ok(pool)
 }

@@ -1,6 +1,7 @@
 use crate::state::ActiveTurn;
 use crate::state::MailboxDeliveryPhase;
 use crate::state::TurnState;
+use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::user_input::UserInput;
@@ -20,7 +21,7 @@ pub(crate) enum TurnInput {
 
 impl From<ResponseInputItem> for TurnInput {
     fn from(item: ResponseInputItem) -> Self {
-        Self::ResponseInputItem(item)
+        Self::ResponseItem(ResponseItem::from(item))
     }
 }
 
@@ -93,9 +94,8 @@ impl InputQueue {
         let active = active_turn.lock().await;
         active.as_ref().and_then(|active_turn| {
             active_turn
-                .task
-                .as_ref()
-                .is_some_and(|task| task.turn_context.sub_id == sub_id)
+                .tasks
+                .contains_key(sub_id)
                 .then(|| Arc::clone(&active_turn.turn_state))
         })
     }

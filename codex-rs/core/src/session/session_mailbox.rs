@@ -61,7 +61,10 @@ impl Session {
         }
 
         let mut turn_state = active_turn.turn_state.lock().await;
-        turn_state.push_pending_input(TurnInput::UserInput(input));
+        turn_state.push_pending_input(TurnInput::UserInput {
+            content: input,
+            client_id: None,
+        });
         turn_state.accept_mailbox_delivery_for_current_turn();
         Ok(active_turn_id.clone())
     }
@@ -183,7 +186,7 @@ impl Session {
                 .drain()
                 .into_iter()
                 .map(|mail| mail.to_response_input_item())
-                .map(TurnInput::ResponseInputItem)
+                .map(TurnInput::from)
                 .collect::<Vec<_>>()
         };
         if pending_input.is_empty() {

@@ -476,7 +476,5 @@ impl Session {
     }
 }
 
-use codex_memories_read::build_memory_tool_developer_instructions;
-
 #[cfg(test)]
 pub(crate) mod tests;

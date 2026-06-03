@@ -241,11 +241,6 @@ impl ThreadStore for InMemoryThreadStore {
     ) -> ThreadStoreResult<Option<Vec<DynamicToolSpec>>> {
         let mut state = self.state.lock().await;
         state.calls.read_thread_dynamic_tools += 1;
-        if let Some(metadata) = state.metadata_updates.get(&params.thread_id)
-            && let Some(dynamic_tools) = &metadata.dynamic_tools
-        {
-            return Ok(Some(dynamic_tools.clone()));
-        }
 
         Ok(state
             .created_threads

@@ -64,14 +64,9 @@ impl Session {
         {
             developer_sections.push(developer_instructions.to_string());
         }
-        // Add developer instructions for memories.
-        if turn_context.features.enabled(Feature::MemoryTool)
-            && turn_context.config.memories.use_memories
-            && let Some(memory_prompt) =
-                build_memory_tool_developer_instructions(&turn_context.config.codex_home).await
-        {
-            developer_sections.push(memory_prompt);
-        }
+        // Memory tool developer instructions are contributed by the `ext/memories`
+        // extension through the context-contributor mechanism below (upstream moved the
+        // prompt builder into that extension in #24558), so no direct call is needed here.
         // Add developer instructions from collaboration_mode if they exist and are non-empty
         if turn_context.config.include_collaboration_mode_instructions
             && let Some(collab_instructions) =

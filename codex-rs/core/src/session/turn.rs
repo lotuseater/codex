@@ -69,7 +69,6 @@ use crate::tools::parallel::ToolCallRuntime;
 use crate::tools::registry::ToolArgumentDiffConsumer;
 use crate::tools::router::ToolRouterParams;
 use crate::tools::router::extension_tool_executors;
-use crate::tools::spec_plan::tool_suggest_enabled;
 use crate::turn_diff_tracker::TurnDiffTracker;
 use crate::turn_timing::record_turn_ttft_metric;
 use crate::util::error_or_panic;
@@ -1649,7 +1648,9 @@ pub(crate) async fn built_tools(
         .into_iter()
         .map(|connector_id| connector_id.0)
         .collect::<Vec<_>>();
-    let discoverable_tools = if apps_enabled && tool_suggest_enabled(turn_context) {
+    let discoverable_tools = if apps_enabled
+        && turn_context.features.enabled(Feature::ToolSuggest)
+    {
         if let Some(accessible_connectors) = accessible_connectors_with_enabled_state.as_ref() {
             match connectors::list_tool_suggest_discoverable_tools_with_auth(
                 &turn_context.config,

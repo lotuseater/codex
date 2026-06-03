@@ -313,7 +313,7 @@ pub(crate) fn feedback_success_cell(
     include_logs: bool,
     thread_id: &str,
     feedback_audience: FeedbackAudience,
-) -> history_cell::WebHyperlinkHistoryCell {
+) -> WebHyperlinkHistoryCell {
     let prefix = if include_logs {
         "• Feedback uploaded."
     } else {
@@ -359,7 +359,48 @@ pub(crate) fn feedback_success_cell(
             ]);
         }
     }
-    history_cell::WebHyperlinkHistoryCell::new(lines)
+    WebHyperlinkHistoryCell::new(lines)
+}
+
+/// History cell that renders plain lines while annotating any web URLs as OSC 8 hyperlinks.
+///
+/// The shared `tui-render` crate keeps its equivalent type crate-private, so this fork defines a
+/// local copy for the feedback success message (which needs the issue URL to remain clickable).
+/// Display/transcript rendering recovers web links from the rendered text via
+/// [`crate::terminal_hyperlinks::annotate_web_urls`].
+#[derive(Debug)]
+pub(crate) struct WebHyperlinkHistoryCell {
+    lines: Vec<Line<'static>>,
+}
+
+impl WebHyperlinkHistoryCell {
+    pub(crate) fn new(lines: Vec<Line<'static>>) -> Self {
+        Self { lines }
+    }
+}
+
+impl history_cell::HistoryCell for WebHyperlinkHistoryCell {
+    fn display_lines(&self, _width: u16) -> Vec<Line<'static>> {
+        self.lines.clone()
+    }
+
+    fn display_hyperlink_lines(
+        &self,
+        _width: u16,
+    ) -> Vec<crate::terminal_hyperlinks::HyperlinkLine> {
+        crate::terminal_hyperlinks::annotate_web_urls(self.lines.clone())
+    }
+
+    fn transcript_hyperlink_lines(
+        &self,
+        width: u16,
+    ) -> Vec<crate::terminal_hyperlinks::HyperlinkLine> {
+        self.display_hyperlink_lines(width)
+    }
+
+    fn raw_lines(&self) -> Vec<Line<'static>> {
+        history_cell::plain_lines(self.lines.clone())
+    }
 }
 
 fn issue_url_for_category(

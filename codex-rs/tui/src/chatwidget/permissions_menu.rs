@@ -2,7 +2,9 @@ use super::*;
 
 impl ChatWidget {
     pub(super) fn open_permission_profiles_popup(&mut self) {
-        let active_profile_id = self
+        // Previously used to mark configured custom profiles as current; the
+        // custom-profile list was dropped (see below), leaving only built-ins.
+        let _active_profile_id = self
             .config
             .permissions
             .active_permission_profile()
@@ -60,22 +62,12 @@ impl ChatWidget {
             AskForApproval::from(read_only.approval),
             ApprovalsReviewer::User,
         ));
-        items.extend(
-            self.config
-                .custom_permission_profiles
-                .iter()
-                .map(|profile| {
-                    Self::permission_profile_selection_item(
-                        &profile.id,
-                        &profile.id,
-                        profile
-                            .description
-                            .as_deref()
-                            .unwrap_or("Configured permission profile."),
-                        active_profile_id.as_deref(),
-                    )
-                }),
-        );
+        // The fork appended user-configured (named) permission profiles here,
+        // sourced from `Config::custom_permission_profiles`. That field was
+        // dropped from `Config` upstream and there is no surviving runtime
+        // source for the custom-profile summaries, so only the built-in
+        // profiles above are listed. (See the build-fix handoff: custom-profile
+        // rows in this picker are the one behavior dropped by this merge.)
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
             title: Some("Update Model Permissions".to_string()),
@@ -136,9 +128,14 @@ impl ChatWidget {
                 .err()
                 .map(|err| err.to_string())
                 .or_else(|| {
+                    // `Permissions::can_set_permission_profile` was removed
+                    // upstream; the constraint check now lives on the inner
+                    // `Constrained<PermissionProfile>` as `can_set`, matching
+                    // the `approval_policy.can_set(..)` call above.
                     self.config
                         .permissions
-                        .can_set_permission_profile(&preset.permission_profile)
+                        .permission_profile
+                        .can_set(&preset.permission_profile)
                         .err()
                         .map(|err| err.to_string())
                 }),

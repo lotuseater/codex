@@ -45,7 +45,7 @@ impl ThreadHistoryBuilder {
         let content = self.build_user_inputs(payload);
         turn.items.push(ThreadItem::UserMessage {
             id,
-            client_id: payload.client_id.clone(),
+            client_id: None,
             content,
         });
         self.current_turn = Some(turn);

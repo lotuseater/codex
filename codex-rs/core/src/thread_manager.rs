@@ -565,10 +565,9 @@ impl ThreadManager {
         options: StartThreadOptions,
         forked_from_thread_id: Option<ThreadId>,
     ) -> CodexResult<NewThread> {
-        let (resumed_session_source, resumed_thread_source) = options
-            .initial_history
-            .get_resumed_session_sources()
-            .unwrap_or_else(|| (self.state.session_source.clone(), None));
+        let (resumed_session_source, resumed_thread_source) =
+            resumed_session_sources(&options.initial_history)
+                .unwrap_or_else(|| (self.state.session_source.clone(), None));
         let session_source = options.session_source.unwrap_or(resumed_session_source);
         let thread_source = options.thread_source.or(resumed_thread_source);
         Box::pin(self.state.spawn_thread_with_source(
@@ -652,8 +651,7 @@ impl ThreadManager {
             self.state.environment_manager.as_ref(),
             &config.cwd,
         );
-        let (session_source, thread_source) = initial_history
-            .get_resumed_session_sources()
+        let (session_source, thread_source) = resumed_session_sources(&initial_history)
             .unwrap_or_else(|| (self.state.session_source.clone(), None));
         Box::pin(self.state.spawn_thread_with_source(
             config,
@@ -713,8 +711,7 @@ impl ThreadManager {
             self.state.environment_manager.as_ref(),
             &config.cwd,
         );
-        let (session_source, thread_source) = initial_history
-            .get_resumed_session_sources()
+        let (session_source, thread_source) = resumed_session_sources(&initial_history)
             .unwrap_or_else(|| (self.state.session_source.clone(), None));
         Box::pin(self.state.spawn_thread_with_source(
             config,
@@ -1341,6 +1338,23 @@ impl ThreadManagerState {
             .ok()
             .map(|thread| thread.codex.session.services.rollout_thread_trace.clone())
             .unwrap_or_else(codex_rollout_trace::ThreadTraceContext::disabled)
+    }
+}
+
+/// Recover the session/thread source recorded in a resumed thread's first
+/// `SessionMeta`. Mirrors the former `InitialHistory::get_resumed_session_sources`
+/// helper (only `Resumed` histories carry a source).
+fn resumed_session_sources(
+    history: &InitialHistory,
+) -> Option<(SessionSource, Option<ThreadSource>)> {
+    match history {
+        InitialHistory::New | InitialHistory::Cleared | InitialHistory::Forked(_) => None,
+        InitialHistory::Resumed(resumed) => resumed.history.iter().find_map(|item| match item {
+            RolloutItem::SessionMeta(meta_line) => {
+                Some((meta_line.meta.source.clone(), meta_line.meta.thread_source))
+            }
+            _ => None,
+        }),
     }
 }
 

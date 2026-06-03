@@ -202,7 +202,6 @@ mod tests {
     fn event_msg_user_messages_set_title_and_first_user_message() {
         let mut metadata = metadata_for_test();
         let item = RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
-            client_id: None,
             message: format!("{USER_MESSAGE_BEGIN} actual user request"),
             images: Some(vec![]),
             local_images: vec![],
@@ -224,7 +223,6 @@ mod tests {
     fn event_msg_image_only_user_message_sets_image_placeholder_preview() {
         let mut metadata = metadata_for_test();
         let item = RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
-            client_id: None,
             message: String::new(),
             images: Some(vec!["https://example.com/image.png".to_string()]),
             local_images: vec![],
@@ -249,7 +247,6 @@ mod tests {
     fn event_msg_blank_user_message_without_images_keeps_first_user_message_empty() {
         let mut metadata = metadata_for_test();
         let item = RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
-            client_id: None,
             message: "   ".to_string(),
             images: Some(vec![]),
             local_images: vec![],
@@ -290,7 +287,6 @@ mod tests {
         assert_eq!(metadata.title, "");
 
         let user_item = RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
-            client_id: None,
             message: format!("{USER_MESSAGE_BEGIN} next normal prompt"),
             images: Some(vec![]),
             local_images: vec![],

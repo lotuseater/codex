@@ -73,6 +73,7 @@ pub(crate) struct CodexSpawnArgs {
     pub(crate) extensions: Arc<codex_extension_api::ExtensionRegistry<crate::config::Config>>,
     pub(crate) conversation_history: InitialHistory,
     pub(crate) session_source: SessionSource,
+    pub(crate) forked_from_thread_id: Option<ThreadId>,
     pub(crate) thread_source: Option<ThreadSource>,
     pub(crate) agent_control: AgentControl,
     pub(crate) dynamic_tools: Vec<DynamicToolSpec>,
@@ -137,6 +138,7 @@ impl Codex {
             extensions,
             conversation_history,
             session_source,
+            forked_from_thread_id,
             thread_source,
             agent_control,
             dynamic_tools,
@@ -304,6 +306,7 @@ impl Codex {
             app_server_client_name: None,
             app_server_client_version: None,
             session_source,
+            forked_from_thread_id,
             thread_source,
             dynamic_tools,
             persist_extended_history,
@@ -378,6 +381,7 @@ impl Codex {
         let sub = Submission {
             id: id.clone(),
             op,
+            client_user_message_id: None,
             trace,
         };
         self.submit_with_id(sub).await?;

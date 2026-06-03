@@ -1,6 +1,11 @@
 use super::*;
 
 impl Config {
+    /// Whether model-visible MCP tool names should keep the legacy `mcp__` prefix.
+    pub(crate) fn prefix_mcp_tool_names(&self) -> bool {
+        !self.features.enabled(Feature::NonPrefixedMcpToolNames)
+    }
+
     pub fn legacy_sandbox_policy(&self) -> SandboxPolicy {
         self.permissions.legacy_sandbox_policy(self.cwd.as_path())
     }

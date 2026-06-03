@@ -510,12 +510,8 @@ impl EnvironmentContext {
 fn workspace_roots_from_turn_context_item(
     turn_context_item: &TurnContextItem,
 ) -> Vec<AbsolutePathBuf> {
-    if let Some(workspace_roots) = turn_context_item.workspace_roots.as_ref() {
-        return workspace_roots.clone();
-    }
-
-    // Older rollout items did not persist workspace roots. Fall back to the
-    // legacy cwd binding only when reconstructing that historical context.
+    // TurnContextItem does not persist workspace roots; reconstruct from the
+    // cwd binding recorded on the rollout item.
     match AbsolutePathBuf::try_from(turn_context_item.cwd.clone()) {
         Ok(cwd) => vec![cwd],
         Err(_) => Vec::new(),

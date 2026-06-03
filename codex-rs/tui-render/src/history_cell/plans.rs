@@ -99,7 +99,7 @@ impl HistoryCell for ProposedPlanCell {
         let plan_style = proposed_plan_style();
         let wrap_width = width.saturating_sub(4).max(1) as usize;
         let mut body: Vec<Line<'static>> = Vec::new();
-        append_markdown_agent_with_cwd(
+        crate::markdown::append_markdown_agent_with_cwd(
             &self.plan_markdown,
             Some(wrap_width),
             Some(self.cwd.as_path()),
