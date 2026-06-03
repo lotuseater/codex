@@ -19,6 +19,7 @@ pub mod shimmer;
 pub mod status_indicator_widget;
 pub mod style;
 pub mod table_detect;
+pub mod terminal_hyperlinks;
 pub mod terminal_palette;
 #[cfg(unix)]
 pub mod terminal_probe;

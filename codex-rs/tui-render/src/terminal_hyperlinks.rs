@@ -24,30 +24,30 @@ use crate::wrapping::RtOptions;
 use crate::wrapping::adaptive_wrap_line;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct TerminalHyperlink {
-    pub(crate) columns: Range<usize>,
-    pub(crate) destination: String,
+pub struct TerminalHyperlink {
+    pub columns: Range<usize>,
+    pub destination: String,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct HyperlinkLine {
-    pub(crate) line: Line<'static>,
-    pub(crate) hyperlinks: Vec<TerminalHyperlink>,
+pub struct HyperlinkLine {
+    pub line: Line<'static>,
+    pub hyperlinks: Vec<TerminalHyperlink>,
 }
 
 impl HyperlinkLine {
-    pub(crate) fn new(line: Line<'static>) -> Self {
+    pub fn new(line: Line<'static>) -> Self {
         Self {
             line,
             hyperlinks: Vec::new(),
         }
     }
 
-    pub(crate) fn width(&self) -> usize {
+    pub fn width(&self) -> usize {
         self.line.width()
     }
 
-    pub(crate) fn push_span(&mut self, span: Span<'static>, destination: Option<&str>) {
+    pub fn push_span(&mut self, span: Span<'static>, destination: Option<&str>) {
         let start = self.width();
         let end = start + span.content.width();
         self.line.push_span(span);
@@ -61,7 +61,7 @@ impl HyperlinkLine {
         }
     }
 
-    pub(crate) fn style(mut self, style: ratatui::style::Style) -> Self {
+    pub fn style(mut self, style: ratatui::style::Style) -> Self {
         self.line = self.line.style(style);
         self
     }
@@ -85,15 +85,15 @@ impl From<String> for HyperlinkLine {
     }
 }
 
-pub(crate) fn visible_lines(lines: Vec<HyperlinkLine>) -> Vec<Line<'static>> {
+pub fn visible_lines(lines: Vec<HyperlinkLine>) -> Vec<Line<'static>> {
     lines.into_iter().map(|line| line.line).collect()
 }
 
-pub(crate) fn plain_hyperlink_lines(lines: Vec<Line<'static>>) -> Vec<HyperlinkLine> {
+pub fn plain_hyperlink_lines(lines: Vec<Line<'static>>) -> Vec<HyperlinkLine> {
     lines.into_iter().map(HyperlinkLine::new).collect()
 }
 
-pub(crate) fn prefix_hyperlink_lines(
+pub fn prefix_hyperlink_lines(
     lines: Vec<HyperlinkLine>,
     initial_prefix: Span<'static>,
     subsequent_prefix: Span<'static>,
@@ -120,7 +120,7 @@ pub(crate) fn prefix_hyperlink_lines(
         .collect()
 }
 
-pub(crate) fn adaptive_wrap_hyperlink_lines(
+pub fn adaptive_wrap_hyperlink_lines(
     lines: &[HyperlinkLine],
     options: RtOptions<'static>,
 ) -> Vec<HyperlinkLine> {
@@ -144,11 +144,11 @@ pub(crate) fn adaptive_wrap_hyperlink_lines(
     out
 }
 
-pub(crate) fn annotate_web_urls(lines: Vec<Line<'static>>) -> Vec<HyperlinkLine> {
+pub fn annotate_web_urls(lines: Vec<Line<'static>>) -> Vec<HyperlinkLine> {
     lines.into_iter().map(annotate_web_urls_in_line).collect()
 }
 
-pub(crate) fn annotate_web_urls_in_line(line: Line<'static>) -> HyperlinkLine {
+pub fn annotate_web_urls_in_line(line: Line<'static>) -> HyperlinkLine {
     let text = line
         .spans
         .iter()
@@ -164,7 +164,7 @@ pub(crate) fn annotate_web_urls_in_line(line: Line<'static>) -> HyperlinkLine {
 /// Link text is matched in display order so a URL split across table rows retains the complete
 /// destination on every rendered fragment. Whitespace inserted or removed at line boundaries is
 /// ignored while matching; hyperlink destinations themselves are never reconstructed from output.
-pub(crate) fn remap_wrapped_line(
+pub fn remap_wrapped_line(
     source: &HyperlinkLine,
     wrapped: Vec<Line<'static>>,
 ) -> Vec<HyperlinkLine> {
@@ -240,7 +240,7 @@ fn push_link_range(line: &mut HyperlinkLine, range: Range<usize>, destination: &
     });
 }
 
-pub(crate) fn web_links_in_text(text: &str) -> Vec<TerminalHyperlink> {
+pub fn web_links_in_text(text: &str) -> Vec<TerminalHyperlink> {
     let mut links = Vec::new();
     let mut search_from = 0usize;
     for raw_token in text.split_ascii_whitespace() {
@@ -307,7 +307,7 @@ fn has_unmatched_closing_delimiter(candidate: &str, closing: char) -> bool {
         > candidate.chars().filter(|ch| *ch == opening).count()
 }
 
-pub(crate) fn web_destination(destination: &str) -> Option<String> {
+pub fn web_destination(destination: &str) -> Option<String> {
     let safe_destination = destination
         .chars()
         .filter(|ch| !ch.is_control())
@@ -319,7 +319,7 @@ pub(crate) fn web_destination(destination: &str) -> Option<String> {
     Some(safe_destination)
 }
 
-pub(crate) fn osc8_hyperlink(destination: &str, text: &str) -> String {
+pub fn osc8_hyperlink(destination: &str, text: &str) -> String {
     let Some(safe_destination) = web_destination(destination) else {
         return text.to_string();
     };
@@ -327,7 +327,7 @@ pub(crate) fn osc8_hyperlink(destination: &str, text: &str) -> String {
 }
 
 #[cfg(test)]
-pub(crate) fn strip_osc8(text: &str) -> String {
+pub fn strip_osc8(text: &str) -> String {
     let bytes = text.as_bytes();
     let mut stripped = String::with_capacity(text.len());
     let mut index = 0usize;
@@ -359,7 +359,7 @@ pub(crate) fn strip_osc8(text: &str) -> String {
     stripped
 }
 
-pub(crate) fn decorate_spans(line: &HyperlinkLine) -> Vec<Span<'static>> {
+pub fn decorate_spans(line: &HyperlinkLine) -> Vec<Span<'static>> {
     if line.hyperlinks.is_empty() {
         return line.line.spans.clone();
     }
@@ -424,7 +424,7 @@ fn append_to_last_span(out: &mut [Span<'static>], content: &str) {
     }
 }
 
-pub(crate) fn mark_buffer_hyperlinks(
+pub fn mark_buffer_hyperlinks(
     buf: &mut Buffer,
     area: Rect,
     lines: &[HyperlinkLine],
@@ -483,13 +483,13 @@ pub(crate) fn mark_buffer_hyperlinks(
     }
 }
 
-pub(crate) fn mark_url_hyperlink(buf: &mut Buffer, area: Rect, destination: &str) {
+pub fn mark_url_hyperlink(buf: &mut Buffer, area: Rect, destination: &str) {
     mark_matching_cells(buf, area, destination, |cell| {
         cell.fg == Color::Cyan && cell.modifier.contains(Modifier::UNDERLINED)
     });
 }
 
-pub(crate) fn mark_underlined_hyperlink(buf: &mut Buffer, area: Rect, destination: &str) {
+pub fn mark_underlined_hyperlink(buf: &mut Buffer, area: Rect, destination: &str) {
     mark_matching_cells(buf, area, destination, |cell| {
         cell.modifier.contains(Modifier::UNDERLINED)
     });
