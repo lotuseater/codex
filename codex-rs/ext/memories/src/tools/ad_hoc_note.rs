@@ -46,38 +46,44 @@ impl<B> ToolExecutor<ToolCall> for AddAdHocNoteTool<B>
 where
     B: MemoriesBackend,
 {
+    type Output = Box<dyn codex_extension_api::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         memory_tool_name(ADD_AD_HOC_NOTE_TOOL_NAME)
     }
 
-    fn spec(&self) -> ToolSpec {
-        memory_function_tool::<AddAdHocNoteArgs, AddAdHocMemoryNoteResponse>(
+    fn spec(&self) -> Option<ToolSpec> {
+        Some(memory_function_tool::<AddAdHocNoteArgs, AddAdHocMemoryNoteResponse>(
             ADD_AD_HOC_NOTE_TOOL_NAME,
             "Create one append-only ad-hoc memory note after the user explicitly asks Codex to remember, forget, or update something.",
-        )
+        ))
     }
 
-    async fn handle(
+    fn handle(
         &self,
         call: ToolCall,
-    ) -> Result<Box<dyn codex_extension_api::ToolOutput>, codex_extension_api::FunctionCallError>
-    {
+    ) -> impl std::future::Future<
+        Output = Result<Self::Output, codex_extension_api::FunctionCallError>,
+    > + Send {
         let backend = self.backend.clone();
-        let args: AddAdHocNoteArgs = parse_args(&call)?;
-        let response = backend
-            .add_ad_hoc_note(AddAdHocMemoryNoteRequest {
-                filename: args.filename,
-                note: args.note,
-            })
-            .await;
-        record_tool_call(
-            self.metrics_client.as_ref(),
-            ADD_AD_HOC_NOTE_TOOL_NAME,
-            "ad_hoc_notes",
-            response.is_ok(),
-            "not_applicable",
-        );
-        let response = response.map_err(backend_error_to_function_call)?;
-        Ok(Box::new(JsonToolOutput::new(json!(response))))
+        let metrics_client = self.metrics_client.clone();
+        async move {
+            let args: AddAdHocNoteArgs = parse_args(&call)?;
+            let response = backend
+                .add_ad_hoc_note(AddAdHocMemoryNoteRequest {
+                    filename: args.filename,
+                    note: args.note,
+                })
+                .await;
+            record_tool_call(
+                metrics_client.as_ref(),
+                ADD_AD_HOC_NOTE_TOOL_NAME,
+                "ad_hoc_notes",
+                response.is_ok(),
+                "not_applicable",
+            );
+            let response = response.map_err(backend_error_to_function_call)?;
+            Ok(Box::new(JsonToolOutput::new(json!(response))) as Box<dyn codex_extension_api::ToolOutput>)
+        }
     }
 }

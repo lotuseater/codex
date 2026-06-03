@@ -1,5 +1,5 @@
 use codex_extension_api::ToolOutput;
-use codex_extension_api::ToolPayload;
+use codex_tools::ToolOutputPayload;
 use codex_protocol::models::FunctionCallOutputContentItem;
 use codex_protocol::models::FunctionCallOutputPayload;
 use codex_protocol::models::ResponseInputItem;
@@ -23,7 +23,7 @@ impl ToolOutput for EncryptedSearchOutput {
         true
     }
 
-    fn to_response_item(&self, call_id: &str, _payload: &ToolPayload) -> ResponseInputItem {
+    fn to_response_item(&self, call_id: &str, _payload: &dyn ToolOutputPayload) -> ResponseInputItem {
         // TODO: Make standalone search honor memories.disable_on_external_context,
         // as hosted web search does.
         ResponseInputItem::FunctionCallOutput {

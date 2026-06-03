@@ -6,9 +6,7 @@ use codex_extension_api::ExtensionData;
 use codex_extension_api::ExtensionRegistryBuilder;
 use codex_extension_api::ThreadLifecycleContributor;
 use codex_extension_api::ThreadStartInput;
-use codex_extension_api::ToolCall;
 use codex_extension_api::ToolContributor;
-use codex_extension_api::ToolExecutor;
 use codex_features::Feature;
 use codex_login::AuthManager;
 use codex_model_provider::create_model_provider;
@@ -68,7 +66,7 @@ impl ToolContributor for ImageGenerationExtension {
         &self,
         _session_store: &ExtensionData,
         thread_store: &ExtensionData,
-    ) -> Vec<Arc<dyn ToolExecutor<ToolCall>>> {
+    ) -> Vec<Arc<dyn codex_extension_api::ExtensionToolExecutor>> {
         let Some(config) = thread_store.get::<ImageGenerationExtensionConfig>() else {
             return Vec::new();
         };

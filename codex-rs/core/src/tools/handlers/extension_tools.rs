@@ -1,12 +1,24 @@
 use std::sync::Arc;
+use std::sync::Weak;
 
 use codex_extension_api::ExtensionToolExecutor;
 use codex_extension_api::ToolCall as ExtensionToolCall;
+use codex_protocol::items::TurnItem;
 use codex_tool_execution_api::FunctionCallError;
+use codex_tools::ConversationHistory;
+use codex_tools::ExtensionTurnItem;
+use codex_tools::ImageGenerationCompletionFuture;
 use codex_tools::ToolName;
 use codex_tools::ToolSpec;
+use codex_tools::TurnItemEmissionFuture;
+use codex_tools::TurnItemEmitter;
 use serde_json::Value;
 
+use crate::context::ContextualUserFragment;
+use crate::context::ImageGenerationInstructions;
+use crate::session::session::Session;
+use crate::session::turn_context::TurnContext;
+use crate::stream_events_utils::persist_image_generation_item;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
@@ -93,10 +105,99 @@ impl CoreToolRuntime for ExtensionToolHandler {
 }
 
 async fn to_extension_call(invocation: &ToolInvocation) -> ExtensionToolCall {
+    let conversation_history =
+        ConversationHistory::new(invocation.session.clone_history().await.into_raw_items());
     ExtensionToolCall {
+        turn_id: invocation.turn.sub_id.clone(),
         call_id: invocation.call_id.clone(),
         tool_name: invocation.tool_name.clone(),
+        model: invocation.turn.model_info.slug.clone(),
+        truncation_policy: invocation.turn.truncation_policy,
+        conversation_history,
+        turn_item_emitter: Arc::new(CoreTurnItemEmitter {
+            session: Arc::downgrade(&invocation.session),
+            turn: Arc::downgrade(&invocation.turn),
+        }),
         payload: invocation.payload.clone(),
+    }
+}
+
+/// Host-side bridge that routes extension turn-item lifecycle events through the
+/// session's normal item event pipeline (persistence + client delivery).
+struct CoreTurnItemEmitter {
+    session: Weak<Session>,
+    turn: Weak<TurnContext>,
+}
+
+impl TurnItemEmitter for CoreTurnItemEmitter {
+    fn emit_started<'a>(&'a self, item: ExtensionTurnItem) -> TurnItemEmissionFuture<'a> {
+        Box::pin(async move {
+            let (Some(session), Some(turn)) = (self.session.upgrade(), self.turn.upgrade()) else {
+                return;
+            };
+            let item = extension_turn_item(item);
+            session.emit_turn_item_started(turn.as_ref(), &item).await;
+        })
+    }
+
+    fn emit_completed<'a>(&'a self, item: ExtensionTurnItem) -> TurnItemEmissionFuture<'a> {
+        Box::pin(async move {
+            let (Some(session), Some(turn)) = (self.session.upgrade(), self.turn.upgrade()) else {
+                return;
+            };
+            let item = extension_turn_item(item);
+            session.emit_turn_item_completed(turn.as_ref(), item).await;
+        })
+    }
+
+    fn image_generation_completed<'a>(
+        &'a self,
+        call_id: String,
+        prompt: String,
+        result: String,
+    ) -> ImageGenerationCompletionFuture<'a> {
+        Box::pin(async move {
+            let (Some(session), Some(turn)) = (self.session.upgrade(), self.turn.upgrade()) else {
+                return None;
+            };
+            let mut item = codex_protocol::items::ImageGenerationItem {
+                id: call_id,
+                status: "completed".to_string(),
+                revised_prompt: Some(prompt),
+                result,
+                saved_path: None,
+            };
+            let output_hint =
+                persist_image_generation_item(session.as_ref(), turn.as_ref(), &mut item)
+                    .await
+                    .map(|saved_path| {
+                        let output_dir = saved_path
+                            .parent()
+                            .unwrap_or_else(|| turn.config.codex_home.clone());
+                        ImageGenerationInstructions::new(output_dir.display(), saved_path.display())
+                            .body()
+                    });
+            let started_item = codex_protocol::items::ImageGenerationItem {
+                id: item.id.clone(),
+                status: "in_progress".to_string(),
+                revised_prompt: None,
+                result: String::new(),
+                saved_path: None,
+            };
+            session
+                .emit_turn_item_started(turn.as_ref(), &TurnItem::ImageGeneration(started_item))
+                .await;
+            session
+                .emit_turn_item_completed(turn.as_ref(), TurnItem::ImageGeneration(item))
+                .await;
+            output_hint
+        })
+    }
+}
+
+fn extension_turn_item(item: ExtensionTurnItem) -> TurnItem {
+    match item {
+        ExtensionTurnItem::WebSearch(item) => TurnItem::WebSearch(item),
     }
 }
 

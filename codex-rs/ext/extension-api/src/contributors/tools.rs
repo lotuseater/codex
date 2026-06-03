@@ -2,8 +2,8 @@ use std::future::Future;
 use std::pin::Pin;
 
 use codex_tool_execution_api::FunctionCallError;
-use codex_tool_execution_api::ToolCall;
 use codex_tool_execution_api::ToolExecutor;
+use codex_tools::ToolCall;
 use codex_tool_execution_api::ToolName;
 use codex_tool_execution_api::ToolOutput;
 use codex_tool_registry_api::ToolExposure;

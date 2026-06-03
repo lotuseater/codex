@@ -181,6 +181,8 @@ pub(crate) trait RegisteredTool: Send + Sync {
 
     fn matches_kind(&self, payload: &ToolPayload) -> bool;
 
+    fn waits_for_runtime_cancellation(&self) -> bool;
+
     fn telemetry_tags<'a>(
         &'a self,
         invocation: &'a ToolInvocation,
@@ -235,6 +237,10 @@ where
 
     fn matches_kind(&self, payload: &ToolPayload) -> bool {
         CoreToolRuntime::matches_kind(self, payload)
+    }
+
+    fn waits_for_runtime_cancellation(&self) -> bool {
+        CoreToolRuntime::waits_for_runtime_cancellation(self)
     }
 
     fn telemetry_tags<'a>(
