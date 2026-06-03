@@ -122,3 +122,46 @@ __pycache__/
 .codex/workflow/*-output.txt
 .codex/workflow/*-latest.txt
 .codex/workflow/tmp
+
+# Recurring merge/workflow scratch (ignore, do not commit) — added 2026-06-03
+*.orig
+.codex/tmp/
+.codex/tasks/
+.codex/diff_*.patch
+.codex/tmp_merge_overlap*.txt
+.codex/workflow/*.md
+.codex/workflow/.*-progress.md
+.codex/workflow/.wave*-progress.md
+.codex/workflow/.tmp-*
+.codex/workflow/*.json
+.codex/workflow/*.jsonl
+.codex/workflow/*.tmp.json
+.codex/workflow/builds/
+.codex/workflow/merge/
+.codex/workflow/patches/
+.codex/workflow/reports/
+.codex/workflow/agents/*.txt
+.codex/workflow/agents/*.json
+.codex/workflow/agents/*.jsonl
+.codex/workflow/agents/*.pid
+.codex/workflow/agents/*.pid.txt
+.codex/workflow/agents/*.exit
+.codex/workflow/agents/*.exec.launch.ps1
+.codex/workflow/agents/*.launch.ps1
+.codex/workflow/agents/*.exec.done.txt
+.codex/workflow/agents/*.png
+.codex/workflow/agents/tmp/
+.codex/workflow/agents/prompts/
+.codex/workflow/agents/handoffs/
+.codex/workflow/agents/merge-abort-backup-*/
+/tmp/
+/tui_cli/
+/.handoff/
+/COMPACT_HANDOFF.md
+/app-server-check.jsonl
+/codex-core-errors.txt
+/codex_core_check_fresh.txt
+/Good_Commit_Early_Compaction_Works.txt
+/PerfomenceTask.txt
+/Improved Context.txt
+/self-review feature.md
