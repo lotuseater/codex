@@ -15,6 +15,7 @@ workspace = true
 
 [dependencies]
 async-trait = { workspace = true }
+codex-context-fragments = { workspace = true }
 codex-core-domain-types = { workspace = true }
 codex-protocol = { workspace = true }
 codex-tool-execution-api = { workspace = true }

@@ -15,6 +15,7 @@ use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::AdditionalContextEntry;
 use codex_protocol::protocol::Event;
+use codex_protocol::protocol::MultiAgentVersion;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::SessionConfiguredEvent;
 use codex_protocol::protocol::SessionSource;
@@ -214,6 +215,14 @@ impl CodexThread {
         items: Vec<ResponseItem>,
     ) -> Result<(), Vec<ResponseItem>> {
         self.codex.session.inject_if_running(items).await
+    }
+
+    /// Starts a regular turn with model-visible items only if the thread is idle.
+    pub async fn try_start_turn_if_idle(
+        &self,
+        items: Vec<ResponseItem>,
+    ) -> Result<(), Vec<ResponseItem>> {
+        self.codex.session.try_start_turn_if_idle(items).await
     }
 
     pub async fn set_app_server_client_info(
@@ -474,6 +483,10 @@ impl CodexThread {
 
     pub async fn config(&self) -> Arc<crate::config::Config> {
         self.codex.session.get_config().await
+    }
+
+    pub fn multi_agent_version(&self) -> Option<MultiAgentVersion> {
+        self.codex.session.multi_agent_version()
     }
 
     /// Refresh the thread's layer-backed user config state from a caller-supplied

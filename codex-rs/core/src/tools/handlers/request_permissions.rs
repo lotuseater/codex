@@ -5,7 +5,9 @@ use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::context::boxed_tool_output;
+use crate::tools::handlers::parse_arguments;
 use crate::tools::handlers::parse_arguments_with_base_path;
+use crate::tools::handlers::resolve_tool_environment;
 use crate::tools::handlers::shell_spec::create_request_permissions_tool;
 use crate::tools::handlers::shell_spec::request_permissions_tool_description;
 use crate::tools::registry::CoreToolRuntime;
@@ -13,8 +15,15 @@ use crate::tools::registry::ToolExecutor;
 use codex_tool_execution_api::FunctionCallError;
 use codex_tool_execution_api::ToolName;
 use codex_tool_registry_api::ToolSpec;
+use serde::Deserialize;
 
 pub struct RequestPermissionsHandler;
+
+#[derive(Deserialize)]
+struct RequestPermissionsEnvironmentArgs {
+    #[serde(default, rename = "environment_id", alias = "environmentId")]
+    environment_id: Option<String>,
+}
 
 impl ToolExecutor<ToolInvocation> for RequestPermissionsHandler {
     type Output = Box<dyn crate::tools::context::ToolOutput>;
@@ -51,9 +60,16 @@ impl ToolExecutor<ToolInvocation> for RequestPermissionsHandler {
             }
         };
 
-        #[allow(deprecated)]
+        let environment_args: RequestPermissionsEnvironmentArgs = parse_arguments(&arguments)?;
+        let Some(turn_environment) =
+            resolve_tool_environment(turn.as_ref(), environment_args.environment_id.as_deref())?
+        else {
+            return Err(FunctionCallError::RespondToModel(
+                "request_permissions requires a primary environment".to_string(),
+            ));
+        };
         let mut args: RequestPermissionsArgs =
-            parse_arguments_with_base_path(&arguments, &turn.cwd)?;
+            parse_arguments_with_base_path(&arguments, &turn_environment.cwd)?;
         args.permissions = normalize_additional_permissions(args.permissions.into())
             .map(codex_protocol::request_permissions::RequestPermissionProfile::from)
             .map_err(FunctionCallError::RespondToModel)?;
@@ -64,7 +80,13 @@ impl ToolExecutor<ToolInvocation> for RequestPermissionsHandler {
         }
 
         let response = session
-            .request_permissions(&turn, call_id, args, cancellation_token)
+            .request_permissions_for_environment(
+                &turn,
+                call_id,
+                args,
+                turn_environment.selection(),
+                cancellation_token,
+            )
             .await
             .ok_or_else(|| {
                 FunctionCallError::RespondToModel(

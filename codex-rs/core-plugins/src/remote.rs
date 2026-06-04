@@ -11,15 +11,18 @@ use codex_protocol::plugin::SkillInterface;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use reqwest::RequestBuilder;
 use serde::Deserialize;
+use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashSet;
 use std::fs;
+use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
 use url::Url;
 
+mod catalog_cache;
 mod remote_installed_plugin_sync;
 mod share;
 
@@ -177,6 +180,18 @@ pub struct RemotePluginSkillDetail {
     pub contents: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteDiscoverablePlugin {
+    pub config_id: String,
+    pub remote_plugin_id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub has_skills: bool,
+    pub app_ids: Vec<String>,
+    pub install_policy: PluginInstallPolicy,
+    pub availability: PluginAvailability,
+}
+
 pub fn is_valid_remote_plugin_id(plugin_id: &str) -> bool {
     !plugin_id.is_empty()
         && plugin_id
@@ -300,7 +315,7 @@ pub enum RemotePluginCatalogError {
     CacheRemove(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 pub enum RemotePluginScope {
     #[serde(rename = "GLOBAL")]
     Global,
@@ -347,7 +362,7 @@ struct RemotePluginPagination {
     next_page_token: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 struct RemotePluginSkillInterfaceResponse {
     display_name: Option<String>,
     short_description: Option<String>,
@@ -357,7 +372,7 @@ struct RemotePluginSkillInterfaceResponse {
     icon_large_url: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 struct RemotePluginSkillResponse {
     name: String,
     description: String,
@@ -371,7 +386,7 @@ struct RemotePluginSkillDetailResponse {
     skill_md_contents: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 struct RemotePluginReleaseInterfaceResponse {
     short_description: Option<String>,
     long_description: Option<String>,
@@ -390,7 +405,7 @@ struct RemotePluginReleaseInterfaceResponse {
     screenshot_urls: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 struct RemotePluginReleaseResponse {
     #[serde(default)]
     version: Option<String>,
@@ -409,7 +424,7 @@ struct RemotePluginReleaseResponse {
     skills: Vec<RemotePluginSkillResponse>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 struct RemotePluginDirectoryItem {
     id: String,
     name: String,
@@ -457,7 +472,7 @@ fn workspace_plugin_discoverability(
     })
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 struct RemotePluginDirectorySharePrincipal {
     principal_type: RemotePluginSharePrincipalType,
     principal_id: String,
@@ -496,6 +511,7 @@ pub async fn fetch_remote_marketplaces(
     config: &RemotePluginServiceConfig,
     auth: Option<&CodexAuth>,
     sources: &[RemoteMarketplaceSource],
+    global_catalog_cache_path: Option<&Path>,
 ) -> Result<Vec<RemoteMarketplace>, RemotePluginCatalogError> {
     let auth = ensure_chatgpt_auth(auth)?;
     let mut marketplaces = Vec::new();
@@ -519,6 +535,8 @@ pub async fn fetch_remote_marketplaces(
                     fetch_directory_plugins_for_scope(config, auth, scope),
                     fetch_installed_plugins_for_scope(config, auth, scope),
                 )?;
+                let directory_plugins_for_cache =
+                    global_catalog_cache_path.map(|_| directory_plugins.clone());
                 if let Some(marketplace) = build_remote_marketplace(
                     scope.marketplace_name(),
                     scope.marketplace_display_name(),
@@ -527,6 +545,16 @@ pub async fn fetch_remote_marketplaces(
                     /*include_installed_only*/ true,
                 )? {
                     marketplaces.push(marketplace);
+                }
+                if let (Some(codex_home), Some(directory_plugins)) =
+                    (global_catalog_cache_path, directory_plugins_for_cache)
+                {
+                    catalog_cache::write_cached_global_directory_plugins(
+                        codex_home,
+                        config,
+                        auth,
+                        &directory_plugins,
+                    );
                 }
             }
             RemoteMarketplaceSource::WorkspaceDirectory => {
@@ -605,6 +633,36 @@ pub async fn fetch_remote_marketplaces(
     }
 
     Ok(marketplaces)
+}
+
+pub async fn fetch_and_cache_global_remote_plugin_catalog(
+    codex_home: &Path,
+    config: &RemotePluginServiceConfig,
+    auth: Option<&CodexAuth>,
+) -> Result<(), RemotePluginCatalogError> {
+    let auth = ensure_chatgpt_auth(auth)?;
+    let plugins =
+        fetch_directory_plugins_for_scope(config, auth, RemotePluginScope::Global).await?;
+    catalog_cache::write_cached_global_directory_plugins(codex_home, config, auth, &plugins);
+    Ok(())
+}
+
+pub fn cached_global_remote_discoverable_plugins(
+    codex_home: &Path,
+    config: &RemotePluginServiceConfig,
+    auth: &CodexAuth,
+) -> Vec<RemoteDiscoverablePlugin> {
+    catalog_cache::load_cached_global_directory_plugins(codex_home, config, auth)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|plugin| match remote_discoverable_plugin_from_directory_item(&plugin) {
+            Ok(plugin) => Some(plugin),
+            Err(err) => {
+                tracing::warn!(error = %err, "ignoring cached remote plugin recommendation entry");
+                None
+            }
+        })
+        .collect()
 }
 
 pub async fn fetch_openai_curated_remote_collection_marketplace(
@@ -1057,6 +1115,34 @@ fn build_remote_plugin_summary(
         availability: plugin.availability,
         interface: remote_plugin_interface_to_info(plugin),
         keywords: plugin.release.keywords.clone(),
+    })
+}
+
+fn remote_discoverable_plugin_from_directory_item(
+    plugin: &RemotePluginDirectoryItem,
+) -> Result<RemoteDiscoverablePlugin, RemotePluginCatalogError> {
+    let marketplace_name = remote_plugin_canonical_marketplace_name(plugin)?;
+    let plugin_id =
+        PluginId::new(plugin.name.clone(), marketplace_name.to_string()).map_err(|err| {
+            RemotePluginCatalogError::UnexpectedResponse(format!(
+                "invalid remote plugin config id for `{}` in `{marketplace_name}`: {err}",
+                plugin.name
+            ))
+        })?;
+    let display_name =
+        non_empty_string(Some(&plugin.release.display_name)).unwrap_or_else(|| plugin.name.clone());
+    let description = non_empty_string(plugin.release.interface.short_description.as_deref())
+        .or_else(|| non_empty_string(Some(&plugin.release.description)));
+
+    Ok(RemoteDiscoverablePlugin {
+        config_id: plugin_id.as_key(),
+        remote_plugin_id: plugin.id.clone(),
+        name: display_name,
+        description,
+        has_skills: !plugin.release.skills.is_empty(),
+        app_ids: plugin.release.app_ids.clone(),
+        install_policy: plugin.installation_policy,
+        availability: plugin.availability,
     })
 }
 

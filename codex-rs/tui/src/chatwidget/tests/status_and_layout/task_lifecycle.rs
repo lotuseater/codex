@@ -1,5 +1,5 @@
-use super::common::*;
 use super::super::*;
+use super::common::*;
 use pretty_assertions::assert_eq;
 
 #[tokio::test]

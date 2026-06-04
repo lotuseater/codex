@@ -22,7 +22,6 @@ async fn token_usage_update_refreshes_status_line_with_runtime_context_window() 
     );
 }
 
-
 #[tokio::test]
 async fn token_usage_update_tracks_agent_current_context_not_cumulative_total() {
     let mut app = make_test_app().await;

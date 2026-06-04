@@ -413,6 +413,7 @@ pub struct RateLimitSnapshot {
     pub primary: Option<RateLimitWindow>,
     pub secondary: Option<RateLimitWindow>,
     pub credits: Option<CreditsSnapshot>,
+    pub individual_limit: Option<SpendControlLimitSnapshot>,
     pub plan_type: Option<crate::account::PlanType>,
     pub rate_limit_reached_type: Option<RateLimitReachedType>,
 }
@@ -460,6 +461,31 @@ pub struct CreditsSnapshot {
     pub has_credits: bool,
     pub unlimited: bool,
     pub balance: Option<String>,
+}
+
+// fork-local: the bulk of the protocol types upstream defines inline here have
+// been extracted into the seam modules under `protocol/` (token_usage.rs,
+// session_config.rs, session_source.rs, rollout.rs, review.rs, exec_command.rs,
+// skills.rs, thread_goal.rs, collaboration.rs, etc.) and are re-exported from
+// `mod.rs`. We drop the inline duplicates to avoid double definitions, but keep
+// the two types upstream newly added that the fork's seam files do not yet own
+// and that kept code in this module still references.
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema, TS)]
+pub struct SpendControlLimitSnapshot {
+    pub limit: String,
+    pub used: String,
+    pub remaining_percent: i32,
+    pub resets_at: i64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(rename_all = "snake_case")]
+pub enum MultiAgentVersion {
+    Disabled,
+    V1,
+    V2,
 }
 
 #[cfg(test)]
@@ -1463,6 +1489,39 @@ mod tests {
     }
 
     #[test]
+    fn multi_agent_version_uses_newest_present_session_meta_value() -> Result<()> {
+        let thread_id = ThreadId::from_string("67e55044-10b1-426f-9247-bb680e5fe0c8")?;
+        let older_meta = SessionMetaLine {
+            meta: SessionMeta {
+                id: thread_id,
+                multi_agent_version: Some(MultiAgentVersion::V2),
+                ..Default::default()
+            },
+            git: None,
+        };
+        let newer_meta_without_version = SessionMetaLine {
+            meta: SessionMeta {
+                id: thread_id,
+                multi_agent_version: None,
+                ..Default::default()
+            },
+            git: None,
+        };
+
+        assert_eq!(
+            multi_agent_version_from_items(
+                &[
+                    RolloutItem::SessionMeta(older_meta),
+                    RolloutItem::SessionMeta(newer_meta_without_version),
+                ],
+                Some(thread_id),
+            ),
+            Some(MultiAgentVersion::V2)
+        );
+        Ok(())
+    }
+
+    #[test]
     fn turn_context_item_serializes_network_when_present() -> Result<()> {
         let item = TurnContextItem {
             turn_id: None,
@@ -1489,6 +1548,7 @@ mod tests {
             model: "gpt-5".to_string(),
             personality: None,
             collaboration_mode: None,
+            multi_agent_version: None,
             realtime_active: None,
             effort: None,
             summary: ReasoningSummaryConfig::Auto,
@@ -1519,6 +1579,79 @@ mod tests {
                 }]
             })
         );
+        assert_eq!(value["summary"], json!("auto"));
+        Ok(())
+    }
+
+    /// Serialize Event to verify that its JSON representation has the expected
+    /// amount of nesting.
+    #[test]
+    fn serialize_event() -> Result<()> {
+        let session_id = SessionId::from_string("67e55044-10b1-426f-9247-bb680e5fe0c7")?;
+        let thread_id = ThreadId::from_string("67e55044-10b1-426f-9247-bb680e5fe0c8")?;
+        let rollout_file = NamedTempFile::new()?;
+        let permission_profile = PermissionProfile::read_only();
+        let event = Event {
+            id: "1234".to_string(),
+            msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
+                session_id,
+                thread_id,
+                forked_from_id: None,
+                parent_thread_id: None,
+                thread_source: None,
+                thread_name: None,
+                model: "codex-mini-latest".to_string(),
+                model_provider_id: "openai".to_string(),
+                service_tier: None,
+                approval_policy: AskForApproval::Never,
+                approvals_reviewer: ApprovalsReviewer::User,
+                permission_profile: permission_profile.clone(),
+                active_permission_profile: None,
+                cwd: test_path_buf("/home/user/project").abs(),
+                reasoning_effort: Some(ReasoningEffortConfig::default()),
+                initial_messages: None,
+                network_proxy: None,
+                rollout_path: Some(rollout_file.path().to_path_buf()),
+            }),
+        };
+
+        let expected = json!({
+            "id": "1234",
+            "msg": {
+                "type": "session_configured",
+                "session_id": "67e55044-10b1-426f-9247-bb680e5fe0c7",
+                "thread_id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
+                "model": "codex-mini-latest",
+                "model_provider_id": "openai",
+                "approval_policy": "never",
+                "approvals_reviewer": "user",
+                "permission_profile": permission_profile,
+                "cwd": test_path_buf("/home/user/project"),
+                "reasoning_effort": "medium",
+                "rollout_path": format!("{}", rollout_file.path().display()),
+            }
+        });
+        assert_eq!(expected, serde_json::to_value(&event)?);
+        Ok(())
+    }
+
+    #[test]
+    fn deserialize_legacy_session_configured_event_uses_sandbox_policy() -> Result<()> {
+        let cwd = test_path_buf("/home/user/project");
+        let value = json!({
+            "session_id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
+            "model": "codex-mini-latest",
+            "model_provider_id": "openai",
+            "approval_policy": "never",
+            "approvals_reviewer": "user",
+            "sandbox_policy": {
+                "type": "read-only"
+            },
+            "cwd": cwd,
+        });
+
+        let event: SessionConfiguredEvent = serde_json::from_value(value)?;
+        assert_eq!(event.permission_profile, PermissionProfile::read_only());
         Ok(())
     }
 

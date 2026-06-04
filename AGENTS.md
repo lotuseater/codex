@@ -86,7 +86,7 @@ In the codex-rs folder where the rust code lives:
   - Do not run `cargo test -p codex-cli`, `cargo test -p codex-exec`, or similarly broad debug lanes. For focused Rust tests, prefer `powershell -ExecutionPolicy Bypass -File scripts\test-local-codex-release.ps1 -Package <crate> -Filter <test-filter>` so passed release tests are logged and disposable release test executables are cleaned automatically.
   - For prompt-reduction or non-interactive-session changes that may cause repeated source reads/searches, run `python scripts\repeated_read_replay_canary.py <session.jsonl>` and store JSON reports under `.codex\workflow\` before handing the session back to workers.
 
-Run `just fmt` (in `codex-rs` directory) automatically after you have finished making Rust code changes; do not ask for approval to run it. Additionally, run the tests:
+Run `just fmt` (in the `codex-rs` directory) automatically after you have finished making code changes anywhere in this repository; do not ask for approval to run it. Additionally, run the tests:
 
 1. Run the test for the specific project that was changed with the local release profile. For example, if changes were made in `codex-rs/tui`, run `powershell -ExecutionPolicy Bypass -File scripts\test-local-codex-release.ps1 -Package codex-tui`.
 2. Once those pass, if any changes were made in common, core, or protocol, ask before running the complete release test suite with `cargo test --release` (or `just test` only if it is configured for release in this checkout). Avoid `--all-features` for routine local runs because it expands the build matrix and can significantly increase `target/` disk usage; use it only when you specifically need full feature coverage. Project-specific or individual release tests can be run without asking the user, but do ask the user before running the complete test suite.
@@ -113,6 +113,49 @@ Likewise, when reviewing code, do not hesitate to push back on PRs that would un
 - When a test helper can be expressed in terms of protocol/domain fixtures, keep it in a small support crate that does not depend on `codex-core`; reserve `codex-core` test harness dependencies for integration tests that genuinely instantiate core runtime behavior.
 - Split large core test families into smaller crates or harness crates when that reduces dependency fan-in, compile scope, or fixture coupling. Keep shared fixtures below the harness layer.
 - Before broad build or lint runs after a dependency refactor, use source inspection and dependency-graph checks to confirm that the intended crate boundary is in place; then run the narrowest release-profile verification that covers the changed boundary.
+
+## Code Review Rules
+
+### Model visible context
+
+Codex maintains a context (history of messages) that is sent to the model in inference requests.
+
+1. No history rewrite - the context must be built up incrementally.
+2. Avoid frequent changes to context that cause cache misses.
+3. No unbounded items - everything injected in the model context must have a bounded size and a hard cap.
+4. No items larger than 10K tokens.
+5. Highlight new individual items that can cross >1k tokens as P0. These need an additional manual review.
+6. All injected fragments must be defined as structs in `core/context` and implement ContextualUserFragment trait
+
+### Breaking changes
+
+Search for breaking changes in external integration surfaces:
+
+- app-server APIs
+- CLI parameters
+- configuration loading
+- resuming sessions from existing rollouts
+
+### Test authoring guidance
+
+For agent changes prefer integration tests over unit tests. Integration tests are under `core/suite` and use `test_codex` to set up a test instance of codex.
+
+Features that change the agent logic MUST add an integration test:
+
+- Provide a list of major logic changes and user-facing behaviors that need to be tested.
+
+If unit tests are needed, put them in a dedicated test file (\*\_tests.rs).
+Avoid test-only functions in the main implementation.
+
+Check whether there are existing helpers to make tests more streamlined and readable.
+
+### Change size guidance (800 lines)
+
+Unless the change is mechanical the total number of changed lines should not exceed 800 lines.
+For complex logic changes the size should be under 500 lines.
+
+If the change is larger, explore whether it can be split into reviewable stages and identify the smallest coherent stage to land first.
+Base the staging suggestion on the actual diff, dependencies, and affected call sites.
 
 ## TUI style conventions
 
@@ -147,6 +190,19 @@ See `codex-rs/tui/styles.md`.
 - If you have a list of lines and you need to prefix them all with some prefix (optionally different on the first vs subsequent lines), use the `prefix_lines` helper from line_utils.
 
 ## Tests
+
+### Test module organization
+
+- When adding a new test module, define its contents in a separate sibling file rather than inline in the implementation file.
+- Use an explicit `#[path = "..._tests.rs"]` attribute so the test filename is descriptive and easy to locate:
+
+  ```rust
+  #[cfg(test)]
+  #[path = "parser_tests.rs"]
+  mod tests;
+  ```
+
+- This applies only when introducing a new test module. Do not move or rewrite existing inline `#[cfg(test)] mod tests { ... }` modules solely to follow this convention.
 
 ### Snapshot tests
 
@@ -257,3 +313,12 @@ These guidelines apply to app-server protocol work in `codex-rs`, especially:
 - Validate with `just test -p codex-app-server-protocol`.
 - Avoid boilerplate tests that only assert experimental field markers for individual
   request fields in `common.rs`; rely on schema generation/tests and behavioral coverage instead.
+
+## Python Development Best Practices
+
+### Ignore Python 2 compatibility
+
+This project uses Python 3+. You should not use the `__future__` module.
+
+If you need to worry about feature compatibility between different 3.xx point releases, check the
+closest `pyproject.toml`'s `requires-python` field to see what minimum runtime version is supported.

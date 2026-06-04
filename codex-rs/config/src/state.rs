@@ -5,9 +5,11 @@ use super::fingerprint::record_origins;
 use super::fingerprint::version_for_toml;
 use super::key_aliases::normalized_with_key_aliases;
 use super::merge::merge_toml_values;
-use codex_config_types::ConfigLayer;
-use codex_config_types::ConfigLayerMetadata;
-use codex_config_types::ConfigLayerSource;
+use crate::CloudConfigBundleLoader;
+use crate::ProfileV2Name;
+use codex_app_server_protocol::ConfigLayer;
+use codex_app_server_protocol::ConfigLayerMetadata;
+use codex_app_server_protocol::ConfigLayerSource;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -20,6 +22,7 @@ use toml::Value as TomlValue;
 pub struct ConfigLoadOptions {
     pub loader_overrides: LoaderOverrides,
     pub strict_config: bool,
+    pub cloud_config_bundle: CloudConfigBundleLoader,
 }
 
 impl From<LoaderOverrides> for ConfigLoadOptions {
@@ -27,6 +30,7 @@ impl From<LoaderOverrides> for ConfigLoadOptions {
         Self {
             loader_overrides,
             strict_config: false,
+            cloud_config_bundle: CloudConfigBundleLoader::default(),
         }
     }
 }
@@ -130,10 +134,16 @@ impl From<UserConfigLayerSource> for ConfigLayerSource {
 pub struct ConfigLayerEntry {
     pub name: ConfigLayerSource,
     pub config: TomlValue,
-    pub raw_toml: Option<String>,
     pub version: String,
     pub disabled_reason: Option<String>,
+    raw_toml: Option<RawTomlLayer>,
     hooks_config_folder_override: Option<AbsolutePathBuf>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct RawTomlLayer {
+    contents: String,
+    base_dir: AbsolutePathBuf,
 }
 
 impl ConfigLayerEntry {
@@ -142,21 +152,29 @@ impl ConfigLayerEntry {
         Self {
             name,
             config,
-            raw_toml: None,
             version,
             disabled_reason: None,
+            raw_toml: None,
             hooks_config_folder_override: None,
         }
     }
 
-    pub fn new_with_raw_toml(name: ConfigLayerSource, config: TomlValue, raw_toml: String) -> Self {
+    pub fn new_with_raw_toml(
+        name: ConfigLayerSource,
+        config: TomlValue,
+        raw_toml: String,
+        raw_toml_base_dir: AbsolutePathBuf,
+    ) -> Self {
         let version = version_for_toml(&config);
         Self {
             name,
             config,
-            raw_toml: Some(raw_toml),
             version,
             disabled_reason: None,
+            raw_toml: Some(RawTomlLayer {
+                contents: raw_toml,
+                base_dir: raw_toml_base_dir,
+            }),
             hooks_config_folder_override: None,
         }
     }
@@ -170,9 +188,9 @@ impl ConfigLayerEntry {
         Self {
             name,
             config,
-            raw_toml: None,
             version,
             disabled_reason: Some(disabled_reason.into()),
+            raw_toml: None,
             hooks_config_folder_override: None,
         }
     }
@@ -182,7 +200,13 @@ impl ConfigLayerEntry {
     }
 
     pub fn raw_toml(&self) -> Option<&str> {
-        self.raw_toml.as_deref()
+        self.raw_toml
+            .as_ref()
+            .map(|raw_toml| raw_toml.contents.as_str())
+    }
+
+    pub fn raw_toml_base_dir(&self) -> Option<&AbsolutePathBuf> {
+        self.raw_toml.as_ref().map(|raw_toml| &raw_toml.base_dir)
     }
 
     pub(crate) fn with_hooks_config_folder_override(
@@ -214,6 +238,7 @@ impl ConfigLayerEntry {
         match &self.name {
             ConfigLayerSource::Mdm { .. } => None,
             ConfigLayerSource::System { file } => file.parent(),
+            ConfigLayerSource::EnterpriseManaged { .. } => None,
             ConfigLayerSource::User { file, .. } => file.parent(),
             ConfigLayerSource::Project { dot_codex_folder } => Some(dot_codex_folder.clone()),
             ConfigLayerSource::SessionFlags => None,
@@ -446,8 +471,8 @@ impl ConfigLayerStack {
 
     /// Returns the merged config-layer view.
     ///
-    /// This only merges ordinary config layers and does not apply requirements
-    /// such as cloud requirements.
+    /// This only merges ordinary config layers. Requirements are composed and
+    /// tracked separately.
     pub fn effective_config(&self) -> TomlValue {
         let mut merged = TomlValue::Table(toml::map::Map::new());
         for layer in self.get_layers(

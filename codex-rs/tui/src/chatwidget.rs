@@ -649,6 +649,7 @@ pub(crate) struct ChatWidget {
     // order.
     suppress_initial_user_message_submit: bool,
     input_queue: InputQueueState,
+    cancel_edit: CancelEditState,
     /// Main chat-surface bindings resolved from `tui.keymap.chat`.
     chat_keymap: ChatKeymap,
     /// Keybinding to show for popping the most-recently queued message back
@@ -771,6 +772,13 @@ pub(crate) enum InterruptedTurnNoticeMode {
     Suppress,
 }
 
+#[derive(Debug, Default)]
+struct CancelEditState {
+    prompt: Option<UserMessage>,
+    eligible: bool,
+    armed: bool,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ReplayKind {
     ResumeInitialMessages,
@@ -826,6 +834,55 @@ impl ThreadItemRenderSource {
             Self::Live => None,
             Self::Replay(replay_kind) => Some(replay_kind),
         }
+    }
+}
+
+fn exec_approval_request_from_params(
+    params: CommandExecutionRequestApprovalParams,
+    fallback_cwd: &AbsolutePathBuf,
+) -> ExecApprovalRequestEvent {
+    ExecApprovalRequestEvent {
+        call_id: params.item_id,
+        command: params
+            .command
+            .as_deref()
+            .map(split_command_string)
+            .unwrap_or_default(),
+        cwd: params.cwd.unwrap_or_else(|| fallback_cwd.clone()),
+        reason: params.reason,
+        network_approval_context: params.network_approval_context,
+        additional_permissions: params.additional_permissions,
+        turn_id: params.turn_id,
+        approval_id: params.approval_id,
+        proposed_execpolicy_amendment: params.proposed_execpolicy_amendment,
+        proposed_network_policy_amendments: params.proposed_network_policy_amendments,
+        available_decisions: params.available_decisions,
+    }
+}
+
+fn patch_approval_request_from_params(
+    params: FileChangeRequestApprovalParams,
+) -> ApplyPatchApprovalRequestEvent {
+    ApplyPatchApprovalRequestEvent {
+        call_id: params.item_id,
+        turn_id: params.turn_id,
+        changes: HashMap::new(),
+        reason: params.reason,
+        grant_root: params.grant_root,
+    }
+}
+
+fn request_permissions_from_params(
+    params: codex_app_server_protocol::PermissionsRequestApprovalParams,
+) -> RequestPermissionsEvent {
+    RequestPermissionsEvent {
+        turn_id: params.turn_id,
+        call_id: params.item_id,
+        environment_id: params.environment_id,
+        started_at_ms: params.started_at_ms,
+        reason: params.reason,
+        permissions: params.permissions.into(),
+        cwd: Some(params.cwd),
     }
 }
 
@@ -1151,6 +1208,9 @@ impl ChatWidget {
     }
 
     fn add_boxed_history(&mut self, cell: Box<dyn HistoryCell>) {
+        if self.turn_lifecycle.agent_turn_running && !cell.display_lines(u16::MAX).is_empty() {
+            self.record_visible_turn_activity();
+        }
         // Keep the placeholder session header as the active cell until real session info arrives,
         // so we can merge headers instead of committing a duplicate box to history.
         let keep_placeholder_header_active = !self.is_session_configured()
@@ -1790,7 +1850,12 @@ impl ChatWidget {
     }
 
     pub(crate) fn prepare_local_op_submission(&mut self, op: &AppCommand) {
-        if matches!(op, AppCommand::Interrupt) && self.turn_lifecycle.agent_turn_running {
+        if let AppCommand::Interrupt { behavior } = op
+            && self.turn_lifecycle.agent_turn_running
+        {
+            if *behavior == crate::app_command::InterruptBehavior::RestorePromptIfNoOutput {
+                self.arm_cancel_edit();
+            }
             if let Some(controller) = self.stream_controller.as_mut() {
                 controller.clear_queue();
             }

@@ -106,7 +106,6 @@ async fn inactive_thread_started_notification_initializes_replay_session() -> Re
     Ok(())
 }
 
-
 #[tokio::test]
 async fn inactive_thread_started_notification_preserves_primary_model_when_path_missing()
 -> Result<()> {
@@ -177,7 +176,6 @@ async fn inactive_thread_started_notification_preserves_primary_model_when_path_
     Ok(())
 }
 
-
 /// `thread/read` is metadata/replay hydration and does not return a fresh
 /// server-authored `PermissionProfile`, so it must not reuse the cached primary
 /// session profile after swapping in the read thread's cwd.
@@ -241,7 +239,6 @@ async fn thread_read_session_state_does_not_reuse_primary_permission_profile() {
          active widget permissions rather than reusing the cached primary session profile"
     );
 }
-
 
 #[tokio::test]
 async fn inactive_thread_settings_notification_updates_cached_collaboration_mode() {

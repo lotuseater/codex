@@ -8,6 +8,7 @@ use super::*;
 impl ChatWidget {
     pub(super) fn on_hook_started(&mut self, run: codex_app_server_protocol::HookRunSummary) {
         let run = history_cell::hook_run_summary_from_app_server(run);
+        self.record_visible_turn_activity();
         self.flush_answer_stream_with_separator();
         self.flush_completed_hook_output();
         match self.active_hook_cell.as_mut() {

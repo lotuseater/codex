@@ -23,7 +23,6 @@ use crate::tools::hook_names::HookToolName;
 use crate::tools::lifecycle::notify_tool_finish;
 use crate::tools::lifecycle::notify_tool_start;
 use crate::tools::tool_dispatch_trace::ToolDispatchTrace;
-use crate::tools::tool_search_entry::ToolSearchInfo;
 use crate::util::error_or_panic;
 use codex_extension_api::ToolCallOutcome;
 use codex_protocol::models::FunctionCallOutputPayload;
@@ -33,6 +32,7 @@ use codex_tool_execution_api::FunctionCallError;
 use codex_tool_execution_api::ToolName;
 use codex_tool_execution_api::ToolOutputPayload;
 use codex_tool_registry_api::ToolSpec;
+use codex_tools::ToolSearchInfo;
 use futures::future::BoxFuture;
 use serde_json::Value;
 use tracing::warn;
@@ -46,7 +46,7 @@ pub use codex_tool_registry_api::ToolExposure;
 ///
 /// Implementers provide the shared `ToolExecutor` behavior plus optional
 /// core-owned metadata for hooks, telemetry, tool search, and argument diffs.
-pub(crate) trait CoreToolRuntime: Send + Sync {
+pub(crate) trait CoreToolRuntime: ToolExecutor<ToolInvocation> {
     fn search_info(&self) -> Option<ToolSearchInfo> {
         None
     }
@@ -402,6 +402,10 @@ impl ToolExecutor<ToolInvocation> for ExposureOverride {
         self.exposure == ToolExposure::Direct && self.handler.supports_parallel_tool_calls()
     }
 
+    fn search_info(&self) -> Option<ToolSearchInfo> {
+        self.handler.search_info()
+    }
+
     async fn handle(
         &self,
         invocation: ToolInvocation,
@@ -411,10 +415,6 @@ impl ToolExecutor<ToolInvocation> for ExposureOverride {
 }
 
 impl CoreToolRuntime for ExposureOverride {
-    fn search_info(&self) -> Option<ToolSearchInfo> {
-        self.handler.search_info()
-    }
-
     fn matches_kind(&self, payload: &ToolPayload) -> bool {
         self.handler.matches_kind(payload)
     }

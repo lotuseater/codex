@@ -24,7 +24,6 @@ fn active_turn_not_steerable_turn_error_extracts_structured_server_error() {
     );
 }
 
-
 #[test]
 fn active_turn_steer_race_detects_missing_active_turn() {
     let error = TypedRequestError::Server {
@@ -42,7 +41,6 @@ fn active_turn_steer_race_detects_missing_active_turn() {
     );
     assert_eq!(active_turn_not_steerable_turn_error(&error), None);
 }
-
 
 #[test]
 fn active_turn_steer_race_extracts_actual_turn_id_from_mismatch() {
@@ -62,7 +60,6 @@ fn active_turn_steer_race_extracts_actual_turn_id_from_mismatch() {
         })
     );
 }
-
 
 #[tokio::test]
 async fn fresh_session_config_uses_current_service_tier() {
@@ -84,7 +81,6 @@ async fn fresh_session_config_uses_current_service_tier() {
         )
     );
 }
-
 
 #[tokio::test]
 async fn override_turn_context_sends_thread_settings_update() {
@@ -222,7 +218,6 @@ async fn override_turn_context_sends_thread_settings_update() {
     })
     .await;
 }
-
 
 #[tokio::test]
 async fn thread_setting_update_params_sync_model_and_default_reasoning() {

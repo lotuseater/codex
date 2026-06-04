@@ -54,7 +54,6 @@ async fn enqueue_primary_thread_session_replays_buffered_approval_after_attach()
     panic!("expected approval action to submit a thread-scoped op");
 }
 
-
 #[tokio::test]
 async fn resolved_buffered_approval_does_not_become_actionable_after_drain() -> Result<()> {
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
@@ -114,7 +113,6 @@ async fn resolved_buffered_approval_does_not_become_actionable_after_drain() -> 
 
     Ok(())
 }
-
 
 #[tokio::test]
 async fn enqueue_primary_thread_session_replays_turns_before_initial_prompt_submit() -> Result<()> {
@@ -200,7 +198,6 @@ async fn enqueue_primary_thread_session_replays_turns_before_initial_prompt_subm
     Ok(())
 }
 
-
 #[tokio::test]
 async fn reset_thread_event_state_aborts_listener_tasks() {
     struct NotifyOnDrop(Option<tokio::sync::oneshot::Sender<()>>);
@@ -236,7 +233,6 @@ async fn reset_thread_event_state_aborts_listener_tasks() {
         .expect("listener task drop notification should succeed");
 }
 
-
 #[tokio::test]
 async fn history_lookup_response_is_routed_to_requesting_thread() -> Result<()> {
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
@@ -264,7 +260,6 @@ async fn history_lookup_response_is_routed_to_requesting_thread() -> Result<()> 
 
     Ok(())
 }
-
 
 #[tokio::test]
 async fn enqueue_thread_event_does_not_block_when_channel_full() -> Result<()> {
@@ -304,7 +299,6 @@ async fn enqueue_thread_event_does_not_block_when_channel_full() -> Result<()> {
 
     Ok(())
 }
-
 
 #[tokio::test]
 async fn replay_thread_snapshot_replays_turn_history_in_order() {
@@ -386,7 +380,6 @@ async fn replay_thread_snapshot_replays_turn_history_in_order() {
     );
 }
 
-
 #[tokio::test]
 async fn replace_chat_widget_reseeds_collab_agent_metadata_for_replay() {
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
@@ -467,7 +460,6 @@ async fn replace_chat_widget_reseeds_collab_agent_metadata_for_replay() {
         "expected replayed wait item to keep agent name"
     );
 }
-
 
 #[tokio::test]
 async fn refreshed_snapshot_session_persists_resumed_turns() {

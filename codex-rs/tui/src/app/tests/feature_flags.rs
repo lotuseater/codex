@@ -102,7 +102,6 @@ async fn update_feature_flags_enabling_guardian_selects_auto_review() -> Result<
     Ok(())
 }
 
-
 #[tokio::test]
 async fn update_feature_flags_disabling_guardian_clears_review_policy_and_restores_default()
 -> Result<()> {
@@ -199,7 +198,6 @@ async fn update_feature_flags_disabling_guardian_clears_review_policy_and_restor
     Ok(())
 }
 
-
 #[tokio::test]
 async fn update_feature_flags_enabling_guardian_overrides_explicit_manual_review_policy()
 -> Result<()> {
@@ -271,7 +269,6 @@ async fn update_feature_flags_enabling_guardian_overrides_explicit_manual_review
     Ok(())
 }
 
-
 #[tokio::test]
 async fn update_feature_flags_disabling_guardian_clears_manual_review_policy_without_history()
 -> Result<()> {
@@ -334,7 +331,6 @@ async fn update_feature_flags_disabling_guardian_clears_manual_review_policy_wit
     app_server.shutdown().await?;
     Ok(())
 }
-
 
 #[tokio::test]
 async fn update_feature_flags_enabling_guardian_in_profile_sets_profile_auto_review_policy()
@@ -407,7 +403,6 @@ async fn update_feature_flags_enabling_guardian_in_profile_sets_profile_auto_rev
     );
     Ok(())
 }
-
 
 #[tokio::test]
 async fn update_feature_flags_disabling_guardian_in_profile_allows_inherited_user_reviewer()
@@ -497,7 +492,6 @@ guardian_approval = true
     );
     Ok(())
 }
-
 
 #[tokio::test]
 async fn update_feature_flags_disabling_guardian_in_profile_keeps_inherited_non_user_reviewer_enabled()

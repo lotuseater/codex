@@ -41,6 +41,11 @@ pub const BUILT_IN_PERMISSION_PROFILE_WORKSPACE: &str = ":workspace";
 /// Reserved identifier for the built-in full-access permission profile.
 pub const BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS: &str = ":danger-full-access";
 
+// fork-local: PermissionProfile and related runtime-permission types live in
+// the extracted `codex_permission_types` crate and are re-exported above via
+// the `pub use codex_permission_types::...` block. Upstream defines these
+// inline here; we intentionally drop the inline copy to avoid duplicate
+// definitions while preserving identical behavior through the crate.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ResponseInputItem {

@@ -20,6 +20,10 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use ts_rs::TS;
 
+// fork-local: ConfigLayerSource/ConfigLayerMetadata/ConfigLayer are owned by the
+// codex-config-types crate (fork config/dependency boundary refactor). Upstream
+// re-inlined these definitions here; we keep re-exporting the canonical types so
+// the extracted crate stays the single source of truth.
 pub use codex_config_types::ConfigLayer;
 pub use codex_config_types::ConfigLayerMetadata;
 pub use codex_config_types::ConfigLayerSource;
@@ -97,6 +101,7 @@ pub struct AppToolsConfig {
 pub struct AppConfig {
     #[serde(default = "default_enabled")]
     pub enabled: bool,
+    pub approvals_reviewer: Option<ApprovalsReviewer>,
     pub destructive_enabled: Option<bool>,
     pub open_world_enabled: Option<bool>,
     pub default_tools_approval_mode: Option<AppToolApproval>,

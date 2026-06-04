@@ -314,6 +314,7 @@ fn experimental_method_types() -> HashSet<String> {
     let mut type_names = HashSet::new();
     collect_experimental_type_names(EXPERIMENTAL_CLIENT_METHOD_PARAM_TYPES, &mut type_names);
     collect_experimental_type_names(EXPERIMENTAL_CLIENT_METHOD_RESPONSE_TYPES, &mut type_names);
+    collect_experimental_type_names(EXPERIMENTAL_CLIENT_METHOD_DEPENDENCY_TYPES, &mut type_names);
     type_names
 }
 

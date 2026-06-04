@@ -15,7 +15,6 @@ async fn active_non_primary_shutdown_target_returns_none_for_non_shutdown_event(
     Ok(())
 }
 
-
 #[tokio::test]
 async fn active_non_primary_shutdown_target_returns_none_for_primary_thread_shutdown() -> Result<()>
 {
@@ -31,7 +30,6 @@ async fn active_non_primary_shutdown_target_returns_none_for_primary_thread_shut
     Ok(())
 }
 
-
 #[tokio::test]
 async fn active_non_primary_shutdown_target_returns_ids_for_non_primary_shutdown() -> Result<()> {
     let mut app = make_test_app().await;
@@ -46,7 +44,6 @@ async fn active_non_primary_shutdown_target_returns_ids_for_non_primary_shutdown
     );
     Ok(())
 }
-
 
 #[tokio::test]
 async fn active_non_primary_shutdown_target_returns_none_when_shutdown_exit_is_pending()
@@ -65,7 +62,6 @@ async fn active_non_primary_shutdown_target_returns_none_when_shutdown_exit_is_p
     Ok(())
 }
 
-
 #[tokio::test]
 async fn active_non_primary_shutdown_target_still_switches_for_other_pending_exit_thread()
 -> Result<()> {
@@ -82,7 +78,6 @@ async fn active_non_primary_shutdown_target_still_switches_for_other_pending_exi
     );
     Ok(())
 }
-
 
 #[tokio::test]
 async fn new_session_requests_shutdown_for_previous_conversation() {
@@ -133,7 +128,6 @@ async fn new_session_requests_shutdown_for_previous_conversation() {
     .await;
 }
 
-
 #[tokio::test]
 async fn shutdown_first_exit_returns_immediate_exit_when_shutdown_submit_fails() {
     let mut app = make_test_app().await;
@@ -153,7 +147,6 @@ async fn shutdown_first_exit_returns_immediate_exit_when_shutdown_submit_fails()
         AppRunControl::Exit(ExitReason::UserRequested)
     ));
 }
-
 
 #[tokio::test]
 async fn shutdown_first_exit_uses_app_server_shutdown_without_submitting_op() {
@@ -178,7 +171,6 @@ async fn shutdown_first_exit_uses_app_server_shutdown_without_submitting_op() {
         "shutdown should not submit Op::Shutdown"
     );
 }
-
 
 #[tokio::test]
 async fn interrupt_without_active_turn_is_treated_as_handled() {

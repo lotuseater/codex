@@ -67,7 +67,11 @@ pub(super) fn hook_run_summary(
     }
 }
 
-pub(super) fn hook_live_and_history_snapshot(chat: &ChatWidget, phase: &str, history: &str) -> String {
+pub(super) fn hook_live_and_history_snapshot(
+    chat: &ChatWidget,
+    phase: &str,
+    history: &str,
+) -> String {
     let history = if history.is_empty() {
         "<empty>"
     } else {

@@ -529,7 +529,6 @@ mod tests {
                 model_provider: "test-provider".to_string(),
                 memory_mode: ThreadMemoryMode::Enabled,
             },
-            event_persistence_mode: ThreadEventPersistenceMode::Limited,
         }
     }
 

@@ -110,27 +110,26 @@ macro_rules! assert_app_snapshot {
     };
 }
 
-mod misc;
-mod replay_session;
-mod replay_queue;
-mod token_usage;
 mod agent_picker;
-mod feature_flags;
-mod inactive_threads;
-mod inactive_thread_session;
-mod memory_and_permissions;
-mod side_threads;
-mod side_snapshot;
-mod shutdown;
-mod clear_ui;
-mod resize_reflow;
 mod backtrack;
+mod clear_ui;
+mod feature_flags;
+mod inactive_thread_session;
+mod inactive_threads;
+mod memory_and_permissions;
+mod misc;
+mod replay_queue;
+mod replay_session;
+mod resize_reflow;
+mod shutdown;
+mod side_snapshot;
+mod side_threads;
 mod thread_settings;
+mod token_usage;
 
 fn test_absolute_path(path: &str) -> AbsolutePathBuf {
     AbsolutePathBuf::try_from(PathBuf::from(path)).expect("absolute test path")
 }
-
 
 async fn next_thread_settings_updated(
     app_server: &mut AppServerSession,
@@ -2558,6 +2557,7 @@ async fn inactive_thread_permissions_approval_preserves_file_system_permissions(
             thread_id: thread_id.to_string(),
             turn_id: "turn-approval".to_string(),
             item_id: "call-approval".to_string(),
+            environment_id: Some("remote".to_string()),
             started_at_ms: 0,
             cwd: test_absolute_path("/tmp"),
             reason: Some("Need access to .git".to_string()),
@@ -2576,7 +2576,9 @@ async fn inactive_thread_permissions_approval_preserves_file_system_permissions(
     };
 
     let Some(ThreadInteractiveRequest::Approval(ApprovalRequest::Permissions {
-        permissions, ..
+        environment_id,
+        permissions,
+        ..
     })) = app
         .interactive_request_for_thread_request(thread_id, &request)
         .await
@@ -2584,6 +2586,7 @@ async fn inactive_thread_permissions_approval_preserves_file_system_permissions(
         panic!("expected permissions approval request");
     };
 
+    assert_eq!(environment_id.as_deref(), Some("remote"));
     assert_eq!(
         permissions,
         RequestPermissionProfile {
@@ -2786,6 +2789,7 @@ async fn inactive_thread_started_notification_initializes_replay_session() -> Re
                 id: agent_thread_id.to_string(),
                 session_id: agent_thread_id.to_string(),
                 forked_from_id: None,
+                parent_thread_id: None,
                 preview: "agent thread".to_string(),
                 ephemeral: false,
                 model_provider: "agent-provider".to_string(),
@@ -2875,6 +2879,7 @@ async fn inactive_thread_started_notification_preserves_primary_model_when_path_
                 id: agent_thread_id.to_string(),
                 session_id: agent_thread_id.to_string(),
                 forked_from_id: None,
+                parent_thread_id: None,
                 preview: "agent thread".to_string(),
                 ephemeral: false,
                 model_provider: "agent-provider".to_string(),
@@ -2933,6 +2938,7 @@ async fn thread_read_session_state_does_not_reuse_primary_permission_profile() {
         id: read_thread_id.to_string(),
         session_id: read_thread_id.to_string(),
         forked_from_id: None,
+        parent_thread_id: None,
         preview: "read thread".to_string(),
         ephemeral: false,
         model_provider: "read-provider".to_string(),
@@ -3831,7 +3837,6 @@ async fn make_test_app() -> App {
     }
 }
 
-
 async fn make_test_app_with_channels() -> (
     App,
     tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
@@ -3903,7 +3908,6 @@ async fn make_test_app_with_channels() -> (
     )
 }
 
-
 fn test_thread_session(thread_id: ThreadId, cwd: PathBuf) -> ThreadSessionState {
     ThreadSessionState {
         thread_id,
@@ -3929,14 +3933,12 @@ fn test_thread_session(thread_id: ThreadId, cwd: PathBuf) -> ThreadSessionState 
     }
 }
 
-
 fn enable_terminal_resize_reflow(app: &mut App) {
     app.config
         .features
         .set_enabled(Feature::TerminalResizeReflow, /*enabled*/ true)
         .expect("feature should be configurable");
 }
-
 
 fn plain_line_cell(text: impl Into<String>) -> Arc<dyn HistoryCell> {
     Arc::new(PlainHistoryCell::new(vec![Line::from(text.into())])) as Arc<dyn HistoryCell>
@@ -4139,7 +4141,6 @@ fn test_turn(turn_id: &str, status: TurnStatus, items: Vec<ThreadItem>) -> Turn 
     }
 }
 
-
 fn turn_started_notification(thread_id: ThreadId, turn_id: &str) -> ServerNotification {
     ServerNotification::TurnStarted(TurnStartedNotification {
         thread_id: thread_id.to_string(),
@@ -4149,7 +4150,6 @@ fn turn_started_notification(thread_id: ThreadId, turn_id: &str) -> ServerNotifi
         },
     })
 }
-
 
 fn turn_completed_notification(
     thread_id: ThreadId,
@@ -4166,13 +4166,11 @@ fn turn_completed_notification(
     })
 }
 
-
 fn thread_closed_notification(thread_id: ThreadId) -> ServerNotification {
     ServerNotification::ThreadClosed(ThreadClosedNotification {
         thread_id: thread_id.to_string(),
     })
 }
-
 
 fn token_usage_notification(
     thread_id: ThreadId,
@@ -4187,7 +4185,6 @@ fn token_usage_notification(
         model_context_window,
     )
 }
-
 
 fn token_usage_notification_with_totals(
     thread_id: ThreadId,
@@ -4219,7 +4216,6 @@ fn token_usage_notification_with_totals(
     })
 }
 
-
 fn agent_message_delta_notification(
     thread_id: ThreadId,
     turn_id: &str,
@@ -4233,7 +4229,6 @@ fn agent_message_delta_notification(
         delta: delta.to_string(),
     })
 }
-
 
 fn exec_approval_request(
     thread_id: ThreadId,
@@ -4262,7 +4257,6 @@ fn exec_approval_request(
     }
 }
 
-
 fn request_user_input_request(thread_id: ThreadId, turn_id: &str, item_id: &str) -> ServerRequest {
     ServerRequest::ToolRequestUserInput {
         request_id: AppServerRequestId::Integer(2),
@@ -4274,7 +4268,6 @@ fn request_user_input_request(thread_id: ThreadId, turn_id: &str, item_id: &str)
         },
     }
 }
-
 
 #[tokio::test]
 async fn feedback_submission_without_thread_emits_error_history_cell() {
@@ -4376,7 +4369,6 @@ fn next_user_turn_op(op_rx: &mut tokio::sync::mpsc::UnboundedReceiver<Op>) -> Op
     panic!("expected UserTurn op, saw: {seen:?}");
 }
 
-
 fn lines_to_single_string(lines: &[Line<'_>]) -> String {
     lines
         .iter()
@@ -4389,7 +4381,6 @@ fn lines_to_single_string(lines: &[Line<'_>]) -> String {
         .collect::<Vec<_>>()
         .join("\n")
 }
-
 
 fn test_session_telemetry(config: &Config, model: &str) -> SessionTelemetry {
     let model_info = crate::legacy_core::test_support::construct_model_info_offline(model, config);
@@ -4406,7 +4397,6 @@ fn test_session_telemetry(config: &Config, model: &str) -> SessionTelemetry {
         crate::test_support::session_source_cli(),
     )
 }
-
 
 #[test]
 fn active_turn_not_steerable_turn_error_extracts_structured_server_error() {
@@ -4693,6 +4683,61 @@ async fn backtrack_remote_image_only_selection_clears_existing_composer_draft() 
         }
     }
     assert_eq!(rollback_turns, Some(1));
+}
+
+#[tokio::test]
+async fn cancelled_turn_edit_restores_prompt_and_rolls_back_latest_turn() {
+    let (mut app, _app_event_rx, mut op_rx) = make_test_app_with_channels().await;
+    app.transcript_cells = vec![Arc::new(UserHistoryCell {
+        message: "original".to_string(),
+        text_elements: Vec::new(),
+        local_image_paths: Vec::new(),
+        remote_image_urls: Vec::new(),
+    }) as Arc<dyn HistoryCell>];
+    let prompt = crate::chatwidget::UserMessage {
+        text: "edit me".to_string(),
+        local_images: Vec::new(),
+        remote_image_urls: vec!["https://example.com/edit.png".to_string()],
+        text_elements: Vec::new(),
+        mention_bindings: Vec::new(),
+    };
+
+    app.apply_cancelled_turn_edit(prompt);
+
+    assert_eq!(app.chat_widget.composer_text_with_pending(), "edit me");
+    assert_snapshot!(
+        "cancelled_turn_edit_restores_composer",
+        app.chat_widget.composer_text_with_pending()
+    );
+    assert_eq!(
+        app.chat_widget.remote_image_urls(),
+        vec!["https://example.com/edit.png".to_string()]
+    );
+    assert_matches!(op_rx.try_recv(), Ok(Op::ThreadRollback { num_turns: 1 }));
+}
+
+#[tokio::test]
+async fn first_cancelled_turn_edit_restores_prompt_without_local_history() {
+    let (mut app, _app_event_rx, mut op_rx) = make_test_app_with_channels().await;
+    let prompt = crate::chatwidget::UserMessage {
+        text: "edit first prompt".to_string(),
+        local_images: Vec::new(),
+        remote_image_urls: vec!["https://example.com/edit.png".to_string()],
+        text_elements: Vec::new(),
+        mention_bindings: Vec::new(),
+    };
+
+    app.apply_cancelled_turn_edit(prompt);
+
+    assert_eq!(
+        app.chat_widget.composer_text_with_pending(),
+        "edit first prompt"
+    );
+    assert_eq!(
+        app.chat_widget.remote_image_urls(),
+        vec!["https://example.com/edit.png".to_string()]
+    );
+    assert_matches!(op_rx.try_recv(), Ok(Op::ThreadRollback { num_turns: 1 }));
 }
 
 #[tokio::test]
@@ -5072,6 +5117,7 @@ async fn thread_rollback_response_discards_queued_active_thread_events() {
                 id: thread_id.to_string(),
                 session_id: thread_id.to_string(),
                 forked_from_id: None,
+                parent_thread_id: None,
                 preview: String::new(),
                 ephemeral: false,
                 model_provider: "openai".to_string(),

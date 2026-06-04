@@ -145,7 +145,6 @@ async fn backtrack_selection_with_duplicate_history_targets_unique_turn() {
     assert_eq!(rollback_turns, Some(1));
 }
 
-
 #[tokio::test]
 async fn backtrack_remote_image_only_selection_clears_existing_composer_draft() {
     let (mut app, _app_event_rx, mut op_rx) = make_test_app_with_channels().await;
@@ -179,7 +178,6 @@ async fn backtrack_remote_image_only_selection_clears_existing_composer_draft() 
     }
     assert_eq!(rollback_turns, Some(1));
 }
-
 
 #[tokio::test]
 async fn backtrack_resubmit_preserves_data_image_urls_in_user_turn() {
@@ -249,7 +247,6 @@ async fn backtrack_resubmit_preserves_data_image_urls_in_user_turn() {
     }));
 }
 
-
 #[tokio::test]
 async fn queued_rollback_syncs_overlay_and_clears_deferred_history() {
     let mut app = make_test_app().await;
@@ -306,7 +303,6 @@ async fn queued_rollback_syncs_overlay_and_clears_deferred_history() {
     assert_eq!(overlay_cell_count, app.transcript_cells.len());
 }
 
-
 #[tokio::test]
 async fn thread_rollback_response_discards_queued_active_thread_events() {
     let mut app = make_test_app().await;
@@ -360,7 +356,6 @@ async fn thread_rollback_response_discards_queued_active_thread_events() {
         .expect("active receiver should remain attached");
     assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
 }
-
 
 #[tokio::test]
 async fn backtrack_esc_does_not_steal_empty_vim_insert_escape() {

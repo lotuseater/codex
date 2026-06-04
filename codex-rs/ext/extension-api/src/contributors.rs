@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use codex_context_fragments::ContextualUserFragment;
+
 use crate::ExtensionData;
 
 mod approval_review;
@@ -8,6 +10,7 @@ mod thread_lifecycle;
 mod token_usage;
 mod tool_lifecycle;
 mod tools;
+mod turn_input;
 mod turn_item;
 mod turn_lifecycle;
 
@@ -29,6 +32,8 @@ pub use tool_lifecycle::ToolStartInput;
 pub use tools::ExtensionToolExecutor;
 pub use tools::ExtensionToolFuture;
 pub use tools::ExtensionToolOutput;
+pub use turn_input::TurnInputContext;
+pub use turn_input::TurnInputEnvironment;
 pub use turn_item::TurnItemContributionFuture;
 pub use turn_item::TurnItemContributor;
 pub use turn_lifecycle::TurnAbortInput;
@@ -90,6 +95,25 @@ pub trait TurnLifecycleContributor: Send + Sync {
 
     /// Called when the host observes an error for a running turn.
     async fn on_turn_error(&self, _input: TurnErrorInput<'_>) {}
+}
+
+/// WARNING: DO NOT USE YET
+/// Extension contribution that can add turn-local model input.
+///
+/// Implementations should resolve only the model-visible input they own and
+/// must preserve authority boundaries for external resources. Expensive or
+/// host-specific dependencies belong on the extension value installed by the
+/// host, not in this input.
+#[async_trait::async_trait]
+pub trait TurnInputContributor: Send + Sync {
+    /// Returns additional contextual fragments for one submitted turn.
+    async fn contribute(
+        &self,
+        input: TurnInputContext,
+        session_store: &ExtensionData,
+        thread_store: &ExtensionData,
+        turn_store: &ExtensionData,
+    ) -> Vec<Box<dyn ContextualUserFragment + Send>>;
 }
 
 /// Contributor for host-owned configuration changes.

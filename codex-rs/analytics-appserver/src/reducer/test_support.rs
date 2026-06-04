@@ -50,8 +50,8 @@ use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
 use codex_app_server_protocol::ServerResponse;
-use codex_protocol::request_permissions::RequestPermissionsResponse;
 use codex_protocol::protocol::SkillScope;
+use codex_protocol::request_permissions::RequestPermissionsResponse;
 
 /// The concrete reducer the test suite constructs via `AnalyticsReducer::default()`.
 pub(crate) type AnalyticsReducer = AppServerReducer;
@@ -377,20 +377,22 @@ async fn ingest_skill_invoked_for_test(
             invocation.skill_path.as_path(),
             invocation.skill_name.as_str(),
         );
-        out.push(TrackEventRequest::SkillInvocation(SkillInvocationEventRequest {
-            event_type: "skill_invocation",
-            skill_id,
-            skill_name: invocation.skill_name.clone(),
-            event_params: SkillInvocationEventParams {
-                thread_id: Some(tracking.thread_id.clone()),
-                turn_id: Some(tracking.turn_id.clone()),
-                invoke_type: Some(map_invocation_type(invocation.invocation_type)),
-                model_slug: Some(tracking.model_slug.clone()),
-                product_client_id: Some(originator().value),
-                repo_url,
-                skill_scope: Some(skill_scope.to_string()),
-                plugin_id: invocation.plugin_id,
+        out.push(TrackEventRequest::SkillInvocation(
+            SkillInvocationEventRequest {
+                event_type: "skill_invocation",
+                skill_id,
+                skill_name: invocation.skill_name.clone(),
+                event_params: SkillInvocationEventParams {
+                    thread_id: Some(tracking.thread_id.clone()),
+                    turn_id: Some(tracking.turn_id.clone()),
+                    invoke_type: Some(map_invocation_type(invocation.invocation_type)),
+                    model_slug: Some(tracking.model_slug.clone()),
+                    product_client_id: Some(originator().value),
+                    repo_url,
+                    skill_scope: Some(skill_scope.to_string()),
+                    plugin_id: invocation.plugin_id,
+                },
             },
-        }));
+        ));
     }
 }

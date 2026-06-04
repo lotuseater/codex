@@ -9,6 +9,7 @@ use codex_protocol::models::PermissionProfile;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::GitInfo;
+use codex_protocol::protocol::MultiAgentVersion;
 use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::ThreadMemoryMode as MemoryMode;
@@ -82,6 +83,8 @@ pub struct CreateThreadParams {
     pub thread_id: ThreadId,
     /// Source thread id when this thread is created as a fork.
     pub forked_from_id: Option<ThreadId>,
+    /// The ID of the parent thread. This will only be set if this thread is a subagent.
+    pub parent_thread_id: Option<ThreadId>,
     /// Runtime source for the thread.
     pub source: SessionSource,
     /// Optional analytics source classification for this thread.
@@ -90,10 +93,10 @@ pub struct CreateThreadParams {
     pub base_instructions: BaseInstructions,
     /// Dynamic tools available to the thread at startup.
     pub dynamic_tools: Vec<DynamicToolSpec>,
+    /// Multi-agent runtime selected when the thread was created.
+    pub multi_agent_version: Option<MultiAgentVersion>,
     /// Metadata captured for the newly created thread.
     pub metadata: ThreadPersistenceMetadata,
-    /// Whether persistence should include the extended event surface.
-    pub event_persistence_mode: ThreadEventPersistenceMode,
 }
 
 /// Parameters required to reopen persistence for an existing thread.
@@ -109,8 +112,6 @@ pub struct ResumeThreadParams {
     pub include_archived: bool,
     /// Metadata for future writes appended to the resumed live thread.
     pub metadata: ThreadPersistenceMetadata,
-    /// Whether persistence should include the extended event surface.
-    pub event_persistence_mode: ThreadEventPersistenceMode,
 }
 
 /// Parameters for appending rollout items to a live thread.
@@ -379,6 +380,8 @@ pub struct StoredThread {
     pub rollout_path: Option<PathBuf>,
     /// Source thread id when this thread was forked from another thread.
     pub forked_from_id: Option<ThreadId>,
+    /// The ID of the parent thread. This will only be set if this thread is a subagent.
+    pub parent_thread_id: Option<ThreadId>,
     /// Best available user-facing preview, usually the first user message.
     pub preview: String,
     /// Optional user-facing thread name/title.

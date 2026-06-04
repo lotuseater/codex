@@ -1,11 +1,11 @@
 mod analytics_server;
 mod auth_fixtures;
 mod config;
-mod mcp_process;
 mod mock_model_server;
 mod models_cache;
 pub mod responses;
 mod rollout;
+mod test_app_server;
 
 pub use analytics_server::start_analytics_events_server;
 pub use auth_fixtures::ChatGptAuthFixture;
@@ -15,14 +15,10 @@ pub use auth_fixtures::write_chatgpt_auth;
 use codex_app_server_protocol::JSONRPCResponse;
 pub use config::write_mock_responses_config_toml;
 pub use config::write_mock_responses_config_toml_with_chatgpt_base_url;
-pub use codex_test_support_lightweight::PathBufExt;
-pub use codex_test_support_lightweight::fs_wait;
-pub use codex_test_support_lightweight::skip_if_windows;
-pub use codex_test_support_lightweight::test_absolute_path;
-pub use codex_test_support_lightweight::test_path_buf_with_windows;
-pub use codex_test_support_lightweight::test_tmp_path;
-pub use codex_test_support_lightweight::test_tmp_path_buf;
-pub use codex_test_support_responses::streaming_sse;
+// fork-local: fork reorganizes shared test support into dedicated crates
+// (lightweight / responses / core-runtime). Upstream's mcp_process module was
+// renamed to test_app_server (see git rename), so the legacy mcp_process exports
+// are dropped; MANAGED_CONFIG_PATH_ARG is re-exported from test_app_server below.
 pub use codex_core_test_runtime::assert_regex_match;
 pub use codex_core_test_runtime::fetch_dotslash_file;
 pub use codex_core_test_runtime::format_with_current_shell;
@@ -31,10 +27,14 @@ pub use codex_core_test_runtime::format_with_current_shell_display_non_login;
 pub use codex_core_test_runtime::format_with_current_shell_non_login;
 pub use codex_core_test_runtime::load_default_config_for_test;
 pub use codex_core_test_runtime::skip_if_no_network;
-pub use mcp_process::DEFAULT_CLIENT_NAME;
-pub use mcp_process::DISABLE_PLUGIN_STARTUP_TASKS_ARG;
-pub use mcp_process::MANAGED_CONFIG_PATH_ARG;
-pub use mcp_process::McpProcess;
+pub use codex_test_support_lightweight::PathBufExt;
+pub use codex_test_support_lightweight::fs_wait;
+pub use codex_test_support_lightweight::skip_if_windows;
+pub use codex_test_support_lightweight::test_absolute_path;
+pub use codex_test_support_lightweight::test_path_buf_with_windows;
+pub use codex_test_support_lightweight::test_tmp_path;
+pub use codex_test_support_lightweight::test_tmp_path_buf;
+pub use codex_test_support_responses::streaming_sse;
 pub use mock_model_server::create_mock_responses_server_repeating_assistant;
 pub use mock_model_server::create_mock_responses_server_sequence;
 pub use mock_model_server::create_mock_responses_server_sequence_unchecked;
@@ -46,12 +46,19 @@ pub use responses::create_final_assistant_message_sse_response;
 pub use responses::create_request_permissions_sse_response;
 pub use responses::create_request_user_input_sse_response;
 pub use responses::create_shell_command_sse_response;
+pub use rollout::create_fake_parented_rollout_with_source;
 pub use rollout::create_fake_rollout;
 pub use rollout::create_fake_rollout_with_source;
 pub use rollout::create_fake_rollout_with_text_elements;
 pub use rollout::create_fake_rollout_with_token_usage;
 pub use rollout::rollout_path;
 use serde::de::DeserializeOwned;
+pub use test_app_server::DEFAULT_CLIENT_NAME;
+pub use test_app_server::DISABLE_PLUGIN_STARTUP_TASKS_ARG;
+// fork-local: preserved from the renamed mcp_process module so callers that used
+// the legacy MANAGED_CONFIG_PATH_ARG re-export keep working.
+pub use test_app_server::MANAGED_CONFIG_PATH_ARG;
+pub use test_app_server::TestAppServer;
 
 pub fn to_response<T: DeserializeOwned>(response: JSONRPCResponse) -> anyhow::Result<T> {
     let value = serde_json::to_value(response.result)?;

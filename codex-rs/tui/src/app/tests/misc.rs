@@ -22,7 +22,6 @@ async fn handle_mcp_inventory_result_clears_committed_loading_cell() {
     assert_eq!(app.transcript_cells.len(), 0);
 }
 
-
 #[test]
 fn bypass_hook_trust_startup_warning_snapshot() {
     let rendered = lines_to_single_string(
@@ -57,7 +56,6 @@ async fn feedback_submission_without_thread_emits_error_history_cell() {
         "■ Failed to upload feedback: boom"
     );
 }
-
 
 #[tokio::test]
 async fn feedback_submission_for_inactive_thread_replays_into_origin_thread() {
@@ -125,7 +123,6 @@ async fn feedback_submission_for_inactive_thread_replays_into_origin_thread() {
             && cell.contains("uploaded-thread")
     }));
 }
-
 
 #[tokio::test]
 async fn auto_loop_after_self_review_submits_plan_mode_continuation() {

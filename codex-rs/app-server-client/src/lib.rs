@@ -49,7 +49,7 @@ use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
 use codex_app_server_protocol::SessionSource;
 use codex_arg0::Arg0DispatchPaths;
-use codex_config::CloudRequirementsLoader;
+use codex_config::CloudConfigBundleLoader;
 use codex_config::LoaderOverrides;
 use codex_config::NoopThreadConfigLoader;
 use codex_config::ThreadConfigLoader;
@@ -545,7 +545,7 @@ mod tests {
             cli_overrides: Vec::new(),
             loader_overrides: LoaderOverrides::default(),
             strict_config: false,
-            cloud_requirements: CloudRequirementsLoader::default(),
+            cloud_config_bundle: CloudConfigBundleLoader::default(),
             feedback: CodexFeedback::new(),
             log_db: None,
             state_db: Some(state_db),

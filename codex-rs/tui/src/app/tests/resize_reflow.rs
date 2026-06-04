@@ -27,7 +27,6 @@ async fn capped_resize_reflow_renders_recent_suffix_only() {
     );
 }
 
-
 #[tokio::test]
 async fn uncapped_resize_reflow_renders_all_cells_when_row_cap_absent() {
     let (mut app, _rx, _op_rx) = make_test_app_with_channels().await;
@@ -42,7 +41,6 @@ async fn uncapped_resize_reflow_renders_all_cells_when_row_cap_absent() {
     assert_eq!(rendered_line_text(&rendered.lines[0]), "cell 0");
     assert_eq!(rendered_line_text(&rendered.lines[38]), "cell 19");
 }
-
 
 #[tokio::test]
 async fn resize_reflow_wraps_transcript_early_when_pet_is_enabled() {
@@ -70,7 +68,6 @@ async fn resize_reflow_wraps_transcript_early_when_pet_is_enabled() {
     );
 }
 
-
 #[tokio::test]
 async fn uncapped_resize_reflow_renders_all_cells_under_row_limit() {
     let (mut app, _rx, _op_rx) = make_test_app_with_channels().await;
@@ -96,7 +93,6 @@ async fn uncapped_resize_reflow_renders_all_cells_under_row_limit() {
         ]
     );
 }
-
 
 #[tokio::test]
 async fn initial_replay_buffer_keeps_recent_rows_when_row_cap_present() {
@@ -133,7 +129,6 @@ async fn initial_replay_buffer_keeps_recent_rows_when_row_cap_present() {
     );
 }
 
-
 #[tokio::test]
 async fn thread_switch_replay_buffer_uses_transcript_tail_mode_when_row_cap_present() {
     let (mut app, _rx, _op_rx) = make_test_app_with_channels().await;
@@ -150,7 +145,6 @@ async fn thread_switch_replay_buffer_uses_transcript_tail_mode_when_row_cap_pres
     assert!(buffer.retained_lines.is_empty());
 }
 
-
 #[tokio::test]
 async fn thread_switch_replay_buffer_is_disabled_without_row_cap() {
     let (mut app, _rx, _op_rx) = make_test_app_with_channels().await;
@@ -161,7 +155,6 @@ async fn thread_switch_replay_buffer_is_disabled_without_row_cap() {
 
     assert!(app.initial_history_replay_buffer.is_none());
 }
-
 
 #[tokio::test]
 async fn height_shrink_schedules_resize_reflow() {

@@ -59,7 +59,6 @@ async fn inactive_subagent_activity_renders_indented_in_primary_view() -> Result
     Ok(())
 }
 
-
 #[tokio::test]
 async fn refresh_pending_thread_approvals_only_lists_inactive_threads() {
     let mut app = make_test_app().await;
@@ -102,7 +101,6 @@ async fn refresh_pending_thread_approvals_only_lists_inactive_threads() {
     app.refresh_pending_thread_approvals().await;
     assert!(app.chat_widget.pending_thread_approvals().is_empty());
 }
-
 
 #[tokio::test]
 async fn inactive_thread_approval_bubbles_into_active_view() -> Result<()> {
@@ -155,7 +153,6 @@ async fn inactive_thread_approval_bubbles_into_active_view() -> Result<()> {
 
     Ok(())
 }
-
 
 #[tokio::test]
 async fn inactive_thread_exec_approval_preserves_context() {
@@ -239,7 +236,6 @@ async fn inactive_thread_exec_approval_preserves_context() {
     );
 }
 
-
 #[tokio::test]
 async fn inactive_thread_exec_approval_splits_shell_wrapped_command() {
     let app = make_test_app().await;
@@ -273,7 +269,6 @@ async fn inactive_thread_exec_approval_splits_shell_wrapped_command() {
         ]
     );
 }
-
 
 #[tokio::test]
 async fn inactive_thread_file_change_approval_recovers_buffered_changes() {
@@ -346,7 +341,6 @@ async fn inactive_thread_file_change_approval_recovers_buffered_changes() {
     assert!(rendered.contains("1 +hello"));
 }
 
-
 #[tokio::test]
 async fn inactive_thread_permissions_approval_preserves_file_system_permissions() {
     let app = make_test_app().await;
@@ -397,7 +391,6 @@ async fn inactive_thread_permissions_approval_preserves_file_system_permissions(
     );
 }
 
-
 #[tokio::test]
 async fn inactive_thread_url_elicitation_routes_to_app_link() {
     let app = make_test_app().await;
@@ -437,7 +430,6 @@ async fn inactive_thread_url_elicitation_routes_to_app_link() {
     );
 }
 
-
 #[tokio::test]
 async fn inactive_thread_invalid_url_elicitation_is_declined() {
     let (app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
@@ -476,7 +468,6 @@ async fn inactive_thread_invalid_url_elicitation_is_declined() {
         }) if op_thread_id == thread_id && server_name == "payments"
     );
 }
-
 
 #[tokio::test]
 async fn inactive_thread_approval_badge_clears_after_turn_completion_notification() -> Result<()> {
@@ -538,4 +529,3 @@ async fn inactive_thread_approval_badge_clears_after_turn_completion_notificatio
 
     Ok(())
 }
-

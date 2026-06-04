@@ -1,5 +1,5 @@
-use super::common::*;
 use super::super::*;
+use super::common::*;
 use crate::bottom_pane::goal_status_indicator_line;
 use pretty_assertions::assert_eq;
 

@@ -2342,7 +2342,7 @@ mod tests {
 
         while let Ok(ev) = rx.try_recv() {
             assert!(
-                !matches!(ev, AppEvent::CodexOp(Op::Interrupt)),
+                !matches!(ev, AppEvent::CodexOp(Op::Interrupt { .. })),
                 "expected Esc to not send Op::Interrupt when dismissing skill popup"
             );
         }
@@ -2380,7 +2380,7 @@ mod tests {
 
         while let Ok(ev) = rx.try_recv() {
             assert!(
-                !matches!(ev, AppEvent::CodexOp(Op::Interrupt)),
+                !matches!(ev, AppEvent::CodexOp(Op::Interrupt { .. })),
                 "expected Esc to not send Op::Interrupt while command popup is active"
             );
         }
@@ -2416,7 +2416,7 @@ mod tests {
 
         while let Ok(ev) = rx.try_recv() {
             assert!(
-                !matches!(ev, AppEvent::CodexOp(Op::Interrupt)),
+                !matches!(ev, AppEvent::CodexOp(Op::Interrupt { .. })),
                 "expected Esc to not send Op::Interrupt while typing `/agent`"
             );
         }
@@ -2461,7 +2461,7 @@ mod tests {
 
         while let Ok(ev) = rx.try_recv() {
             assert!(
-                !matches!(ev, AppEvent::CodexOp(Op::Interrupt)),
+                !matches!(ev, AppEvent::CodexOp(Op::Interrupt { .. })),
                 "expected Esc release after dismissing agent picker to not interrupt"
             );
         }
@@ -2491,7 +2491,7 @@ mod tests {
         pane.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
         assert!(
-            matches!(rx.try_recv(), Ok(AppEvent::CodexOp(Op::Interrupt))),
+            matches!(rx.try_recv(), Ok(AppEvent::CodexOp(Op::Interrupt { .. }))),
             "expected Esc to send Op::Interrupt while a task is running"
         );
     }
@@ -2515,7 +2515,7 @@ mod tests {
 
         pane.handle_key_event(KeyEvent::new(KeyCode::F(12), KeyModifiers::NONE));
         assert!(
-            matches!(rx.try_recv(), Ok(AppEvent::CodexOp(Op::Interrupt))),
+            matches!(rx.try_recv(), Ok(AppEvent::CodexOp(Op::Interrupt { .. }))),
             "expected configured key to interrupt while `/agent` is being edited"
         );
     }

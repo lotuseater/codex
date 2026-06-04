@@ -58,7 +58,6 @@ async fn side_defers_parent_approval_overlay_until_parent_replay() -> Result<()>
     Ok(())
 }
 
-
 #[tokio::test]
 async fn replay_snapshot_with_pending_request_suppresses_replay_notices() {
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
@@ -105,7 +104,6 @@ async fn replay_snapshot_with_pending_request_suppresses_replay_notices() {
         "expected pending approval replay to suppress session notices, got {replayed_history:?}"
     );
 }
-
 
 #[tokio::test]
 async fn side_defers_subagent_approval_overlay_until_side_exits() -> Result<()> {
@@ -168,7 +166,6 @@ async fn side_defers_subagent_approval_overlay_until_side_exits() -> Result<()> 
     Ok(())
 }
 
-
 #[tokio::test]
 async fn side_fork_config_is_ephemeral_and_appends_developer_guardrails() {
     let app = make_test_app().await;
@@ -213,7 +210,6 @@ async fn side_fork_config_is_ephemeral_and_appends_developer_guardrails() {
     assert!(developer_instructions.contains("Do not request escalated permissions"));
     assert!(app.transcript_cells.is_empty());
 }
-
 
 #[tokio::test]
 async fn side_fork_config_inherits_parent_thread_runtime_settings() {
@@ -260,7 +256,6 @@ async fn side_fork_config_inherits_parent_thread_runtime_settings() {
     );
 }
 
-
 #[tokio::test]
 async fn side_start_block_message_tracks_open_side_conversation() {
     let mut app = make_test_app().await;
@@ -287,7 +282,6 @@ async fn side_start_block_message_tracks_open_side_conversation() {
     app.side_threads.remove(&side_thread_id);
     assert_eq!(app.side_start_block_message(), None);
 }
-
 
 #[tokio::test]
 async fn side_parent_status_tracks_parent_turn_lifecycle() -> Result<()> {
@@ -337,7 +331,6 @@ async fn side_parent_status_tracks_parent_turn_lifecycle() -> Result<()> {
 
     Ok(())
 }
-
 
 #[tokio::test]
 async fn side_parent_status_prioritizes_input_over_approval() -> Result<()> {
@@ -414,4 +407,3 @@ async fn side_parent_status_prioritizes_input_over_approval() -> Result<()> {
 
     Ok(())
 }
-

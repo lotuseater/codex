@@ -116,7 +116,6 @@ async fn render_clear_ui_header_after_long_transcript_for_snapshot() -> String {
     rendered
 }
 
-
 #[tokio::test]
 #[cfg_attr(
     target_os = "windows",
@@ -127,7 +126,6 @@ async fn clear_ui_after_long_transcript_snapshots_fresh_header_only() {
     assert_app_snapshot!("clear_ui_after_long_transcript_fresh_header_only", rendered);
 }
 
-
 #[tokio::test]
 #[cfg_attr(
     target_os = "windows",
@@ -137,7 +135,6 @@ async fn ctrl_l_clear_ui_after_long_transcript_reuses_clear_header_snapshot() {
     let rendered = render_clear_ui_header_after_long_transcript_for_snapshot().await;
     assert_app_snapshot!("clear_ui_after_long_transcript_fresh_header_only", rendered);
 }
-
 
 #[tokio::test]
 #[cfg_attr(
@@ -173,7 +170,6 @@ async fn clear_ui_header_shows_fast_status_for_fast_capable_models() {
 
     assert_app_snapshot!("clear_ui_header_fast_status_fast_capable_models", rendered);
 }
-
 
 #[tokio::test]
 async fn clear_only_ui_reset_preserves_chat_session_state() {

@@ -48,7 +48,7 @@ pub(crate) struct SessionState {
     semantic_compact_state: SemanticCompactState,
     pub(crate) task_memory_throttle_state: TaskMemoryThrottleState,
     git_checkpoint_baseline_dirty_paths_by_worktree: HashMap<String, HashSet<String>>,
-    granted_permissions: Option<AdditionalPermissionProfile>,
+    granted_permissions_by_environment_id: HashMap<String, AdditionalPermissionProfile>,
     next_turn_is_first: bool,
     restored_session_auto_compact_pending: bool,
     post_turn_compact_max_output_suppression: Option<PostTurnCompactSuppression>,
@@ -81,7 +81,7 @@ impl SessionState {
             semantic_compact_state: SemanticCompactState::default(),
             task_memory_throttle_state: TaskMemoryThrottleState::default(),
             git_checkpoint_baseline_dirty_paths_by_worktree: HashMap::new(),
-            granted_permissions: None,
+            granted_permissions_by_environment_id: HashMap::new(),
             next_turn_is_first: true,
             restored_session_auto_compact_pending: false,
             post_turn_compact_max_output_suppression: None,
@@ -365,13 +365,29 @@ impl SessionState {
             .insert(worktree, paths);
     }
 
-    pub(crate) fn record_granted_permissions(&mut self, permissions: AdditionalPermissionProfile) {
-        self.granted_permissions =
-            merge_permission_profiles(self.granted_permissions.as_ref(), Some(&permissions));
+    pub(crate) fn record_granted_permissions(
+        &mut self,
+        environment_id: &str,
+        permissions: AdditionalPermissionProfile,
+    ) {
+        let granted_permissions = merge_permission_profiles(
+            self.granted_permissions_by_environment_id
+                .get(environment_id),
+            Some(&permissions),
+        );
+        if let Some(granted_permissions) = granted_permissions {
+            self.granted_permissions_by_environment_id
+                .insert(environment_id.to_string(), granted_permissions);
+        }
     }
 
-    pub(crate) fn granted_permissions(&self) -> Option<AdditionalPermissionProfile> {
-        self.granted_permissions.clone()
+    pub(crate) fn granted_permissions(
+        &self,
+        environment_id: &str,
+    ) -> Option<AdditionalPermissionProfile> {
+        self.granted_permissions_by_environment_id
+            .get(environment_id)
+            .cloned()
     }
 }
 
@@ -387,6 +403,9 @@ fn merge_rate_limit_fields(
     }
     if snapshot.credits.is_none() {
         snapshot.credits = previous.and_then(|prior| prior.credits.clone());
+    }
+    if snapshot.individual_limit.is_none() {
+        snapshot.individual_limit = previous.and_then(|prior| prior.individual_limit.clone());
     }
     if snapshot.plan_type.is_none() {
         snapshot.plan_type = previous.and_then(|prior| prior.plan_type);

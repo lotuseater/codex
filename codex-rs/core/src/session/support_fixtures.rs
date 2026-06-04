@@ -4,7 +4,9 @@ pub(crate) fn plain_tool_name(name: impl Into<String>) -> ToolName {
     ToolName::plain(name)
 }
 
-pub(crate) fn permission_profile_for_sandbox_policy(sandbox_policy: &SandboxPolicy) -> PermissionProfile {
+pub(crate) fn permission_profile_for_sandbox_policy(
+    sandbox_policy: &SandboxPolicy,
+) -> PermissionProfile {
     PermissionProfile::from_legacy_sandbox_policy(sandbox_policy)
 }
 
@@ -175,7 +177,10 @@ pub(crate) async fn write_project_trust_config(
     .await
 }
 
-pub(crate) fn test_tool_runtime(session: Arc<Session>, turn_context: Arc<TurnContext>) -> ToolCallRuntime {
+pub(crate) fn test_tool_runtime(
+    session: Arc<Session>,
+    turn_context: Arc<TurnContext>,
+) -> ToolCallRuntime {
     let router = Arc::new(ToolRouter::from_turn_context(
         &turn_context,
         crate::tools::router::ToolRouterParams {
@@ -208,7 +213,9 @@ pub(crate) fn make_connector(id: &str, name: &str) -> AppInfo {
     }
 }
 
-pub(crate) async fn wait_for_thread_rolled_back(rx: &async_channel::Receiver<Event>) -> ThreadRolledBackEvent {
+pub(crate) async fn wait_for_thread_rolled_back(
+    rx: &async_channel::Receiver<Event>,
+) -> ThreadRolledBackEvent {
     let deadline = StdDuration::from_secs(2);
     let start = std::time::Instant::now();
     loop {
@@ -224,7 +231,9 @@ pub(crate) async fn wait_for_thread_rolled_back(rx: &async_channel::Receiver<Eve
     }
 }
 
-pub(crate) async fn wait_for_thread_rollback_failed(rx: &async_channel::Receiver<Event>) -> ErrorEvent {
+pub(crate) async fn wait_for_thread_rollback_failed(
+    rx: &async_channel::Receiver<Event>,
+) -> ErrorEvent {
     let deadline = StdDuration::from_secs(2);
     let start = std::time::Instant::now();
     loop {
@@ -295,7 +304,9 @@ pub(crate) fn git_attribution_test_registry()
     Arc::new(builder.build())
 }
 
-pub(crate) fn file_system_policy_with_unreadable_glob(turn_context: &TurnContext) -> FileSystemSandboxPolicy {
+pub(crate) fn file_system_policy_with_unreadable_glob(
+    turn_context: &TurnContext,
+) -> FileSystemSandboxPolicy {
     let mut policy = FileSystemSandboxPolicy::from_legacy_sandbox_policy_for_cwd(
         &turn_context.sandbox_policy(),
         &turn_context.cwd,

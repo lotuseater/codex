@@ -30,7 +30,6 @@ async fn open_agent_picker_keeps_missing_threads_for_replay() -> Result<()> {
     Ok(())
 }
 
-
 #[tokio::test]
 async fn open_agent_picker_preserves_cached_metadata_for_replay_threads() -> Result<()> {
     let mut app = Box::pin(make_test_app()).await;
@@ -66,7 +65,6 @@ async fn open_agent_picker_preserves_cached_metadata_for_replay_threads() -> Res
     Ok(())
 }
 
-
 #[tokio::test]
 async fn open_agent_picker_prunes_terminal_metadata_only_threads() -> Result<()> {
     let mut app = Box::pin(make_test_app()).await;
@@ -89,7 +87,6 @@ async fn open_agent_picker_prunes_terminal_metadata_only_threads() -> Result<()>
     assert!(app.agent_navigation.is_empty());
     Ok(())
 }
-
 
 #[tokio::test]
 async fn open_agent_picker_marks_terminal_read_errors_closed() -> Result<()> {
@@ -124,7 +121,6 @@ async fn open_agent_picker_marks_terminal_read_errors_closed() -> Result<()> {
     );
     Ok(())
 }
-
 
 #[test]
 fn open_agent_picker_marks_loaded_threads_open() -> Result<()> {
@@ -167,7 +163,6 @@ fn open_agent_picker_marks_loaded_threads_open() -> Result<()> {
         Ok(())
     })
 }
-
 
 #[test]
 fn attach_live_thread_for_selection_rejects_empty_non_ephemeral_fallback_threads() -> Result<()> {
@@ -212,7 +207,6 @@ fn attach_live_thread_for_selection_rejects_empty_non_ephemeral_fallback_threads
     })
 }
 
-
 #[test]
 fn attach_live_thread_for_selection_rejects_unmaterialized_fallback_threads() -> Result<()> {
     const WORKER_THREADS: usize = 1;
@@ -253,7 +247,6 @@ fn attach_live_thread_for_selection_rejects_unmaterialized_fallback_threads() ->
     })
 }
 
-
 #[tokio::test]
 async fn should_attach_live_thread_for_selection_skips_closed_metadata_only_threads() {
     let mut app = make_test_app().await;
@@ -280,7 +273,6 @@ async fn should_attach_live_thread_for_selection_skips_closed_metadata_only_thre
     assert!(!app.should_attach_live_thread_for_selection(thread_id));
 }
 
-
 #[tokio::test]
 async fn refresh_agent_picker_thread_liveness_prunes_closed_metadata_only_threads() -> Result<()> {
     let mut app = Box::pin(make_test_app()).await;
@@ -305,7 +297,6 @@ async fn refresh_agent_picker_thread_liveness_prunes_closed_metadata_only_thread
     assert!(!app.thread_event_channels.contains_key(&thread_id));
     Ok(())
 }
-
 
 #[tokio::test]
 async fn open_agent_picker_prompts_to_enable_multi_agent_when_disabled() -> Result<()> {
@@ -339,7 +330,6 @@ async fn open_agent_picker_prompts_to_enable_multi_agent_when_disabled() -> Resu
     Ok(())
 }
 
-
 #[tokio::test]
 async fn open_agent_picker_allows_existing_agent_threads_when_feature_is_disabled() -> Result<()> {
     let (mut app, mut app_event_rx, _op_rx) = Box::pin(make_test_app_with_channels()).await;
@@ -362,7 +352,6 @@ async fn open_agent_picker_allows_existing_agent_threads_when_feature_is_disable
     );
     Ok(())
 }
-
 
 #[test]
 fn agent_picker_item_name_snapshot() {

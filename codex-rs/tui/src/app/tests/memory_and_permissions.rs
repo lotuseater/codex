@@ -43,7 +43,6 @@ async fn update_memory_settings_persists_and_updates_widget_config() -> Result<(
     Ok(())
 }
 
-
 #[test]
 fn update_memory_settings_updates_current_thread_memory_mode() -> Result<()> {
     const WORKER_THREADS: usize = 1;
@@ -93,7 +92,6 @@ fn update_memory_settings_updates_current_thread_memory_mode() -> Result<()> {
     })
 }
 
-
 #[tokio::test]
 async fn reset_memories_clears_local_memory_directories() -> Result<()> {
     Box::pin(async {
@@ -125,7 +123,6 @@ async fn reset_memories_clears_local_memory_directories() -> Result<()> {
     })
     .await
 }
-
 
 #[tokio::test]
 async fn apply_permission_profile_selection_preserves_loader_overrides() -> Result<()> {
@@ -211,4 +208,3 @@ default_permissions = "locked-down"
     assert!(rendered.contains("Permissions updated to locked-down"));
     Ok(())
 }
-

@@ -4,6 +4,13 @@ pub(crate) use app_test_support::McpProcess;
 pub(crate) use app_test_support::create_final_assistant_message_sse_response;
 pub(crate) use app_test_support::create_mock_responses_server_sequence_unchecked;
 pub(crate) use app_test_support::create_shell_command_sse_response;
+pub(crate) use app_test_support::responses;
+pub(crate) use app_test_support::responses::WebSocketConnectionConfig;
+pub(crate) use app_test_support::responses::WebSocketRequest;
+pub(crate) use app_test_support::responses::WebSocketTestServer;
+pub(crate) use app_test_support::responses::start_websocket_server;
+pub(crate) use app_test_support::responses::start_websocket_server_with_headers;
+pub(crate) use app_test_support::skip_if_no_network;
 pub(crate) use app_test_support::to_response;
 pub(crate) use codex_app_server_protocol::CommandExecutionStatus;
 pub(crate) use codex_app_server_protocol::ItemCompletedNotification;
@@ -43,13 +50,6 @@ pub(crate) use codex_protocol::protocol::RealtimeConversationVersion;
 pub(crate) use codex_protocol::protocol::RealtimeOutputModality;
 pub(crate) use codex_protocol::protocol::RealtimeVoice;
 pub(crate) use codex_protocol::protocol::RealtimeVoicesList;
-pub(crate) use app_test_support::responses;
-pub(crate) use app_test_support::responses::WebSocketConnectionConfig;
-pub(crate) use app_test_support::responses::WebSocketRequest;
-pub(crate) use app_test_support::responses::WebSocketTestServer;
-pub(crate) use app_test_support::responses::start_websocket_server;
-pub(crate) use app_test_support::responses::start_websocket_server_with_headers;
-pub(crate) use app_test_support::skip_if_no_network;
 pub(crate) use pretty_assertions::assert_eq;
 pub(crate) use serde::de::DeserializeOwned;
 pub(crate) use serde_json::Value;
@@ -304,7 +304,10 @@ impl RealtimeE2eHarness {
         })
     }
 
-    pub(crate) async fn start_webrtc_realtime(&mut self, offer_sdp: &str) -> Result<StartedWebrtcRealtime> {
+    pub(crate) async fn start_webrtc_realtime(
+        &mut self,
+        offer_sdp: &str,
+    ) -> Result<StartedWebrtcRealtime> {
         // Starts realtime through the public JSON-RPC method, then waits for the same client-visible
         // notifications a desktop app needs: started first, SDP answer second.
         let start_request_id = self
@@ -338,7 +341,10 @@ impl RealtimeE2eHarness {
         Ok(StartedWebrtcRealtime { started, sdp })
     }
 
-    pub(crate) async fn read_notification<T: DeserializeOwned>(&mut self, method: &str) -> Result<T> {
+    pub(crate) async fn read_notification<T: DeserializeOwned>(
+        &mut self,
+        method: &str,
+    ) -> Result<T> {
         read_notification(&mut self.mcp, method).await
     }
 
@@ -416,7 +422,9 @@ pub(crate) fn no_main_loop_responses() -> MainLoopResponsesScript {
     main_loop_responses(Vec::new())
 }
 
-pub(crate) fn realtime_sideband(connections: Vec<WebSocketConnectionConfig>) -> RealtimeSidebandScript {
+pub(crate) fn realtime_sideband(
+    connections: Vec<WebSocketConnectionConfig>,
+) -> RealtimeSidebandScript {
     RealtimeSidebandScript { connections }
 }
 
@@ -460,14 +468,6 @@ pub(crate) fn v2_background_agent_tool_call(call_id: &str, prompt: &str) -> Valu
     })
 }
 
-
-
-
-
-
-
-
-
 /// Regression coverage for Realtime V2 text input while a response is active.
 ///
 /// Text input is append-only, so app-server should send the user message without
@@ -489,12 +489,10 @@ pub(crate) fn v2_background_agent_tool_call(call_id: &str, prompt: &str) -> Valu
 /// task. App-server acknowledges that steering message to realtime and then
 /// emits `response.create` so realtime can speak that acknowledgement.
 
-
-
-
-
-
-pub(crate) async fn read_notification<T: DeserializeOwned>(mcp: &mut McpProcess, method: &str) -> Result<T> {
+pub(crate) async fn read_notification<T: DeserializeOwned>(
+    mcp: &mut McpProcess,
+    method: &str,
+) -> Result<T> {
     let notification = timeout(
         DEFAULT_TIMEOUT,
         mcp.read_stream_until_notification_message(method),
@@ -599,7 +597,11 @@ pub(crate) fn function_call_output_sideband_requests(server: &WebSocketTestServe
         .collect()
 }
 
-pub(crate) fn assert_v2_function_call_output(request: &Value, call_id: &str, expected_output: &str) {
+pub(crate) fn assert_v2_function_call_output(
+    request: &Value,
+    call_id: &str,
+    expected_output: &str,
+) {
     assert_eq!(
         request,
         &json!({

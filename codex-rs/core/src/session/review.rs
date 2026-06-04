@@ -142,6 +142,7 @@ pub(super) async fn spawn_review_thread(
         sess.session_id().to_string(),
         sess.thread_id().to_string(),
         forked_from_thread_id,
+        parent_turn_context.parent_thread_id,
         &session_source,
         parent_turn_context.thread_source,
         review_turn_id.clone(),
@@ -165,6 +166,7 @@ pub(super) async fn spawn_review_thread(
         reasoning_effort,
         reasoning_summary,
         session_source,
+        parent_thread_id: parent_turn_context.parent_thread_id,
         thread_source: parent_turn_context.thread_source,
         environments: parent_turn_context.environments.clone(),
         tools_config,
@@ -177,6 +179,7 @@ pub(super) async fn spawn_review_thread(
         user_instructions: None,
         compact_prompt: parent_turn_context.compact_prompt.clone(),
         collaboration_mode: parent_turn_context.collaboration_mode.clone(),
+        multi_agent_version: MultiAgentVersion::Disabled,
         personality: parent_turn_context.personality,
         // Mirror the scalar fields: collaboration_mode/personality from the parent
         // turn, context_budget_mode from this review turn's own config (captured
@@ -216,7 +219,9 @@ pub(super) async fn spawn_review_thread(
         client_id: None,
     }];
     let tc = Arc::new(review_turn_context);
-    tc.turn_metadata_state.spawn_git_enrichment_task();
+    if tc.environments.single_local_environment_cwd().is_some() {
+        tc.turn_metadata_state.spawn_git_enrichment_task();
+    }
     // TODO(ccunningham): Review turns currently rely on `spawn_task` for TurnComplete but do not
     // emit a parent TurnStarted. Consider giving review a full parent turn lifecycle
     // (TurnStarted + TurnComplete) for consistency with other standalone tasks.

@@ -61,7 +61,6 @@ async fn replay_thread_snapshot_restores_draft_and_queued_input() {
     }
 }
 
-
 #[tokio::test]
 async fn active_turn_id_for_thread_uses_snapshot_turns() {
     let mut app = make_test_app().await;
@@ -81,7 +80,6 @@ async fn active_turn_id_for_thread_uses_snapshot_turns() {
         Some("turn-1".to_string())
     );
 }
-
 
 #[tokio::test]
 async fn replayed_turn_complete_submits_restored_queued_follow_up() {
@@ -135,7 +133,6 @@ async fn replayed_turn_complete_submits_restored_queued_follow_up() {
     }
 }
 
-
 #[tokio::test]
 async fn replay_only_thread_keeps_restored_queue_visible() {
     let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
@@ -187,7 +184,6 @@ async fn replay_only_thread_keeps_restored_queue_visible() {
     );
 }
 
-
 #[tokio::test]
 async fn replay_thread_snapshot_keeps_queue_when_running_state_only_comes_from_snapshot() {
     let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
@@ -236,7 +232,6 @@ async fn replay_thread_snapshot_keeps_queue_when_running_state_only_comes_from_s
         "restored queue should stay queued when replay did not prove the turn finished"
     );
 }
-
 
 #[tokio::test]
 async fn replay_thread_snapshot_in_progress_turn_restores_running_queue_state() {
@@ -287,7 +282,6 @@ async fn replay_thread_snapshot_in_progress_turn_restores_running_queue_state() 
     );
 }
 
-
 #[tokio::test]
 async fn replay_thread_snapshot_in_progress_turn_restores_running_state_without_input_state() {
     let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
@@ -309,7 +303,6 @@ async fn replay_thread_snapshot_in_progress_turn_restores_running_state_without_
 
     assert!(app.chat_widget.is_task_running_for_test());
 }
-
 
 #[tokio::test]
 async fn replay_thread_snapshot_does_not_submit_queue_before_replay_catches_up() {
@@ -383,7 +376,6 @@ async fn replay_thread_snapshot_does_not_submit_queue_before_replay_catches_up()
     }
 }
 
-
 #[tokio::test]
 async fn replay_thread_snapshot_restores_pending_pastes_for_submit() {
     let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
@@ -440,7 +432,6 @@ async fn replay_thread_snapshot_restores_pending_pastes_for_submit() {
         other => panic!("expected restored paste submission, got {other:?}"),
     }
 }
-
 
 #[tokio::test]
 async fn replay_thread_snapshot_restores_collaboration_mode_for_draft_submit() {
@@ -526,7 +517,6 @@ async fn replay_thread_snapshot_restores_collaboration_mode_for_draft_submit() {
     }
 }
 
-
 #[tokio::test]
 async fn replay_thread_snapshot_restores_collaboration_mode_without_input() {
     let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
@@ -582,7 +572,6 @@ async fn replay_thread_snapshot_restores_collaboration_mode_without_input() {
         Some(ReasoningEffortConfig::High)
     );
 }
-
 
 #[tokio::test]
 async fn replayed_interrupted_turn_restores_queued_input_to_composer() {

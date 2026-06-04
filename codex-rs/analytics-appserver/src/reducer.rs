@@ -144,7 +144,9 @@ impl codex_analytics::AnalyticsReducer for AppServerReducer {
                 match serde_json::from_value::<AppServerFact>(value) {
                     Ok(fact) => self.ingest_app_server(fact, &mut reqs).await,
                     Err(err) => {
-                        tracing::warn!("dropping analytics fact: malformed app-server payload: {err}");
+                        tracing::warn!(
+                            "dropping analytics fact: malformed app-server payload: {err}"
+                        );
                     }
                 }
             }
@@ -313,20 +315,18 @@ impl ThreadMetadataState {
         session_id: String,
         session_source: &SessionSource,
         thread_source: Option<ThreadSource>,
+        parent_thread_id: Option<String>,
         initialization_mode: ThreadInitializationMode,
     ) -> Self {
-        let (subagent_source, parent_thread_id) = match session_source {
-            SessionSource::SubAgent(subagent_source) => (
-                Some(subagent_source_name(subagent_source)),
-                subagent_parent_thread_id(subagent_source),
-            ),
+        let subagent_source = match session_source {
+            SessionSource::SubAgent(subagent_source) => Some(subagent_source_name(subagent_source)),
             SessionSource::Cli
             | SessionSource::VSCode
             | SessionSource::Exec
             | SessionSource::Mcp
             | SessionSource::Custom(_)
             | SessionSource::Internal(_)
-            | SessionSource::Unknown => (None, None),
+            | SessionSource::Unknown => None,
         };
         Self {
             session_id,
@@ -371,6 +371,7 @@ struct TurnState {
     started_at: Option<u64>,
     token_usage: Option<TokenUsage>,
     completed: Option<CompletedTurnState>,
+    codex_error: Option<TurnCodexError>,
     latest_diff: Option<String>,
     steer_count: usize,
     tool_counts: TurnToolCounts,
@@ -589,6 +590,7 @@ impl AppServerReducer {
             started_at: None,
             token_usage: None,
             completed: None,
+            codex_error: None,
             latest_diff: None,
             steer_count: 0,
             tool_counts: TurnToolCounts::default(),
@@ -613,6 +615,7 @@ impl AppServerReducer {
             started_at: None,
             token_usage: None,
             completed: None,
+            codex_error: None,
             latest_diff: None,
             steer_count: 0,
             tool_counts: TurnToolCounts::default(),
@@ -674,6 +677,7 @@ impl AppServerReducer {
                     started_at: None,
                     token_usage: None,
                     completed: None,
+                    codex_error: None,
                     latest_diff: None,
                     steer_count: 0,
                     tool_counts: TurnToolCounts::default(),
@@ -1033,6 +1037,7 @@ impl AppServerReducer {
                     started_at: None,
                     token_usage: None,
                     completed: None,
+                    codex_error: None,
                     latest_diff: None,
                     steer_count: 0,
                     tool_counts: TurnToolCounts::default(),
@@ -1054,6 +1059,7 @@ impl AppServerReducer {
                             started_at: None,
                             token_usage: None,
                             completed: None,
+                            codex_error: None,
                             latest_diff: None,
                             steer_count: 0,
                             tool_counts: TurnToolCounts::default(),
@@ -1073,6 +1079,7 @@ impl AppServerReducer {
                             started_at: None,
                             token_usage: None,
                             completed: None,
+                            codex_error: None,
                             latest_diff: None,
                             steer_count: 0,
                             tool_counts: TurnToolCounts::default(),
@@ -1108,12 +1115,11 @@ impl AppServerReducer {
         initialization_mode: ThreadInitializationMode,
         out: &mut Vec<TrackEventRequest>,
     ) {
-        let session_source: SessionSource = thread
-            .source
-            .try_into()
-            .unwrap_or(SessionSource::Unknown);
+        let session_source: SessionSource =
+            thread.source.try_into().unwrap_or(SessionSource::Unknown);
         let session_id = thread.session_id;
         let thread_id = thread.id;
+        let parent_thread_id = thread.parent_thread_id;
         let Some(connection_state) = self.connections.get(&connection_id) else {
             return;
         };
@@ -1121,6 +1127,7 @@ impl AppServerReducer {
             session_id.clone(),
             &session_source,
             thread.thread_source.map(Into::into),
+            parent_thread_id,
             initialization_mode,
         );
         self.threads.insert(
@@ -2334,9 +2341,11 @@ fn codex_turn_event_params(
         sandbox_network_access,
         collaboration_mode,
         personality,
+        workspace_kind,
         is_first_turn,
     } = resolved_config;
     let token_usage = turn_state.token_usage.clone();
+    let codex_error = turn_state.codex_error.as_ref();
     CodexTurnEventParams {
         thread_id,
         session_id: thread_metadata.session_id.clone(),
@@ -2365,10 +2374,14 @@ fn codex_turn_event_params(
         sandbox_network_access,
         collaboration_mode: Some(collaboration_mode_mode(collaboration_mode)),
         personality: personality_mode(personality),
+        workspace_kind,
         num_input_images,
         is_first_turn,
         status: completed.status,
         turn_error: completed.turn_error,
+        codex_error_kind: codex_error.map(|error| error.kind),
+        codex_error_subreason: codex_error.and_then(|error| error.subreason.clone()),
+        codex_error_http_status_code: codex_error.and_then(|error| error.http_status_code),
         steer_count: Some(turn_state.steer_count),
         total_tool_call_count: Some(turn_state.tool_counts.total),
         shell_command_count: Some(turn_state.tool_counts.shell_command),

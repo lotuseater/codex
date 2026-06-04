@@ -4,8 +4,6 @@ use crate::tools::context::ToolSearchOutput;
 use crate::tools::context::boxed_tool_output;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
-use crate::tools::tool_search_entry::ToolSearchEntry;
-use crate::tools::tool_search_entry::ToolSearchInfo;
 use bm25::Document;
 use bm25::Language;
 use bm25::SearchEngine;
@@ -19,6 +17,8 @@ use codex_tool_registry_api::ToolSearchSourceInfo;
 use codex_tool_registry_api::ToolSpec;
 use codex_tool_registry_api::coalesce_loadable_tool_specs;
 use codex_tool_registry_api::create_tool_search_tool;
+use codex_tools::ToolSearchEntry;
+use codex_tools::ToolSearchInfo;
 
 pub struct ToolSearchHandler {
     entries: Vec<ToolSearchEntry>,

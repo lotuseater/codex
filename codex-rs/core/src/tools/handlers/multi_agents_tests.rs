@@ -136,6 +136,11 @@ model_reasoning_effort = "minimal"
     role_name
 }
 
+fn set_turn_config(turn: &mut TurnContext, config: crate::config::Config) {
+    turn.multi_agent_version = config.multi_agent_version_from_features();
+    turn.config = Arc::new(config);
+}
+
 fn expect_text_output<T>(output: T) -> (String, Option<bool>)
 where
     T: ToolOutput,

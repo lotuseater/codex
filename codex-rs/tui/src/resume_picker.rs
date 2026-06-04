@@ -7,6 +7,7 @@ use std::sync::Arc;
 mod transcript;
 
 use crate::app_server_session::AppServerSession;
+use crate::clipboard_paste::normalize_pasted_search_query;
 use crate::color::blend;
 use crate::color::is_light;
 use crate::git_action_directives::parse_assistant_markdown;
@@ -1232,6 +1233,21 @@ impl PickerState {
             _ => {}
         }
         Ok(None)
+    }
+
+    fn handle_paste(&mut self, pasted: String) {
+        if self.is_transcript_loading() {
+            return;
+        }
+        let Some(pasted) = normalize_pasted_search_query(&pasted) else {
+            return;
+        };
+        let mut new_query = self.query.clone();
+        if !new_query.is_empty() && !new_query.ends_with(char::is_whitespace) {
+            new_query.push(' ');
+        }
+        new_query.push_str(&pasted);
+        self.set_query(new_query);
     }
 
     fn start_initial_load(&mut self) {
@@ -5726,6 +5742,7 @@ session_picker_view = "dense"
             id: thread_id.to_string(),
             session_id: thread_id.to_string(),
             forked_from_id: None,
+            parent_thread_id: None,
             preview: String::from("remote thread"),
             ephemeral: false,
             model_provider: String::from("openai"),
@@ -5760,6 +5777,7 @@ session_picker_view = "dense"
             id: thread_id.to_string(),
             session_id: thread_id.to_string(),
             forked_from_id: None,
+            parent_thread_id: None,
             preview: String::from("preview"),
             ephemeral: false,
             model_provider: String::from("openai"),
@@ -5828,6 +5846,7 @@ session_picker_view = "dense"
             id: thread_id.to_string(),
             session_id: thread_id.to_string(),
             forked_from_id: None,
+            parent_thread_id: None,
             preview: String::from("preview"),
             ephemeral: false,
             model_provider: String::from("openai"),
@@ -5885,6 +5904,7 @@ session_picker_view = "dense"
             id: thread_id.to_string(),
             session_id: thread_id.to_string(),
             forked_from_id: None,
+            parent_thread_id: None,
             preview: String::from("preview"),
             ephemeral: false,
             model_provider: String::from("openai"),
@@ -6204,6 +6224,79 @@ session_picker_view = "dense"
         assert!(state.filtered_rows.is_empty());
         assert!(!state.search_state.is_active());
         assert!(state.pagination.reached_scan_cap);
+    }
+
+    #[tokio::test]
+    async fn paste_appends_to_existing_query() {
+        let loader = page_only_loader(|_| {});
+        let mut state = PickerState::new(
+            FrameRequester::test_dummy(),
+            loader,
+            ProviderFilter::MatchDefault(String::from("openai")),
+            /*show_all*/ true,
+            /*filter_cwd*/ None,
+            SessionPickerAction::Resume,
+        );
+        state.query = String::from("resize");
+
+        state.handle_paste(String::from("results"));
+
+        assert_eq!(state.query, "resize results");
+    }
+
+    #[tokio::test]
+    async fn whitespace_only_paste_is_ignored() {
+        let loader = page_only_loader(|_| {});
+        let mut state = PickerState::new(
+            FrameRequester::test_dummy(),
+            loader,
+            ProviderFilter::MatchDefault(String::from("openai")),
+            /*show_all*/ true,
+            /*filter_cwd*/ None,
+            SessionPickerAction::Resume,
+        );
+        state.query = String::from("resize");
+
+        state.handle_paste(String::from("  \n\t  "));
+
+        assert_eq!(state.query, "resize");
+    }
+
+    #[tokio::test]
+    async fn paste_uses_existing_search_loading_path() {
+        let recorded_requests: Arc<Mutex<Vec<PageLoadRequest>>> = Arc::new(Mutex::new(Vec::new()));
+        let request_sink = recorded_requests.clone();
+        let loader = page_only_loader(move |req: PageLoadRequest| {
+            request_sink.lock().unwrap().push(req);
+        });
+
+        let mut state = PickerState::new(
+            FrameRequester::test_dummy(),
+            loader,
+            ProviderFilter::MatchDefault(String::from("openai")),
+            /*show_all*/ true,
+            /*filter_cwd*/ None,
+            SessionPickerAction::Resume,
+        );
+        state.reset_pagination();
+        state.ingest_page(page(
+            vec![make_row(
+                "/tmp/start.jsonl",
+                "2025-01-01T00:00:00Z",
+                "alpha",
+            )],
+            Some("2025-01-02T00:00:00Z"),
+            /*num_scanned_files*/ 1,
+            /*reached_scan_cap*/ false,
+        ));
+        recorded_requests.lock().unwrap().clear();
+
+        state.handle_paste(String::from("target"));
+
+        let guard = recorded_requests.lock().unwrap();
+        assert_eq!(state.query, "target");
+        assert_eq!(guard.len(), 1);
+        assert!(guard[0].search_token.is_some());
     }
 
     #[tokio::test]

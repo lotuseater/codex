@@ -3,11 +3,11 @@ use std::pin::Pin;
 
 use codex_tool_execution_api::FunctionCallError;
 use codex_tool_execution_api::ToolExecutor;
-use codex_tools::ToolCall;
 use codex_tool_execution_api::ToolName;
 use codex_tool_execution_api::ToolOutput;
 use codex_tool_registry_api::ToolExposure;
 use codex_tool_registry_api::ToolSpec;
+use codex_tools::ToolCall;
 
 /// Model-facing output returned by extension-owned tools.
 pub type ExtensionToolOutput = Box<dyn ToolOutput>;

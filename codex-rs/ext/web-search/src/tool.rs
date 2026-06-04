@@ -10,6 +10,7 @@ use codex_extension_api::FunctionCallError;
 use codex_extension_api::ResponsesApiTool;
 use codex_extension_api::ToolCall;
 use codex_extension_api::ToolExecutor;
+use codex_extension_api::ToolExposure;
 use codex_extension_api::ToolName;
 use codex_extension_api::ToolOutput;
 use codex_extension_api::ToolSpec;
@@ -18,7 +19,6 @@ use codex_login::default_client::build_reqwest_client;
 use codex_model_provider::SharedModelProvider;
 use codex_protocol::items::WebSearchItem;
 use codex_protocol::models::WebSearchAction;
-use codex_extension_api::ToolExposure;
 use codex_tools::ResponsesApiNamespace;
 use codex_tools::ResponsesApiNamespaceTool;
 use codex_tools::default_namespace_description;
@@ -72,6 +72,10 @@ impl ToolExecutor<ToolCall> for WebSearchTool {
         ToolExposure::DirectModelOnly
     }
 
+    fn supports_parallel_tool_calls(&self) -> bool {
+        true
+    }
+
     fn handle(
         &self,
         call: ToolCall,
@@ -117,8 +121,10 @@ impl ToolExecutor<ToolCall> for WebSearchTool {
                 .emit_completed(web_search_item(&call.call_id, command_action))
                 .await;
 
-            Ok(Box::new(EncryptedSearchOutput::new(response.encrypted_output))
-                as Box<dyn ToolOutput>)
+            Ok(
+                Box::new(EncryptedSearchOutput::new(response.encrypted_output))
+                    as Box<dyn ToolOutput>,
+            )
         }
     }
 }

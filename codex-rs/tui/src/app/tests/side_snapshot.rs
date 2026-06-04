@@ -31,7 +31,6 @@ async fn side_thread_snapshot_hides_forked_parent_transcript() {
     assert_eq!(store.active_turn_id(), None);
 }
 
-
 #[tokio::test]
 async fn side_thread_snapshot_does_not_refresh_from_fork_history() {
     let mut app = make_test_app().await;
@@ -56,7 +55,6 @@ async fn side_thread_snapshot_does_not_refresh_from_fork_history() {
         &snapshot
     ));
 }
-
 
 #[tokio::test]
 async fn side_thread_snapshot_skips_session_header_preamble() {
@@ -96,7 +94,6 @@ async fn side_thread_snapshot_skips_session_header_preamble() {
     );
 }
 
-
 #[tokio::test]
 async fn side_thread_ignores_global_mcp_startup_notifications() {
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
@@ -127,7 +124,6 @@ async fn side_thread_ignores_global_mcp_startup_notifications() {
     assert!(app_event_rx.try_recv().is_err());
 }
 
-
 #[tokio::test]
 async fn side_restore_user_message_puts_inline_question_back_in_composer() {
     let mut app = make_test_app().await;
@@ -140,7 +136,6 @@ async fn side_restore_user_message_puts_inline_question_back_in_composer() {
         "side question"
     );
 }
-
 
 #[tokio::test]
 async fn side_discard_selection_keeps_current_side_thread() {
@@ -160,7 +155,6 @@ async fn side_discard_selection_keeps_current_side_thread() {
         Some(side_thread_id)
     );
 }
-
 
 #[tokio::test]
 async fn discard_side_thread_removes_agent_navigation_entry() -> Result<()> {
@@ -192,7 +186,6 @@ async fn discard_side_thread_removes_agent_navigation_entry() -> Result<()> {
     })
     .await
 }
-
 
 #[tokio::test]
 async fn discard_side_thread_keeps_local_state_when_server_close_fails() -> Result<()> {
@@ -230,7 +223,6 @@ async fn discard_side_thread_keeps_local_state_when_server_close_fails() -> Resu
     .await
 }
 
-
 #[tokio::test]
 async fn discard_closed_side_thread_removes_local_state_without_server_rpc() {
     let mut app = make_test_app().await;
@@ -256,7 +248,6 @@ async fn discard_closed_side_thread_removes_local_state_without_server_rpc() {
     assert_eq!(app.agent_navigation.get(&side_thread_id), None);
 }
 
-
 #[tokio::test]
 async fn side_conversations_reject_backtrack_esc_without_stealing_vim_insert_escape() {
     let mut app = make_test_app().await;
@@ -279,7 +270,6 @@ async fn side_conversations_reject_backtrack_esc_without_stealing_vim_insert_esc
     assert!(!app.should_handle_backtrack_esc(esc));
     assert!(!app.should_reject_side_backtrack_esc(esc));
 }
-
 
 #[tokio::test]
 async fn side_backtrack_rejection_reports_unavailable_message_snapshot() {
