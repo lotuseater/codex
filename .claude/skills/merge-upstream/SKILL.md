@@ -143,11 +143,17 @@ If the gate isn't tripped (or the user declines), skip straight to Step 3.
    disjoint area slice (one resolver worker per slice; never splits a file across two slices,
    keeps an interleaved region whole inside ONE slice):
    ```
-   powershell -ExecutionPolicy Bypass -File scripts\partition-conflict-slices.ps1
+   powershell -ExecutionPolicy Bypass -File scripts\partition-conflict-slices.ps1 -EmitBriefs
    ```
-   - Standard areas it buckets into:
-     `core-session` · `core-tools` · `tui-app` · `tui-composer` · `protocol` ·
-     `app-server-protocol` · `config-features` · `manifests` (Cargo.toml/lock, MODULE.bazel).
+   - Standard areas it buckets into (exact `Get-Slice` output — keep this list in sync with the
+     script's `$sliceOrder`):
+     `core-session` · `core-tools` · `core-other` · `protocol` · `app-server-protocol` ·
+     `app-server` · `config` · `tui` · `analytics` · `manifests` (Cargo.toml/lock + schema JSON/TS) ·
+     `ci-infra` (`.github/`, `*.bazel`) · `other`.
+   - **`-EmitBriefs`** ALSO writes one ready-to-paste resolver brief per non-empty slice to
+     `.codex/tmp/slice_<area>_brief.md` — ABSOLUTE paths + fork-features-at-risk (joined from
+     `docs/fork-feature-inventory.md`) + modify/delete RESTORE/REMOVE flags + a HANDOFF skeleton.
+     This turns "hand-write N resolver prompts" into "spawn N agents, each fed its brief file."
    - It splits DEEP — prefer several lean resolvers over a few heavy ones. Each emitted slice
      is the exact ABSOLUTE-path list for one resolver prompt.
 3. **Fan out the `merge-conflict-resolver` agents on those slices as a Claude Workflow.**
@@ -179,6 +185,11 @@ If the gate isn't tripped (or the user declines), skip straight to Step 3.
    COMMIT GATE used in Step 4 — run it here unstaged to confirm resolvers finished.) If any
    resolver is `partial`/`blocked`, re-slice the leftover files and respawn a fresh resolver
    (never reuse one across batches).
+   - **This gate is now also HOOK-ENFORCED:** `.claude/hooks/guard-merge-debris.ps1` DENIES any
+     `git commit`/`git add` whose staged tracked content still contains inline conflict markers
+     (primary signal `git diff --cached --check`, regex backstop) — so a forgotten marker can no
+     longer slip into a commit even if this manual check is skipped. The hook also still blocks
+     staging `*.orig` / `.codex/diff_*.patch` debris.
 5. **Regenerate union/generated files** flagged under `FILES_NEEDING_REGEN` (e.g.
    `app-server-protocol/src/export.rs` + schema JSON) — use `scripts\regen-all.ps1` (Step 5);
    do the regen, don't hand-finish generated files.

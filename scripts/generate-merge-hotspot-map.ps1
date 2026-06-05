@@ -80,6 +80,20 @@ function Test-SeamExists {
     return $false
 }
 
+function Get-FileLoc {
+    # Line count for a repo-relative path. Defensive: returns 0 on missing/unreadable
+    # files (e.g. deleted upstream-only paths or binaries we cannot enumerate).
+    param([string]$RepoRoot, [string]$RelPath)
+    $full = Join-Path $RepoRoot $RelPath
+    if (-not (Test-Path -LiteralPath $full -PathType Leaf)) { return 0 }
+    try {
+        return (Get-Content -LiteralPath $full -ErrorAction Stop | Measure-Object -Line).Lines
+    }
+    catch {
+        return 0
+    }
+}
+
 # --- Preflight: upstream remote must exist ---
 $null = Invoke-Git rev-parse --verify --quiet "$UpstreamRef^{commit}"
 if ($LASTEXITCODE -ne 0) {
@@ -163,16 +177,22 @@ foreach ($file in $candidates) {
     $uc = [int]($upstreamChurn[$file])
     $fc = [int]($forkCommitCount[$file])
     $seam = Test-SeamExists -RepoRoot $RepoRoot -RelPath $file
+    $loc = Get-FileLoc -RepoRoot $RepoRoot -RelPath $file
     $score = ($mt + 1) * ($uc + 1) * $risk
+    # SizeChurnScore targets SRP-splits: big files that are ALSO frequently conflicted.
+    # Reuses the existing merge-touch metric ($mt / MergeTouches), no parallel signal.
+    $sizeChurn = $loc * $mt
     $rows.Add([pscustomobject]@{
         File = $file
         Area = $area
+        Loc = $loc
         MergeTouches = $mt
         UpstreamChurn = $uc
         ForkCommits = $fc
         Seam = $seam
         RiskWeight = $risk
         HotspotScore = $score
+        SizeChurnScore = $sizeChurn
     })
 }
 
@@ -193,11 +213,33 @@ $sb = New-Object System.Text.StringBuilder
 [void]$sb.AppendLine()
 [void]$sb.AppendLine("HotspotScore = (MergeTouches+1) * (UpstreamChurn+1) * RiskWeight.")
 [void]$sb.AppendLine()
-[void]$sb.AppendLine("| File | Area | MergeTouches | UpstreamChurn | ForkCommits | Seam | HotspotScore |")
-[void]$sb.AppendLine("| --- | --- | ---: | ---: | ---: | :---: | ---: |")
+[void]$sb.AppendLine("| File | Area | LOC | MergeTouches | UpstreamChurn | ForkCommits | Seam | HotspotScore |")
+[void]$sb.AppendLine("| --- | --- | ---: | ---: | ---: | ---: | :---: | ---: |")
 foreach ($r in $topRows) {
     $seamCell = if ($r.Seam) { "yes" } else { "-" }
-    [void]$sb.AppendLine("| ``$($r.File)`` | $($r.Area) | $($r.MergeTouches) | $($r.UpstreamChurn) | $($r.ForkCommits) | $seamCell | $($r.HotspotScore) |")
+    [void]$sb.AppendLine("| ``$($r.File)`` | $($r.Area) | $($r.Loc) | $($r.MergeTouches) | $($r.UpstreamChurn) | $($r.ForkCommits) | $seamCell | $($r.HotspotScore) |")
+}
+
+# --- SRP-split candidate section: big AND frequently-conflicted files ---
+# SizeChurnScore = LOC * MergeTouches. Splitting these reduces future conflicts most.
+$srpRows = $rows |
+    Where-Object { $_.SizeChurnScore -gt 0 } |
+    Sort-Object SizeChurnScore -Descending |
+    Select-Object -First 15
+[void]$sb.AppendLine()
+[void]$sb.AppendLine("## Top SRP-split candidates (LOC * merge-touch)")
+[void]$sb.AppendLine()
+[void]$sb.AppendLine("Files that are both large and frequently conflicted; splitting them by responsibility reduces future merge conflicts the most. SizeChurnScore = LOC * MergeTouches.")
+[void]$sb.AppendLine()
+[void]$sb.AppendLine("| File | LOC | merge-touch | SizeChurnScore |")
+[void]$sb.AppendLine("| --- | ---: | ---: | ---: |")
+if (@($srpRows).Count -eq 0) {
+    [void]$sb.AppendLine("| _(no file has both LOC and merge-touch &gt; 0)_ | - | - | - |")
+}
+else {
+    foreach ($r in $srpRows) {
+        [void]$sb.AppendLine("| ``$($r.File)`` | $($r.Loc) | $($r.MergeTouches) | $($r.SizeChurnScore) |")
+    }
 }
 
 $resolvedOut = if ([System.IO.Path]::IsPathRooted($OutPath)) { $OutPath } else { Join-Path $RepoRoot $OutPath }

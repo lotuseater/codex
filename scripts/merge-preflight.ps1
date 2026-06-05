@@ -20,7 +20,11 @@
          scripts/detect-adapter-gaps.ps1 (try/catch; never fails the preflight).
       6. Write a Markdown report to -OutFile (default
          .codex/tmp/merge_preflight_<yyyy-MM-dd_HHmm>.md) and echo a terse summary.
-      7. Always exit 0 (informational). Prints a "nothing to merge" banner when 0 behind.
+      7. If -LogMetrics is set (OFF by default; -MetricsCsv overrides the path), seed/upsert
+         one row in docs/merge-metrics.csv with the up-front measurements (date, upstream
+         tip, commits_behind, conflicts, content_conflicts, modify_delete); outcome columns
+         stay blank for scripts/merge-metrics-finalize.ps1. Idempotent on (date, upstream_tip).
+      8. Always exit 0 (informational). Prints a "nothing to merge" banner when 0 behind.
 
 .NOTES
     Read-only. Never runs cargo/builds, `git merge`, or any mutating git other than the
@@ -31,6 +35,8 @@ param(
     [string]$UpstreamRef = "upstream/main",
     [switch]$NoFetch,
     [string]$OutFile,
+    [switch]$LogMetrics,
+    [string]$MetricsCsv,
     [string]$RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 )
 
@@ -74,6 +80,72 @@ $AreaOrder = @(
     "core-session", "core-tools", "core-other", "protocol", "app-server-protocol",
     "app-server", "config", "tui", "analytics", "manifests", "ci-infra", "other"
 )
+
+# Canonical metrics-CSV columns (must match docs/merge-metrics.csv header order).
+$MetricsColumns = @(
+    "date", "upstream_tip", "commits_behind", "conflicts", "content_conflicts",
+    "modify_delete", "slices", "buildfix_waves", "wallclock_min", "result", "notes"
+)
+
+# --- Metrics upsert: append (or update-in-place) one row in docs/merge-metrics.csv ---
+# Seeds the up-front measurements the preflight already computed; outcome columns
+# (slices/buildfix_waves/wallclock_min/result/notes) are left blank for
+# scripts/merge-metrics-finalize.ps1 to backfill. Idempotent on (date, upstream_tip):
+# a row matching both is overwritten rather than duplicated.
+function Update-MergeMetricsRow {
+    param(
+        [Parameter(Mandatory = $true)][string]$CsvPath,
+        [Parameter(Mandatory = $true)][string]$Date,
+        [Parameter(Mandatory = $true)][string]$UpstreamTip,
+        [Parameter(Mandatory = $true)][int]$CommitsBehind,
+        [Parameter(Mandatory = $true)][int]$Conflicts,
+        [Parameter(Mandatory = $true)][int]$ContentConflicts,
+        [Parameter(Mandatory = $true)][int]$ModifyDelete
+    )
+
+    # Load existing data rows (if any), preserving every column.
+    $existing = @()
+    if (Test-Path -LiteralPath $CsvPath) {
+        $existing = @(Import-Csv -LiteralPath $CsvPath)
+    } else {
+        $dir = Split-Path -Parent $CsvPath
+        if ($dir -and -not (Test-Path -LiteralPath $dir)) {
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        }
+    }
+
+    # Find a row matching today's date + this upstream tip (idempotency key).
+    $match = $null
+    foreach ($r in $existing) {
+        if ($r.date -eq $Date -and $r.upstream_tip -eq $UpstreamTip) { $match = $r; break }
+    }
+
+    if ($null -ne $match) {
+        # Update the seeded columns in place; leave outcome columns untouched.
+        $match.commits_behind    = "$CommitsBehind"
+        $match.conflicts         = "$Conflicts"
+        $match.content_conflicts = "$ContentConflicts"
+        $match.modify_delete     = "$ModifyDelete"
+        $rowsOut = $existing
+        $action = "updated"
+    } else {
+        # Build a new row carrying ALL canonical columns (blanks for outcome fields).
+        $new = [ordered]@{}
+        foreach ($c in $MetricsColumns) { $new[$c] = "" }
+        $new.date              = $Date
+        $new.upstream_tip      = $UpstreamTip
+        $new.commits_behind    = "$CommitsBehind"
+        $new.conflicts         = "$Conflicts"
+        $new.content_conflicts = "$ContentConflicts"
+        $new.modify_delete     = "$ModifyDelete"
+        $rowsOut = @($existing) + [pscustomobject]$new
+        $action = "appended"
+    }
+
+    $rowsOut | Select-Object $MetricsColumns |
+        Export-Csv -LiteralPath $CsvPath -Encoding UTF8
+    return $action
+}
 
 # --- Preflight: upstream ref must resolve ---
 $null = Invoke-Git rev-parse --verify --quiet "$UpstreamRef^{commit}"
@@ -383,6 +455,32 @@ if ($conflictFiles.Count -gt 0) {
 
 Set-Content -LiteralPath $resolvedOut -Value $sb.ToString() -Encoding UTF8
 
+# --- Step 7 (opt-in): seed a metrics row in docs/merge-metrics.csv ---
+# Off by default so default behavior is unchanged. Records ONLY the up-front
+# measurements just computed; outcome columns stay blank for the finalize companion.
+$metricsNote = "not logged (-LogMetrics off)"
+if ($LogMetrics) {
+    if (-not $MetricsCsv) { $MetricsCsv = Join-Path $RepoRoot "docs/merge-metrics.csv" }
+    $resolvedMetrics = if ([System.IO.Path]::IsPathRooted($MetricsCsv)) { $MetricsCsv } else { Join-Path $RepoRoot $MetricsCsv }
+    # content_conflicts = files with inline <<<<<<< markers; fall back to conflictCount
+    # if the legacy marker pass produced nothing (e.g. --write-tree-only environments).
+    $contentConflicts = if ($markerCount -gt 0) { $markerCount } else { $conflictCount }
+    $modifyDelete = 0
+    foreach ($k in $conflictTypeCounts.Keys) {
+        if ($k -match '(?i)modify/delete|delete/modify') { $modifyDelete += [int]$conflictTypeCounts[$k] }
+    }
+    try {
+        $action = Update-MergeMetricsRow -CsvPath $resolvedMetrics `
+            -Date $ts.ToString('yyyy-MM-dd') -UpstreamTip $upstreamShort `
+            -CommitsBehind $behind -Conflicts $conflictCount `
+            -ContentConflicts $contentConflicts -ModifyDelete $modifyDelete
+        $metricsNote = "$action -> $resolvedMetrics"
+    } catch {
+        $metricsNote = "ERROR: $($_.Exception.Message)"
+        Write-Warning "Failed to log metrics row: $($_.Exception.Message)"
+    }
+}
+
 # --- Terse stdout summary ---
 Write-Host ""
 if ($nothingToMerge) {
@@ -407,6 +505,7 @@ if ($first) { Write-Host " (none)" -NoNewline }
 Write-Host ""
 Write-Host "  hotspots     : $hotspotNote"
 Write-Host "  adapter gaps : $adapterNote"
+Write-Host "  metrics      : $metricsNote"
 Write-Host "Report -> $resolvedOut" -ForegroundColor Cyan
 
 # Informational tool: always exit 0.
