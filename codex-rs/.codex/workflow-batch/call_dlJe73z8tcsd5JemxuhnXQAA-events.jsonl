@@ -1,4 +1,0 @@
-{"event":"workflow_start","name":null,"spec":"<inline>","ts":1779864796.4283023}
-{"event":"read_file","id":"step_1","path":"C:\\Users\\Oleh\\Documents\\GitHub\\open_ai\\codex\\codex-rs\\protocol/src/protocol.rs","iteration":null,"ts":1779864796.4339325}
-{"event":"read_file","id":"step_2","path":"C:\\Users\\Oleh\\Documents\\GitHub\\open_ai\\codex\\codex-rs\\core/src/codex_thread.rs","iteration":null,"ts":1779864796.438064}
-{"event":"read_file","id":"step_3","path":"C:\\Users\\Oleh\\Documents\\GitHub\\open_ai\\codex\\codex-rs\\thread/thread-manager-api/src/lib.rs","iteration":null,"ts":1779864796.4420447}

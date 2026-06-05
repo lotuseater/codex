@@ -124,6 +124,14 @@ __pycache__/
 .codex/workflow/tmp
 
 # Recurring merge/workflow scratch (ignore, do not commit) — added 2026-06-03
+# Nested worker-CWD scratch: workers run with cwd=codex-rs and write relative .codex/ paths
+codex-rs/.codex/
+# Stray agent scratch left under .codex/workflow (txt/tsv/tmp); .ps1 launchers kept visible
+.codex/workflow/agents/*.tmp
+.codex/workflow/agents/*.tsv
+.codex/workflow/stage*.txt
+.codex/workflow/tmp_*.txt
+/.codex_core_check*.txt
 *.orig
 .codex/tmp/
 .codex/tasks/
