@@ -242,6 +242,93 @@ If the gate isn't tripped (or the user declines), skip straight to Step 3.
 
 ---
 
+## Step 5.5 — Post-merge build-fix loop (the part that eats the session)
+
+Step 5.3 fans out compile-fixers; this section is the FULL runbook for that loop — the
+post-merge compile-error triage that the conflict-marker tooling does NOT cover. Budget
+**~6-9 iterations**, not one: `--keep-going` SKIPS any crate whose dependency failed, so
+errors surface in **WAVES** — leaf/base crates clear first, the big aggregator
+(`codex-core`) is last and largest. Each cleared layer unblocks the next.
+
+### The iteration loop
+```
+loop (run cargo from INSIDE codex-rs/ — see toolchain-CWD gotcha):
+  cargo check --workspace --release --keep-going  > logs\merge-check-release-iterN.log 2>&1
+  scripts\verify-cargo-log.ps1 -LogPath logs\merge-check-release-iterN.log   # pass/fail GATE (grep, not exit 0)
+  if clean: break
+  scripts\merge-buildfix-triage.ps1 <log>   # triage/partition: groups errors by (error-code, missing-symbol) + owning crate/file, suggests a file→slice partition
+  recon (1 worker): decide RESTORE/RENAME/REMOVE per root cause; emit file-disjoint slices
+  fan out N concurrent fix-workers (one per slice); ORCHESTRATOR re-checks (iter N+1)
+```
+`verify-cargo-log.ps1` = the pass/fail gate (already in `scripts/`); `merge-buildfix-triage.ps1`
+= the triage/partition helper (so recon starts from a table, not 100 hand-grepped errors).
+
+### The dominant failure pattern (~80% of post-merge errors)
+> Upstream ADDED a member (field / enum variant / trait method / fn / import path) and its
+> USAGE. The 3-way merge resolved the DEFINITION toward the fork side (which lacked the new
+> member, or had the old name), but upstream's USAGE files survived → usage refers to a
+> member the fork-flavored definition doesn't have.
+
+Variants — all the same root shape: dropped struct field, dropped enum variant arm
+(non-exhaustive match), dropped trait method, dropped free fn / method, stale import path
+(symbol moved crate/module), field/symbol RENAME (fork usage kept the OLD name), orphaned
+DEAD code left after upstream removed a whole feature (dangling field-inits + an orphaned fn).
+
+### The per-member decision — RESTORE-MEMBER vs ADOPT-RENAME vs REMOVE
+Decide ONCE per root cause, GLOBALLY, BEFORE editing call sites (so two slices can't guess
+differently on a shared type like `Session`/`Config` and diverge):
+- **RESTORE-MEMBER (default, union-preserve)** — the member is a fork feature (or an upstream
+  addition the fork wants) the merge dropped. Add it back to its OWNING definition → ALL
+  external call sites auto-resolve with ZERO call-site edits. Cheapest fix; default.
+- **ADOPT-RENAME** — upstream RENAMED a member and the fork should follow. The def already
+  has the new name; fork USAGE kept the old one → rename the CALL SITES (not the def). Pick
+  this when the new name already compiles at many OTHER sites (renaming the def back is the
+  bigger blast radius).
+- **REMOVE** — upstream DELETED the concept entirely → drop the fork's dangling usages.
+
+Git-evidence method (decide which case): compare the owning type on each merge parent —
+fork-parent = `<merge>^1`, upstream-parent = `<merge>^2` (`git rev-parse <mergesha>^1 ^2`):
+```
+git show <merge>^1:<path>   # fork side
+git show <merge>^2:<path>   # upstream side
+```
+Heuristic: member on fork side & gone upstream → RESTORE (fork still uses it) or REMOVE
+(upstream killed it AND no longer uses it) — tell apart by whether upstream still USES it.
+New name present & compiling elsewhere → ADOPT-RENAME.
+
+### Orchestration — recon → file-disjoint fan-out
+1. **Recon (1 worker)** reads the full error log + chokepoint defs + the `^1`/`^2` git diffs,
+   and emits a PLAN: per root cause the RESTORE/RENAME/REMOVE decision + the OWNING file, PLUS
+   a **file-disjoint partition** where **each chokepoint def is owned by EXACTLY ONE slice**
+   and the auto-resolving call-site files are listed (no other slice touches them).
+2. **Fan-out (N concurrent fix-workers)**, one per slice, each editing only its owned files,
+   each told: "call-site files of a member another slice restores → DO NOT edit; they compile
+   after that owner's restore." Cross-slice deps are **compile-time only**, so concurrent
+   editing of disjoint files is safe.
+3. **Consolidated check (ORCHESTRATOR only)** — workers CANNOT verify (a hook force-backgrounds
+   their cargo, and subagents aren't re-woken on bg completion). The orchestrator always runs
+   the authoritative `cargo check` + `verify-cargo-log.ps1`.
+
+### Gotchas (checklist — each cost real time)
+- [ ] **Toolchain-CWD trap.** Toolchain selection follows the CWD, NOT `--manifest-path`. From
+      repo root → rustup default (1.93.0) → instant bail "sqlx requires rustc 1.94.0" (~14-line
+      log that LOOKS like a code error). FIX: always run cargo from INSIDE `codex-rs/`.
+- [ ] **False-green exit 0.** A trailing echo / `EXITCODE=` line after cargo masks its real
+      failure; bg "exit code 0" is unreliable. GREP the log (`error[`, `error:`, `^error`,
+      `EXITCODE=`) via `verify-cargo-log.ps1` — never trust the notification.
+- [ ] **`--release` skips `#[cfg(test)]`.** A green release-lib check leaves test code with
+      hundreds of stale-API errors. Test repair is a SEPARATE `cargo check --tests -p <crate>`
+      pass / deferred debt — green release is NOT "done".
+- [ ] **Code-motion drops method bodies.** A worker MOVING a method (trait-impl relocation) can
+      silently drop the body (keeping doc/attr). Verify moves: source-removed + target-added +
+      body verbatim (`scripts\split-completeness-check.ps1`).
+- [ ] **Compat-wrapper before deleting** a fn if a non-owned caller survives: grep ALL callers
+      across slices first; if any are out of your slice, keep a thin wrapper METHOD (NOT a
+      cross-crate re-export shim — those stay banned).
+- [ ] **`PostToolUse` formatter re-sorts `use` blocks** after edits — cosmetic, ignore.
+
+---
+
 ## Step 6 — Deploy
 
 1. Build + deploy the local binary (memory-aware):
@@ -282,5 +369,9 @@ If the gate isn't tripped (or the user declines), skip straight to Step 3.
       `FILES_UNCERTAIN` surfaced.
 - [ ] Step 5: first `cargo check`; BUILD GATE via `verify-cargo-log.ps1` (not trusting exit 0);
       `regen-all.ps1` for schemas/locks; clean.
+- [ ] Step 5.5: build-fix LOOP (~6-9 waves, leaf crates → `codex-core` last);
+      `merge-buildfix-triage.ps1` → recon decides RESTORE/RENAME/REMOVE per root cause →
+      file-disjoint fix-workers → ORCHESTRATOR re-checks; gotchas (toolchain-CWD, false-green,
+      `--release` skips tests, code-motion drops bodies, compat-wrapper non-owned callers).
 - [ ] Step 6: build + deploy; per-crate smoke tests; `check-no-merge-residue.ps1 -Staged`;
       merge commit; push.
