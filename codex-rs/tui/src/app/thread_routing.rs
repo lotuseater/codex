@@ -613,7 +613,7 @@ impl App {
                             permissions_override,
                             workspace_roots,
                             model.to_string(),
-                            *effort,
+                            effort.clone(),
                             *summary,
                             service_tier.clone(),
                             *context_budget_mode,

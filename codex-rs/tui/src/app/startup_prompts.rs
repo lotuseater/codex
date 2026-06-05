@@ -155,6 +155,8 @@ pub(super) fn apply_accepted_model_migration(
     });
 
     config.model = Some(target_model.clone());
+    // fork-local: preserve the user's chosen reasoning effort across model migration
+    // instead of forcing the target model's default effort.
     config.model_reasoning_effort = Some(selected_effort);
     app_event_tx.send(AppEvent::UpdateModel(target_model.clone()));
     app_event_tx.send(AppEvent::UpdateReasoningEffort(Some(selected_effort)));
@@ -243,7 +245,6 @@ pub(super) async fn handle_model_migration_prompt_if_needed(
 
     if let Some(ModelUpgrade {
         id: target_model,
-        reasoning_effort_mapping: _,
         migration_config_key,
         model_link,
         upgrade_copy,
@@ -293,7 +294,7 @@ pub(super) async fn handle_model_migration_prompt_if_needed(
                     app_event_tx,
                     model.to_string(),
                     target_model.clone(),
-                    target_preset.default_reasoning_effort,
+                    target_preset.default_reasoning_effort.clone(),
                 );
             }
             ModelMigrationOutcome::Rejected => {

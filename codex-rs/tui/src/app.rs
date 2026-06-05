@@ -16,6 +16,7 @@ use crate::app_event::RealtimeAudioDeviceKind;
 #[cfg(target_os = "windows")]
 use crate::app_event::WindowsSandboxEnableMode;
 use crate::app_event_sender::AppEventSender;
+use crate::app_server_session::AppServerBootstrap;
 use crate::app_server_session::AppServerSession;
 use crate::app_server_session::AppServerStartedThread;
 use crate::app_server_session::app_server_rate_limit_snapshots;
@@ -772,6 +773,8 @@ impl App {
         remote_app_server_endpoint: Option<RemoteAppServerEndpoint>,
         state_db: Option<StateDbHandle>,
         environment_manager: Arc<EnvironmentManager>,
+        startup_elapsed_before_app: Duration,
+        startup_bootstrap: Option<AppServerBootstrap>,
         startup_hooks_browser: Option<HooksListEntry>,
         auto_loop_settings: AutoLoopSettings,
     ) -> Result<AppExitInfo> {
@@ -819,7 +822,11 @@ impl App {
                 });
             }
         };
-        let bootstrap = app_server.bootstrap(&config).await?;
+        let bootstrap = match startup_bootstrap {
+            Some(bootstrap) => bootstrap,
+            None => app_server.bootstrap(&config).await?,
+        };
+        let bootstrap_ms = bootstrap.duration.as_millis();
         let mut model = bootstrap.default_model;
         let available_models = bootstrap.available_models;
         let remote_connection = crate::status::remote_connection::remote_connection_status_value(
@@ -1130,6 +1137,15 @@ See the Codex keymap documentation for supported actions and examples."
         tokio::pin!(tui_events);
 
         tui.frame_requester().schedule_frame();
+        tracing::info!(
+            duration_ms = %(startup_elapsed_before_app + startup_started_at.elapsed()).as_millis(),
+            bootstrap_ms = %bootstrap_ms,
+            runtime_model_provider_ms = %runtime_model_provider_ms,
+            thread_and_widget_ms = %thread_and_widget_ms,
+            initial_session_ms = %initial_session_ms,
+            event_stream_ms = %event_stream_started_at.elapsed().as_millis(),
+            "tui startup initial frame scheduled"
+        );
         app.refresh_startup_skills(&app_server);
         // Kick off a non-blocking rate-limit prefetch so the first `/status`
         // already has data, without delaying the initial frame render.

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
@@ -22,7 +23,6 @@ use crate::context::ContextualUserFragment;
 use crate::context_reduction_adapter::context_reduction_reason_to_compaction_reason;
 use crate::context_reduction_adapter::semantic_compact_input;
 use crate::feedback_tags;
-use crate::goals::GoalRuntimeEvent;
 use crate::hook_runtime::inspect_pending_input;
 use crate::hook_runtime::record_additional_contexts;
 use crate::hook_runtime::record_pending_input;
@@ -85,12 +85,14 @@ use codex_context_reduction::PRUNE_NUDGE_PROMPT;
 use codex_context_reduction::PostSamplingAutoCompactAction;
 use codex_context_reduction::SemanticCompactDecision;
 use codex_context_reduction::restored_session_auto_compact_token_limit;
+use codex_core_skills::injection::InjectedHostSkillPrompts;
 use codex_extension_api::TurnInputContext;
 use codex_extension_api::TurnInputEnvironment;
 use codex_features::Feature;
 use codex_git_utils::get_git_repo_root;
 use codex_prompt_reducer::PromptReductionConfig;
 use codex_prompt_reducer::PromptReductionStats;
+use codex_protocol::config_types::AutoCompactTokenLimitScope;
 use codex_protocol::config_types::ModeKind;
 use codex_protocol::config_types::ServiceTier;
 use codex_protocol::error::CodexErr;
@@ -669,15 +671,6 @@ pub(crate) async fn run_turn(
                 let error = e.to_codex_protocol_error();
                 sess.emit_turn_error_lifecycle(turn_context.as_ref(), error.clone())
                     .await;
-                if error == CodexErrorInfo::UsageLimitExceeded
-                    && let Err(err) = sess
-                        .goal_runtime_apply(GoalRuntimeEvent::UsageLimitReached {
-                            turn_context: turn_context.as_ref(),
-                        })
-                        .await
-                {
-                    warn!("failed to usage-limit active goal after usage-limit error: {err}");
-                }
                 sess.track_turn_codex_error(turn_context.as_ref(), &e);
                 let event = EventMsg::Error(e.to_error_event(/*message_prefix*/ None));
                 sess.send_event(&turn_context, event).await;
@@ -853,6 +846,9 @@ async fn build_skills_and_plugins(
     )
     .await;
 
+    let injected_host_skill_prompts = turn_context
+        .extension_data
+        .get::<InjectedHostSkillPrompts>();
     let SkillInjections {
         items: skill_injections,
         warnings: skill_warnings,
@@ -909,7 +905,16 @@ async fn build_skills_and_plugins(
             .track_plugin_used(tracking.clone(), plugin);
     }
 
-    let mut injection_items = skill_items;
+    let mut injection_items: Vec<ResponseItem> = match injected_host_skill_prompts {
+        Some(injected_host_skill_prompts) => skill_injections
+            .iter()
+            .filter(|skill| !injected_host_skill_prompts.contains_path(&skill.path))
+            .map(|skill| {
+                ContextualUserFragment::into(crate::context::SkillInstructions::from(skill))
+            })
+            .collect(),
+        None => skill_items,
+    };
     injection_items.extend(plugin_items);
     injection_items.extend(extension_injection_items);
     Some((injection_items, explicitly_enabled_connectors))
@@ -1003,7 +1008,7 @@ async fn track_turn_resolved_config_analytics(
             permission_profile: turn_context.permission_profile(),
             #[allow(deprecated)]
             permission_profile_cwd: turn_context.cwd.to_path_buf(),
-            reasoning_effort: turn_context.reasoning_effort,
+            reasoning_effort: turn_context.reasoning_effort.clone(),
             reasoning_summary: Some(turn_context.reasoning_summary),
             service_tier: turn_context
                 .config
@@ -1636,6 +1641,7 @@ async fn run_sampling_request(
             ResponsesStreamRequest::Sampling,
         )
         .await?;
+        turn_context.turn_timing_state.record_sampling_retry();
     }
 }
 
@@ -1838,12 +1844,13 @@ async fn try_run_sampling_request(
         turn_context.model_info.slug.as_str(),
         turn_context.provider.info().name.as_str(),
     );
+    let sampling_timing_guard = turn_context.turn_timing_state.begin_sampling();
     let mut stream = client_session
         .stream(
             prompt,
             &turn_context.model_info,
             &turn_context.session_telemetry,
-            turn_context.reasoning_effort,
+            turn_context.reasoning_effort.clone(),
             turn_context.reasoning_summary,
             turn_context.config.service_tier.clone(),
             turn_metadata_header,
@@ -1959,6 +1966,7 @@ async fn try_run_sampling_request(
                         role == "assistant" && matches!(phase, Some(MessagePhase::Commentary))
                     }
                     ResponseItem::Reasoning { .. } => true,
+                    ResponseItem::AgentMessage { .. } => false,
                     ResponseItem::LocalShellCall { .. }
                     | ResponseItem::FunctionCall { .. }
                     | ResponseItem::ToolSearchCall { .. }
@@ -2086,6 +2094,10 @@ async fn try_run_sampling_request(
                         .await;
                 }
             }
+            ResponseEvent::TurnModerationMetadata(metadata) => {
+                sess.emit_turn_moderation_metadata(&turn_context, metadata)
+                    .await;
+            }
             ResponseEvent::ServerReasoningIncluded(included) => {
                 sess.set_server_reasoning_included(included).await;
             }
@@ -2100,9 +2112,9 @@ async fn try_run_sampling_request(
                 sess.services.models_manager.refresh_if_new_etag(etag).await;
             }
             ResponseEvent::Completed {
-                response_id,
                 token_usage,
                 end_turn,
+                ..
             } => {
                 flush_assistant_text_segments_all(
                     &sess,
@@ -2249,6 +2261,7 @@ async fn try_run_sampling_request(
             }
         }
     };
+    drop(sampling_timing_guard);
 
     flush_assistant_text_segments_all(
         &sess,
@@ -2267,7 +2280,13 @@ async fn try_run_sampling_request(
         client_session.send_response_processed(response_id).await;
     }
 
+    let tool_blocking_timing_guard = if in_flight.is_empty() {
+        None
+    } else {
+        Some(turn_context.turn_timing_state.begin_tool_blocking())
+    };
     drain_in_flight(&mut in_flight, sess.clone(), turn_context.clone()).await?;
+    drop(tool_blocking_timing_guard);
 
     if should_emit_token_count {
         // A tool call such as request_user_input can intentionally pause the turn. Emit token

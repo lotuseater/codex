@@ -49,6 +49,8 @@ pub use facts::ThreadInitializationMode;
 pub use facts::TrackEventsContext;
 pub use facts::TurnCodexError;
 pub use facts::TurnCodexErrorFact;
+pub use facts::TurnProfile;
+pub use facts::TurnProfileFact;
 pub use facts::TurnResolvedConfigFact;
 pub use facts::TurnStatus;
 pub use facts::TurnSteerRejectionReason;

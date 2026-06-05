@@ -1430,6 +1430,7 @@ pub(super) fn plugins_test_detail(
                 needs_auth: *needs_auth,
             })
             .collect(),
+        app_templates: Vec::new(),
         mcp_servers: mcp_servers.iter().map(|name| (*name).to_string()).collect(),
     }
 }

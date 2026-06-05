@@ -1,2 +1,2 @@
 date,upstream_tip,commits_behind,conflicts,content_conflicts,modify_delete,slices,buildfix_waves,wallclock_min,result,notes
-2026-06-05,bb7d19bc24,83,106,95,11,,,,,""
+2026-06-05,479a14cf59,85,117,100,17,17,,,,"DU=11 UD=6 resolved pre-resolver; 100 UU via 17 Opus slices"

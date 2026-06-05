@@ -19,9 +19,6 @@ use codex_core_test_runtime::compact_fixtures::body_contains_compaction_prompt;
 use codex_core_test_runtime::compact_fixtures::body_contains_text;
 use codex_core_test_runtime::compact_fixtures::compact_prompt;
 use codex_core_test_runtime::compact_fixtures::set_test_compact_prompt;
-use codex_test_support_responses::context_snapshot;
-use codex_test_support_responses::context_snapshot::ContextSnapshotOptions;
-use codex_test_support_responses::context_snapshot::ContextSnapshotRenderMode;
 use codex_core_test_runtime::responses::ResponseMock;
 use codex_core_test_runtime::responses::ResponsesRequest;
 use codex_core_test_runtime::responses::ev_assistant_message;
@@ -38,6 +35,9 @@ use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::WarningEvent;
 use codex_protocol::user_input::UserInput;
+use codex_test_support_responses::context_snapshot;
+use codex_test_support_responses::context_snapshot::ContextSnapshotOptions;
+use codex_test_support_responses::context_snapshot::ContextSnapshotRenderMode;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
 use serde_json::json;
@@ -546,6 +546,7 @@ async fn snapshot_rollback_followup_turn_trims_context_updates() -> Result<()> {
             approvals_reviewer: None,
             sandbox_policy: None,
             permission_profile: None,
+            active_permission_profile: None,
             windows_sandbox_level: None,
             model: None,
             effort: None,

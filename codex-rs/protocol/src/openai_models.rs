@@ -71,7 +71,6 @@ pub struct ReasoningEffortPreset {
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema, PartialEq)]
 pub struct ModelUpgrade {
     pub id: String,
-    pub reasoning_effort_mapping: Option<HashMap<ReasoningEffort, ReasoningEffort>>,
     pub migration_config_key: String,
     pub model_link: Option<String>,
     pub upgrade_copy: Option<String>,
@@ -304,6 +303,8 @@ pub struct ModelInfo {
     pub used_fallback_model_metadata: bool,
     #[serde(default)]
     pub supports_search_tool: bool,
+    #[serde(default)]
+    pub use_responses_lite: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_review_model_override: Option<String>,
     #[serde(
@@ -465,9 +466,6 @@ impl From<ModelInfo> for ModelPreset {
             is_default: false, // default is the highest priority available model
             upgrade: info.upgrade.as_ref().map(|upgrade| ModelUpgrade {
                 id: upgrade.model.clone(),
-                reasoning_effort_mapping: reasoning_effort_mapping_from_presets(
-                    &info.supported_reasoning_levels,
-                ),
                 migration_config_key: info.slug.clone(),
                 // todo(aibrahim): add the model link here.
                 model_link: None,
@@ -535,43 +533,6 @@ impl ModelPreset {
     }
 }
 
-fn reasoning_effort_mapping_from_presets(
-    presets: &[ReasoningEffortPreset],
-) -> Option<HashMap<ReasoningEffort, ReasoningEffort>> {
-    if presets.is_empty() {
-        return None;
-    }
-
-    // Map every canonical effort to the closest supported effort for the new model.
-    let supported: Vec<ReasoningEffort> = presets.iter().map(|p| p.effort).collect();
-    let mut map = HashMap::new();
-    for effort in ReasoningEffort::iter() {
-        let nearest = nearest_effort(effort, &supported);
-        map.insert(effort, nearest);
-    }
-    Some(map)
-}
-
-fn effort_rank(effort: ReasoningEffort) -> i32 {
-    match effort {
-        ReasoningEffort::None => 0,
-        ReasoningEffort::Minimal => 1,
-        ReasoningEffort::Low => 2,
-        ReasoningEffort::Medium => 3,
-        ReasoningEffort::High => 4,
-        ReasoningEffort::XHigh => 5,
-    }
-}
-
-fn nearest_effort(target: ReasoningEffort, supported: &[ReasoningEffort]) -> ReasoningEffort {
-    let target_rank = effort_rank(target);
-    supported
-        .iter()
-        .copied()
-        .min_by_key(|candidate| (effort_rank(*candidate) - target_rank).abs())
-        .unwrap_or(target)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -612,6 +573,7 @@ mod tests {
             input_modalities: default_input_modalities(),
             used_fallback_model_metadata: false,
             supports_search_tool: false,
+            use_responses_lite: false,
             auto_review_model_override: None,
             tool_mode: None,
             multi_agent_version: None,
@@ -832,6 +794,7 @@ mod tests {
         assert!(!model.supports_image_detail_original);
         assert_eq!(model.web_search_tool_type, WebSearchToolType::Text);
         assert!(!model.supports_search_tool);
+        assert!(!model.use_responses_lite);
         assert_eq!(model.auto_review_model_override, None);
         assert_eq!(model.tool_mode, None);
     }

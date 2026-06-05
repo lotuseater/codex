@@ -25,6 +25,7 @@ pub mod responses {
 }
 mod runtime_harness;
 pub mod tracing;
+pub mod zsh_fork;
 
 pub use protocol_fixtures::RemoteEnvConfig;
 pub use protocol_fixtures::assert_regex_match;

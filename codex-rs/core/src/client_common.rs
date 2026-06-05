@@ -4,6 +4,7 @@ use codex_protocol::error::Result;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::FunctionCallOutputBody;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::protocol::InterAgentCommunication;
 use codex_tool_registry_api::ToolSpec;
 use futures::Stream;
 use serde::Deserialize;
@@ -56,7 +57,23 @@ impl Default for Prompt {
 
 impl Prompt {
     pub(crate) fn get_formatted_input(&self) -> Vec<ResponseItem> {
-        let mut input = self.input.clone();
+        let mut input: Vec<ResponseItem> = self
+            .input
+            .iter()
+            .cloned()
+            .map(|item| {
+                let ResponseItem::Message { role, content, .. } = &item else {
+                    return item;
+                };
+                if role != "assistant" {
+                    return item;
+                }
+                InterAgentCommunication::from_message_content(content)
+                    .filter(|communication| communication.encrypted_content.is_some())
+                    .map(|communication| communication.to_model_input_item())
+                    .unwrap_or(item)
+            })
+            .collect();
         sanitize_tool_search_outputs(&mut input);
 
         // when using the *Freeform* apply_patch tool specifically, tool outputs

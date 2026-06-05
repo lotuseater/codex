@@ -412,18 +412,40 @@ impl StreamingAgentTailCell {
 }
 
 impl HistoryCell for StreamingAgentTailCell {
-    fn display_lines(&self, _width: u16) -> Vec<Line<'static>> {
+    fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
+        visible_lines(self.display_hyperlink_lines(width))
+    }
+
+    fn display_hyperlink_lines(&self, _width: u16) -> Vec<HyperlinkLine> {
         // Tail lines are already rendered at the controller's current stream width.
         // Re-wrapping them here can split table borders and produce malformed in-flight rows.
-        prefix_lines(
-            self.lines.clone(),
+        // fork-local: this cell stores plain `Vec<Line>` (fork call-sites pass plain lines),
+        // so lift them into hyperlink lines before applying the upstream prefixing path.
+        let mut lines = prefix_hyperlink_lines(
+            plain_hyperlink_lines(self.lines.clone()),
             if self.is_first_line {
                 "• ".dim()
             } else {
                 "  ".into()
             },
             "  ".into(),
-        )
+        );
+        for line in &mut lines {
+            if line
+                .line
+                .spans
+                .iter()
+                .all(|span| span.content.chars().all(char::is_whitespace))
+            {
+                line.line = Line::default().style(line.line.style);
+                line.hyperlinks.clear();
+            }
+        }
+        lines
+    }
+
+    fn transcript_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
+        self.display_hyperlink_lines(width)
     }
 
     fn raw_lines(&self) -> Vec<Line<'static>> {

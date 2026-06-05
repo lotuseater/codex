@@ -149,7 +149,7 @@ pub fn new_session_info(
     // Header box rendered as history (so it appears at the very top)
     let header = SessionHeaderHistoryCell::new(
         session.model.clone(),
-        session.reasoning_effort,
+        session.reasoning_effort.clone(),
         show_fast_status,
         cwd.to_path_buf(),
         CODEX_CLI_VERSION,
@@ -311,15 +311,10 @@ impl SessionHeaderHistoryCell {
         formatted
     }
 
-    fn reasoning_label(&self) -> Option<&'static str> {
-        self.reasoning_effort.map(|effort| match effort {
-            ReasoningEffortConfig::Minimal => "minimal",
-            ReasoningEffortConfig::Low => "low",
-            ReasoningEffortConfig::Medium => "medium",
-            ReasoningEffortConfig::High => "high",
-            ReasoningEffortConfig::XHigh => "xhigh",
-            ReasoningEffortConfig::None => "none",
-        })
+    fn reasoning_label(&self) -> Option<&str> {
+        self.reasoning_effort
+            .as_ref()
+            .map(ReasoningEffortConfig::as_str)
     }
 }
 
@@ -366,7 +361,7 @@ impl HistoryCell for SessionHeaderHistoryCell {
             ];
             if let Some(reasoning) = reasoning_label {
                 spans.push(Span::from(" "));
-                spans.push(Span::from(reasoning));
+                spans.push(Span::from(reasoning.to_owned()));
             }
             if self.show_fast_status {
                 spans.push("   ".into());

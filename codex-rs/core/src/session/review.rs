@@ -1,5 +1,6 @@
 use super::turn_context::image_generation_tool_auth_allowed;
 use super::*;
+use codex_core_skills::HostLoadedSkills;
 use codex_protocol::openai_models::ToolMode;
 use codex_protocol::protocol::MultiAgentVersion;
 use codex_tool_execution_api::ToolsConfig;
@@ -28,15 +29,22 @@ pub(super) async fn spawn_review_thread(
     let _ = review_features.disable(Feature::WebSearchRequest);
     let _ = review_features.disable(Feature::WebSearchCached);
     let review_web_search_mode = WebSearchMode::Disabled;
+    let available_models = sess
+        .services
+        .models_manager
+        .list_models(RefreshStrategy::OnlineIfUncached)
+        .await;
+    let unified_exec_shell_mode = UnifiedExecShellMode::for_session(
+        codex_tools::unified_exec_feature_mode_for_features(review_features.get()),
+        crate::tools::tool_user_shell_type(sess.services.user_shell.as_ref()),
+        sess.services.shell_zsh_path.as_ref(),
+        sess.services.main_execve_wrapper_exe.as_ref(),
+    );
     let goal_tools_supported = !config.ephemeral && parent_turn_context.tools_config.goal_tools;
     let provider_capabilities = parent_turn_context.provider.capabilities();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &review_model_info,
-        available_models: &sess
-            .services
-            .models_manager
-            .list_models(RefreshStrategy::OnlineIfUncached)
-            .await,
+        available_models: &available_models,
         features: &review_features,
         image_generation_tool_auth_allowed: image_generation_tool_auth_allowed(Some(
             sess.services.auth_manager.as_ref(),
@@ -123,7 +131,7 @@ pub(super) async fn spawn_review_thread(
     let auth_manager_for_context = auth_manager.clone();
     let provider_for_context = provider.clone();
     let session_telemetry_for_context = session_telemetry.clone();
-    let reasoning_effort = per_turn_config.model_reasoning_effort;
+    let reasoning_effort = per_turn_config.model_reasoning_effort.clone();
     let reasoning_summary = per_turn_config
         .model_reasoning_summary
         .unwrap_or(model_info.default_reasoning_summary);
@@ -154,6 +162,13 @@ pub(super) async fn spawn_review_thread(
         parent_turn_context.network.is_some(),
     ));
 
+    let extension_data = Arc::new(codex_extension_api::ExtensionData::new(
+        review_turn_id.clone(),
+    ));
+    extension_data.insert(HostLoadedSkills::new(
+        parent_turn_context.turn_skills.outcome.clone(),
+    ));
+
     let review_turn_context = TurnContext {
         sub_id: review_turn_id.clone(),
         trace_id: current_span_trace_id(),
@@ -171,7 +186,9 @@ pub(super) async fn spawn_review_thread(
         thread_source: parent_turn_context.thread_source,
         environments: parent_turn_context.environments.clone(),
         tools_config,
-        features: parent_turn_context.features.clone(),
+        available_models,
+        unified_exec_shell_mode,
+        features: review_features,
         ghost_snapshot: parent_turn_context.ghost_snapshot.clone(),
         current_date: parent_turn_context.current_date.clone(),
         timezone: parent_turn_context.timezone.clone(),
@@ -203,7 +220,7 @@ pub(super) async fn spawn_review_thread(
         dynamic_tools: parent_turn_context.dynamic_tools.clone(),
         truncation_policy: model_info.truncation_policy.into(),
         turn_metadata_state,
-        extension_data: Arc::new(codex_extension_api::ExtensionData::new(review_turn_id)),
+        extension_data,
         turn_skills: TurnSkillsContext::new(parent_turn_context.turn_skills.outcome.clone()),
         turn_timing_state: Arc::new(TurnTimingState::default()),
         server_model_warning_emitted: AtomicBool::new(false),

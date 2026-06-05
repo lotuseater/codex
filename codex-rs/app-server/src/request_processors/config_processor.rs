@@ -8,6 +8,7 @@ use crate::error_code::invalid_request;
 use crate::outgoing_message::ConnectionRequestId;
 use crate::outgoing_message::OutgoingMessageSender;
 use codex_analytics::AnalyticsEventsClient;
+// fork-local: imports for the apps-list refresh after experimental feature enablement.
 use codex_app_server_protocol::AppListUpdatedNotification;
 use codex_app_server_protocol::ClientResponsePayload;
 use codex_app_server_protocol::ComputerUseRequirements;
@@ -43,7 +44,6 @@ use codex_config::SandboxModeRequirement as CoreSandboxModeRequirement;
 use codex_core::ThreadManager;
 use codex_features::canonical_feature_for_key;
 use codex_features::feature_for_key;
-use codex_login::AuthManager;
 use codex_model_provider::create_model_provider;
 use codex_plugin::PluginId;
 use codex_protocol::config_types::WebSearchMode;
@@ -51,21 +51,18 @@ use serde_json::json;
 use std::path::PathBuf;
 
 const SUPPORTED_EXPERIMENTAL_FEATURE_ENABLEMENT: &[&str] = &[
-    "apps",
+    "auth_elicitation",
     "memories",
     "mentions_v2",
-    "plugins",
     "remote_control",
     "remote_plugin",
     "tool_suggest",
-    "tool_call_mcp_elicitation",
 ];
 
 #[derive(Clone)]
 pub(crate) struct ConfigRequestProcessor {
     outgoing: Arc<OutgoingMessageSender>,
     config_manager: ConfigManager,
-    auth_manager: Arc<AuthManager>,
     thread_manager: Arc<ThreadManager>,
     analytics_events_client: AnalyticsEventsClient,
 }
@@ -74,14 +71,12 @@ impl ConfigRequestProcessor {
     pub(crate) fn new(
         outgoing: Arc<OutgoingMessageSender>,
         config_manager: ConfigManager,
-        auth_manager: Arc<AuthManager>,
         thread_manager: Arc<ThreadManager>,
         analytics_events_client: AnalyticsEventsClient,
     ) -> Self {
         Self {
             outgoing,
             config_manager,
-            auth_manager,
             thread_manager,
             analytics_events_client,
         }
@@ -152,6 +147,7 @@ impl ConfigRequestProcessor {
         request_id: ConnectionRequestId,
         params: ExperimentalFeatureEnablementSetParams,
     ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
+        // fork-local: refresh the apps list when `apps` is newly enabled.
         let should_refresh_apps_list = params.enablement.get("apps").copied() == Some(true);
         let response = self
             .handle_config_mutation_result(self.set_experimental_feature_enablement(params).await)
@@ -196,6 +192,8 @@ impl ConfigRequestProcessor {
         Ok(response)
     }
 
+    // fork-local: refresh the apps list after `apps` is enabled via experimental
+    // feature enablement (upstream removed this; the fork retains the feature).
     async fn refresh_apps_list_after_experimental_feature_enablement_set(&self) {
         let config = match self.load_latest_config(/*fallback_cwd*/ None).await {
             Ok(config) => config,
@@ -320,28 +318,19 @@ impl ConfigRequestProcessor {
         &self,
         params: ExperimentalFeatureEnablementSetParams,
     ) -> Result<ExperimentalFeatureEnablementSetResponse, JSONRPCErrorError> {
-        let ExperimentalFeatureEnablementSetParams { enablement } = params;
-        for key in enablement.keys() {
-            if canonical_feature_for_key(key).is_some() {
-                if SUPPORTED_EXPERIMENTAL_FEATURE_ENABLEMENT.contains(&key.as_str()) {
-                    continue;
-                }
-
-                return Err(invalid_request(format!(
-                    "unsupported feature enablement `{key}`: currently supported features are {}",
-                    SUPPORTED_EXPERIMENTAL_FEATURE_ENABLEMENT.join(", ")
-                )));
+        let ExperimentalFeatureEnablementSetParams { mut enablement } = params;
+        let mut invalid_keys = Vec::new();
+        enablement.retain(|key, _| {
+            let valid = canonical_feature_for_key(key).is_some()
+                && SUPPORTED_EXPERIMENTAL_FEATURE_ENABLEMENT.contains(&key.as_str());
+            if !valid {
+                invalid_keys.push(key.clone());
             }
-
-            let message = if let Some(feature) = feature_for_key(key) {
-                format!(
-                    "invalid feature enablement `{key}`: use canonical feature key `{}`",
-                    feature.key()
-                )
-            } else {
-                format!("invalid feature enablement `{key}`")
-            };
-            return Err(invalid_request(message));
+            valid
+        });
+        if !invalid_keys.is_empty() {
+            let invalid_keys = invalid_keys.join(", ");
+            tracing::warn!("ignoring invalid experimental feature enablement keys: {invalid_keys}");
         }
 
         if enablement.is_empty() {

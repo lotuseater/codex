@@ -27,6 +27,7 @@ use codex_protocol::protocol::CollabResumeBeginEvent;
 use codex_protocol::protocol::CollabResumeEndEvent;
 use codex_protocol::protocol::CollabWaitingBeginEvent;
 use codex_protocol::protocol::CollabWaitingEndEvent;
+use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::user_input::UserInput;
 use codex_tool_execution_api::FunctionCallError;
 use codex_tool_execution_api::ToolName;
@@ -55,3 +56,17 @@ mod resume_agent;
 mod send_message;
 mod spawn;
 pub(crate) mod wait;
+
+pub(super) fn communication_from_tool_message(
+    author: AgentPath,
+    recipient: AgentPath,
+    message: String,
+) -> InterAgentCommunication {
+    InterAgentCommunication::new_encrypted(
+        author,
+        recipient,
+        Vec::new(),
+        message,
+        /*trigger_turn*/ true,
+    )
+}

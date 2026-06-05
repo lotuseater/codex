@@ -528,6 +528,11 @@ fn combine_right_context_lines(
 }
 
 impl ChatComposer {
+    #[cfg(test)]
+    pub(crate) fn cursor(&self) -> usize {
+        self.current_cursor()
+    }
+
     fn set_has_focus(&mut self, has_focus: bool) {
         self.has_focus = has_focus;
     }

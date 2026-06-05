@@ -70,18 +70,27 @@ pub(crate) enum ToolEventFailure<'a> {
 }
 
 enum TurnDiffTrackerUpdate<'a> {
-    Track(&'a AppliedPatchDelta),
+    Track {
+        environment_id: Option<String>,
+        delta: &'a AppliedPatchDelta,
+    },
     Invalidate,
     None,
 }
 
-fn tracker_update_for_known_delta(delta: &AppliedPatchDelta) -> TurnDiffTrackerUpdate<'_> {
+fn tracker_update_for_known_delta<'a>(
+    environment_id: Option<&str>,
+    delta: &'a AppliedPatchDelta,
+) -> TurnDiffTrackerUpdate<'a> {
     if !delta.is_exact() {
         TurnDiffTrackerUpdate::Invalidate
     } else if delta.is_empty() {
         TurnDiffTrackerUpdate::None
     } else {
-        TurnDiffTrackerUpdate::Track(delta)
+        TurnDiffTrackerUpdate::Track {
+            environment_id: environment_id.map(str::to_string),
+            delta,
+        }
     }
 }
 
@@ -122,6 +131,7 @@ pub(crate) enum ToolEmitter {
     ApplyPatch {
         changes: HashMap<PathBuf, FileChange>,
         auto_approved: bool,
+        environment_id: Option<String>,
     },
     UnifiedExec {
         command: Vec<String>,
@@ -143,10 +153,15 @@ impl ToolEmitter {
         }
     }
 
-    pub fn apply_patch(changes: HashMap<PathBuf, FileChange>, auto_approved: bool) -> Self {
+    pub fn apply_patch_for_environment(
+        changes: HashMap<PathBuf, FileChange>,
+        auto_approved: bool,
+        environment_id: String,
+    ) -> Self {
         Self::ApplyPatch {
             changes,
             auto_approved,
+            environment_id: Some(environment_id),
         }
     }
 
@@ -217,7 +232,11 @@ impl ToolEmitter {
                     .await;
             }
             (
-                Self::ApplyPatch { changes, .. },
+                Self::ApplyPatch {
+                    changes,
+                    environment_id,
+                    ..
+                },
                 ToolEventStage::Success {
                     output,
                     applied_patch_delta,
@@ -229,7 +248,7 @@ impl ToolEmitter {
                     PatchApplyStatus::Failed
                 };
                 let tracker_update = applied_patch_delta
-                    .map(tracker_update_for_known_delta)
+                    .map(|delta| tracker_update_for_known_delta(environment_id.as_deref(), delta))
                     .unwrap_or(TurnDiffTrackerUpdate::Invalidate);
                 emit_patch_end(
                     ctx,
@@ -274,7 +293,11 @@ impl ToolEmitter {
                 .await;
             }
             (
-                Self::ApplyPatch { changes, .. },
+                Self::ApplyPatch {
+                    changes,
+                    environment_id,
+                    ..
+                },
                 ToolEventStage::Failure(ToolEventFailure::Rejected {
                     message,
                     applied_patch_delta,
@@ -287,7 +310,9 @@ impl ToolEmitter {
                     (*message).to_string(),
                     PatchApplyStatus::Declined,
                     applied_patch_delta
-                        .map(tracker_update_for_known_delta)
+                        .map(|delta| {
+                            tracker_update_for_known_delta(environment_id.as_deref(), delta)
+                        })
                         .unwrap_or(TurnDiffTrackerUpdate::None),
                 )
                 .await;
@@ -572,12 +597,11 @@ async fn emit_patch_end(
             let mut guard = tracker.lock().await;
             let previous_diff = guard.get_unified_diff().ok().flatten();
             let tracker_changed = match tracker_update {
-                TurnDiffTrackerUpdate::Track(delta) => {
-                    let changes =
-                        crate::turn_diff_tracker::committed_file_changes_from_apply_patch_delta(
-                            delta,
-                        );
-                    guard.track_delta(&changes);
+                TurnDiffTrackerUpdate::Track {
+                    environment_id,
+                    delta,
+                } => {
+                    guard.track_delta(environment_id.as_deref().unwrap_or_default(), delta);
                     true
                 }
                 TurnDiffTrackerUpdate::Invalidate => {
@@ -638,14 +662,18 @@ mod tests {
         .await
         .expect("apply patch");
 
-        ToolEmitter::apply_patch(HashMap::new(), /*auto_approved*/ false)
-            .finish(
-                ToolEventCtx::new(session.as_ref(), turn.as_ref(), "call-id", Some(&tracker)),
-                out,
-                Some(&delta),
-            )
-            .await
-            .expect_err("failed patch");
+        ToolEmitter::ApplyPatch {
+            changes: HashMap::new(),
+            auto_approved: false,
+            environment_id: None,
+        }
+        .finish(
+            ToolEventCtx::new(session.as_ref(), turn.as_ref(), "call-id", Some(&tracker)),
+            out,
+            Some(&delta),
+        )
+        .await
+        .expect_err("failed patch");
 
         let completed = rx_event.recv().await.expect("item completed event");
         assert!(matches!(

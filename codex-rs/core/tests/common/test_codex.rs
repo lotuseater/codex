@@ -808,6 +808,10 @@ impl TestCodexHarness {
         self.test.config.cwd.as_path()
     }
 
+    pub fn cwd_abs(&self) -> AbsolutePathBuf {
+        self.test.config.cwd.clone()
+    }
+
     pub fn path(&self, rel: impl AsRef<Path>) -> PathBuf {
         self.path_abs(rel).into_path_buf()
     }

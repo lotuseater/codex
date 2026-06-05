@@ -828,6 +828,7 @@ impl ToolRegistry {
         )
         .await;
 
+        // fork-local: account thread goal progress after a tool call completes.
         if finished
             && let Err(err) = invocation
                 .session

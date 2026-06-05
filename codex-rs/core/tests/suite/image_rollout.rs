@@ -1,14 +1,4 @@
 use anyhow::Context;
-use codex_protocol::models::ContentItem;
-use codex_protocol::models::DEFAULT_IMAGE_DETAIL;
-use codex_protocol::models::PermissionProfile;
-use codex_protocol::models::ResponseItem;
-use codex_protocol::protocol::AskForApproval;
-use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::Op;
-use codex_protocol::protocol::RolloutItem;
-use codex_protocol::protocol::RolloutLine;
-use codex_protocol::user_input::UserInput;
 use codex_core_test_runtime::responses;
 use codex_core_test_runtime::responses::ev_assistant_message;
 use codex_core_test_runtime::responses::ev_completed;
@@ -20,6 +10,16 @@ use codex_core_test_runtime::test_codex::TestCodex;
 use codex_core_test_runtime::test_codex::test_codex;
 use codex_core_test_runtime::test_codex::turn_permission_fields;
 use codex_core_test_runtime::wait_for_event;
+use codex_protocol::models::ContentItem;
+use codex_protocol::models::DEFAULT_IMAGE_DETAIL;
+use codex_protocol::models::PermissionProfile;
+use codex_protocol::models::ResponseItem;
+use codex_protocol::protocol::AskForApproval;
+use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::Op;
+use codex_protocol::protocol::RolloutItem;
+use codex_protocol::protocol::RolloutLine;
+use codex_protocol::user_input::UserInput;
 use image::ImageBuffer;
 use image::Rgba;
 use pretty_assertions::assert_eq;
@@ -155,7 +155,9 @@ async fn copy_paste_local_image_persists_rollout_request_shape() -> anyhow::Resu
         role: "user".to_string(),
         content: vec![
             ContentItem::InputText {
-                text: codex_protocol::models::local_image_open_tag_text(/*label_number*/ 1),
+                text: codex_protocol::models::local_image_open_tag_text_with_path(
+                    /*label_number*/ 1, &abs_path,
+                ),
             },
             ContentItem::InputImage {
                 image_url,

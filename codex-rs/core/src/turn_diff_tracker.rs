@@ -8,6 +8,10 @@ pub use codex_turn_diff::CommittedFileChange;
 pub use codex_turn_diff::TrackedFileChange;
 pub use codex_turn_diff::TurnDiffTracker;
 
+// fork-local: turn-diff tracking lives in the `codex-turn-diff` crate; this module keeps only
+// the thin protocol<->crate adapters that delegate to it. Upstream's in-core monolith (the
+// re-introduced `TurnDiffTracker`/`TrackedPath` implementation, including #26433 multi-env
+// logic) belongs in that crate, not here.
 pub(crate) fn tracked_file_changes_from_protocol(
     changes: &HashMap<PathBuf, FileChange>,
 ) -> HashMap<PathBuf, TrackedFileChange> {

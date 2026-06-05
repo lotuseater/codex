@@ -14,6 +14,9 @@ use std::path::PathBuf;
 #[derive(Debug, Parser)]
 #[command(version)]
 struct AppServerArgs {
+    #[command(flatten)]
+    config_overrides: CliConfigOverrides,
+
     /// Transport endpoint URL. Supported values: `stdio://` (default),
     /// `unix://`, `unix://PATH`, `ws://IP:PORT`, `off`.
     #[arg(
@@ -72,9 +75,10 @@ fn main() -> anyhow::Result<()> {
     arg0_dispatch_or_else(|arg0_paths: Arg0DispatchPaths| async move {
         let args = AppServerArgs::parse();
         let loader_overrides = loader_overrides_from_args(&args);
-        let transport = args.listen;
-        let session_source = args.session_source;
-        let auth = args.auth.try_into_settings()?;
+        let config_overrides = args.config_overrides.clone();
+        let transport = args.listen.clone();
+        let session_source = args.session_source.clone();
+        let auth = args.auth.clone().try_into_settings()?;
         let mut runtime_options = AppServerRuntimeOptions::default();
         if args.disable_plugin_startup_tasks_for_tests {
             runtime_options.plugin_startup_tasks = PluginStartupTasks::Skip;
@@ -83,7 +87,7 @@ fn main() -> anyhow::Result<()> {
 
         run_main_with_transport_options(
             arg0_paths,
-            CliConfigOverrides::default(),
+            config_overrides,
             loader_overrides,
             args.strict_config,
             /*default_analytics_enabled*/ false,
@@ -164,3 +168,7 @@ mod tests {
         assert!(result.is_err());
     }
 }
+
+#[cfg(test)]
+#[path = "main_tests.rs"]
+mod tests;

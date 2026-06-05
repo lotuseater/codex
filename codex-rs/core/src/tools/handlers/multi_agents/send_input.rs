@@ -36,8 +36,19 @@ impl ToolExecutor<ToolInvocation> for Handler {
         let receiver_agent = session
             .services
             .agent_control
-            .get_agent_metadata(receiver_thread_id)
-            .unwrap_or_default();
+            .get_agent_metadata(receiver_thread_id);
+        if receiver_agent.is_some() {
+            let resume_config = build_agent_resume_config(turn.as_ref())?;
+            session
+                .services
+                .agent_control
+                .ensure_v2_agent_loaded(resume_config, receiver_thread_id)
+                .await
+                .map_err(|err| collab_agent_error(receiver_thread_id, err))?;
+        }
+        let receiver_agent = receiver_agent.unwrap_or_default();
+        // fork-local: resolve the receiver's effective model / reasoning effort
+        // from its config snapshot, falling back to the agent metadata.
         let receiver_config = session
             .services
             .agent_control

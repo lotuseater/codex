@@ -5,6 +5,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use anyhow::Result;
+use codex_core::LoadedAgentsMd;
 use codex_core_test_runtime::hooks::trust_discovered_hooks;
 use codex_core_test_runtime::responses;
 use codex_core_test_runtime::responses::ResponseMock;
@@ -517,7 +518,9 @@ async fn build_harness_inner(
             FIXED_CWD,
         ))
         .expect("fixed cwd should be absolute");
-        config.user_instructions = Some("PARITY_USER_INSTRUCTIONS".to_string());
+        config.user_instructions = Some(LoadedAgentsMd::from_text_for_testing(
+            "PARITY_USER_INSTRUCTIONS",
+        ));
         config.developer_instructions = Some("PARITY_DEVELOPER_INSTRUCTIONS".to_string());
         if settings.service_tier_fast {
             config.service_tier = Some(ServiceTier::Fast.request_value().to_string());

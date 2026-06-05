@@ -10,7 +10,6 @@ use crate::compact::insert_initial_context_before_last_real_user_or_summary;
 use crate::context_manager::ContextManager;
 use crate::context_manager::TotalTokenUsageBreakdown;
 use crate::context_manager::estimate_response_item_model_visible_bytes;
-use crate::context_manager::is_codex_generated_item;
 use crate::hook_runtime::PostCompactHookOutcome;
 use crate::hook_runtime::PreCompactHookOutcome;
 use crate::hook_runtime::run_post_compact_hooks;
@@ -32,6 +31,8 @@ use codex_protocol::error::Result as CodexResult;
 use codex_protocol::items::ContextCompactionItem;
 use codex_protocol::items::TurnItem;
 use codex_protocol::models::BaseInstructions;
+use codex_protocol::models::FunctionCallOutputBody;
+use codex_protocol::models::FunctionCallOutputPayload;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::CompactedItem;
 use codex_protocol::protocol::EventMsg;
@@ -42,6 +43,9 @@ use tokio_util::sync::CancellationToken;
 use tracing::error;
 use tracing::info;
 use tracing::warn;
+
+const CONTEXT_WINDOW_TRUNCATED_OUTPUT_MESSAGE: &str =
+    "Output exceeded the available model context and was truncated";
 
 pub(crate) async fn run_inline_remote_auto_compact_task(
     sess: Arc<Session>,
@@ -101,6 +105,7 @@ async fn run_remote_compact_task_inner(
         CompactionImplementation::ResponsesCompact,
         phase,
     );
+    let mut active_context_tokens_before = sess.get_total_token_usage().await;
     let attempt = CompactionAnalyticsAttempt::begin(
         sess.as_ref(),
         turn_context.as_ref(),
@@ -120,6 +125,7 @@ async fn run_remote_compact_task_inner(
                     sess.as_ref(),
                     codex_analytics::CompactionStatus::Interrupted,
                     Some(error),
+                    Some(active_context_tokens_before),
                 )
                 .await;
             return Err(CodexErr::TurnAborted);
@@ -130,6 +136,7 @@ async fn run_remote_compact_task_inner(
         turn_context,
         initial_context_injection,
         compaction_metadata,
+        &mut active_context_tokens_before,
     )
     .await;
     let status = compaction_status_from_result(&result);
@@ -137,11 +144,25 @@ async fn run_remote_compact_task_inner(
     if result.is_ok() {
         let post_compact_outcome = run_post_compact_hooks(sess, turn_context, trigger).await;
         if let PostCompactHookOutcome::Stopped = post_compact_outcome {
-            attempt.track(sess.as_ref(), status, error).await;
+            attempt
+                .track(
+                    sess.as_ref(),
+                    status,
+                    error,
+                    Some(active_context_tokens_before),
+                )
+                .await;
             return Err(CodexErr::TurnAborted);
         }
     }
-    attempt.track(sess.as_ref(), status, error.clone()).await;
+    attempt
+        .track(
+            sess.as_ref(),
+            status,
+            error.clone(),
+            Some(active_context_tokens_before),
+        )
+        .await;
     if let Err(err) = result {
         sess.track_turn_codex_error(turn_context, &err);
         let event = EventMsg::Error(
@@ -158,6 +179,10 @@ async fn run_remote_compact_task_inner_impl(
     turn_context: &Arc<TurnContext>,
     initial_context_injection: InitialContextInjection,
     compaction_metadata: CompactionTurnMetadata,
+    // fork-local: the budget-based remote compaction loop below does not adjust the
+    // caller's local-token estimate (upstream's single-shot path did); keep the
+    // parameter for signature/call-site compatibility but mark it intentionally unused.
+    _active_context_tokens_before: &mut i64,
 ) -> CodexResult<()> {
     let context_compaction_item = ContextCompactionItem::new();
     // Use the UI compaction item ID as the trace compaction ID so protocol lifecycle events,
@@ -229,7 +254,7 @@ async fn run_remote_compact_task_inner_impl(
                 &prompt,
                 &turn_context.model_info,
                 CompactConversationRequestSettings {
-                    effort: turn_context.reasoning_effort,
+                    effort: turn_context.reasoning_effort.clone(),
                     summary: turn_context.reasoning_summary,
                     service_tier: if is_api_key_auth {
                         None
@@ -356,6 +381,7 @@ pub(crate) fn should_keep_compacted_history_item(item: &ResponseItem) -> bool {
         }
         ResponseItem::Message { role, .. } if role == "assistant" => true,
         ResponseItem::Message { .. } => false,
+        ResponseItem::AgentMessage { .. } => true,
         ResponseItem::Compaction { .. } | ResponseItem::ContextCompaction { .. } => true,
         ResponseItem::Reasoning { .. }
         | ResponseItem::LocalShellCall { .. }
@@ -417,12 +443,42 @@ pub(crate) fn trim_function_call_history_to_fit_context_window(
     history: &mut ContextManager,
     turn_context: &TurnContext,
     base_instructions: &BaseInstructions,
-) -> usize {
+) -> (usize, i64) {
     let Some(context_window) = turn_context.model_context_window() else {
-        return 0;
+        return (0, 0);
     };
-    let token_budget = remote_compaction_input_token_budget(context_window);
-    trim_remote_compaction_history_to_token_budget(history, base_instructions, token_budget)
+    let mut rewritten_outputs = 0usize;
+    let mut estimated_deleted_tokens = 0i64;
+    let item_count = history.raw_items().len();
+
+    for index in (0..item_count).rev() {
+        let Some(estimated_tokens_before) =
+            history.estimate_token_count_with_base_instructions(base_instructions)
+        else {
+            break;
+        };
+        if estimated_tokens_before <= context_window {
+            break;
+        }
+        let Some(rewritten_item) = history
+            .raw_items()
+            .get(index)
+            .and_then(rewritten_output_for_context_window)
+        else {
+            break;
+        };
+        let mut items = history.raw_items().to_vec();
+        items[index] = rewritten_item;
+        history.replace(items);
+        let estimated_tokens_after = history
+            .estimate_token_count_with_base_instructions(base_instructions)
+            .unwrap_or_default();
+        rewritten_outputs += 1;
+        estimated_deleted_tokens = estimated_deleted_tokens
+            .saturating_add(estimated_tokens_before.saturating_sub(estimated_tokens_after));
+    }
+
+    (rewritten_outputs, estimated_deleted_tokens)
 }
 
 pub(crate) struct PreparedRemoteCompactionPrompt {
@@ -525,9 +581,14 @@ fn trim_remote_compaction_history_to_token_budget(
         if !is_codex_generated_item(last_item) {
             break;
         }
-        if !history.remove_last_item() {
+        // fork-local: upstream removed `ContextManager::remove_last_item`; pop the
+        // trailing item via `replace` (the only public API that can drop from the
+        // back) to keep the budget-based trailing-trim behavior.
+        let mut items = history.raw_items().to_vec();
+        if items.pop().is_none() {
             break;
         }
+        history.replace(items);
         deleted_items += 1;
     }
 
@@ -548,6 +609,55 @@ fn trim_remote_compaction_history_to_token_budget(
     }
 
     deleted_items
+}
+
+// fork-local: upstream removed `context_manager::is_codex_generated_item` during the
+// merge; the fork's budget-based remote compaction still needs it to decide which
+// trailing items may be dropped, so it is restored locally here.
+fn is_codex_generated_item(item: &ResponseItem) -> bool {
+    matches!(
+        item,
+        ResponseItem::FunctionCallOutput { .. }
+            | ResponseItem::ToolSearchOutput { .. }
+            | ResponseItem::CustomToolCallOutput { .. }
+    ) || matches!(item, ResponseItem::Message { role, .. } if role == "developer")
+}
+
+fn rewritten_output_for_context_window(item: &ResponseItem) -> Option<ResponseItem> {
+    Some(match item {
+        ResponseItem::FunctionCallOutput { call_id, output } => ResponseItem::FunctionCallOutput {
+            call_id: call_id.clone(),
+            output: truncated_output_payload(output),
+        },
+        ResponseItem::CustomToolCallOutput {
+            call_id,
+            name,
+            output,
+        } => ResponseItem::CustomToolCallOutput {
+            call_id: call_id.clone(),
+            name: name.clone(),
+            output: truncated_output_payload(output),
+        },
+        ResponseItem::ToolSearchOutput {
+            call_id,
+            status,
+            execution,
+            ..
+        } => ResponseItem::ToolSearchOutput {
+            call_id: call_id.clone(),
+            status: status.clone(),
+            execution: execution.clone(),
+            tools: Vec::new(),
+        },
+        _ => return None,
+    })
+}
+
+fn truncated_output_payload(output: &FunctionCallOutputPayload) -> FunctionCallOutputPayload {
+    FunctionCallOutputPayload {
+        body: FunctionCallOutputBody::Text(CONTEXT_WINDOW_TRUNCATED_OUTPUT_MESSAGE.to_string()),
+        success: output.success,
+    }
 }
 
 fn remote_compaction_input_token_budget(context_window: i64) -> i64 {

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
+use codex_core_test_runtime::TempDirExt;
 use codex_core_test_runtime::responses;
 use codex_core_test_runtime::responses::ev_assistant_message;
 use codex_core_test_runtime::responses::ev_completed;
@@ -62,7 +63,7 @@ async fn refresh_models_on_models_etag_mismatch_and_avoid_duplicate_models_fetch
     let codex = Arc::clone(&test.codex);
     let cwd = Arc::clone(&test.cwd);
     let session_model = test.session_configured.model.clone();
-    let cwd_path = cwd.path().to_path_buf();
+    let cwd_path = cwd.abs();
     let (sandbox_policy, permission_profile) =
         turn_permission_fields(PermissionProfile::Disabled, cwd_path.as_path());
 

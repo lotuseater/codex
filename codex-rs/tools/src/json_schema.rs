@@ -12,6 +12,7 @@ pub use codex_tool_schema::JsonSchemaType;
 pub use codex_tool_schema::parse_tool_input_schema;
 pub use codex_tool_schema::parse_tool_input_schema_without_compaction;
 
-#[cfg(test)]
-#[path = "json_schema_tests.rs"]
-mod tests;
+// fork-local: tests for these schema types live in the `codex-tool-schema`
+// crate (`tool-schema/src/json_schema_tests.rs`) after the schema split;
+// the upstream-side `mod tests;` referenced a `tools/src/json_schema_tests.rs`
+// file that the fork removed, so it is intentionally not re-declared here.

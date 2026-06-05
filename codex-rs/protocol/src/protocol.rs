@@ -16,10 +16,12 @@ use crate::config_types::Personality;
 use crate::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use crate::config_types::WindowsSandboxLevel;
 use crate::models::ActivePermissionProfile;
+use crate::models::AgentMessageInputContent;
 use crate::models::ContentItem;
 use crate::models::MessagePhase;
 use crate::models::PermissionProfile;
 use crate::models::ResponseInputItem;
+use crate::models::ResponseItem;
 use crate::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use crate::user_input::UserInput;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -80,39 +82,60 @@ pub use tool_call_events::*;
 pub use turn_items::*;
 pub use turn_lifecycle::*;
 
-pub use agent_reasoning::{
-    AgentReasoningEvent, AgentReasoningRawContentEvent, AgentReasoningSectionBreakEvent,
-};
-pub use collaboration::{
-    CollabAgentInteractionBeginEvent, CollabAgentInteractionEndEvent, CollabAgentRef,
-    CollabAgentSpawnBeginEvent, CollabAgentSpawnEndEvent, CollabAgentStatusEntry,
-    CollabCloseBeginEvent, CollabCloseEndEvent, CollabCompactBeginEvent, CollabCompactEndEvent,
-    CollabRestartBeginEvent, CollabRestartEndEvent, CollabResumeBeginEvent, CollabResumeEndEvent,
-    CollabWaitingBeginEvent, CollabWaitingEndEvent,
-};
-pub use errors_and_warnings::{ErrorEvent, StreamErrorEvent, StreamInfoEvent, WarningEvent};
+pub use agent_reasoning::AgentReasoningEvent;
+pub use agent_reasoning::AgentReasoningRawContentEvent;
+pub use agent_reasoning::AgentReasoningSectionBreakEvent;
+pub use collaboration::CollabAgentInteractionBeginEvent;
+pub use collaboration::CollabAgentInteractionEndEvent;
+pub use collaboration::CollabAgentRef;
+pub use collaboration::CollabAgentSpawnBeginEvent;
+pub use collaboration::CollabAgentSpawnEndEvent;
+pub use collaboration::CollabAgentStatusEntry;
+pub use collaboration::CollabCloseBeginEvent;
+pub use collaboration::CollabCloseEndEvent;
+pub use collaboration::CollabCompactBeginEvent;
+pub use collaboration::CollabCompactEndEvent;
+pub use collaboration::CollabRestartBeginEvent;
+pub use collaboration::CollabRestartEndEvent;
+pub use collaboration::CollabResumeBeginEvent;
+pub use collaboration::CollabResumeEndEvent;
+pub use collaboration::CollabWaitingBeginEvent;
+pub use collaboration::CollabWaitingEndEvent;
+pub use errors_and_warnings::ErrorEvent;
+pub use errors_and_warnings::StreamErrorEvent;
+pub use errors_and_warnings::StreamInfoEvent;
+pub use errors_and_warnings::WarningEvent;
 pub use event_msg::EventMsg;
-pub use exec_command::{
-    ExecCommandBeginEvent, ExecCommandEndEvent, ExecCommandOutputDeltaEvent, ExecCommandSource,
-    ExecCommandStatus, ExecOutputStream, TerminalInteractionEvent, ViewImageToolCallEvent,
-};
-pub use mcp_tool::{
-    McpAuthStatus, McpStartupCompleteEvent, McpStartupFailure, McpStartupStatus,
-    McpStartupUpdateEvent,
-};
+pub use exec_command::ExecCommandBeginEvent;
+pub use exec_command::ExecCommandEndEvent;
+pub use exec_command::ExecCommandOutputDeltaEvent;
+pub use exec_command::ExecCommandSource;
+pub use exec_command::ExecCommandStatus;
+pub use exec_command::ExecOutputStream;
+pub use exec_command::TerminalInteractionEvent;
+pub use exec_command::ViewImageToolCallEvent;
+pub use mcp_tool::McpAuthStatus;
+pub use mcp_tool::McpStartupCompleteEvent;
+pub use mcp_tool::McpStartupFailure;
+pub use mcp_tool::McpStartupStatus;
+pub use mcp_tool::McpStartupUpdateEvent;
 pub use op::Op;
-pub use patch_and_plan::{
-    PatchApplyBeginEvent, PatchApplyEndEvent, PatchApplyStatus, PatchApplyUpdatedEvent,
-};
-pub use realtime_conversation::{
-    RealtimeConversationClosedEvent, RealtimeConversationListVoicesResponseEvent,
-    RealtimeConversationRealtimeEvent, RealtimeConversationSdpEvent,
-    RealtimeConversationStartedEvent,
-};
-pub use review::{
-    ReviewCodeLocation, ReviewDelivery, ReviewFinding, ReviewLineRange, ReviewOutputEvent,
-    ReviewRequest, ReviewTarget,
-};
+pub use patch_and_plan::PatchApplyBeginEvent;
+pub use patch_and_plan::PatchApplyEndEvent;
+pub use patch_and_plan::PatchApplyStatus;
+pub use patch_and_plan::PatchApplyUpdatedEvent;
+pub use realtime_conversation::RealtimeConversationClosedEvent;
+pub use realtime_conversation::RealtimeConversationListVoicesResponseEvent;
+pub use realtime_conversation::RealtimeConversationRealtimeEvent;
+pub use realtime_conversation::RealtimeConversationSdpEvent;
+pub use realtime_conversation::RealtimeConversationStartedEvent;
+pub use review::ReviewCodeLocation;
+pub use review::ReviewDelivery;
+pub use review::ReviewFinding;
+pub use review::ReviewLineRange;
+pub use review::ReviewOutputEvent;
+pub use review::ReviewRequest;
+pub use review::ReviewTarget;
 
 pub use crate::permissions::FileSystemAccessMode;
 pub use crate::permissions::FileSystemPath;
@@ -167,7 +190,10 @@ pub struct Submission {
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
 pub struct ThreadSettingsOverrides {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cwd: Option<PathBuf>,
+    pub cwd: Option<AbsolutePathBuf>,
+
+    /// Updated runtime workspace roots used to materialize symbolic
+    /// `:workspace_roots` filesystem permissions.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_roots: Option<Vec<AbsolutePathBuf>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -227,6 +253,9 @@ pub struct InterAgentCommunication {
     #[serde(default)]
     pub other_recipients: Vec<AgentPath>,
     pub content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub encrypted_content: Option<String>,
     pub trigger_turn: bool,
 }
 
@@ -243,6 +272,24 @@ impl InterAgentCommunication {
             recipient,
             other_recipients,
             content,
+            encrypted_content: None,
+            trigger_turn,
+        }
+    }
+
+    pub fn new_encrypted(
+        author: AgentPath,
+        recipient: AgentPath,
+        other_recipients: Vec<AgentPath>,
+        encrypted_content: String,
+        trigger_turn: bool,
+    ) -> Self {
+        Self {
+            author,
+            recipient,
+            other_recipients,
+            content: String::new(),
+            encrypted_content: Some(encrypted_content),
             trigger_turn,
         }
     }
@@ -254,6 +301,19 @@ impl InterAgentCommunication {
                 text: serde_json::to_string(self).unwrap_or_default(),
             }],
             phase: Some(MessagePhase::Commentary),
+        }
+    }
+
+    pub fn to_model_input_item(&self) -> ResponseItem {
+        match &self.encrypted_content {
+            Some(encrypted_content) => ResponseItem::AgentMessage {
+                author: self.author.to_string(),
+                recipient: self.recipient.to_string(),
+                content: vec![AgentMessageInputContent::EncryptedContent {
+                    encrypted_content: encrypted_content.clone(),
+                }],
+            },
+            None => self.to_response_input_item().into(),
         }
     }
 
@@ -545,6 +605,7 @@ mod tests {
             recipient: AgentPath::root().join("reviewer").expect("recipient path"),
             other_recipients: vec![AgentPath::root().join("worker").expect("recipient path")],
             content: "review the diff".to_string(),
+            encrypted_content: None,
             trigger_turn: true,
         };
 
