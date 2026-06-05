@@ -7,7 +7,6 @@ use crate::agent::registry::AgentRegistry;
 use crate::agent::role::DEFAULT_ROLE_NAME;
 use crate::agent::role::resolve_role_config;
 use crate::agent::status::is_final;
-use crate::codex_thread::CodexThreadSettingsOverrides;
 use crate::codex_thread::ThreadConfigSnapshot;
 use crate::config::Config;
 use crate::session::emit_subagent_session_started;
@@ -25,7 +24,6 @@ use codex_protocol::error::Result as CodexResult;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::MessagePhase;
 use codex_protocol::models::ResponseItem;
-use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::protocol::InitialHistory;
 use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::MultiAgentVersion;
@@ -45,6 +43,8 @@ use std::sync::Arc;
 use std::sync::Weak;
 use tokio::sync::watch;
 use tracing::warn;
+
+mod override_local;
 
 const AGENT_NAMES: &str = include_str!("agent_names.txt");
 const ROOT_LAST_TASK_MESSAGE: &str = "Main thread";
@@ -762,51 +762,6 @@ impl AgentControl {
                 .update_last_task_message(agent_id, last_task_message);
         }
         result
-    }
-
-    /// Override a live agent's persistent turn context before assigning follow-up work.
-    pub(crate) async fn override_agent_turn_context(
-        &self,
-        agent_id: ThreadId,
-        model: Option<String>,
-        reasoning_effort: Option<ReasoningEffort>,
-    ) -> CodexResult<String> {
-        let state = self.upgrade()?;
-        let thread = state.get_thread(agent_id).await?;
-        let effort = reasoning_effort.map(Some);
-        thread
-            .validate_turn_context_overrides(CodexThreadSettingsOverrides {
-                model: model.clone(),
-                effort,
-                ..Default::default()
-            })
-            .await
-            .map_err(|err| CodexErr::UnsupportedOperation(err.to_string()))?;
-        self.handle_thread_request_result(
-            agent_id,
-            &state,
-            state
-                .send_op(
-                    agent_id,
-                    Op::OverrideTurnContext {
-                        cwd: None,
-                        approval_policy: None,
-                        approvals_reviewer: None,
-                        sandbox_policy: None,
-                        permission_profile: None,
-                        windows_sandbox_level: None,
-                        model,
-                        effort,
-                        summary: None,
-                        service_tier: None,
-                        context_budget_mode: None,
-                        collaboration_mode: None,
-                        personality: None,
-                    },
-                )
-                .await,
-        )
-        .await
     }
 
     /// Interrupt the current task for an existing agent thread.
