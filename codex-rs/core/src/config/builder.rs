@@ -7,7 +7,7 @@ pub struct ConfigBuilder {
     harness_overrides: Option<ConfigOverrides>,
     loader_overrides: Option<LoaderOverrides>,
     strict_config: bool,
-    cloud_requirements: CloudRequirementsLoader,
+    cloud_config_bundle: CloudConfigBundleLoader,
     thread_config_loader: Option<Arc<dyn ThreadConfigLoader>>,
     fallback_cwd: Option<PathBuf>,
 }
@@ -38,8 +38,21 @@ impl ConfigBuilder {
         self
     }
 
+    pub fn cloud_config_bundle(mut self, cloud_config_bundle: CloudConfigBundleLoader) -> Self {
+        self.cloud_config_bundle = cloud_config_bundle;
+        self
+    }
+
+    /// Fork API: thread cloud-delivered requirements through the builder.
+    ///
+    /// Upstream replaced the fork's dedicated `cloud_requirements` argument with
+    /// the unified `cloud_config_bundle`. This setter preserves the fork's
+    /// `CloudRequirementsLoader`-based API by adapting it onto the bundle loader
+    /// (see [`CloudConfigBundleLoader::from_requirements_loader`]). It writes the
+    /// same `cloud_config_bundle` field, so the two setters are last-wins.
     pub fn cloud_requirements(mut self, cloud_requirements: CloudRequirementsLoader) -> Self {
-        self.cloud_requirements = cloud_requirements;
+        self.cloud_config_bundle =
+            CloudConfigBundleLoader::from_requirements_loader(cloud_requirements);
         self
     }
 
@@ -68,7 +81,7 @@ impl ConfigBuilder {
             harness_overrides,
             loader_overrides,
             strict_config,
-            cloud_requirements,
+            cloud_config_bundle,
             thread_config_loader,
             fallback_cwd,
         } = self;
@@ -93,8 +106,8 @@ impl ConfigBuilder {
             ConfigLoadOptions {
                 loader_overrides,
                 strict_config,
+                cloud_config_bundle,
             },
-            cloud_requirements,
             thread_config_loader
                 .as_deref()
                 .unwrap_or(&codex_config::NoopThreadConfigLoader),

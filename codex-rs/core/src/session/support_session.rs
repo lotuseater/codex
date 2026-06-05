@@ -69,7 +69,7 @@ pub(crate) async fn attach_thread_persistence(session: &mut Session) -> PathBuf 
     let live_thread = LiveThread::create(
         Arc::clone(&session.services.thread_store),
         CreateThreadParams {
-            thread_id: session.conversation_id,
+            thread_id: session.thread_id,
             forked_from_id: None,
             source: SessionSource::Exec,
             thread_source: None,
@@ -84,7 +84,6 @@ pub(crate) async fn attach_thread_persistence(session: &mut Session) -> PathBuf 
                     ThreadMemoryMode::Disabled
                 },
             },
-            event_persistence_mode: ThreadEventPersistenceMode::Limited,
         },
     )
     .await
@@ -708,7 +707,7 @@ pub(crate) async fn upsert_goal_test_thread(session: &Session) {
         .state_db()
         .expect("goal test session should have a state db");
     let mut builder = codex_state::ThreadMetadataBuilder::new(
-        session.conversation_id,
+        session.thread_id,
         config
             .codex_home
             .join("goal-test-rollout.jsonl")

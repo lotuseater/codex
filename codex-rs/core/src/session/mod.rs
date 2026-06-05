@@ -52,6 +52,7 @@ use chrono::Utc;
 use codex_analytics::AnalyticsEventsClient;
 use codex_analytics::CompactionReason;
 use codex_analytics::SubAgentThreadStartedInput;
+use codex_analytics::TurnCodexErrorFact;
 use codex_config::types::OAuthCredentialsStoreMode;
 use codex_exec_server::Environment;
 use codex_exec_server::EnvironmentManager;
@@ -112,6 +113,7 @@ use codex_protocol::protocol::HasLegacyEvent;
 use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::ItemCompletedEvent;
 use codex_protocol::protocol::ItemStartedEvent;
+use codex_protocol::protocol::MultiAgentVersion;
 use codex_protocol::protocol::RawResponseItemEvent;
 use codex_protocol::protocol::ReviewRequest;
 use codex_protocol::protocol::RolloutItem;
@@ -203,6 +205,7 @@ mod approvals;
 pub(crate) mod blackboard;
 mod checkpoint_git;
 mod checkpoint_scratchpad;
+mod codex_handle;
 mod config_lock;
 mod context_budget;
 mod context_budget_adapter;
@@ -217,27 +220,26 @@ mod mcp;
 mod multi_agents;
 mod review;
 mod rollout_reconstruction;
-mod codex_handle;
+#[allow(clippy::module_inception)]
+pub(crate) mod session;
 mod session_events;
 mod session_history;
 mod session_lifecycle;
 mod session_mailbox;
 mod session_network_proxy;
 mod session_settings;
-#[allow(clippy::module_inception)]
-pub(crate) mod session;
 pub(crate) mod turn;
 pub(crate) mod turn_context;
 use self::config_lock::export_config_lock_if_configured;
 use self::config_lock::validate_config_lock_if_configured;
+pub(crate) use self::fork_features::ForkFeaturesState;
+pub(crate) use self::fork_features::ForkFeaturesUpdate;
 #[cfg(test)]
 use self::handlers::submission_dispatch_span;
 use self::handlers::submission_loop;
 pub(crate) use self::input_queue::InputQueue;
 pub(crate) use self::input_queue::TurnInput;
 pub(crate) use self::input_queue::TurnInputQueue;
-pub(crate) use self::fork_features::ForkFeaturesState;
-pub(crate) use self::fork_features::ForkFeaturesUpdate;
 use self::review::spawn_review_thread;
 use self::session::AppServerClientMetadata;
 use self::session::Session;
@@ -253,12 +255,12 @@ use self::turn::realtime_text_for_event;
 use self::turn_context::TurnContext;
 use self::turn_context::TurnSkillsContext;
 pub use codex_handle::Codex;
-pub use codex_handle::CodexSpawnOk;
-pub use codex_handle::SteerInputError;
 pub(crate) use codex_handle::CodexSpawnArgs;
+pub use codex_handle::CodexSpawnOk;
 pub(crate) use codex_handle::INITIAL_SUBMIT_ID;
 pub(crate) use codex_handle::SUBMISSION_CHANNEL_CAPACITY;
 pub(crate) use codex_handle::SessionLoopTermination;
+pub use codex_handle::SteerInputError;
 use codex_handle::*;
 #[cfg(test)]
 pub(crate) use session_lifecycle::completed_session_loop_termination;
@@ -334,7 +336,6 @@ use codex_protocol::protocol::ModelVerificationEvent;
 use codex_protocol::protocol::NetworkApprovalContext;
 use codex_protocol::protocol::NonSteerableTurnKind;
 use codex_protocol::protocol::Op;
-use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::protocol::RateLimitSnapshot;
 use codex_protocol::protocol::RequestUserInputEvent;
 use codex_protocol::protocol::ReviewDecision;
@@ -344,6 +345,7 @@ use codex_protocol::protocol::SessionNetworkProxyRuntime;
 use codex_protocol::protocol::StreamErrorEvent;
 use codex_protocol::protocol::Submission;
 use codex_protocol::protocol::ThreadMemoryMode;
+use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::protocol::TokenCountEvent;
 use codex_protocol::protocol::TokenUsage;
 use codex_protocol::protocol::TokenUsageInfo;
@@ -386,6 +388,41 @@ impl Session {
 
     pub(crate) fn live_thread(&self) -> Option<&Arc<dyn LiveThreadHandle>> {
         self.services.live_thread.as_ref()
+    }
+
+    pub(crate) fn track_turn_codex_error(&self, turn_context: &TurnContext, error: &CodexErr) {
+        self.services
+            .analytics_events_client
+            .track_turn_codex_error(TurnCodexErrorFact::from_codex_err(
+                self.thread_id.to_string(),
+                turn_context.sub_id.clone(),
+                error,
+            ));
+    }
+
+    pub(crate) fn multi_agent_version(&self) -> Option<MultiAgentVersion> {
+        self.multi_agent_version.get().copied()
+    }
+
+    pub(crate) fn set_multi_agent_version_if_unset(
+        &self,
+        multi_agent_version: MultiAgentVersion,
+    ) -> MultiAgentVersion {
+        *self.multi_agent_version.get_or_init(|| multi_agent_version)
+    }
+
+    pub(crate) fn resolve_multi_agent_version_for_model(
+        &self,
+        model_info: &ModelInfo,
+        config: &Config,
+    ) -> MultiAgentVersion {
+        if let Some(v) = self.multi_agent_version() {
+            return v;
+        }
+        let selected = model_info
+            .multi_agent_version
+            .unwrap_or_else(|| config.multi_agent_version_from_features());
+        self.set_multi_agent_version_if_unset(selected)
     }
 
     /// Flush rollout writes and return the final durability-barrier result.
@@ -474,6 +511,22 @@ impl Session {
     fn show_raw_agent_reasoning(&self) -> bool {
         self.services.show_raw_agent_reasoning
     }
+}
+
+pub(crate) fn resolve_multi_agent_version(
+    conversation_history: &InitialHistory,
+    inherited_multi_agent_version: Option<MultiAgentVersion>,
+) -> Option<MultiAgentVersion> {
+    if inherited_multi_agent_version == Some(MultiAgentVersion::Disabled) {
+        return Some(MultiAgentVersion::Disabled);
+    }
+    conversation_history
+        .get_multi_agent_version()
+        .or(inherited_multi_agent_version)
+        .or(match conversation_history {
+            InitialHistory::New | InitialHistory::Cleared => None,
+            InitialHistory::Resumed(_) | InitialHistory::Forked(_) => Some(MultiAgentVersion::V1),
+        })
 }
 
 #[cfg(test)]

@@ -313,12 +313,48 @@ impl Session {
         args: RequestPermissionsArgs,
         cancellation_token: CancellationToken,
     ) -> Option<RequestPermissionsResponse> {
-        self.request_permissions_for_cwd(
+        let environment = turn_context
+            .environments
+            .primary()
+            .map(|environment| environment.selection())
+            .unwrap_or_else(|| TurnEnvironmentSelection {
+                environment_id: codex_exec_server::LOCAL_ENVIRONMENT_ID.to_string(),
+                #[allow(deprecated)]
+                cwd: turn_context.cwd.clone(),
+            });
+        self.request_permissions_for_environment(
             turn_context,
             call_id,
             args,
-            #[allow(deprecated)]
-            turn_context.cwd.clone(),
+            environment,
+            cancellation_token,
+        )
+        .await
+    }
+
+    /// Backwards-compatible entry point that derives a [`TurnEnvironmentSelection`]
+    /// from an explicit `cwd` (used by the delegate path, which carries the
+    /// originating environment id in `args`).
+    pub(crate) async fn request_permissions_for_cwd(
+        self: &Arc<Self>,
+        turn_context: &Arc<TurnContext>,
+        call_id: String,
+        args: RequestPermissionsArgs,
+        cwd: AbsolutePathBuf,
+        cancellation_token: CancellationToken,
+    ) -> Option<RequestPermissionsResponse> {
+        let environment = TurnEnvironmentSelection {
+            environment_id: args
+                .environment_id
+                .clone()
+                .unwrap_or_else(|| codex_exec_server::LOCAL_ENVIRONMENT_ID.to_string()),
+            cwd,
+        };
+        self.request_permissions_for_environment(
+            turn_context,
+            call_id,
+            args,
+            environment,
             cancellation_token,
         )
         .await
@@ -328,12 +364,12 @@ impl Session {
         clippy::await_holding_invalid_type,
         reason = "active turn checks and turn state updates must remain atomic"
     )]
-    pub(crate) async fn request_permissions_for_cwd(
+    pub(crate) async fn request_permissions_for_environment(
         self: &Arc<Self>,
         turn_context: &Arc<TurnContext>,
         call_id: String,
         args: RequestPermissionsArgs,
-        cwd: AbsolutePathBuf,
+        environment: TurnEnvironmentSelection,
         cancellation_token: CancellationToken,
     ) -> Option<RequestPermissionsResponse> {
         match turn_context.as_ref().approval_policy.value() {
@@ -427,9 +463,10 @@ impl Session {
             let response = Self::normalize_request_permissions_response(
                 requested_permissions,
                 response,
-                cwd.as_path(),
+                environment.cwd.as_path(),
             );
             self.record_granted_request_permissions_for_turn(
+                &environment.environment_id,
                 &response,
                 originating_turn_state.as_ref(),
             )
@@ -448,7 +485,7 @@ impl Session {
                         PendingRequestPermissions {
                             tx_response,
                             requested_permissions: requested_permissions.clone(),
-                            cwd: cwd.clone(),
+                            environment: environment.clone(),
                         },
                     )
                 }
@@ -462,10 +499,11 @@ impl Session {
         let event = EventMsg::RequestPermissions(RequestPermissionsEvent {
             call_id: call_id.clone(),
             turn_id: turn_context.sub_id.clone(),
+            environment_id: Some(environment.environment_id.clone()),
             started_at_ms: now_unix_timestamp_ms(),
             reason: args.reason,
             permissions: requested_permissions,
-            cwd: Some(cwd),
+            cwd: Some(environment.cwd.clone()),
         });
         self.send_event(turn_context.as_ref(), event).await;
         tokio::select! {
@@ -573,9 +611,10 @@ impl Session {
                 let response = Self::normalize_request_permissions_response(
                     entry.requested_permissions,
                     response,
-                    entry.cwd.as_path(),
+                    entry.environment.cwd.as_path(),
                 );
                 self.record_granted_request_permissions_for_turn(
+                    &entry.environment.environment_id,
                     &response,
                     originating_turn_state.as_ref(),
                 )
@@ -619,6 +658,7 @@ impl Session {
 
     pub(crate) async fn record_granted_request_permissions_for_turn(
         &self,
+        environment_id: &str,
         response: &RequestPermissionsResponse,
         originating_turn_state: Option<&Arc<Mutex<crate::state::TurnState>>>,
     ) {
@@ -631,7 +671,7 @@ impl Session {
                     let mut ts = turn_state.lock().await;
                     let permissions: AdditionalPermissionProfile =
                         response.permissions.clone().into();
-                    ts.record_granted_permissions(permissions);
+                    ts.record_granted_permissions(environment_id, permissions);
                     if response.strict_auto_review {
                         ts.enable_strict_auto_review();
                     }
@@ -639,7 +679,10 @@ impl Session {
             }
             PermissionGrantScope::Session => {
                 let mut state = self.state.lock().await;
-                state.record_granted_permissions(response.permissions.clone().into());
+                state.record_granted_permissions(
+                    environment_id,
+                    response.permissions.clone().into(),
+                );
             }
         }
     }
@@ -648,11 +691,14 @@ impl Session {
         clippy::await_holding_invalid_type,
         reason = "active turn reads must stay consistent with the matching turn state"
     )]
-    pub(crate) async fn granted_turn_permissions(&self) -> Option<AdditionalPermissionProfile> {
+    pub(crate) async fn granted_turn_permissions(
+        &self,
+        environment_id: &str,
+    ) -> Option<AdditionalPermissionProfile> {
         let active = self.active_turn.lock().await;
         let active = active.as_ref()?;
         let ts = active.turn_state.lock().await;
-        ts.granted_permissions()
+        ts.granted_permissions(environment_id)
     }
 
     #[expect(
@@ -668,9 +714,12 @@ impl Session {
         ts.strict_auto_review_enabled()
     }
 
-    pub(crate) async fn granted_session_permissions(&self) -> Option<AdditionalPermissionProfile> {
+    pub(crate) async fn granted_session_permissions(
+        &self,
+        environment_id: &str,
+    ) -> Option<AdditionalPermissionProfile> {
         let state = self.state.lock().await;
-        state.granted_permissions()
+        state.granted_permissions(environment_id)
     }
 
     #[expect(

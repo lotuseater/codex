@@ -1123,10 +1123,23 @@ pub async fn run_main(
     let effective_toml = config.config_layer_stack.effective_config();
     match effective_toml.try_into() {
         Ok(config_toml) => {
+            let thread_store_selection = match &config.experimental_thread_store {
+                crate::legacy_core::config::ThreadStoreConfig::Local => {
+                    codex_thread_store::ThreadStoreSelection::Local
+                }
+                crate::legacy_core::config::ThreadStoreConfig::InMemory { id } => {
+                    codex_thread_store::ThreadStoreSelection::InMemory { id: id.clone() }
+                }
+            };
+            let thread_store = codex_thread_store::thread_store_from_config(
+                &config,
+                thread_store_selection,
+                state_db.clone(),
+            );
             match crate::legacy_core::personality_migration::maybe_migrate_personality(
                 &config.codex_home,
                 &config_toml,
-                state_db.clone(),
+                thread_store,
             )
             .await
             {

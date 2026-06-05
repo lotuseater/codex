@@ -373,8 +373,6 @@ impl Config {
                 };
             let sandbox_policy = compatibility_sandbox_policy_for_permission_profile(
                 &permission_profile,
-                &file_system_sandbox_policy,
-                network_sandbox_policy,
                 resolved_cwd.as_path(),
             );
             if matches!(sandbox_policy, SandboxPolicy::WorkspaceWrite { .. }) {
@@ -445,8 +443,6 @@ impl Config {
             };
             let sandbox_policy = compatibility_sandbox_policy_for_permission_profile(
                 &permission_profile,
-                &file_system_sandbox_policy,
-                network_sandbox_policy,
                 resolved_cwd.as_path(),
             );
             if matches!(sandbox_policy, SandboxPolicy::WorkspaceWrite { .. }) {
@@ -511,7 +507,6 @@ impl Config {
             let mut permission_profile = cfg
                 .derive_permission_profile(
                     sandbox_mode,
-                    /*profile_sandbox_mode*/ None,
                     windows_sandbox_level,
                     Some(&active_project),
                     Some(&constrained_permission_profile),

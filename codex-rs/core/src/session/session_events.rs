@@ -177,7 +177,7 @@ impl Session {
         self.send_event(
             turn_context,
             EventMsg::ItemStarted(ItemStartedEvent {
-                thread_id: self.conversation_id,
+                thread_id: self.thread_id,
                 turn_id: turn_context.sub_id.clone(),
                 item: item.clone(),
                 started_at_ms: now_unix_timestamp_ms(),
@@ -195,7 +195,7 @@ impl Session {
         self.send_event(
             turn_context,
             EventMsg::ItemCompleted(ItemCompletedEvent {
-                thread_id: self.conversation_id,
+                thread_id: self.thread_id,
                 turn_id: turn_context.sub_id.clone(),
                 item,
                 completed_at_ms: now_unix_timestamp_ms(),
@@ -255,7 +255,11 @@ impl Session {
         .await;
     }
 
-    pub(crate) async fn send_raw_response_items(&self, turn_context: &TurnContext, items: &[ResponseItem]) {
+    pub(crate) async fn send_raw_response_items(
+        &self,
+        turn_context: &TurnContext,
+        items: &[ResponseItem],
+    ) {
         for item in items {
             self.send_event(
                 turn_context,
@@ -282,5 +286,4 @@ impl Session {
         });
         self.send_event(turn_context, event).await;
     }
-
 }

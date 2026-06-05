@@ -124,7 +124,8 @@ impl AnalyticsReducer for CustomFactReducer {
             CustomAnalyticsFact::Compaction(_)
             | CustomAnalyticsFact::GuardianReview(_)
             | CustomAnalyticsFact::TurnResolvedConfig(_)
-            | CustomAnalyticsFact::TurnTokenUsage(_) => {}
+            | CustomAnalyticsFact::TurnTokenUsage(_)
+            | CustomAnalyticsFact::TurnCodexError(_) => {}
         }
     }
 }

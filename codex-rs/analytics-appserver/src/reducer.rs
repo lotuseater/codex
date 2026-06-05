@@ -54,6 +54,7 @@ use codex_analytics::CustomAnalyticsFact;
 use codex_analytics::GuardianReviewEventParams;
 use codex_analytics::ThreadInitializationMode;
 use codex_analytics::TrackEvent;
+use codex_analytics::TurnCodexError;
 use codex_analytics::TurnResolvedConfigFact;
 use codex_analytics::TurnStatus;
 use codex_analytics::TurnSteerRejectionReason;

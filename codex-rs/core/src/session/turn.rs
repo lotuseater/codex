@@ -298,7 +298,7 @@ pub(crate) async fn run_turn(
     .await;
 
     let session_telemetry = turn_context.session_telemetry.clone();
-    let thread_id = sess.conversation_id.to_string();
+    let thread_id = sess.thread_id.to_string();
     let tracking = build_track_events_context(
         turn_context.model_info.slug.clone(),
         thread_id,
@@ -1708,8 +1708,7 @@ pub(crate) async fn built_tools(
         .into_iter()
         .map(|connector_id| connector_id.0)
         .collect::<Vec<_>>();
-    let discoverable_tools = if apps_enabled
-        && turn_context.features.enabled(Feature::ToolSuggest)
+    let discoverable_tools = if apps_enabled && turn_context.features.enabled(Feature::ToolSuggest)
     {
         if let Some(accessible_connectors) = accessible_connectors_with_enabled_state.as_ref() {
             match connectors::list_tool_suggest_discoverable_tools_with_auth(

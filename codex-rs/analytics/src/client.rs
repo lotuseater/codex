@@ -114,9 +114,8 @@ impl AnalyticsEventsClient {
         reducer: Box<dyn AnalyticsReducer>,
     ) -> Self {
         Self {
-            queue: (analytics_enabled != Some(false)).then(|| {
-                AnalyticsEventsQueue::new(Arc::clone(&auth_manager), base_url, reducer)
-            }),
+            queue: (analytics_enabled != Some(false))
+                .then(|| AnalyticsEventsQueue::new(Arc::clone(&auth_manager), base_url, reducer)),
         }
     }
 

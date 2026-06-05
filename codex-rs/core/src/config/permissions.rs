@@ -201,7 +201,7 @@ pub(crate) fn resolve_permission_profile(
 
 fn extensible_builtin_parent_profile(profile_name: &str) -> Option<PermissionProfileToml> {
     let file_system = match profile_name {
-        BUILT_IN_READ_ONLY_PROFILE => FileSystemSandboxPolicy::read_only(),
+        BUILT_IN_READ_ONLY_PROFILE => FileSystemSandboxPolicy::default(),
         BUILT_IN_WORKSPACE_PROFILE => FileSystemSandboxPolicy::workspace_write(
             &[],
             /*exclude_tmpdir_env_var*/ false,
@@ -224,6 +224,7 @@ fn permission_profile_toml_from_file_system_policy(
     }
     PermissionProfileToml {
         description: None,
+        extends: None,
         workspace_roots: None,
         filesystem: Some(filesystem),
         network: None,

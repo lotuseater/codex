@@ -18,13 +18,6 @@ impl ToolExecutor<ToolInvocation> for Handler {
         Some(create_resume_agent_tool())
     }
 
-    fn search_info(&self) -> Option<ToolSearchInfo> {
-        multi_agent_tool_search_info(
-            "resume_agent resume reopen closed agent subagent thread id target",
-            self.spec(),
-        )
-    }
-
     async fn handle(
         &self,
         invocation: ToolInvocation,
@@ -143,6 +136,13 @@ async fn handle_resume_agent(
 }
 
 impl CoreToolRuntime for Handler {
+    fn search_info(&self) -> Option<ToolSearchInfo> {
+        multi_agent_tool_search_info(
+            "resume_agent resume reopen closed agent subagent thread id target",
+            self.spec(),
+        )
+    }
+
     fn matches_kind(&self, payload: &ToolPayload) -> bool {
         matches!(payload, ToolPayload::Function { .. })
     }

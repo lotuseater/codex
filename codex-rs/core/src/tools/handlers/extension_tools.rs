@@ -198,6 +198,7 @@ impl TurnItemEmitter for CoreTurnItemEmitter {
 fn extension_turn_item(item: ExtensionTurnItem) -> TurnItem {
     match item {
         ExtensionTurnItem::WebSearch(item) => TurnItem::WebSearch(item),
+        ExtensionTurnItem::ImageGeneration(item) => TurnItem::ImageGeneration(item),
     }
 }
 

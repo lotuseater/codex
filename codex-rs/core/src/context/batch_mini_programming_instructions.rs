@@ -4,7 +4,7 @@ use super::ContextualUserFragment;
 pub(crate) struct BatchMiniProgrammingInstructions;
 
 impl ContextualUserFragment for BatchMiniProgrammingInstructions {
-    fn role() -> &'static str {
+    fn role(&self) -> &'static str {
         "developer"
     }
 

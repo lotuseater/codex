@@ -111,7 +111,9 @@ impl Session {
         previous_turn_settings
     }
 
-    pub(crate) fn last_token_info_from_rollout(rollout_items: &[RolloutItem]) -> Option<TokenUsageInfo> {
+    pub(crate) fn last_token_info_from_rollout(
+        rollout_items: &[RolloutItem],
+    ) -> Option<TokenUsageInfo> {
         rollout_items.iter().rev().find_map(|item| match item {
             RolloutItem::EventMsg(EventMsg::TokenCount(ev)) => ev.info.clone(),
             _ => None,

@@ -402,10 +402,6 @@ impl ToolExecutor<ToolInvocation> for ExposureOverride {
         self.exposure == ToolExposure::Direct && self.handler.supports_parallel_tool_calls()
     }
 
-    fn search_info(&self) -> Option<ToolSearchInfo> {
-        self.handler.search_info()
-    }
-
     async fn handle(
         &self,
         invocation: ToolInvocation,
@@ -415,6 +411,10 @@ impl ToolExecutor<ToolInvocation> for ExposureOverride {
 }
 
 impl CoreToolRuntime for ExposureOverride {
+    fn search_info(&self) -> Option<ToolSearchInfo> {
+        self.handler.search_info()
+    }
+
     fn matches_kind(&self, payload: &ToolPayload) -> bool {
         self.handler.matches_kind(payload)
     }

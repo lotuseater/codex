@@ -33,7 +33,10 @@ impl ToolSearchHandler {
         for search_info in search_infos {
             entries.push(search_info.entry);
             if let Some(source_info) = search_info.source_info {
-                search_source_infos.push(source_info);
+                search_source_infos.push(ToolSearchSourceInfo {
+                    name: source_info.name,
+                    description: source_info.description,
+                });
             }
         }
         let documents: Vec<Document<usize>> = entries

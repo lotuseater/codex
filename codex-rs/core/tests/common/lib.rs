@@ -1,5 +1,7 @@
 #![expect(clippy::expect_used)]
 
+use codex_core::CodexThread;
+
 pub use codex_test_support_lightweight::PathBufExt;
 pub use codex_test_support_lightweight::PathExt;
 pub use codex_test_support_lightweight::TempDirExt;

@@ -11,6 +11,8 @@ use crate::RequirementsLayerEntry;
 use crate::cloud_config_layers::CloudConfigLayerError;
 use crate::cloud_config_layers::cloud_config_layers_from_fragments_strict;
 use crate::cloud_config_layers_from_fragments;
+use crate::cloud_requirements::CloudRequirementsLoadErrorCode;
+use crate::cloud_requirements::CloudRequirementsLoader;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use futures::future::BoxFuture;
 use futures::future::FutureExt;
@@ -192,8 +194,70 @@ impl CloudConfigBundleLoader {
         }
     }
 
+    /// Bridge the fork's `CloudRequirementsLoader` onto the upstream cloud
+    /// config bundle path.
+    ///
+    /// The fork historically threaded cloud-delivered requirements through a
+    /// dedicated `CloudRequirementsLoader` argument. Upstream replaced that with
+    /// a single `CloudConfigBundle` that carries both config and requirements
+    /// fragments. This adapter preserves the fork's `ConfigBuilder::cloud_requirements`
+    /// API by serializing the loaded [`ConfigRequirementsToml`] into a single
+    /// enterprise-managed requirements fragment, which `from_bundle_impl` then
+    /// turns into the same requirements layer the fork used to produce.
+    pub fn from_requirements_loader(loader: CloudRequirementsLoader) -> Self {
+        Self::new(async move {
+            match loader.get().await {
+                Ok(Some(requirements)) => {
+                    // Round-trip through `toml::Value` first so table/array fields are
+                    // emitted after scalar fields. Serializing the struct directly can
+                    // fail with a "values must be emitted before tables" ordering error.
+                    let contents = toml::Value::try_from(&requirements)
+                        .and_then(|value| toml::to_string(&value))
+                        .map_err(|err| {
+                            CloudConfigBundleLoadError::new(
+                                CloudConfigBundleLoadErrorCode::InvalidBundle,
+                                /*status_code*/ None,
+                                format!("failed to serialize cloud requirements: {err}"),
+                            )
+                        })?;
+                    let bundle = CloudConfigBundle {
+                        config_toml: CloudConfigTomlBundle::default(),
+                        requirements_toml: CloudRequirementsTomlBundle {
+                            enterprise_managed: vec![CloudRequirementsFragment {
+                                id: "cloud_requirements".to_string(),
+                                name: "Cloud requirements".to_string(),
+                                contents,
+                            }],
+                        },
+                    };
+                    Ok(Some(bundle))
+                }
+                Ok(None) => Ok(None),
+                Err(err) => Err(CloudConfigBundleLoadError::new(
+                    cloud_requirements_error_code_to_bundle(err.code()),
+                    err.status_code(),
+                    err.to_string(),
+                )),
+            }
+        })
+    }
+
     pub async fn get(&self) -> Result<Option<CloudConfigBundle>, CloudConfigBundleLoadError> {
         self.fut.clone().await
+    }
+}
+
+fn cloud_requirements_error_code_to_bundle(
+    code: CloudRequirementsLoadErrorCode,
+) -> CloudConfigBundleLoadErrorCode {
+    match code {
+        CloudRequirementsLoadErrorCode::Auth => CloudConfigBundleLoadErrorCode::Auth,
+        CloudRequirementsLoadErrorCode::Timeout => CloudConfigBundleLoadErrorCode::Timeout,
+        CloudRequirementsLoadErrorCode::RequestFailed => {
+            CloudConfigBundleLoadErrorCode::RequestFailed
+        }
+        CloudRequirementsLoadErrorCode::Parse => CloudConfigBundleLoadErrorCode::InvalidBundle,
+        CloudRequirementsLoadErrorCode::Internal => CloudConfigBundleLoadErrorCode::Internal,
     }
 }
 

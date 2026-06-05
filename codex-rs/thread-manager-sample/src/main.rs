@@ -9,19 +9,6 @@ use anyhow::Context;
 use anyhow::bail;
 use clap::Parser;
 use codex_app_server_protocol::item_event_to_server_notification;
-use codex_core::CodexThread;
-use codex_core::NewThread;
-use codex_core::ThreadManager;
-use codex_core::config::Config;
-use codex_core::config::Constrained;
-use codex_core::config::GhostSnapshotConfig;
-use codex_core::config::MultiAgentV2Config;
-use codex_core::config::Permissions;
-use codex_core::config::TerminalResizeReflowConfig;
-use codex_core::config::ThreadStoreConfig;
-use codex_core::config::find_codex_home;
-use codex_core::init_state_db;
-use codex_core::resolve_installation_id;
 use codex_arg0::Arg0DispatchPaths;
 use codex_arg0::arg0_dispatch_or_else;
 use codex_config::ConfigLayerStack;
@@ -45,6 +32,21 @@ use codex_config_types::AltScreenMode;
 use codex_config_types::ApprovalsReviewer;
 use codex_config_types::ContextBudgetMode;
 use codex_config_types::WebSearchMode;
+use codex_core::CodexThread;
+use codex_core::NewThread;
+use codex_core::ThreadManager;
+use codex_core::config::Config;
+use codex_core::config::Constrained;
+use codex_core::config::GhostSnapshotConfig;
+use codex_core::config::MultiAgentV2Config;
+use codex_core::config::Permissions;
+use codex_core::config::TerminalResizeReflowConfig;
+use codex_core::config::ThreadStoreConfig;
+use codex_core::config::find_codex_home;
+use codex_core::init_state_db;
+use codex_core::resolve_installation_id;
+use codex_exec_server::EnvironmentManager;
+use codex_exec_server::ExecServerRuntimePaths;
 use codex_extension_api::empty_extension_registry;
 use codex_features::Feature;
 use codex_features::Features;
@@ -59,12 +61,10 @@ use codex_protocol::protocol::Op;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::user_input::UserInput;
-use codex_utils_absolute_path::AbsolutePathBuf;
-use codex_exec_server::EnvironmentManager;
-use codex_exec_server::ExecServerRuntimePaths;
 use codex_thread_store::StoreLiveThreadFactory;
 use codex_thread_store::ThreadStoreSelection;
 use codex_thread_store::thread_store_from_config;
+use codex_utils_absolute_path::AbsolutePathBuf;
 
 // The sample constructs Config directly, so keep its unset-config defaults explicit.
 const DEFAULT_MODEL_COMPACT_PERCENTAGE: u8 = 20;
@@ -198,8 +198,6 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
             Constrained::allow_any(PermissionProfile::read_only()),
         )
         .context("build permissions")?,
-        explicit_permission_profile_mode: false,
-        custom_permission_profiles: Vec::new(),
         approvals_reviewer: ApprovalsReviewer::User,
         enforce_residency: Constrained::allow_any(/*initial_value*/ None),
         hide_agent_reasoning: false,
@@ -289,7 +287,6 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         forced_login_method: None,
         web_search_mode: Constrained::allow_any(WebSearchMode::Disabled),
         web_search_config: None,
-        experimental_request_user_input_enabled: true,
         use_experimental_unified_exec_tool: false,
         background_terminal_max_timeout: 300_000,
         ghost_snapshot: GhostSnapshotConfig::default(),

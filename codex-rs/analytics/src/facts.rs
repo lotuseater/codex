@@ -112,9 +112,10 @@ impl TurnCodexErrorFact {
 
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum CodexErrKind {
+pub enum CodexErrKind {
     TurnAborted,
     Stream,
+    CompactionIncomplete,
     ContextWindowExceeded,
     ThreadNotFound,
     AgentLimitReached,
@@ -152,10 +153,10 @@ pub(crate) enum CodexErrKind {
 }
 
 #[derive(Clone)]
-pub(crate) struct TurnCodexError {
-    pub(crate) kind: CodexErrKind,
-    pub(crate) subreason: Option<String>,
-    pub(crate) http_status_code: Option<u16>,
+pub struct TurnCodexError {
+    pub kind: CodexErrKind,
+    pub subreason: Option<String>,
+    pub http_status_code: Option<u16>,
 }
 
 impl TurnCodexError {
@@ -192,6 +193,7 @@ impl From<&CodexErr> for CodexErrKind {
         match error {
             CodexErr::TurnAborted => CodexErrKind::TurnAborted,
             CodexErr::Stream(..) => CodexErrKind::Stream,
+            CodexErr::CompactionIncomplete { .. } => CodexErrKind::CompactionIncomplete,
             CodexErr::ContextWindowExceeded => CodexErrKind::ContextWindowExceeded,
             CodexErr::ThreadNotFound(_) => CodexErrKind::ThreadNotFound,
             CodexErr::AgentLimitReached { .. } => CodexErrKind::AgentLimitReached,

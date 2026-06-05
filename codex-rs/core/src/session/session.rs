@@ -563,7 +563,6 @@ impl Session {
                                             ThreadMemoryMode::Disabled
                                         },
                                     },
-                                    event_persistence_mode,
                                 },
                             )
                             .await?
@@ -586,7 +585,6 @@ impl Session {
                                             ThreadMemoryMode::Disabled
                                         },
                                     },
-                                    event_persistence_mode,
                                 },
                             )
                             .await?

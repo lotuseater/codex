@@ -282,6 +282,7 @@ pub(crate) fn collect_tool_executors(
                         allow_login_shell: config.allow_login_shell,
                         exec_permission_approvals_enabled,
                         include_environment_id,
+                        include_shell_parameter: true,
                     },
                 )));
                 executors.push(Arc::new(WriteStdinHandler));

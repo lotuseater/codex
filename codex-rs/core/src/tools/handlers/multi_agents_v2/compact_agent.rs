@@ -32,7 +32,7 @@ impl ToolExecutor<ToolInvocation> for Handler {
             .agent_control
             .get_agent_metadata(agent_id)
             .unwrap_or_default();
-        if agent_id == session.conversation_id
+        if agent_id == session.thread_id
             && !matches!(
                 turn.session_source,
                 codex_protocol::protocol::SessionSource::SubAgent(_)
@@ -60,7 +60,7 @@ impl ToolExecutor<ToolInvocation> for Handler {
                 CollabCompactBeginEvent {
                     call_id: call_id.clone(),
                     started_at_ms: now_unix_timestamp_ms(),
-                    sender_thread_id: session.conversation_id,
+                    sender_thread_id: session.thread_id,
                     receiver_thread_id: agent_id,
                     reason: args.reason.clone(),
                 }
@@ -81,7 +81,7 @@ impl ToolExecutor<ToolInvocation> for Handler {
                 CollabCompactEndEvent {
                     call_id,
                     completed_at_ms: now_unix_timestamp_ms(),
-                    sender_thread_id: session.conversation_id,
+                    sender_thread_id: session.thread_id,
                     receiver_thread_id: agent_id,
                     receiver_agent_nickname: receiver_agent.agent_nickname,
                     receiver_agent_role: receiver_agent.agent_role,

@@ -1,4 +1,5 @@
 use super::*;
+use codex_protocol::protocol::MultiAgentVersion;
 
 #[derive(Debug, PartialEq)]
 pub enum SteerInputError {
@@ -77,6 +78,8 @@ pub(crate) struct CodexSpawnArgs {
     pub(crate) thread_source: Option<ThreadSource>,
     pub(crate) agent_control: AgentControl,
     pub(crate) dynamic_tools: Vec<DynamicToolSpec>,
+    pub(crate) parent_thread_id: Option<ThreadId>,
+    pub(crate) inherited_multi_agent_version: Option<MultiAgentVersion>,
     pub(crate) persist_extended_history: bool,
     pub(crate) metrics_service_name: Option<String>,
     pub(crate) inherited_shell_snapshot: Option<Arc<ShellSnapshot>>,
@@ -142,7 +145,9 @@ impl Codex {
             thread_source,
             agent_control,
             dynamic_tools,
-            persist_extended_history,
+            parent_thread_id,
+            inherited_multi_agent_version,
+            persist_extended_history: _,
             metrics_service_name,
             inherited_shell_snapshot,
             user_shell_override,
@@ -307,9 +312,9 @@ impl Codex {
             app_server_client_version: None,
             session_source,
             forked_from_thread_id,
+            parent_thread_id,
             thread_source,
             dynamic_tools,
-            persist_extended_history,
             inherited_shell_snapshot,
             user_shell_override,
         };
@@ -317,6 +322,11 @@ impl Codex {
         // Generate a unique ID for the lifetime of this Codex session.
         let session_source_clone = session_configuration.session_source.clone();
         let (agent_status_tx, agent_status_rx) = watch::channel(AgentStatus::PendingInit);
+
+        let multi_agent_version = crate::session::resolve_multi_agent_version(
+            &conversation_history,
+            inherited_multi_agent_version,
+        );
 
         let session = Session::new(
             session_configuration,
@@ -341,13 +351,14 @@ impl Codex {
             state_db,
             parent_rollout_thread_trace,
             attestation_provider,
+            multi_agent_version,
         )
         .await
         .map_err(|e| {
             error!("Failed to create session: {e:#}");
             map_session_init_error(&e, &config.codex_home)
         })?;
-        let thread_id = session.conversation_id;
+        let thread_id = session.thread_id;
 
         // This task will run until Op::Shutdown is received.
         let session_for_loop = Arc::clone(&session);

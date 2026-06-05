@@ -14,7 +14,6 @@ use codex_thread_store_api::ReadThreadParams;
 use codex_thread_store_api::ResumeThreadParams;
 use codex_thread_store_api::StoredThread;
 use codex_thread_store_api::StoredThreadHistory;
-use codex_thread_store_api::ThreadEventPersistenceMode;
 use codex_thread_store_api::ThreadMetadataPatch;
 use codex_thread_store_api::ThreadStore;
 use codex_thread_store_api::ThreadStoreFuture;
@@ -346,13 +345,6 @@ impl LiveThreadFactory for StoreLiveThreadFactory {
     }
 }
 
-fn event_persistence_mode(mode: ThreadEventPersistenceMode) -> EventPersistenceMode {
-    match mode {
-        ThreadEventPersistenceMode::Limited => EventPersistenceMode::Limited,
-        ThreadEventPersistenceMode::Extended => EventPersistenceMode::Extended,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -365,6 +357,7 @@ mod tests {
     use codex_thread_store_api::ReadThreadParams;
     use codex_thread_store_api::RecordingThreadStore;
     use codex_thread_store_api::StoredThread;
+    use codex_thread_store_api::ThreadEventPersistenceMode;
     use codex_thread_store_api::ThreadPersistenceMetadata;
     use codex_thread_store_api::ThreadStore;
     use pretty_assertions::assert_eq;

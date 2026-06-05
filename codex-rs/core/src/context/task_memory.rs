@@ -6,7 +6,7 @@ pub(crate) struct TaskMemory {
 }
 
 impl ContextualUserFragment for TaskMemory {
-    fn role() -> &'static str {
+    fn role(&self) -> &'static str {
         "user"
     }
 

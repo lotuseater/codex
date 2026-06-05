@@ -345,6 +345,7 @@ impl ConfigLayerStack {
             ConfigLayerSource::User { file, .. } => Some(file),
             ConfigLayerSource::Mdm { .. }
             | ConfigLayerSource::System { .. }
+            | ConfigLayerSource::EnterpriseManaged { .. }
             | ConfigLayerSource::Project { .. }
             | ConfigLayerSource::SessionFlags
             | ConfigLayerSource::LegacyManagedConfigTomlFromFile { .. }
@@ -415,6 +416,7 @@ impl ConfigLayerStack {
                     }),
                     ConfigLayerSource::Mdm { .. }
                     | ConfigLayerSource::System { .. }
+                    | ConfigLayerSource::EnterpriseManaged { .. }
                     | ConfigLayerSource::Project { .. }
                     | ConfigLayerSource::SessionFlags
                     | ConfigLayerSource::LegacyManagedConfigTomlFromFile { .. }

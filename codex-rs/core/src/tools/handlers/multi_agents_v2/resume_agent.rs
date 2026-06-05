@@ -65,7 +65,7 @@ impl ToolExecutor<ToolInvocation> for Handler {
                 CollabResumeBeginEvent {
                     call_id: call_id.clone(),
                     started_at_ms: now_unix_timestamp_ms(),
-                    sender_thread_id: session.conversation_id,
+                    sender_thread_id: session.thread_id,
                     receiver_thread_id,
                     receiver_agent_nickname: receiver_agent.agent_nickname.clone(),
                     receiver_agent_role: receiver_agent.agent_role.clone(),
@@ -121,7 +121,7 @@ impl ToolExecutor<ToolInvocation> for Handler {
                 CollabResumeEndEvent {
                     call_id,
                     completed_at_ms: now_unix_timestamp_ms(),
-                    sender_thread_id: session.conversation_id,
+                    sender_thread_id: session.thread_id,
                     receiver_thread_id,
                     receiver_agent_nickname: receiver_agent.agent_nickname,
                     receiver_agent_role: receiver_agent.agent_role,
@@ -261,11 +261,11 @@ async fn persisted_spawn_root_thread_id(
         turn.session_source,
         SessionSource::SubAgent(SubAgentSource::ThreadSpawn { .. })
     ) {
-        return Ok(session.conversation_id);
+        return Ok(session.thread_id);
     }
 
     if let Some(root_thread_id) = state_db
-        .find_thread_spawn_root_for_descendant(session.conversation_id)
+        .find_thread_spawn_root_for_descendant(session.thread_id)
         .await
         .map_err(|err| {
             FunctionCallError::RespondToModel(format!("failed to load persisted agent root: {err}"))
@@ -278,7 +278,7 @@ async fn persisted_spawn_root_thread_id(
         SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
             parent_thread_id, ..
         }) => Ok(*parent_thread_id),
-        _ => Ok(session.conversation_id),
+        _ => Ok(session.thread_id),
     }
 }
 
@@ -322,13 +322,13 @@ pub(super) async fn try_resume_closed_agent(
                 state_db,
                 receiver_thread_id,
                 fallback_agent_path,
-                session.conversation_id,
+                session.thread_id,
                 next_thread_spawn_depth(&turn.session_source),
             )
             .await?
         }
         None => PersistedThreadSpawnSource {
-            parent_thread_id: session.conversation_id,
+            parent_thread_id: session.thread_id,
             depth: next_thread_spawn_depth(&turn.session_source),
             agent_path: fallback_agent_path,
             agent_role: None,
@@ -340,7 +340,7 @@ pub(super) async fn try_resume_closed_agent(
         ));
     }
 
-    let config = build_agent_resume_config(turn.as_ref(), persisted_source.depth)?;
+    let config = build_agent_resume_config(turn.as_ref())?;
     let source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
         parent_thread_id: persisted_source.parent_thread_id,
         depth: persisted_source.depth,

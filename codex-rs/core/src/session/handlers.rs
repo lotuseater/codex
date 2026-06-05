@@ -200,7 +200,11 @@ async fn thread_settings_applied_event(sess: &Session) -> EventMsg {
 }
 
 /// Applies persistent thread-settings overrides without starting a turn.
-pub async fn thread_settings(sess: &Arc<Session>, sub_id: String, settings: ThreadSettingsOverrides) {
+pub async fn thread_settings(
+    sess: &Arc<Session>,
+    sub_id: String,
+    settings: ThreadSettingsOverrides,
+) {
     let updates = settings_update_from_thread_settings(sess, settings).await;
     override_turn_context(sess, sub_id, updates).await;
 }

@@ -101,7 +101,7 @@ pub(super) async fn first_moves_context_for_fresh_turn(
 
     let context_pack = context_pack_for_fresh_turn(turn_context, prompt);
     let project_problem_context = project_problem_memory_context(turn_context, prompt).await;
-    let session_id = sess.conversation_id.to_string();
+    let session_id = sess.thread_id.to_string();
     let first_moves_context = match predict(PredictRequest {
         project_root: turn_context.cwd.as_path(),
         codex_home: turn_context.config.codex_home.as_path(),

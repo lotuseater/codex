@@ -591,6 +591,19 @@ pub enum ConfigLayerSource {
         file: AbsolutePathBuf,
     },
 
+    /// Enterprise-managed config layer delivered via the cloud config bundle.
+    #[serde(rename_all = "camelCase")]
+    #[ts(rename_all = "camelCase")]
+    EnterpriseManaged {
+        /// Stable identifier for the delivered layer.
+        id: String,
+
+        /// Admin-facing name for the delivered layer. This is surfaced in
+        /// diagnostics so users know which cloud layer needs administrator
+        /// attention.
+        name: String,
+    },
+
     /// User config layer from $CODEX_HOME/config.toml. This layer is special
     /// in that it is expected to be:
     /// - writable by the user
@@ -632,6 +645,7 @@ impl ConfigLayerSource {
         match self {
             ConfigLayerSource::Mdm { .. } => 0,
             ConfigLayerSource::System { .. } => 10,
+            ConfigLayerSource::EnterpriseManaged { .. } => 15,
             ConfigLayerSource::User { .. } => 20,
             ConfigLayerSource::Project { .. } => 25,
             ConfigLayerSource::SessionFlags => 30,

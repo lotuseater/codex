@@ -332,7 +332,10 @@ fn insert_definition(
     Ok(())
 }
 
-pub(crate) fn write_json_schema_with_return<T>(out_dir: &Path, name: &str) -> Result<GeneratedSchema>
+pub(crate) fn write_json_schema_with_return<T>(
+    out_dir: &Path,
+    name: &str,
+) -> Result<GeneratedSchema>
 where
     T: JsonSchema,
 {

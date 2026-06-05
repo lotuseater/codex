@@ -83,7 +83,7 @@ impl Session {
 
         ShellSnapshot::refresh_snapshot(
             codex_home.clone(),
-            self.conversation_id,
+            self.thread_id,
             next_cwd.clone(),
             self.services.user_shell.as_ref().clone(),
             self.services.shell_snapshot_tx.clone(),

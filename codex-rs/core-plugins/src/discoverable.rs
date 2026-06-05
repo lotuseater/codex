@@ -1,8 +1,8 @@
 use anyhow::Context;
-use codex_app_server_protocol::PluginAvailability;
-use codex_app_server_protocol::PluginInstallPolicy;
 use codex_login::CodexAuth;
 use codex_plugin::PluginCapabilitySummary;
+use codex_protocol::plugin::PluginAvailability;
+use codex_protocol::plugin::PluginInstallPolicy;
 use std::collections::HashSet;
 use tracing::warn;
 

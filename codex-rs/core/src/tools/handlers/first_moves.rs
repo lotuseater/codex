@@ -95,7 +95,7 @@ async fn handle_predict(
     if let Some(max_candidates) = args.max_candidates {
         config.max_candidates = max_candidates.min(50);
     }
-    let session_id = invocation.session.conversation_id.to_string();
+    let session_id = invocation.session.thread_id.to_string();
     let bundle = predict(PredictRequest {
         project_root: project_root.as_path(),
         codex_home: invocation.turn.config.codex_home.as_path(),

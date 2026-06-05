@@ -105,7 +105,7 @@ async fn run_local_sandboxed_command(
             capture_policy: ExecCapturePolicy::FullBuffer,
             env: create_env(
                 &invocation.turn.shell_environment_policy,
-                Some(invocation.session.conversation_id),
+                Some(invocation.session.thread_id),
             ),
             network: invocation.turn.network.clone(),
             sandbox_permissions: Default::default(),
@@ -149,7 +149,7 @@ async fn run_remote_command(
     let mut env = HashMap::new();
     env.insert(
         CODEX_THREAD_ID_ENV_VAR.to_string(),
-        invocation.session.conversation_id.to_string(),
+        invocation.session.thread_id.to_string(),
     );
     let started = turn_environment
         .environment

@@ -128,7 +128,7 @@ impl Session {
         };
         match checkpoint_scratchpad::write_scratchpad(
             codex_home.as_ref(),
-            self.conversation_id,
+            self.thread_id,
             &turn_context.sub_id,
             reason,
             git_summary,

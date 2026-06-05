@@ -45,7 +45,7 @@ impl ToolExecutor<ToolInvocation> for Handler {
             )
             .await)
             .unwrap_or_default();
-        if restart_target.thread_id == session.conversation_id
+        if restart_target.thread_id == session.thread_id
             && !matches!(
                 turn.session_source,
                 codex_protocol::protocol::SessionSource::SubAgent(_)
@@ -76,7 +76,7 @@ impl ToolExecutor<ToolInvocation> for Handler {
                 CollabRestartBeginEvent {
                     call_id: call_id.clone(),
                     started_at_ms: now_unix_timestamp_ms(),
-                    sender_thread_id: session.conversation_id,
+                    sender_thread_id: session.thread_id,
                     receiver_thread_id: restart_target.thread_id,
                     prompt: prompt.clone(),
                     model: args.model.clone(),
@@ -167,7 +167,7 @@ impl ToolExecutor<ToolInvocation> for Handler {
                 CollabRestartEndEvent {
                     call_id,
                     completed_at_ms: now_unix_timestamp_ms(),
-                    sender_thread_id: session.conversation_id,
+                    sender_thread_id: session.thread_id,
                     receiver_thread_id: restart_target.thread_id,
                     receiver_agent_nickname: receiver_agent.agent_nickname,
                     receiver_agent_role: receiver_agent.agent_role,

@@ -11,6 +11,7 @@ use crate::accepted_lines::AcceptedLineFingerprintEventInput;
 use codex_analytics::AcceptedLineFingerprint;
 use codex_analytics::AppServerRpcTransport;
 use codex_analytics::CodexCompactionEvent;
+use codex_analytics::CodexErrKind;
 use codex_analytics::CompactionImplementation;
 use codex_analytics::CompactionPhase;
 use codex_analytics::CompactionReason;
@@ -570,10 +571,14 @@ pub(crate) struct CodexTurnEventParams {
     pub(crate) sandbox_network_access: bool,
     pub(crate) collaboration_mode: Option<&'static str>,
     pub(crate) personality: Option<String>,
+    pub(crate) workspace_kind: Option<String>,
     pub(crate) num_input_images: usize,
     pub(crate) is_first_turn: bool,
     pub(crate) status: Option<TurnStatus>,
     pub(crate) turn_error: Option<CodexErrorInfo>,
+    pub(crate) codex_error_kind: Option<CodexErrKind>,
+    pub(crate) codex_error_subreason: Option<String>,
+    pub(crate) codex_error_http_status_code: Option<u16>,
     pub(crate) steer_count: Option<usize>,
     pub(crate) total_tool_call_count: Option<usize>,
     pub(crate) shell_command_count: Option<usize>,
@@ -699,8 +704,12 @@ pub(crate) fn codex_app_metadata(
         app_name: app.app_name,
         product_client_id: Some(codex_login::default_client::originator().value),
         invoke_type: match app.invocation_type {
-            Some(codex_analytics::InvocationType::Explicit) => Some(crate::events::InvocationType::Explicit),
-            Some(codex_analytics::InvocationType::Implicit) => Some(crate::events::InvocationType::Implicit),
+            Some(codex_analytics::InvocationType::Explicit) => {
+                Some(crate::events::InvocationType::Explicit)
+            }
+            Some(codex_analytics::InvocationType::Implicit) => {
+                Some(crate::events::InvocationType::Implicit)
+            }
             None => None,
         },
         model_slug: Some(tracking.model_slug.clone()),
@@ -784,6 +793,7 @@ pub(crate) fn codex_hook_run_metadata(
             HookSource::SessionFlags => "session_flags",
             HookSource::Plugin => "plugin",
             HookSource::CloudRequirements => "cloud_requirements",
+            HookSource::CloudManagedConfig => "cloud_managed_config",
             HookSource::LegacyManagedConfigFile => "legacy_managed_config_file",
             HookSource::LegacyManagedConfigMdm => "legacy_managed_config_mdm",
             HookSource::Unknown => "unknown",

@@ -12,7 +12,7 @@ use std::time::Duration;
 use anyhow::Context;
 use anyhow::Result;
 use anyhow::anyhow;
-use codex_config::CloudConfigBundleLoader;
+use codex_config::CloudRequirementsLoader;
 use codex_core::CodexThread;
 use codex_core::ThreadManager;
 use codex_core::config::Config;
@@ -217,7 +217,7 @@ pub struct TestCodexBuilder {
     pre_build_hooks: Vec<Box<PreBuildHook>>,
     workspace_setups: Vec<Box<WorkspaceSetup>>,
     home: Option<Arc<TempDir>>,
-    cloud_config_bundle: Option<CloudConfigBundleLoader>,
+    cloud_requirements: Option<CloudRequirementsLoader>,
     user_shell_override: Option<Shell>,
     exec_server_url: Option<String>,
 }
@@ -266,11 +266,8 @@ impl TestCodexBuilder {
         self
     }
 
-    pub fn with_cloud_config_bundle(
-        mut self,
-        cloud_config_bundle: CloudConfigBundleLoader,
-    ) -> Self {
-        self.cloud_config_bundle = Some(cloud_config_bundle);
+    pub fn with_cloud_requirements(mut self, cloud_requirements: CloudRequirementsLoader) -> Self {
+        self.cloud_requirements = Some(cloud_requirements);
         self
     }
 
@@ -513,8 +510,8 @@ impl TestCodexBuilder {
         for hook in self.pre_build_hooks.drain(..) {
             hook(home.path());
         }
-        let mut config = if let Some(cloud_config_bundle) = self.cloud_config_bundle.take() {
-            load_default_config_for_test_with_cloud_config_bundle(home, cloud_config_bundle).await
+        let mut config = if let Some(cloud_requirements) = self.cloud_requirements.take() {
+            load_default_config_for_test_with_cloud_requirements(home, cloud_requirements).await
         } else {
             load_default_config_for_test(home).await
         };
@@ -1012,7 +1009,7 @@ pub fn test_codex() -> TestCodexBuilder {
         pre_build_hooks: vec![],
         workspace_setups: vec![],
         home: None,
-        cloud_config_bundle: None,
+        cloud_requirements: None,
         user_shell_override: None,
         exec_server_url: None,
     }

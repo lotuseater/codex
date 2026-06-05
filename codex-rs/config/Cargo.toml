@@ -15,6 +15,7 @@ workspace = true
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 base64 = { workspace = true }
+codex-app-server-protocol = { workspace = true }
 codex-config-types = { workspace = true }
 codex-execpolicy = { workspace = true }
 codex-features = { workspace = true }
@@ -22,6 +23,7 @@ codex-file-system = { workspace = true }
 codex-model-provider-info = { workspace = true }
 codex-network-proxy-config = { workspace = true }
 codex-permission-types = { workspace = true }
+codex-protocol = { workspace = true }
 codex-utils-absolute-path = { workspace = true }
 codex-utils-path = { workspace = true }
 dunce = { workspace = true }

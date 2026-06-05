@@ -15,8 +15,8 @@ use codex_protocol::protocol::RequestUserInputEvent;
 use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
-use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::protocol::Submission;
+use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::protocol::ThreadSource;
 use codex_protocol::request_permissions::PermissionGrantScope;
 use codex_protocol::request_permissions::RequestPermissionsArgs;
@@ -110,6 +110,7 @@ pub(crate) async fn run_codex_thread_interactive(
         state_db: parent_session.services.state_db.clone(),
         attestation_provider: parent_session.services.attestation_provider.clone(),
         inherited_multi_agent_version: Some(MultiAgentVersion::Disabled),
+        persist_extended_history: false,
     }))
     .or_cancel(&cancel_token)
     .await??;

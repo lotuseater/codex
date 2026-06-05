@@ -3,8 +3,8 @@
 //! Moved verbatim from `session/mod.rs` (pure code-motion). Builds the developer
 //! and contextual-user instruction items injected at the start of a turn/thread.
 
-use super::*;
 use super::multi_agents;
+use super::*;
 
 impl Session {
     #[expect(
@@ -189,7 +189,7 @@ impl Session {
             let subagents = self
                 .services
                 .agent_control
-                .format_environment_context_subagents(self.conversation_id)
+                .format_environment_context_subagents(self.thread_id)
                 .await;
             contextual_user_sections.push(
                 crate::context::EnvironmentContext::from_turn_context(turn_context, shell.as_ref())

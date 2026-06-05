@@ -1305,6 +1305,7 @@ impl ThreadManagerState {
             state_db: self.state_db.clone(),
             attestation_provider: self.attestation_provider.clone(),
             inherited_multi_agent_version: multi_agent_version,
+            persist_extended_history: false,
         }))
         .await?;
         let new_thread = self
