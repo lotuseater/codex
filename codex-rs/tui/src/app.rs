@@ -779,6 +779,7 @@ impl App {
         auto_loop_settings: AutoLoopSettings,
     ) -> Result<AppExitInfo> {
         use tokio_stream::StreamExt;
+        let startup_started_at = Instant::now();
         let (app_event_tx, mut app_event_rx) = unbounded_channel();
         let app_event_tx = AppEventSender::new(app_event_tx);
         emit_project_config_warnings(&app_event_tx, &config);
@@ -887,8 +888,10 @@ impl App {
         let workspace_command_runner: WorkspaceCommandRunner = Arc::new(
             AppServerWorkspaceCommandRunner::new(app_server.request_handle()),
         );
+        let runtime_model_provider_started_at = Instant::now();
         let runtime_model_provider_base_url =
             resolve_runtime_model_provider_base_url(&config.model_provider).await;
+        let runtime_model_provider_ms = runtime_model_provider_started_at.elapsed().as_millis();
 
         let enhanced_keys_supported = tui.enhanced_keys_supported();
         let wait_for_initial_session_configured =
@@ -904,6 +907,7 @@ impl App {
             &session_selection,
             SessionSelection::StartFresh | SessionSelection::Exit
         );
+        let initial_session_started_at = Instant::now();
         let (mut chat_widget, initial_started_thread) = match session_selection {
             SessionSelection::StartFresh | SessionSelection::Exit => {
                 spawn_startup_thread_start(&app_server, config.clone(), app_event_tx.clone());
@@ -1013,6 +1017,7 @@ impl App {
                 (ChatWidget::new_with_app_event(init), Some(forked))
             }
         };
+        let initial_session_ms = initial_session_started_at.elapsed().as_millis();
         chat_widget.remote_connection = remote_connection;
         let thread_and_widget_ms = thread_and_widget_started_at.elapsed().as_millis();
         if let Some(message) = external_agent_config_migration_message {
@@ -1133,6 +1138,7 @@ See the Codex keymap documentation for supported actions and examples."
             }
         }
 
+        let event_stream_started_at = Instant::now();
         let tui_events = tui.event_stream();
         tokio::pin!(tui_events);
 

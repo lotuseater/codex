@@ -553,7 +553,10 @@ impl TurnRequestProcessor {
                     workspace_roots: Some(
                         runtime_workspace_roots
                             .clone()
-                            .unwrap_or_else(|| snapshot.workspace_roots.clone()),
+                            .unwrap_or_else(|| snapshot.workspace_roots.clone())
+                            .into_iter()
+                            .map(AbsolutePathBuf::into_path_buf)
+                            .collect(),
                     ),
                     default_permissions: Some(permissions),
                     codex_linux_sandbox_exe: self.arg0_paths.codex_linux_sandbox_exe.clone(),

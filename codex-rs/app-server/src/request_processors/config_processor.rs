@@ -44,6 +44,7 @@ use codex_config::SandboxModeRequirement as CoreSandboxModeRequirement;
 use codex_core::ThreadManager;
 use codex_features::canonical_feature_for_key;
 use codex_features::feature_for_key;
+use codex_login::AuthManager;
 use codex_model_provider::create_model_provider;
 use codex_plugin::PluginId;
 use codex_protocol::config_types::WebSearchMode;
@@ -61,6 +62,7 @@ const SUPPORTED_EXPERIMENTAL_FEATURE_ENABLEMENT: &[&str] = &[
 
 #[derive(Clone)]
 pub(crate) struct ConfigRequestProcessor {
+    auth_manager: Arc<AuthManager>,
     outgoing: Arc<OutgoingMessageSender>,
     config_manager: ConfigManager,
     thread_manager: Arc<ThreadManager>,
@@ -69,12 +71,14 @@ pub(crate) struct ConfigRequestProcessor {
 
 impl ConfigRequestProcessor {
     pub(crate) fn new(
+        auth_manager: Arc<AuthManager>,
         outgoing: Arc<OutgoingMessageSender>,
         config_manager: ConfigManager,
         thread_manager: Arc<ThreadManager>,
         analytics_events_client: AnalyticsEventsClient,
     ) -> Self {
         Self {
+            auth_manager,
             outgoing,
             config_manager,
             thread_manager,

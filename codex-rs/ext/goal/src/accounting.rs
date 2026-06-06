@@ -1,4 +1,3 @@
-use codex_extension_api::TokenUsage;
 use codex_protocol::config_types::ModeKind;
 use codex_protocol::protocol::TokenUsage;
 use codex_state::ThreadGoalStatus;

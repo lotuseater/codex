@@ -478,11 +478,12 @@ impl MessageProcessor {
                 .plugins_manager()
                 .maybe_start_plugin_startup_tasks_for_config(
                     &config.plugins_config_input(),
-                    auth_manager,
+                    auth_manager.clone(),
                     Some(on_effective_plugins_changed),
                 );
         }
         let config_processor = ConfigRequestProcessor::new(
+            auth_manager,
             outgoing.clone(),
             config_manager.clone(),
             thread_manager.clone(),

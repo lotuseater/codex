@@ -315,10 +315,25 @@ where
 
         let Some(_recorded) = runtime
             .accounting_state()
-            .record_token_usage(turn_store.level_id(), &token_usage.total_token_usage)
+            .record_token_usage(
+                turn_store.level_id(),
+                &protocol_token_usage_from_extension(&token_usage.total_token_usage),
+            )
         else {
             return;
         };
+    }
+}
+
+fn protocol_token_usage_from_extension(
+    usage: &codex_extension_api::TokenUsage,
+) -> codex_protocol::protocol::TokenUsage {
+    codex_protocol::protocol::TokenUsage {
+        input_tokens: usage.input_tokens,
+        cached_input_tokens: usage.cached_input_tokens,
+        output_tokens: usage.output_tokens,
+        reasoning_output_tokens: usage.reasoning_output_tokens,
+        total_tokens: usage.total_tokens,
     }
 }
 

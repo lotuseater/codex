@@ -505,15 +505,11 @@ impl ChatWidget {
             ReasoningEffortConfig::Medium => "Medium".to_string(),
             ReasoningEffortConfig::High => "High".to_string(),
             ReasoningEffortConfig::XHigh => "Extra high".to_string(),
-            ReasoningEffortConfig::Custom(value) => value.clone(),
         }
     }
 
     pub(super) fn reasoning_effort_sentence_label(effort: &ReasoningEffortConfig) -> String {
-        match effort {
-            ReasoningEffortConfig::Custom(value) => value.clone(),
-            effort => Self::reasoning_effort_label(effort).to_lowercase(),
-        }
+        Self::reasoning_effort_label(effort).to_lowercase()
     }
 
     pub(super) fn apply_model_and_effort_without_persist(
