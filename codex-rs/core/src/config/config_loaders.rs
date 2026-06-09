@@ -112,8 +112,7 @@ impl Config {
             .to_vec();
         let user_instructions =
             AgentsMdManager::load_global_instructions(fs, Some(&codex_home), &mut startup_warnings)
-                .await
-                .map(|loaded| loaded.contents);
+                .await;
 
         // Destructure ConfigOverrides fully to ensure all overrides are applied.
         let ConfigOverrides {

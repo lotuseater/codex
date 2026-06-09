@@ -24,6 +24,7 @@ pub(super) fn elide_repeated_large_tool_outputs(items: &mut [ResponseItem]) {
                 call_id, output, ..
             } => maybe_elide_tool_output(call_id, output, &mut seen),
             ResponseItem::Message { .. }
+            | ResponseItem::AgentMessage { .. }
             | ResponseItem::Reasoning { .. }
             | ResponseItem::LocalShellCall { .. }
             | ResponseItem::FunctionCall { .. }

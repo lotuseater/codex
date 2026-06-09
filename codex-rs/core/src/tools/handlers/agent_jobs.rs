@@ -116,7 +116,10 @@ async fn build_runner_options(
             "multi-agent runtime is disabled; this session cannot spawn workers".to_string(),
         ));
     }
-    let agent_max_threads = turn.config.effective_agent_max_threads(multi_agent_version);
+    let agent_max_threads = turn
+        .config
+        .effective_agent_max_threads(multi_agent_version)
+        .map_err(|err| FunctionCallError::Fatal(err.to_string()))?;
     if agent_max_threads == Some(0) {
         return Err(FunctionCallError::RespondToModel(
             "agent thread limit reached; this session cannot spawn more subagents".to_string(),

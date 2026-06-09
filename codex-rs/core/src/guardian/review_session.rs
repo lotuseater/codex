@@ -8,6 +8,7 @@ use anyhow::anyhow;
 use codex_analytics::GuardianReviewAnalyticsResult;
 use codex_analytics::GuardianReviewSessionKind;
 use codex_protocol::ThreadId;
+#[cfg(test)]
 use codex_protocol::config_types::AutoCompactTokenLimitScope;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary as ReasoningSummaryConfig;
@@ -142,7 +143,6 @@ struct GuardianReviewSessionReuseKey {
     model_provider: ModelProviderInfo,
     model_context_window: Option<i64>,
     model_auto_compact_token_limit: Option<i64>,
-    model_auto_compact_token_limit_scope: AutoCompactTokenLimitScope,
     model_reasoning_effort: Option<ReasoningEffortConfig>,
     model_reasoning_summary: Option<ReasoningSummaryConfig>,
     permissions: Permissions,
@@ -168,7 +168,6 @@ impl GuardianReviewSessionReuseKey {
             model_provider: spawn_config.model_provider.clone(),
             model_context_window: spawn_config.model_context_window,
             model_auto_compact_token_limit: spawn_config.model_auto_compact_token_limit,
-            model_auto_compact_token_limit_scope: spawn_config.model_auto_compact_token_limit_scope,
             model_reasoning_effort: spawn_config.model_reasoning_effort.clone(),
             model_reasoning_summary: spawn_config.model_reasoning_summary,
             permissions: spawn_config.permissions.clone(),

@@ -1025,6 +1025,7 @@ impl UnifiedExecProcessManager {
                 } else {
                     request.sandbox_permissions
                 },
+                sandbox_cwd: request.sandbox_cwd.as_path(),
                 prefix_rule: request.prefix_rule.clone(),
             })
             .await;

@@ -1,5 +1,6 @@
 use super::*;
 use codex_protocol::protocol::MultiAgentVersion;
+use codex_utils_absolute_path::AbsolutePathBuf;
 
 #[derive(Debug, PartialEq)]
 pub enum SteerInputError {
@@ -188,9 +189,14 @@ impl Codex {
 
         let primary_environment = environment_selections.primary_environment();
         let mut startup_warnings = Vec::new();
-        let user_instructions = AgentsMdManager::new(&config)
-            .user_instructions(primary_environment.as_deref(), &mut startup_warnings)
-            .await;
+        let user_instructions = match primary_environment.as_deref() {
+            Some(environment) => {
+                AgentsMdManager::new(&config)
+                    .user_instructions(environment, &mut startup_warnings)
+                    .await
+            }
+            None => None,
+        };
 
         let exec_policy = if crate::guardian::is_guardian_reviewer_source(&session_source) {
             // Guardian review should rely on the built-in shell safety checks,
@@ -479,6 +485,17 @@ impl Codex {
     pub(crate) async fn thread_config_snapshot(&self) -> ThreadConfigSnapshot {
         let state = self.session.state.lock().await;
         state.session_configuration.thread_config_snapshot()
+    }
+
+    pub(crate) async fn instruction_sources(&self) -> Vec<AbsolutePathBuf> {
+        let state = self.session.state.lock().await;
+        state
+            .session_configuration
+            .user_instructions
+            .as_ref()
+            .map_or_else(Vec::new, |instructions| {
+                instructions.sources().cloned().collect()
+            })
     }
 
     pub(crate) async fn thread_environment_selections(&self) -> Vec<TurnEnvironmentSelection> {

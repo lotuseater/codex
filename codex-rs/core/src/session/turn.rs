@@ -23,6 +23,7 @@ use crate::context::ContextualUserFragment;
 use crate::context_reduction_adapter::context_reduction_reason_to_compaction_reason;
 use crate::context_reduction_adapter::semantic_compact_input;
 use crate::feedback_tags;
+use crate::goals::GoalRuntimeEvent;
 use crate::hook_runtime::inspect_pending_input;
 use crate::hook_runtime::record_additional_contexts;
 use crate::hook_runtime::record_pending_input;
@@ -1875,7 +1876,6 @@ async fn try_run_sampling_request(
     let mut assistant_message_stream_parsers = AssistantMessageStreamParsers::new(plan_mode);
     let mut plan_mode_state = plan_mode.then(|| PlanModeStreamState::new(&turn_context.sub_id));
     let receiving_span = trace_span!("receiving_stream");
-    let mut terminal_response_id: Option<String> = None;
     let outcome: CodexResult<SamplingRequestResult> = loop {
         let handle_responses = trace_span!(
             parent: &receiving_span,
@@ -2130,16 +2130,15 @@ async fn try_run_sampling_request(
                 if let Some(false) = end_turn {
                     needs_follow_up = true;
                 }
-                terminal_response_id = Some(response_id);
                 break Ok(SamplingRequestResult {
                     needs_follow_up,
                     last_agent_message,
                 });
             }
             ResponseEvent::Incomplete {
-                response_id,
                 token_usage,
                 reason,
+                ..
             } => {
                 flush_assistant_text_segments_all(
                     &sess,
@@ -2152,7 +2151,6 @@ async fn try_run_sampling_request(
                     .await;
                 should_emit_token_count = true;
                 should_emit_turn_diff = true;
-                terminal_response_id = Some(response_id);
                 if reason == "max_output_tokens" {
                     break Ok(SamplingRequestResult {
                         needs_follow_up: true,
@@ -2270,15 +2268,6 @@ async fn try_run_sampling_request(
         &mut assistant_message_stream_parsers,
     )
     .await;
-
-    if sess
-        .features
-        .enabled(Feature::ResponsesWebsocketResponseProcessed)
-        && outcome.is_ok()
-        && let Some(response_id) = terminal_response_id.as_deref()
-    {
-        client_session.send_response_processed(response_id).await;
-    }
 
     let tool_blocking_timing_guard = if in_flight.is_empty() {
         None

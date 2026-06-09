@@ -68,7 +68,7 @@ pub struct Config {
     pub show_raw_agent_reasoning: bool,
 
     /// User-provided instructions from AGENTS.md.
-    pub user_instructions: Option<String>,
+    pub user_instructions: Option<LoadedAgentsMd>,
 
     /// Base instructions override.
     pub base_instructions: Option<String>,

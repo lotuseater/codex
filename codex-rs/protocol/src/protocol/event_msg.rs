@@ -46,6 +46,9 @@ pub enum EventMsg {
     /// Backend recommends additional account verification for this turn.
     ModelVerification(ModelVerificationEvent),
 
+    /// Backend moderation metadata intended for first-party turn presentation.
+    TurnModerationMetadata(TurnModerationMetadataEvent),
+
     /// Conversation history was compacted (either automatically or manually).
     ContextCompacted(ContextCompactedEvent),
 

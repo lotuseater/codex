@@ -31,6 +31,7 @@ use codex_thread_store_api::StoredThreadHistory;
 use codex_thread_store_api::ThreadMetadataPatch;
 use codex_thread_store_api::ThreadStoreError;
 use codex_thread_store_api::ThreadStoreResult;
+use codex_utils_absolute_path::AbsolutePathBuf;
 use rmcp::model::ReadResourceRequestParams;
 use std::collections::BTreeMap;
 use std::collections::HashMap;

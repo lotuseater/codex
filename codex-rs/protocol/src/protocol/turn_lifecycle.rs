@@ -41,6 +41,11 @@ pub struct ModelVerificationEvent {
     pub verifications: Vec<ModelVerification>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+pub struct TurnModerationMetadataEvent {
+    pub metadata: serde_json::Value,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct ContextCompactedEvent;
 

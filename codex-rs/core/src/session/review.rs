@@ -34,12 +34,6 @@ pub(super) async fn spawn_review_thread(
         .models_manager
         .list_models(RefreshStrategy::OnlineIfUncached)
         .await;
-    let unified_exec_shell_mode = UnifiedExecShellMode::for_session(
-        codex_tools::unified_exec_feature_mode_for_features(review_features.get()),
-        crate::tools::tool_user_shell_type(sess.services.user_shell.as_ref()),
-        sess.services.shell_zsh_path.as_ref(),
-        sess.services.main_execve_wrapper_exe.as_ref(),
-    );
     let goal_tools_supported = !config.ephemeral && parent_turn_context.tools_config.goal_tools;
     let provider_capabilities = parent_turn_context.provider.capabilities();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
@@ -95,6 +89,11 @@ pub(super) async fn spawn_review_thread(
     .with_agent_type_description(crate::agent::role::spawn_tool_spec::build(
         &config.agent_roles,
     ));
+
+    // Mirror the unified-exec shell mode that the builder resolved for this
+    // review turn so the upstream `unified_exec_shell_mode` field stays in sync
+    // (same pattern as `make_turn_context`).
+    let unified_exec_shell_mode = tools_config.unified_exec_shell_mode.clone();
 
     let review_prompt = resolved.prompt.clone();
     let provider = parent_turn_context.provider.clone();

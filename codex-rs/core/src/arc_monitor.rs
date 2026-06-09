@@ -374,7 +374,8 @@ fn build_arc_monitor_message_item(
                 }]),
             ))
         }
-        ResponseItem::LocalShellCall { .. }
+        ResponseItem::AgentMessage { .. }
+        | ResponseItem::LocalShellCall { .. }
         | ResponseItem::FunctionCall { .. }
         | ResponseItem::CustomToolCall { .. }
         | ResponseItem::ToolSearchCall { .. }

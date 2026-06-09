@@ -90,6 +90,20 @@ impl FromStr for ReasoningEffort {
             .map_err(|_| format!("invalid reasoning_effort: {s}"))
     }
 }
+
+impl ReasoningEffort {
+    /// Lowercase wire/string representation, matching `#[serde(rename_all = "lowercase")]`.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Minimal => "minimal",
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::XHigh => "xhigh",
+        }
+    }
+}
 /// A summary of the reasoning performed by the model. This can be useful for
 /// debugging and understanding the model's reasoning process.
 /// See https://platform.openai.com/docs/guides/reasoning?api-mode=responses#reasoning-summaries

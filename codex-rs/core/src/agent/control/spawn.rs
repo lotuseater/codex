@@ -1,6 +1,25 @@
 use super::*;
+use codex_state::DirectionalThreadSpawnEdgeStatus;
 
 const AGENT_NAMES: &str = include_str!("../agent_names.txt");
+
+/// Recover the session/thread source recorded in a resumed thread's first `SessionMeta`.
+///
+/// Upstream removed `InitialHistory::get_resumed_session_sources`; this mirrors the
+/// equivalent free helper in `thread_manager` (only `Resumed` histories carry a source).
+fn resumed_session_sources(
+    history: &InitialHistory,
+) -> Option<(SessionSource, Option<ThreadSource>)> {
+    match history {
+        InitialHistory::New | InitialHistory::Cleared | InitialHistory::Forked(_) => None,
+        InitialHistory::Resumed(resumed) => resumed.history.iter().find_map(|item| match item {
+            RolloutItem::SessionMeta(meta_line) => {
+                Some((meta_line.meta.source.clone(), meta_line.meta.thread_source))
+            }
+            _ => None,
+        }),
+    }
+}
 
 struct SpawnAgentThreadInheritance {
     shell_snapshot: Option<Arc<ShellSnapshot>>,
@@ -144,9 +163,8 @@ impl AgentControl {
             return Err(CodexErr::ThreadNotFound(thread_id));
         }
 
-        let (session_source, _) = initial_history
-            .get_resumed_session_sources()
-            .unwrap_or((stored_source, None));
+        let (session_source, _) =
+            resumed_session_sources(&initial_history).unwrap_or((stored_source, None));
         let parent_thread_id = initial_history
             .get_resumed_parent_thread_id()
             .or(stored_parent_thread_id);
@@ -199,7 +217,7 @@ impl AgentControl {
                 &config,
             )
             .await;
-        let agent_max_threads = config.effective_agent_max_threads(multi_agent_version);
+        let agent_max_threads = config.effective_agent_max_threads(multi_agent_version)?;
         let mut reservation = self.state.reserve_spawn_slot(agent_max_threads)?;
         let inheritance = SpawnAgentThreadInheritance {
             shell_snapshot: self
@@ -598,7 +616,7 @@ impl AgentControl {
                 &config,
             )
             .await;
-        let agent_max_threads = config.effective_agent_max_threads(multi_agent_version);
+        let agent_max_threads = config.effective_agent_max_threads(multi_agent_version)?;
         let mut reservation = self.state.reserve_spawn_slot(agent_max_threads)?;
         let (session_source, agent_metadata) = match session_source {
             SessionSource::SubAgent(SubAgentSource::ThreadSpawn {

@@ -598,10 +598,18 @@ async fn emit_patch_end(
             let previous_diff = guard.get_unified_diff().ok().flatten();
             let tracker_changed = match tracker_update {
                 TurnDiffTrackerUpdate::Track {
-                    environment_id,
+                    // The current `codex-turn-diff` `track_delta` API tracks a
+                    // flat set of committed changes and does not take a
+                    // per-environment key, so the environment id is not
+                    // forwarded here.
+                    environment_id: _,
                     delta,
                 } => {
-                    guard.track_delta(environment_id.as_deref().unwrap_or_default(), delta);
+                    let changes =
+                        crate::turn_diff_tracker::committed_file_changes_from_apply_patch_delta(
+                            delta,
+                        );
+                    guard.track_delta(&changes);
                     true
                 }
                 TurnDiffTrackerUpdate::Invalidate => {

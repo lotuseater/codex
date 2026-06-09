@@ -112,9 +112,9 @@ pub struct TurnProfileFact {
 
 #[derive(Clone)]
 pub struct TurnCodexErrorFact {
-    pub(crate) turn_id: String,
-    pub(crate) thread_id: String,
-    pub(crate) error: TurnCodexError,
+    pub turn_id: String,
+    pub thread_id: String,
+    pub error: TurnCodexError,
 }
 
 impl TurnCodexErrorFact {

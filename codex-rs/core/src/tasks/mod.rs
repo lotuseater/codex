@@ -22,6 +22,7 @@ use tracing::warn;
 
 use crate::config::Config;
 use crate::context::ContextualUserFragment;
+use crate::goals::GoalRuntimeEvent;
 use crate::hook_runtime::inspect_pending_input;
 use crate::hook_runtime::record_additional_contexts;
 use crate::hook_runtime::record_pending_input;

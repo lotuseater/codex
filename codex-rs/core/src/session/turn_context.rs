@@ -557,6 +557,7 @@ impl Session {
         cwd: AbsolutePathBuf,
         sub_id: String,
         skills_outcome: Arc<SkillLoadOutcome>,
+        goal_tools_supported: bool,
     ) -> TurnContext {
         let reasoning_effort = session_configuration.collaboration_mode.reasoning_effort();
         let reasoning_summary = session_configuration
@@ -935,6 +936,11 @@ impl Session {
                 .skills_for_config(&skills_input, fs)
                 .await,
         );
+        // Goal tools are hidden for ephemeral threads (e.g. review subagents).
+        // The goal-tools feature gate itself is applied inside `ToolsConfig`;
+        // this flag only carries the ephemeral suppression, mirroring the
+        // `!config.ephemeral` gate used for review threads.
+        let goal_tools_supported = !per_turn_config.ephemeral;
         let mut turn_context: TurnContext = Self::make_turn_context(
             self.thread_id(),
             self.session_id(),
@@ -963,6 +969,7 @@ impl Session {
             cwd,
             sub_id,
             skills_outcome,
+            goal_tools_supported,
         );
         turn_context.realtime_active = self.conversation.running_state().await.is_some();
 

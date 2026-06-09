@@ -1,4 +1,5 @@
 use super::*;
+use codex_state::DirectionalThreadSpawnEdgeStatus;
 
 impl AgentControl {
     /// Submit a shutdown request for a live agent without marking it explicitly closed in

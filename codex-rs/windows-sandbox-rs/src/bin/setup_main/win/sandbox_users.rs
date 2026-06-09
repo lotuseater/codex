@@ -525,7 +525,7 @@ pub(super) fn prepare_setup_marker(codex_home: &Path, real_user: &str) -> Result
             &security_attributes,
             CREATE_NEW,
             FILE_ATTRIBUTE_NORMAL,
-            /*htemplatefile*/ 0,
+            /*htemplatefile*/ std::ptr::null_mut(),
         )
     };
     let create_error = unsafe { GetLastError() };

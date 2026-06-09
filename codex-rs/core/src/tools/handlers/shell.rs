@@ -173,6 +173,7 @@ async fn run_exec_like(args: RunExecLikeArgs) -> Result<FunctionToolOutput, Func
             } else {
                 effective_additional_permissions.sandbox_permissions
             },
+            sandbox_cwd: turn.cwd.as_path(),
             prefix_rule,
         })
         .await;

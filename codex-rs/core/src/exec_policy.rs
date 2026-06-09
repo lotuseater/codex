@@ -302,6 +302,10 @@ pub(crate) struct ExecApprovalRequest<'a> {
     pub(crate) permission_profile: PermissionProfile,
     pub(crate) windows_sandbox_level: WindowsSandboxLevel,
     pub(crate) sandbox_permissions: SandboxPermissions,
+    /// Anchor for the fork's debug-profile Cargo guard. The process cwd may be
+    /// model-controlled, so policy resolution stays anchored to the selected
+    /// turn environment cwd instead.
+    pub(crate) sandbox_cwd: &'a Path,
     pub(crate) prefix_rule: Option<Vec<String>>,
 }
 
@@ -336,6 +340,7 @@ impl ExecPolicyManager {
             permission_profile,
             windows_sandbox_level,
             sandbox_permissions,
+            sandbox_cwd,
             prefix_rule,
         } = req;
         let exec_policy = self.current();
