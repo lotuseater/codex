@@ -3459,6 +3459,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-goal-extension"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "codex-core",
+ "codex-extension-api",
+ "codex-otel",
+ "codex-protocol",
+ "codex-state",
+ "codex-tools",
+ "codex-utils-template",
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "codex-guardian"
 version = "0.0.0"
 dependencies = [
