@@ -1,4 +1,4 @@
 Pull main upstream, rehearse merge on a temp copy of current branch. Document
-  conflicts. Think what should be improved, refactored, split, decoupled in the original current branch to reduce
-  conlicts. Prefere architercture quality, good long-term goals. After refactoring, merge main into the current branch,
-  improve code structure if needed. Commit, push, build, deploy.
+  conflicts. Think what should be improved, refactored, split, decoupled in the original current branch to reduce conlicts. Prefere architercture quality, good long-term goals. Reduce interdependencies of code. Lesss transitive dependencies and dependencies on implementations - rather on abstractions. No huge files, clear small files/classes/modules/binaries with single purpsoe. After refactoring, merge main into the current branch, improve code structure if needed. Commit, push, build, deploy.
+  That is a repeated task, we need to learn lessons from the previous merges to do the current and the future merges - faster, preciser, more automated.
+Delegate - workflows of best models with max effort.
