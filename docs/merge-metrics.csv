@@ -1,2 +1,3 @@
 date,upstream_tip,commits_behind,conflicts,content_conflicts,modify_delete,slices,buildfix_waves,wallclock_min,result,notes
 2026-06-05,479a14cf59,85,117,100,17,17,,,,"DU=11 UD=6 resolved pre-resolver; 100 UU via 17 Opus slices"
+2026-06-10,51b3cd51f6,81,117,100,17,17,8,829,success,"waves 4-11 (78 errors, Fable workers); legacy_core dedup; schema regen; build killed once by session restart (+~150 min); deployed 16:48"
