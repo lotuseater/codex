@@ -46,6 +46,9 @@ use tracing::warn;
 
 const ROOT_LAST_TASK_MESSAGE: &str = "Main thread";
 
+// fork-local: sibling module holding the fork-only `compact_agent`, kept out of
+// this file so upstream's `control/{spawn,legacy}` split does not repeatedly collide with it.
+mod compact_local;
 mod legacy;
 // fork-local: sibling module holding the fork-only `override_agent_turn_context`, kept out of
 // this file so upstream's `control/{spawn,legacy}` split does not repeatedly collide with it.
@@ -178,17 +181,6 @@ impl AgentControl {
     pub(crate) async fn interrupt_agent(&self, agent_id: ThreadId) -> CodexResult<String> {
         let state = self.upgrade()?;
         state.send_op(agent_id, Op::Interrupt).await
-    }
-
-    /// Request context compaction for an existing agent thread.
-    pub(crate) async fn compact_agent(&self, agent_id: ThreadId) -> CodexResult<String> {
-        let state = self.upgrade()?;
-        self.handle_thread_request_result(
-            agent_id,
-            &state,
-            state.send_op(agent_id, Op::Compact).await,
-        )
-        .await
     }
 
     async fn handle_thread_request_result(
