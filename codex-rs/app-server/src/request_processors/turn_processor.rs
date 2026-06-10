@@ -464,6 +464,11 @@ impl TurnRequestProcessor {
         // Start the turn by submitting the user input. Return its submission id as turn_id.
         let turn_op = Op::UserInput {
             items: mapped_items,
+            // Turn-scoped selections already travel via
+            // `thread_settings.environments` with the request's fallback cwd;
+            // passing them here would re-wrap them around the session's
+            // current cwd and drop the requested override.
+            environments: None,
             final_output_json_schema: params.output_schema,
             responsesapi_client_metadata: params.responsesapi_client_metadata,
             additional_context,
@@ -521,14 +526,15 @@ impl TurnRequestProcessor {
         }
 
         let snapshot = thread.config_snapshot().await;
-        let environment_selections =
-            environment_selections.unwrap_or_else(|| snapshot.environment_selections().to_vec());
+        // The thread config snapshot no longer carries environment
+        // selections; default to an empty list when the request omits them.
+        let environment_selections = environment_selections.unwrap_or_default();
         let legacy_fallback_cwd = cwd.unwrap_or_else(|| {
             environment_selections
                 .iter()
                 .find(|selection| selection.environment_id == LOCAL_ENVIRONMENT_ID)
                 .map(|selection| selection.cwd.clone())
-                .unwrap_or_else(|| snapshot.cwd().clone())
+                .unwrap_or_else(|| snapshot.cwd.clone())
         });
         Some(TurnEnvironmentSelections::new(
             legacy_fallback_cwd,
@@ -625,7 +631,7 @@ impl TurnRequestProcessor {
                     .load_for_cwd(
                         /*request_overrides*/ None,
                         overrides,
-                        Some(snapshot.cwd().to_path_buf()),
+                        Some(snapshot.cwd.to_path_buf()),
                     )
                     .await
                     .map_err(|err| config_load_error(&err))?;
@@ -652,7 +658,11 @@ impl TurnRequestProcessor {
         if has_any_overrides {
             thread
                 .preview_thread_settings_overrides(CodexThreadSettingsOverrides {
-                    environments: environments.clone(),
+                    // Core maps `cwd` back into a `TurnEnvironmentSelections`
+                    // fallback; preview the new fallback cwd when present.
+                    cwd: environments
+                        .as_ref()
+                        .map(|environments| environments.legacy_fallback_cwd.clone()),
                     workspace_roots: runtime_workspace_roots.clone(),
                     approval_policy,
                     approvals_reviewer,
@@ -676,6 +686,9 @@ impl TurnRequestProcessor {
         }
 
         Ok(codex_protocol::protocol::ThreadSettingsOverrides {
+            // The standalone `cwd` override is folded into
+            // `environments.legacy_fallback_cwd`; core ignores it.
+            cwd: None,
             environments,
             workspace_roots: runtime_workspace_roots,
             profile_workspace_roots,

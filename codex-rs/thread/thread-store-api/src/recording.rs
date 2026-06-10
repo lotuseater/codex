@@ -209,6 +209,7 @@ impl RecordingThread {
                 .unwrap_or_else(PermissionProfile::read_only),
             token_usage: self.patch.token_usage.clone(),
             first_user_message: self.patch.first_user_message.clone(),
+            extra_config: None,
             history: include_history.then(|| StoredThreadHistory {
                 thread_id: self.thread_id,
                 items: self.history.clone(),

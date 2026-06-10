@@ -306,12 +306,16 @@ impl Codex {
             permission_profile: config.permissions.permission_profile.clone(),
             active_permission_profile: config.permissions.active_permission_profile(),
             windows_sandbox_level: WindowsSandboxLevel::from_config(&config),
-            cwd: config.cwd.clone(),
             workspace_roots: vec![config.cwd.clone()],
             profile_workspace_roots: Vec::new(),
             codex_home: config.codex_home.clone(),
             thread_name: None,
-            environments: environment_selections.to_selections(),
+            // `cwd` is no longer a `SessionConfiguration` field; it lives as the
+            // `legacy_fallback_cwd` inside the environments wrapper.
+            environments: TurnEnvironmentSelections::new(
+                config.cwd.clone(),
+                environment_selections.to_selections(),
+            ),
             original_config_do_not_use: Arc::clone(&config),
             metrics_service_name,
             app_server_client_name: None,
@@ -349,6 +353,9 @@ impl Codex {
             plugins_manager,
             mcp_manager.clone(),
             extensions,
+            // `thread_extension_init` is no longer carried on `CodexSpawnArgs`;
+            // root/spawn paths seed an empty init (matching `thread_manager.rs`).
+            codex_extension_api::ExtensionDataInit::default(),
             agent_control,
             environment_manager,
             analytics_events_client,
@@ -500,7 +507,10 @@ impl Codex {
 
     pub(crate) async fn thread_environment_selections(&self) -> Vec<TurnEnvironmentSelection> {
         let state = self.session.state.lock().await;
-        state.session_configuration.environments.clone()
+        state
+            .session_configuration
+            .environment_selections()
+            .to_vec()
     }
 
     pub(crate) fn state_db(&self) -> Option<state_db::StateDbHandle> {

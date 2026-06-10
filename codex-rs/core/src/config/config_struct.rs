@@ -290,6 +290,9 @@ pub struct Config {
     /// When true, session is not persisted on disk. Default to `false`
     pub ephemeral: bool,
 
+    /// Optional extra configuration fields for the thread.
+    pub extra_config: Option<ExtraConfig>,
+
     /// Whether enabled hooks should run without requiring persisted hook trust for this session.
     ///
     /// This is a runtime-only knob populated from invocation overrides, not from config files.
@@ -403,6 +406,12 @@ pub struct Config {
     /// Additional parameters for the web search tool when it is enabled.
     pub web_search_config: Option<WebSearchConfig>,
 
+    /// Whether to register the experimental request_user_input tool.
+    pub experimental_request_user_input_enabled: bool,
+
+    /// Configuration for the experimental code-mode tool surface.
+    pub code_mode: CodeModeConfig,
+
     /// If set to `true`, used only the experimental unified exec tool.
     pub use_experimental_unified_exec_tool: bool,
 
@@ -465,6 +474,12 @@ pub struct Config {
 
     /// OTEL configuration (exporter type, endpoint, headers, etc.).
     pub otel: codex_config::types::OtelConfig,
+}
+
+/// Configuration for the experimental code-mode tool surface.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct CodeModeConfig {
+    pub excluded_tool_namespaces: Vec<String>,
 }
 
 impl AuthManagerConfig for Config {

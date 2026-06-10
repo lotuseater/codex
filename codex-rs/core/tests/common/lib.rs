@@ -24,6 +24,7 @@ pub mod responses {
     pub use codex_test_support_responses::responses::*;
 }
 mod runtime_harness;
+pub mod test_codex;
 pub mod tracing;
 pub mod zsh_fork;
 

@@ -2375,6 +2375,9 @@ fn codex_turn_event_params(
         status: completed.status,
         turn_error: completed.turn_error,
         codex_error_kind: codex_error.map(|error| error.kind),
+        // Upstream added an optional error subreason dimension; the turn-state
+        // fact carries no subreason yet, so emit None.
+        codex_error_subreason: None,
         codex_error_http_status_code: codex_error.and_then(|error| error.http_status_code),
         steer_count: Some(turn_state.steer_count),
         total_tool_call_count: Some(turn_state.tool_counts.total),

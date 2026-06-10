@@ -165,6 +165,8 @@ fn activity_summary(item: &ThreadItem) -> Option<String> {
                 CollabAgentTool::ResumeAgent => "Resumed an agent",
                 CollabAgentTool::Wait => "Waited for an agent",
                 CollabAgentTool::CloseAgent => "Closed an agent",
+                CollabAgentTool::CompactAgent => "Compacted an agent",
+                CollabAgentTool::RestartAgent => "Restarted an agent",
             };
             return Some(action.to_string());
         }

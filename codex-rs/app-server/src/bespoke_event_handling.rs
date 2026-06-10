@@ -769,7 +769,7 @@ pub(crate) async fn apply_bespoke_event_handling(
             let requested_permissions = request.permissions.clone();
             let request_cwd = match request.cwd.clone() {
                 Some(cwd) => cwd,
-                None => conversation.config_snapshot().await.cwd().clone(),
+                None => conversation.config_snapshot().await.cwd.clone(),
             };
             let params = PermissionsRequestApprovalParams {
                 thread_id: conversation_id.to_string(),
@@ -1189,7 +1189,7 @@ pub(crate) async fn apply_bespoke_event_handling(
                         return;
                     }
                 };
-                let fallback_cwd = conversation.config_snapshot().await.cwd().clone();
+                let fallback_cwd = conversation.config_snapshot().await.cwd.clone();
                 let stored_thread = match conversation
                     .read_thread(
                         /*include_archived*/ true, /*include_history*/ true,

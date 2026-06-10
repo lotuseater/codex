@@ -1,5 +1,7 @@
 use super::*;
 
+use crate::config::permissions::BUILT_IN_WORKSPACE_PROFILE;
+
 impl Config {
     /// This is the preferred way to create an instance of [Config].
     pub async fn load_with_cli_overrides(
@@ -607,6 +609,12 @@ impl Config {
         let web_search_mode =
             resolve_web_search_mode(&cfg, &features).unwrap_or(WebSearchMode::Cached);
         let web_search_config = resolve_web_search_config(&cfg);
+        // Upstream resolves this from `[tools.experimental_request_user_input]`,
+        // defaulting to enabled when the key is absent. The fork's `Tools`
+        // config (in the non-owned `codex-config-types` crate) does not carry
+        // that key, so mirror upstream's default-enabled behavior here.
+        let experimental_request_user_input_enabled = true;
+        let code_mode = resolve_code_mode_config(&cfg);
         let multi_agent_v2 = resolve_multi_agent_v2_config(&cfg, &config_profile);
         let apps_mcp_path_override = if features.enabled(Feature::AppsMcpPathOverride) {
             let base = apps_mcp_path_override_toml_config(cfg.features.as_ref());
@@ -1114,6 +1122,7 @@ impl Config {
             config_layer_stack,
             history,
             ephemeral: ephemeral.unwrap_or_default(),
+            extra_config: None,
             bypass_hook_trust,
             file_opener: cfg.file_opener.unwrap_or(UriBasedFileOpener::VsCode),
             codex_self_exe,
@@ -1169,6 +1178,8 @@ impl Config {
             include_apply_patch_tool: include_apply_patch_tool_flag,
             web_search_mode: constrained_web_search_mode.value,
             web_search_config,
+            experimental_request_user_input_enabled,
+            code_mode,
             use_experimental_unified_exec_tool,
             background_terminal_max_timeout,
             ghost_snapshot,
@@ -1282,5 +1293,23 @@ impl Config {
         } else {
             Ok(Some(s))
         }
+    }
+}
+
+fn resolve_code_mode_config(config_toml: &ConfigToml) -> CodeModeConfig {
+    let base = code_mode_toml_config(config_toml.features.as_ref());
+
+    CodeModeConfig {
+        excluded_tool_namespaces: base
+            .and_then(|config| config.excluded_tool_namespaces.as_ref())
+            .cloned()
+            .unwrap_or_default(),
+    }
+}
+
+fn code_mode_toml_config(features: Option<&FeaturesToml>) -> Option<&CodeModeConfigToml> {
+    match features?.code_mode.as_ref()? {
+        FeatureToml::Enabled(_) => None,
+        FeatureToml::Config(config) => Some(config),
     }
 }

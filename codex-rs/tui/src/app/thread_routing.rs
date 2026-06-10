@@ -1625,6 +1625,7 @@ fn notification_thread_id(notification: &ServerNotification) -> Option<ThreadId>
             Some(thread_id)
         }
         super::app_server_event_targets::ServerNotificationThreadTarget::InvalidThreadId(_)
+        | super::app_server_event_targets::ServerNotificationThreadTarget::AppScoped
         | super::app_server_event_targets::ServerNotificationThreadTarget::Global => None,
     }
 }

@@ -28,14 +28,7 @@ use codex_app_server_protocol::ServerNotification;
 use codex_arg0::Arg0DispatchPaths;
 use codex_core::ThreadManager;
 use codex_external_agent_sessions::ExternalAgentSessionMigration as CoreSessionMigration;
-use codex_external_agent_sessions::ImportedExternalAgentSession;
-use codex_external_agent_sessions::PendingSessionImport;
-use codex_external_agent_sessions::prepare_validated_session_imports;
-use codex_external_agent_sessions::record_imported_session;
-use codex_protocol::ThreadId;
-use codex_protocol::protocol::InitialHistory;
-use codex_thread_store::ThreadStore;
-use codex_thread_store_api::ThreadMetadataPatch;
+use codex_thread_store_api::ThreadStore;
 use std::collections::HashSet;
 use std::path::PathBuf;
 

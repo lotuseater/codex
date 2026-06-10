@@ -293,7 +293,7 @@ impl CodexThread {
         overrides: CodexThreadSettingsOverrides,
     ) -> SessionSettingsUpdate {
         let CodexThreadSettingsOverrides {
-            environments,
+            cwd,
             workspace_roots,
             profile_workspace_roots,
             approval_policy,
@@ -319,6 +319,13 @@ impl CodexThread {
                 .await
                 .with_updates(model, effort, /*developer_instructions*/ None)
         };
+
+        // The override only carries an optional `cwd`; map it into the
+        // environments selection by using it as the legacy fallback cwd.
+        let environments = cwd.map(|cwd| TurnEnvironmentSelections {
+            legacy_fallback_cwd: cwd,
+            environments: Vec::new(),
+        });
 
         SessionSettingsUpdate {
             environments,

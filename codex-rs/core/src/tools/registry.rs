@@ -27,8 +27,8 @@ use crate::util::error_or_panic;
 use codex_extension_api::ToolCallOutcome;
 use codex_protocol::models::FunctionCallOutputPayload;
 use codex_protocol::models::ResponseInputItem;
+use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::EventMsg;
-use codex_rollout::state_db;
 use codex_tool_execution_api::FunctionCallError;
 use codex_tool_execution_api::ToolName;
 use codex_tool_execution_api::ToolOutputPayload;
@@ -884,16 +884,17 @@ async fn handle_any_tool(
     let call_id = invocation.call_id.clone();
     let payload = invocation.payload.clone();
     let output = tool.handle(invocation.clone()).await?;
-    if output.contains_external_context()
-        && invocation.turn.config.memories.disable_on_external_context
-    {
-        state_db::mark_thread_memory_mode_polluted(
-            invocation.session.services.state_db.as_deref(),
-            invocation.session.thread_id,
-            "tool_output",
-        )
-        .await;
-    }
+    // Upstream relocated external-context pollution detection from a
+    // `ToolOutput::contains_external_context()` method to a central helper keyed on the
+    // emitted `ResponseItem`. Convert this tool output to its response item and run the
+    // same detector, preserving the fork's "mark thread memory mode polluted" behavior.
+    let output_item: ResponseItem = output.to_response_item(&call_id, &payload).into();
+    crate::stream_events_utils::mark_thread_memory_mode_polluted_if_external_context(
+        &invocation.session,
+        &invocation.turn,
+        &output_item,
+    )
+    .await;
     let post_tool_use_payload = tool.post_tool_use_payload(&invocation, output.as_ref());
     Ok(AnyToolResult {
         call_id,

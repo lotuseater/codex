@@ -15,6 +15,7 @@ use codex_app_server_protocol::FileUpdateChange;
 use codex_app_server_protocol::McpToolCallStatus;
 use codex_app_server_protocol::PatchApplyStatus;
 use codex_app_server_protocol::ServerNotification;
+use codex_app_server_protocol::SubAgentActivityKind;
 use codex_app_server_protocol::ThreadItem;
 use codex_protocol::ThreadId;
 use ratatui::style::Stylize;
@@ -233,6 +234,16 @@ fn subagent_activity_summary(item: &ThreadItem) -> Option<SubagentActivitySummar
                 details,
             })
         }
+        ThreadItem::SubAgentActivity {
+            kind, agent_path, ..
+        } => Some(SubagentActivitySummary {
+            title: match kind {
+                SubAgentActivityKind::Started => "Started a sub-agent",
+                SubAgentActivityKind::Interacted => "Contacted a sub-agent",
+                SubAgentActivityKind::Interrupted => "Interrupted a sub-agent",
+            },
+            details: preview_lines([agent_path.as_str()]),
+        }),
         ThreadItem::WebSearch { query, action, .. } => {
             let mut details = preview_lines([query.as_str()]);
             if let Some(action) = action {

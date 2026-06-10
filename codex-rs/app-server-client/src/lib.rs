@@ -76,41 +76,6 @@ pub(crate) use notifications::ForwardEventResult;
 pub(crate) use notifications::forward_in_process_event;
 pub(crate) use request_method::request_method_name;
 
-/// Transitional access to core-only embedded app-server types.
-///
-/// New TUI behavior should prefer the app-server protocol methods. This
-/// module exists so clients can remove a direct `codex-core` dependency
-/// while legacy startup/config paths are migrated to RPCs.
-pub mod legacy_core {
-    pub use codex_core::check_execpolicy_for_warnings;
-    pub use codex_core::format_exec_policy_error_with_source;
-    pub use codex_core::grant_read_root_non_elevated;
-
-    pub mod config {
-        pub use codex_core::config::*;
-
-        pub mod edit {
-            pub use codex_core::config::edit::*;
-        }
-    }
-
-    pub mod otel_init {
-        pub use codex_core::otel_init::*;
-    }
-
-    pub mod personality_migration {
-        pub use codex_core::personality_migration::*;
-    }
-
-    pub mod test_support {
-        pub use codex_core::test_support::*;
-    }
-
-    pub mod windows_sandbox {
-        pub use codex_core::windows_sandbox::*;
-    }
-}
-
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Internal command sent from public facade methods to the worker task.

@@ -52,7 +52,7 @@ impl AgentControl {
         protected_thread_id: Option<ThreadId>,
     ) -> CodexResult<V2ResidencySlot> {
         let capacity = config
-            .effective_agent_max_threads(MultiAgentVersion::V2)
+            .effective_agent_max_threads(MultiAgentVersion::V2)?
             .unwrap_or(usize::MAX);
         Arc::clone(&self.v2_residency)
             .reserve_slot(state, capacity, protected_thread_id)

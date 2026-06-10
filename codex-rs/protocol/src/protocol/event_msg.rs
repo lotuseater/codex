@@ -218,6 +218,9 @@ pub enum EventMsg {
     CollabRestartBegin(CollabRestartBeginEvent),
     /// Collab interaction: restart end.
     CollabRestartEnd(CollabRestartEndEvent),
+    // fork-local: restored after the upstream protocol split dropped this variant.
+    /// Path-based v2 sub-agent activity.
+    SubAgentActivity(SubAgentActivityEvent),
 }
 
 impl HasLegacyEvent for EventMsg {

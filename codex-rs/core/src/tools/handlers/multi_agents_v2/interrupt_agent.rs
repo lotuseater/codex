@@ -2,18 +2,19 @@ use super::*;
 use crate::tools::handlers::multi_agents_spec::create_interrupt_agent_tool_v2;
 use crate::turn_timing::now_unix_timestamp_ms;
 use codex_protocol::error::CodexErr;
-use codex_tools::ToolSpec;
+use codex_tool_registry_api::ToolSpec;
 
 pub(crate) struct Handler;
 
-#[async_trait::async_trait]
 impl ToolExecutor<ToolInvocation> for Handler {
+    type Output = Box<dyn crate::tools::context::ToolOutput>;
+
     fn tool_name(&self) -> ToolName {
         ToolName::plain("interrupt_agent")
     }
 
-    fn spec(&self) -> ToolSpec {
-        create_interrupt_agent_tool_v2()
+    fn spec(&self) -> Option<ToolSpec> {
+        Some(create_interrupt_agent_tool_v2())
     }
 
     async fn handle(
@@ -118,11 +119,15 @@ impl ToolOutput for InterruptAgentResult {
         true
     }
 
-    fn to_response_item(&self, call_id: &str, payload: &ToolPayload) -> ResponseInputItem {
+    fn to_response_item(
+        &self,
+        call_id: &str,
+        payload: &dyn ToolOutputPayload,
+    ) -> ResponseInputItem {
         tool_output_response_item(call_id, payload, self, Some(true), "interrupt_agent")
     }
 
-    fn code_mode_result(&self, _payload: &ToolPayload) -> JsonValue {
+    fn code_mode_result(&self, _payload: &dyn ToolOutputPayload) -> JsonValue {
         tool_output_code_mode_result(self, "interrupt_agent")
     }
 }

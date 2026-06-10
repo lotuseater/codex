@@ -608,6 +608,13 @@
         }
       ]
     },
+    "ContextBudgetMode": {
+      "enum": [
+        "standard",
+        "slow"
+      ],
+      "type": "string"
+    },
     "DynamicToolSpec": {
       "properties": {
         "deferLoading": {
@@ -2025,8 +2032,15 @@
       "type": "string"
     },
     "ReasoningEffort": {
-      "description": "A non-empty reasoning effort value advertised by the model.",
-      "minLength": 1,
+      "description": "See https://platform.openai.com/docs/guides/reasoning?api-mode=responses#get-started-with-reasoning",
+      "enum": [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
       "type": "string"
     },
     "ReasoningItemContent": {
@@ -2570,6 +2584,22 @@
         },
         {
           "properties": {
+            "type": {
+              "enum": [
+                "compaction_trigger"
+              ],
+              "title": "CompactionTriggerResponseItemType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "title": "CompactionTriggerResponseItem",
+          "type": "object"
+        },
+        {
+          "properties": {
             "encrypted_content": {
               "type": "string"
             },
@@ -2586,22 +2616,6 @@
             "type"
           ],
           "title": "CompactionResponseItem",
-          "type": "object"
-        },
-        {
-          "properties": {
-            "type": {
-              "enum": [
-                "compaction_trigger"
-              ],
-              "title": "CompactionTriggerResponseItemType",
-              "type": "string"
-            }
-          },
-          "required": [
-            "type"
-          ],
-          "title": "CompactionTriggerResponseItem",
           "type": "object"
         },
         {
@@ -4099,6 +4113,17 @@
             "string",
             "null"
           ]
+        },
+        "contextBudgetMode": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ContextBudgetMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Override local context-budget behavior for this turn and subsequent turns."
         },
         "cwd": {
           "description": "Override the working directory for this turn and subsequent turns.",

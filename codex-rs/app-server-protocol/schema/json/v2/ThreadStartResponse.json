@@ -56,9 +56,6 @@
         }
       ]
     },
-    "AgentPath": {
-      "type": "string"
-    },
     "ApprovalsReviewer": {
       "description": "Configures who approval requests are routed to for review. Examples include sandbox escapes, blocked network access, MCP approval prompts, and ARC escalations. Defaults to `user`. `auto_review` uses a carefully prompted subagent to gather relevant context and apply a risk-based decision framework before approving or denying the request. The legacy value `guardian_subagent` is accepted for compatibility.",
       "enum": [
@@ -751,9 +748,106 @@
       ]
     },
     "ReasoningEffort": {
-      "description": "A non-empty reasoning effort value advertised by the model.",
-      "minLength": 1,
+      "description": "See https://platform.openai.com/docs/guides/reasoning?api-mode=responses#get-started-with-reasoning",
+      "enum": [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
       "type": "string"
+    },
+    "ReviewCodeLocation": {
+      "properties": {
+        "absoluteFilePath": {
+          "type": "string"
+        },
+        "lineRange": {
+          "$ref": "#/definitions/ReviewLineRange"
+        }
+      },
+      "required": [
+        "absoluteFilePath",
+        "lineRange"
+      ],
+      "type": "object"
+    },
+    "ReviewFinding": {
+      "properties": {
+        "body": {
+          "type": "string"
+        },
+        "codeLocation": {
+          "$ref": "#/definitions/ReviewCodeLocation"
+        },
+        "confidenceScore": {
+          "format": "float",
+          "type": "number"
+        },
+        "priority": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "body",
+        "codeLocation",
+        "confidenceScore",
+        "priority",
+        "title"
+      ],
+      "type": "object"
+    },
+    "ReviewLineRange": {
+      "properties": {
+        "end": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "start": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "end",
+        "start"
+      ],
+      "type": "object"
+    },
+    "ReviewOutput": {
+      "properties": {
+        "findings": {
+          "items": {
+            "$ref": "#/definitions/ReviewFinding"
+          },
+          "type": "array"
+        },
+        "overallConfidenceScore": {
+          "format": "float",
+          "type": "number"
+        },
+        "overallCorrectness": {
+          "type": "string"
+        },
+        "overallExplanation": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "findings",
+        "overallConfidenceScore",
+        "overallCorrectness",
+        "overallExplanation"
+      ],
+      "type": "object"
     },
     "SandboxPolicy": {
       "oneOf": [
@@ -915,6 +1009,19 @@
         {
           "additionalProperties": false,
           "properties": {
+            "other": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "other"
+          ],
+          "title": "OtherSubAgentSource",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
             "thread_spawn": {
               "properties": {
                 "agent_nickname": {
@@ -925,15 +1032,11 @@
                   ]
                 },
                 "agent_path": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/definitions/AgentPath"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ],
-                  "default": null
+                  "default": null,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "agent_role": {
                   "default": null,
@@ -947,7 +1050,7 @@
                   "type": "integer"
                 },
                 "parent_thread_id": {
-                  "$ref": "#/definitions/ThreadId"
+                  "type": "string"
                 }
               },
               "required": [
@@ -961,19 +1064,6 @@
             "thread_spawn"
           ],
           "title": "ThreadSpawnSubAgentSource",
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "properties": {
-            "other": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "other"
-          ],
-          "title": "OtherSubAgentSource",
           "type": "object"
         }
       ]
@@ -1153,9 +1243,6 @@
         "waitingOnApproval",
         "waitingOnUserInput"
       ],
-      "type": "string"
-    },
-    "ThreadId": {
       "type": "string"
     },
     "ThreadItem": {
@@ -1824,6 +1911,16 @@
             "review": {
               "type": "string"
             },
+            "reviewOutput": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ReviewOutput"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "type": {
               "enum": [
                 "exitedReviewMode"
@@ -2314,18 +2411,6 @@
     }
   },
   "properties": {
-    "activePermissionProfile": {
-      "anyOf": [
-        {
-          "$ref": "#/definitions/ActivePermissionProfile"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Named or implicit built-in profile that produced the active permissions, when known."
-    },
     "approvalPolicy": {
       "$ref": "#/definitions/AskForApproval"
     },
@@ -2363,14 +2448,6 @@
           "type": "null"
         }
       ]
-    },
-    "runtimeWorkspaceRoots": {
-      "default": [],
-      "description": "Thread-scoped runtime workspace roots used to materialize `:workspace_roots`.",
-      "items": {
-        "$ref": "#/definitions/AbsolutePathBuf"
-      },
-      "type": "array"
     },
     "sandbox": {
       "allOf": [

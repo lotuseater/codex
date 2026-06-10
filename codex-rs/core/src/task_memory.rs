@@ -5,7 +5,6 @@ use codex_task_memory::TaskMemoryInputItem;
 use codex_utils_output_truncation::approx_tokens_from_byte_count_i64;
 
 use crate::compact::SUMMARY_PREFIX;
-use crate::context_manager::estimate_response_item_model_visible_bytes;
 
 pub(crate) use codex_task_memory::TaskMemoryThrottleState;
 
@@ -96,6 +95,17 @@ pub(crate) fn estimated_prompt_tokens(items: &[ResponseItem]) -> i64 {
         .map(estimate_response_item_model_visible_bytes)
         .fold(0i64, i64::saturating_add);
     approx_tokens_from_byte_count_i64(bytes)
+}
+
+// Upstream PR #27106 made `context_manager::estimate_response_item_model_visible_bytes`
+// private to the context manager. Estimate the model-visible byte cost from the serialized
+// item length instead. This matches the upstream estimator's default arm; image/encrypted
+// payloads are not discounted, which only raises the estimated token pressure (a safe,
+// conservative direction for the under-pressure task-memory injection heuristic).
+fn estimate_response_item_model_visible_bytes(item: &ResponseItem) -> i64 {
+    serde_json::to_string(item)
+        .map(|serialized| i64::try_from(serialized.len()).unwrap_or(i64::MAX))
+        .unwrap_or_default()
 }
 
 pub(crate) fn should_inject_under_pressure(estimated_tokens: i64, auto_compact_limit: i64) -> bool {

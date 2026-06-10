@@ -263,15 +263,6 @@ async fn run_remote_compact_task_inner_impl(
         let mut new_history = match result {
             Ok(new_history) => new_history,
             Err(err) => {
-                let total_usage_breakdown = sess.get_total_token_usage_breakdown().await;
-                let compact_request_log_data =
-                    build_compact_request_log_data(&prompt.input, &prompt.base_instructions.text);
-                log_remote_compact_failure(
-                    turn_context,
-                    &compact_request_log_data,
-                    total_usage_breakdown,
-                    &err,
-                );
                 if matches!(err, CodexErr::ContextWindowExceeded)
                     && attempt_index + 1 < budgets.len()
                 {
@@ -653,6 +644,18 @@ fn estimate_remote_compaction_prompt_tokens(
         .map(estimate_response_item_model_visible_bytes)
         .map(|bytes| bytes.saturating_add(3) / 4)
         .fold(base_tokens, i64::saturating_add)
+}
+
+// Upstream PR #27106 made `context_manager::estimate_response_item_model_visible_bytes`
+// private to the context manager. The fork still needs an approximate per-item
+// model-visible byte count for remote compaction budget estimates, so estimate from the
+// serialized item length here. This matches the upstream estimator's default arm for the
+// text items remote compaction sees; image/encrypted payloads are not discounted (a
+// conservative over-estimate that only tightens the token budget).
+fn estimate_response_item_model_visible_bytes(item: &ResponseItem) -> i64 {
+    serde_json::to_string(item)
+        .map(|serialized| i64::try_from(serialized.len()).unwrap_or(i64::MAX))
+        .unwrap_or_default()
 }
 
 pub(crate) fn log_remote_compaction_prompt_fit(

@@ -39,7 +39,7 @@
           "type": "string"
         },
         "conversationId": {
-          "$ref": "#/definitions/v2/ThreadId"
+          "$ref": "#/definitions/ThreadId"
         },
         "fileChanges": {
           "additionalProperties": {
@@ -2464,7 +2464,7 @@
           "type": "array"
         },
         "conversationId": {
-          "$ref": "#/definitions/v2/ThreadId"
+          "$ref": "#/definitions/ThreadId"
         },
         "cwd": {
           "type": "string"
@@ -5547,6 +5547,9 @@
       ],
       "title": "ServerRequest"
     },
+    "ThreadId": {
+      "type": "string"
+    },
     "ToolRequestUserInputAnswer": {
       "description": "EXPERIMENTAL. Captures a user's answer to a request_user_input question.",
       "properties": {
@@ -5878,12 +5881,43 @@
           "id": {
             "description": "Identifier from `default_permissions` or the implicit built-in default, such as `:workspace` or a user-defined `[permissions.<id>]` profile.",
             "type": "string"
+          },
+          "modifications": {
+            "default": [],
+            "items": {
+              "$ref": "#/definitions/v2/ActivePermissionProfileModification"
+            },
+            "type": "array"
           }
         },
         "required": [
           "id"
         ],
         "type": "object"
+      },
+      "ActivePermissionProfileModification": {
+        "oneOf": [
+          {
+            "properties": {
+              "path": {
+                "$ref": "#/definitions/v2/AbsolutePathBuf"
+              },
+              "type": {
+                "enum": [
+                  "additionalWritableRoot"
+                ],
+                "title": "AdditionalWritableRootActivePermissionProfileModificationType",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "type"
+            ],
+            "title": "AdditionalWritableRootActivePermissionProfileModification",
+            "type": "object"
+          }
+        ]
       },
       "AddCreditsNudgeCreditType": {
         "enum": [
@@ -6022,9 +6056,6 @@
             "type": "object"
           }
         ]
-      },
-      "AgentPath": {
-        "type": "string"
       },
       "AnalyticsConfig": {
         "additionalProperties": true,
@@ -6687,25 +6718,6 @@
           }
         ]
       },
-      "AutoCompactTokenLimitScope": {
-        "description": "Selects which part of the active context is charged against `model_auto_compact_token_limit`.",
-        "oneOf": [
-          {
-            "description": "Count the full active context against the limit.",
-            "enum": [
-              "total"
-            ],
-            "type": "string"
-          },
-          {
-            "description": "Count sampled output and later growth after the carried window prefix.",
-            "enum": [
-              "body_after_prefix"
-            ],
-            "type": "string"
-          }
-        ]
-      },
       "AutoReviewDecisionSource": {
         "description": "[UNSTABLE] Source that produced a terminal approval auto-review decision.",
         "enum": [
@@ -6794,6 +6806,52 @@
             "type": "object"
           }
         ]
+      },
+      "CodexAppsToolsCacheStatus": {
+        "properties": {
+          "byteSize": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "modifiedAt": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "schemaVersion": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "state": {
+            "$ref": "#/definitions/v2/McpCacheEntryState"
+          },
+          "toolCount": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "path",
+          "state"
+        ],
+        "type": "object"
       },
       "CodexErrorInfo": {
         "description": "This translation layer make sure that we expose codex error code in camel case.\n\nWhen an upstream HTTP status is available (for example, from the Responses API or a provider), it is forwarded in `httpStatusCode` on the relevant `codexErrorInfo` variant.",
@@ -6967,7 +7025,9 @@
           "sendInput",
           "resumeAgent",
           "wait",
-          "closeAgent"
+          "closeAgent",
+          "compactAgent",
+          "restartAgent"
         ],
         "type": "string"
       },
@@ -7543,13 +7603,6 @@
               "null"
             ]
           },
-          "desktop": {
-            "additionalProperties": true,
-            "type": [
-              "object",
-              "null"
-            ]
-          },
           "developer_instructions": {
             "type": [
               "string",
@@ -7557,13 +7610,9 @@
             ]
           },
           "forced_chatgpt_workspace_id": {
-            "anyOf": [
-              {
-                "$ref": "#/definitions/v2/ForcedChatgptWorkspaceIds"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "forced_login_method": {
@@ -7593,16 +7642,6 @@
             "type": [
               "integer",
               "null"
-            ]
-          },
-          "model_auto_compact_token_limit_scope": {
-            "anyOf": [
-              {
-                "$ref": "#/definitions/v2/AutoCompactTokenLimitScope"
-              },
-              {
-                "type": "null"
-              }
             ]
           },
           "model_context_window": {
@@ -7845,7 +7884,7 @@
             "type": "object"
           },
           {
-            "description": "Enterprise-managed config layer delivered by the cloud config bundle.",
+            "description": "Enterprise-managed config layer delivered via the cloud config bundle.",
             "properties": {
               "id": {
                 "description": "Stable identifier for the delivered layer.",
@@ -7883,7 +7922,7 @@
                 "description": "This is the path to the user's config.toml file, though it is not guaranteed to exist."
               },
               "profile": {
-                "description": "Name of the selected profile-v2 config layered on top of the base user config, when this layer represents one.",
+                "default": null,
                 "type": [
                   "string",
                   "null"
@@ -7964,6 +8003,7 @@
             "type": "object"
           },
           {
+            "description": "Legacy managed config loaded from MDM.",
             "properties": {
               "type": {
                 "enum": [
@@ -8422,6 +8462,13 @@
             "type": "object"
           }
         ]
+      },
+      "ContextBudgetMode": {
+        "enum": [
+          "standard",
+          "slow"
+        ],
+        "type": "string"
       },
       "ContextCompactedNotification": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -8990,7 +9037,8 @@
         "enum": [
           "read",
           "write",
-          "deny"
+          "deny",
+          "none"
         ],
         "type": "string"
       },
@@ -9200,20 +9248,6 @@
           "path"
         ],
         "type": "object"
-      },
-      "ForcedChatgptWorkspaceIds": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          }
-        ],
-        "description": "Backward-compatible API shape for ChatGPT workspace login restrictions."
       },
       "ForcedLoginMethod": {
         "enum": [
@@ -11255,6 +11289,14 @@
         ],
         "type": "string"
       },
+      "McpCacheEntryState": {
+        "enum": [
+          "hit",
+          "missing",
+          "invalid"
+        ],
+        "type": "string"
+      },
       "McpResourceReadParams": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "properties": {
@@ -11655,6 +11697,27 @@
           "lineStart",
           "note",
           "path"
+        ],
+        "type": "object"
+      },
+      "MemoryJobStatus": {
+        "properties": {
+          "count": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "kind",
+          "status"
         ],
         "type": "object"
       },
@@ -13789,8 +13852,15 @@
         "type": "object"
       },
       "ReasoningEffort": {
-        "description": "A non-empty reasoning effort value advertised by the model.",
-        "minLength": 1,
+        "description": "See https://platform.openai.com/docs/guides/reasoning?api-mode=responses#get-started-with-reasoning",
+        "enum": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ],
         "type": "string"
       },
       "ReasoningEffortOption": {
@@ -14640,6 +14710,22 @@
           },
           {
             "properties": {
+              "type": {
+                "enum": [
+                  "compaction_trigger"
+                ],
+                "title": "CompactionTriggerResponseItemType",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "title": "CompactionTriggerResponseItem",
+            "type": "object"
+          },
+          {
+            "properties": {
               "encrypted_content": {
                 "type": "string"
               },
@@ -14656,22 +14742,6 @@
               "type"
             ],
             "title": "CompactionResponseItem",
-            "type": "object"
-          },
-          {
-            "properties": {
-              "type": {
-                "enum": [
-                  "compaction_trigger"
-                ],
-                "title": "CompactionTriggerResponseItemType",
-                "type": "string"
-              }
-            },
-            "required": [
-              "type"
-            ],
-            "title": "CompactionTriggerResponseItem",
             "type": "object"
           },
           {
@@ -14815,12 +14885,102 @@
           }
         ]
       },
+      "ReviewCodeLocation": {
+        "properties": {
+          "absoluteFilePath": {
+            "type": "string"
+          },
+          "lineRange": {
+            "$ref": "#/definitions/v2/ReviewLineRange"
+          }
+        },
+        "required": [
+          "absoluteFilePath",
+          "lineRange"
+        ],
+        "type": "object"
+      },
       "ReviewDelivery": {
         "enum": [
           "inline",
           "detached"
         ],
         "type": "string"
+      },
+      "ReviewFinding": {
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "codeLocation": {
+            "$ref": "#/definitions/v2/ReviewCodeLocation"
+          },
+          "confidenceScore": {
+            "format": "float",
+            "type": "number"
+          },
+          "priority": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "codeLocation",
+          "confidenceScore",
+          "priority",
+          "title"
+        ],
+        "type": "object"
+      },
+      "ReviewLineRange": {
+        "properties": {
+          "end": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "start": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "end",
+          "start"
+        ],
+        "type": "object"
+      },
+      "ReviewOutput": {
+        "properties": {
+          "findings": {
+            "items": {
+              "$ref": "#/definitions/v2/ReviewFinding"
+            },
+            "type": "array"
+          },
+          "overallConfidenceScore": {
+            "format": "float",
+            "type": "number"
+          },
+          "overallCorrectness": {
+            "type": "string"
+          },
+          "overallExplanation": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "findings",
+          "overallConfidenceScore",
+          "overallCorrectness",
+          "overallExplanation"
+        ],
+        "type": "object"
       },
       "ReviewStartParams": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -15653,6 +15813,19 @@
           {
             "additionalProperties": false,
             "properties": {
+              "other": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "other"
+            ],
+            "title": "OtherSubAgentSource",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
               "thread_spawn": {
                 "properties": {
                   "agent_nickname": {
@@ -15663,15 +15836,11 @@
                     ]
                   },
                   "agent_path": {
-                    "anyOf": [
-                      {
-                        "$ref": "#/definitions/v2/AgentPath"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ],
-                    "default": null
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
                   },
                   "agent_role": {
                     "default": null,
@@ -15685,7 +15854,7 @@
                     "type": "integer"
                   },
                   "parent_thread_id": {
-                    "$ref": "#/definitions/v2/ThreadId"
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -15699,19 +15868,6 @@
               "thread_spawn"
             ],
             "title": "ThreadSpawnSubAgentSource",
-            "type": "object"
-          },
-          {
-            "additionalProperties": false,
-            "properties": {
-              "other": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "other"
-            ],
-            "title": "OtherSubAgentSource",
             "type": "object"
           }
         ]
@@ -16425,9 +16581,6 @@
         "title": "ThreadGoalUpdatedNotification",
         "type": "object"
       },
-      "ThreadId": {
-        "type": "string"
-      },
       "ThreadInjectItemsParams": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "properties": {
@@ -17117,6 +17270,16 @@
               },
               "review": {
                 "type": "string"
+              },
+              "reviewOutput": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/v2/ReviewOutput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "type": {
                 "enum": [
@@ -18930,6 +19093,17 @@
               "string",
               "null"
             ]
+          },
+          "contextBudgetMode": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/v2/ContextBudgetMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Override local context-budget behavior for this turn and subsequent turns."
           },
           "cwd": {
             "description": "Override the working directory for this turn and subsequent turns.",

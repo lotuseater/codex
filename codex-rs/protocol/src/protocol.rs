@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use crate::AgentPath;
+use crate::ThreadId;
 use crate::config_types::ApprovalsReviewer;
 use crate::config_types::CollaborationMode;
 use crate::config_types::ContextBudgetMode;
@@ -175,7 +176,7 @@ pub use codex_config_types::RealtimeVoicesList;
 // `TurnEnvironmentSelections` is an upstream addition the fork's core code depends on, so
 // it is kept here. Upstream's inline `GitSha` is dropped — the fork re-exports it from
 // `codex_git_types` above.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 pub struct TurnEnvironmentSelections {
     pub legacy_fallback_cwd: AbsolutePathBuf,
     pub environments: Vec<TurnEnvironmentSelection>,
@@ -218,7 +219,7 @@ pub struct Submission {
 
 /// Persistent thread-settings overrides that can be applied before user input or
 /// on their own.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
 pub struct ThreadSettingsOverrides {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cwd: Option<AbsolutePathBuf>,
@@ -259,14 +260,15 @@ pub struct ThreadSettingsOverrides {
 }
 
 /// Source classification for client-supplied context.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum AdditionalContextKind {
     Untrusted,
     Application,
 }
 
 /// Client-supplied context keyed by an opaque source identifier.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 pub struct AdditionalContextEntry {
     pub value: String,
     pub kind: AdditionalContextKind,

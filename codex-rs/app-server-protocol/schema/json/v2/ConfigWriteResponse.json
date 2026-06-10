@@ -74,7 +74,7 @@
           "type": "object"
         },
         {
-          "description": "Enterprise-managed config layer delivered by the cloud config bundle.",
+          "description": "Enterprise-managed config layer delivered via the cloud config bundle.",
           "properties": {
             "id": {
               "description": "Stable identifier for the delivered layer.",

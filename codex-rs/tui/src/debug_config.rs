@@ -67,8 +67,12 @@ fn sandbox_mode_is_allowed_by_permissions(
         },
     };
 
+    // `Permissions::can_set_permission_profile` was removed upstream; the
+    // constraint check now lives on the inner `Constrained<PermissionProfile>`
+    // as `can_set` (same adaptation as in `chatwidget/permissions_menu.rs`).
     permissions
-        .can_set_permission_profile(&permission_profile)
+        .permission_profile
+        .can_set(&permission_profile)
         .is_ok()
 }
 

@@ -17,12 +17,12 @@ use codex_protocol::models::BaseInstructions;
 use codex_protocol::protocol::MultiAgentVersion;
 use codex_protocol::protocol::ThreadMemoryMode;
 use codex_rollout::is_persisted_rollout_item;
-use codex_thread_store::AppendThreadItemsParams;
-use codex_thread_store::CreateThreadParams;
-use codex_thread_store::ThreadMetadataPatch;
-use codex_thread_store::ThreadPersistenceMetadata;
-use codex_thread_store::ThreadStore;
-use codex_thread_store::UpdateThreadMetadataParams;
+use codex_thread_store_api::AppendThreadItemsParams;
+use codex_thread_store_api::CreateThreadParams;
+use codex_thread_store_api::ThreadMetadataPatch;
+use codex_thread_store_api::ThreadPersistenceMetadata;
+use codex_thread_store_api::ThreadStore;
+use codex_thread_store_api::UpdateThreadMetadataParams;
 use futures::StreamExt;
 use tokio::sync::Semaphore;
 

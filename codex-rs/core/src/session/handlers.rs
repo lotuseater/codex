@@ -44,6 +44,7 @@ use codex_protocol::protocol::ThreadSettingsAppliedEvent;
 use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::protocol::ThreadSettingsSnapshot;
 use codex_protocol::protocol::TurnAbortReason;
+use codex_protocol::protocol::TurnEnvironmentSelections;
 use codex_protocol::protocol::WarningEvent;
 use codex_protocol::request_permissions::RequestPermissionsResponse;
 use codex_protocol::request_user_input::RequestUserInputResponse;
@@ -111,6 +112,9 @@ async fn settings_update_from_thread_settings(
     thread_settings: ThreadSettingsOverrides,
 ) -> SessionSettingsUpdate {
     let ThreadSettingsOverrides {
+        // `cwd` is now folded into `environments.legacy_fallback_cwd`; the
+        // standalone override is unused here.
+        cwd: _,
         environments,
         workspace_roots,
         profile_workspace_roots,
@@ -155,7 +159,6 @@ async fn settings_update_from_thread_settings(
         service_tier,
         context_budget_mode: None,
         final_output_json_schema: None,
-        environments: None,
         personality,
         app_server_client_name: None,
         app_server_client_version: None,
@@ -168,7 +171,7 @@ async fn thread_settings_applied_event(sess: &Session) -> EventMsg {
         let state = sess.state.lock().await;
         state.session_configuration.thread_config_snapshot()
     };
-    let cwd = snapshot.cwd().clone();
+    let cwd = snapshot.cwd.clone();
     EventMsg::ThreadSettingsApplied(ThreadSettingsAppliedEvent {
         thread_settings: ThreadSettingsSnapshot {
             model: snapshot.model,
@@ -205,6 +208,7 @@ pub(super) async fn user_input_or_turn_inner(
 ) {
     let Op::UserInput {
         items,
+        environments,
         final_output_json_schema,
         responsesapi_client_metadata,
         additional_context,
@@ -220,6 +224,19 @@ pub(super) async fn user_input_or_turn_inner(
         SessionSettingsUpdate::default()
     };
     updates.final_output_json_schema = Some(final_output_json_schema);
+    // Turn-scoped environments from `Op::UserInput` carry no fallback cwd; wrap
+    // them with the session's current cwd so a turn-local environment override
+    // does not change the sticky working directory.
+    if let Some(environments) = environments {
+        let legacy_fallback_cwd = {
+            let state = sess.state.lock().await;
+            state.session_configuration.cwd().clone()
+        };
+        updates.environments = Some(TurnEnvironmentSelections::new(
+            legacy_fallback_cwd,
+            environments,
+        ));
+    }
 
     let Ok(current_context) = sess.new_turn_with_sub_id(sub_id.clone(), updates).await else {
         // new_turn_with_sub_id already emits the error event.

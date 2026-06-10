@@ -135,7 +135,7 @@ pub(super) fn read_session_import(path: &Path) -> io::Result<ParsedSessionImport
         cwd,
         source_title: custom_title.or(ai_title),
         messages,
-        content_sha256: format!("{:x}", hasher.finalize()),
+        content_sha256: hex::encode(hasher.finalize()),
     })
 }
 
@@ -376,10 +376,7 @@ mod tests {
         assert_eq!(parsed.source_title.as_deref(), Some("custom title"));
         assert_eq!(parsed.messages.len(), 1);
         assert_eq!(parsed.messages[0].text, "first request");
-        assert_eq!(
-            parsed.content_sha256,
-            format!("{:x}", Sha256::digest(contents))
-        );
+        assert_eq!(parsed.content_sha256, hex::encode(Sha256::digest(contents)));
     }
 
     #[test]

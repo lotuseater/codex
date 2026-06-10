@@ -141,7 +141,7 @@ impl InitialHistory {
             InitialHistory::New | InitialHistory::Cleared | InitialHistory::Forked(_) => None,
             InitialHistory::Resumed(resumed) => {
                 resumed.history.iter().find_map(|item| match item {
-                    RolloutItem::SessionMeta(meta_line) => meta_line.meta.thread_source,
+                    RolloutItem::SessionMeta(meta_line) => meta_line.meta.thread_source.clone(),
                     _ => None,
                 })
             }

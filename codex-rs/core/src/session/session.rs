@@ -206,7 +206,7 @@ impl SessionConfiguration {
             approvals_reviewer: self.approvals_reviewer,
             permission_profile: self.permission_profile(),
             active_permission_profile: self.active_permission_profile(),
-            environments: self.environments.clone(),
+            cwd: self.cwd().clone(),
             workspace_roots: self.workspace_roots.clone(),
             profile_workspace_roots: self.profile_workspace_roots.clone(),
             ephemeral: self.original_config_do_not_use.ephemeral,
@@ -962,6 +962,8 @@ impl Session {
                 session_id,
                 config
                     .effective_agent_max_threads(MultiAgentVersion::V2)
+                    .ok()
+                    .flatten()
                     .unwrap_or(usize::MAX),
             );
             let session_extension_data =

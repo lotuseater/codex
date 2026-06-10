@@ -14,9 +14,10 @@ fn resumed_session_sources(
     match history {
         InitialHistory::New | InitialHistory::Cleared | InitialHistory::Forked(_) => None,
         InitialHistory::Resumed(resumed) => resumed.history.iter().find_map(|item| match item {
-            RolloutItem::SessionMeta(meta_line) => {
-                Some((meta_line.meta.source.clone(), meta_line.meta.thread_source))
-            }
+            RolloutItem::SessionMeta(meta_line) => Some((
+                meta_line.meta.source.clone(),
+                meta_line.meta.thread_source.clone(),
+            )),
             _ => None,
         }),
     }

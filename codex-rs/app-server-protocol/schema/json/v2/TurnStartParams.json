@@ -121,6 +121,13 @@
       ],
       "type": "object"
     },
+    "ContextBudgetMode": {
+      "enum": [
+        "standard",
+        "slow"
+      ],
+      "type": "string"
+    },
     "ImageDetail": {
       "enum": [
         "auto",
@@ -154,8 +161,15 @@
       "type": "string"
     },
     "ReasoningEffort": {
-      "description": "A non-empty reasoning effort value advertised by the model.",
-      "minLength": 1,
+      "description": "See https://platform.openai.com/docs/guides/reasoning?api-mode=responses#get-started-with-reasoning",
+      "enum": [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
       "type": "string"
     },
     "ReasoningSummary": {
@@ -514,6 +528,17 @@
         "string",
         "null"
       ]
+    },
+    "contextBudgetMode": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ContextBudgetMode"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Override local context-budget behavior for this turn and subsequent turns."
     },
     "cwd": {
       "description": "Override the working directory for this turn and subsequent turns.",

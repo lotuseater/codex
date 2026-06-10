@@ -190,12 +190,12 @@ pub(crate) fn thread_settings_from_config_snapshot(
     config_snapshot: &ThreadConfigSnapshot,
 ) -> ThreadSettings {
     ThreadSettings {
-        cwd: config_snapshot.cwd().clone(),
+        cwd: config_snapshot.cwd.clone(),
         approval_policy: config_snapshot.approval_policy.into(),
         approvals_reviewer: config_snapshot.approvals_reviewer.into(),
         sandbox_policy: thread_response_sandbox_policy(
             &config_snapshot.permission_profile,
-            config_snapshot.cwd().as_path(),
+            config_snapshot.cwd.as_path(),
         ),
         active_permission_profile: thread_response_active_permission_profile(
             config_snapshot.active_permission_profile.clone(),
