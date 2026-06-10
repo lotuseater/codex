@@ -71,6 +71,34 @@ mod thread_item;
 mod thread_list;
 mod thread_turn_params;
 
+// fork-local: upstream test not yet relocated into a submodule by the fork's test split.
+// (The sibling upstream tests `approvals_reviewer_serializes_auto_review_and_accepts_legacy_guardian_subagent`,
+// `turn_defaults_legacy_missing_items_view_to_full`, and `thread_turns_list_params_accepts_items_view`
+// already live in the v2/tests submodules, so they are intentionally NOT duplicated here.)
+#[test]
+fn thread_sources_round_trip_as_scalar_labels() {
+    for (source, label) in [
+        (ThreadSource::User, "user"),
+        (ThreadSource::Subagent, "subagent"),
+        (
+            ThreadSource::Feature("automation".to_string()),
+            "automation",
+        ),
+        (ThreadSource::MemoryConsolidation, "memory_consolidation"),
+    ] {
+        let value = serde_json::to_value(&source).expect("serialize thread source");
+
+        assert_eq!(value, json!(label));
+        assert_eq!(
+            serde_json::from_value::<ThreadSource>(value).expect("deserialize thread source"),
+            source
+        );
+
+        let core_source: codex_protocol::protocol::ThreadSource = source.clone().into();
+        assert_eq!(ThreadSource::from(core_source), source);
+    }
+}
+
 // fork-local: upstream tests that the fork's pre-merge test split did not relocate
 // into a submodule. Kept inline here so upstream coverage is not dropped during the
 // merge; the test-repair wave may later move these into the appropriate submodule.
@@ -180,6 +208,33 @@ fn mcp_server_status_serializes_absent_server_info_as_null() {
                 "authStatus": "unsupported",
             }],
             "nextCursor": null,
+        })
+    );
+}
+
+#[test]
+fn mcp_server_status_updated_accepts_missing_thread_id() {
+    let notification: McpServerStatusUpdatedNotification = serde_json::from_value(json!({
+        "name": "optional_broken",
+        "status": "failed",
+        "error": "handshake failed",
+    }))
+    .expect("notification without threadId should deserialize");
+
+    let expected = McpServerStatusUpdatedNotification {
+        thread_id: None,
+        name: "optional_broken".to_string(),
+        status: McpServerStartupState::Failed,
+        error: Some("handshake failed".to_string()),
+    };
+    assert_eq!(notification, expected);
+    assert_eq!(
+        serde_json::to_value(notification).expect("notification should serialize"),
+        json!({
+            "threadId": null,
+            "name": "optional_broken",
+            "status": "failed",
+            "error": "handshake failed",
         })
     );
 }

@@ -345,7 +345,6 @@ async fn snapshot_model_visible_layout_resume_with_personality_change() -> Resul
     .await;
     codex
         .submit(Op::UserInput {
-            environments: None,
             items: vec![UserInput::Text {
                 text: "seed resume history".into(),
                 text_elements: Vec::new(),
@@ -456,7 +455,6 @@ async fn snapshot_model_visible_layout_resume_override_matches_rollout_model() -
     .await;
     codex
         .submit(Op::UserInput {
-            environments: None,
             items: vec![UserInput::Text {
                 text: "seed resume history".into(),
                 text_elements: Vec::new(),
@@ -509,7 +507,6 @@ async fn snapshot_model_visible_layout_resume_override_matches_rollout_model() -
     resumed
         .codex
         .submit(Op::UserInput {
-            environments: None,
             items: vec![UserInput::Text {
                 text: "first resumed turn after model override".into(),
                 text_elements: Vec::new(),

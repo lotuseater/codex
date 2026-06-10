@@ -1,5 +1,5 @@
-use super::*;
 use super::super::*;
+use super::*;
 
 #[tokio::test]
 async fn list_marketplaces_installed_git_source_reads_metadata_from_cache_without_cloning() {

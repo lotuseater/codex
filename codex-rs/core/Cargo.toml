@@ -390,12 +390,15 @@ codex-shell-escalation = { workspace = true }
 assert_cmd = { workspace = true }
 assert_matches = { workspace = true }
 codex-core-test-runtime = { workspace = true }
+codex-image-generation-extension = { workspace = true }
 codex-otel = { workspace = true }
 codex-test-binary-support = { workspace = true }
 codex-test-support-context-fixtures = { workspace = true }
 codex-test-support-lightweight = { workspace = true }
 codex-test-support-responses = { workspace = true }
 codex-utils-cargo-bin = { workspace = true }
+codex-web-search-extension = { workspace = true }
+core_test_support = { workspace = true }
 ctor = { workspace = true }
 insta = { workspace = true }
 maplit = { workspace = true }

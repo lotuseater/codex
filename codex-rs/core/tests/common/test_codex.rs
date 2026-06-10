@@ -22,6 +22,7 @@ use codex_core::shell::get_shell_by_model_provided_path;
 use codex_exec_server::CreateDirectoryOptions;
 use codex_exec_server::ExecutorFileSystem;
 use codex_exec_server::RemoveOptions;
+use codex_extension_api::ExtensionRegistry;
 use codex_extension_api::empty_extension_registry;
 use codex_features::Feature;
 use codex_login::CodexAuth;
@@ -29,6 +30,7 @@ use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::built_in_model_providers;
 use codex_models_manager::bundled_models_response;
 use codex_protocol::models::PermissionProfile;
+use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ModelsResponse;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
@@ -38,6 +40,7 @@ use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::SessionConfiguredEvent;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::TurnEnvironmentSelection;
+use codex_protocol::protocol::TurnEnvironmentSelections;
 use codex_protocol::user_input::UserInput;
 use codex_thread_store_api::RecordingThreadStore;
 use codex_thread_store_api::UnsupportedLiveThreadFactory;
@@ -69,6 +72,17 @@ const TEST_MODEL_WITH_EXPERIMENTAL_TOOLS: &str = "test-gpt-5.1-codex";
 const REMOTE_EXEC_SERVER_URL_ENV_VAR: &str = "CODEX_TEST_REMOTE_EXEC_SERVER_URL";
 static REMOTE_TEST_INSTANCE_COUNTER: AtomicU64 = AtomicU64::new(0);
 const SUBMIT_TURN_COMPLETE_TIMEOUT: Duration = Duration::from_secs(30);
+
+pub fn local(cwd: AbsolutePathBuf) -> TurnEnvironmentSelection {
+    TurnEnvironmentSelection {
+        environment_id: codex_exec_server::LOCAL_ENVIRONMENT_ID.to_string(),
+        cwd,
+    }
+}
+
+pub fn local_selections(cwd: AbsolutePathBuf) -> TurnEnvironmentSelections {
+    TurnEnvironmentSelections::new(cwd.clone(), vec![local(cwd)])
+}
 
 #[derive(Debug)]
 pub struct TestEnv {
@@ -220,6 +234,7 @@ pub struct TestCodexBuilder {
     cloud_requirements: Option<CloudRequirementsLoader>,
     user_shell_override: Option<Shell>,
     exec_server_url: Option<String>,
+    extensions: Arc<ExtensionRegistry<Config>>,
 }
 
 impl TestCodexBuilder {
@@ -240,6 +255,26 @@ impl TestCodexBuilder {
         let new_model = model.to_string();
         self.with_config(move |config| {
             config.model = Some(new_model);
+        })
+    }
+
+    pub fn with_model_info_override<T>(self, model: &str, override_model_info: T) -> Self
+    where
+        T: FnOnce(&mut ModelInfo) + Send + 'static,
+    {
+        let model = model.to_string();
+        self.with_config(move |config| {
+            let model_catalog = config.model_catalog.get_or_insert_with(|| {
+                bundled_models_response()
+                    .unwrap_or_else(|err| panic!("bundled models.json should parse: {err}"))
+            });
+            let model_info = model_catalog
+                .models
+                .iter_mut()
+                .find(|model_info| model_info.slug == model)
+                .unwrap_or_else(|| panic!("{model} should exist in the configured model catalog"));
+            override_model_info(model_info);
+            config.model = Some(model);
         })
     }
 
@@ -278,6 +313,11 @@ impl TestCodexBuilder {
 
     pub fn with_exec_server_url(mut self, exec_server_url: impl Into<String>) -> Self {
         self.exec_server_url = Some(exec_server_url.into());
+        self
+    }
+
+    pub fn with_extensions(mut self, extensions: Arc<ExtensionRegistry<Config>>) -> Self {
+        self.extensions = extensions;
         self
     }
 
@@ -434,7 +474,7 @@ impl TestCodexBuilder {
             codex_core::test_support::auth_manager_from_auth(auth.clone()),
             SessionSource::Exec,
             Arc::clone(&environment_manager),
-            empty_extension_registry(),
+            Arc::clone(&self.extensions),
             /*analytics_events_client*/ None,
             thread_store,
             Arc::new(UnsupportedLiveThreadFactory::new()),
@@ -1016,6 +1056,7 @@ pub fn test_codex() -> TestCodexBuilder {
         cloud_requirements: None,
         user_shell_override: None,
         exec_server_url: None,
+        extensions: empty_extension_registry(),
     }
 }
 

@@ -726,6 +726,9 @@ async fn run_review_on_session(
     let submit_result = run_before_review_deadline(
         deadline,
         params.external_cancel.as_ref(),
+        // fork-local: keep Op::UserTurn so the guardian review turn carries the fork's
+        // per-turn context_budget_mode (upstream's Op::UserInput/ThreadSettingsOverrides
+        // path has no context_budget_mode field).
         Box::pin(review_session.codex.submit(Op::UserTurn {
             environments: None,
             items: prompt_items.items,

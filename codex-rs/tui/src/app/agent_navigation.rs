@@ -19,6 +19,7 @@
 //! updated or marked closed.
 
 use crate::multi_agents::AgentPickerThreadEntry;
+use crate::multi_agents::SubAgentActivityDisplay;
 use crate::multi_agents::format_agent_picker_item_name;
 use crate::multi_agents::next_agent_shortcut;
 use crate::multi_agents::previous_agent_shortcut;
@@ -87,37 +88,87 @@ impl AgentNavigationState {
             self.order.push(thread_id);
         }
         let existing = self.threads.get(&thread_id);
+        let (previous_agent_path, previous_is_running) = existing
+            .map(|entry| (entry.agent_path.clone(), entry.is_running))
+            .unwrap_or((None, false));
+        let previous_model = existing.and_then(|entry| entry.model.clone());
+        let previous_reasoning_effort = existing.and_then(|entry| entry.reasoning_effort);
+        let previous_token_context_percent_used =
+            existing.and_then(|entry| entry.token_context_percent_used);
         self.threads.insert(
             thread_id,
             AgentPickerThreadEntry {
                 agent_nickname,
                 agent_role,
+                agent_path: previous_agent_path,
+                is_running: previous_is_running && !is_closed,
                 is_closed,
-                model: existing.and_then(|entry| entry.model.clone()),
-                reasoning_effort: existing.and_then(|entry| entry.reasoning_effort),
-                token_context_percent_used: existing
-                    .and_then(|entry| entry.token_context_percent_used),
+                model: previous_model,
+                reasoning_effort: previous_reasoning_effort,
+                token_context_percent_used: previous_token_context_percent_used,
             },
         );
     }
 
+    pub(crate) fn record_sub_agent_activity(&mut self, activity: SubAgentActivityDisplay) {
+        if !self.threads.contains_key(&activity.thread_id) {
+            self.order.push(activity.thread_id);
+        }
+        let entry =
+            self.threads
+                .entry(activity.thread_id)
+                .or_insert_with(|| AgentPickerThreadEntry {
+                    agent_nickname: None,
+                    agent_role: None,
+                    agent_path: None,
+                    is_running: false,
+                    is_closed: false,
+                    model: None,
+                    reasoning_effort: None,
+                    token_context_percent_used: None,
+                });
+        entry.agent_path = Some(activity.agent_path);
+        entry.is_running = activity.is_running_hint;
+        entry.is_closed = false;
+    }
+
+    pub(crate) fn set_running(&mut self, thread_id: ThreadId, is_running: bool) {
+        if let Some(entry) = self.threads.get_mut(&thread_id) {
+            entry.is_running = is_running;
+        }
+    }
+
+    pub(crate) fn set_agent_path(&mut self, thread_id: ThreadId, agent_path: Option<String>) {
+        if let Some(agent_path) = agent_path
+            && let Some(entry) = self.threads.get_mut(&thread_id)
+        {
+            entry.agent_path = Some(agent_path);
+        }
+    }
+
+    // fork-local: runtime model/reasoning/token-usage details for the agent picker.
     pub(crate) fn update_runtime_details(
         &mut self,
         thread_id: ThreadId,
         model: Option<String>,
         reasoning_effort: Option<codex_protocol::openai_models::ReasoningEffort>,
     ) {
-        let entry = self.threads.entry(thread_id).or_insert_with(|| {
+        if !self.threads.contains_key(&thread_id) {
             self.order.push(thread_id);
-            AgentPickerThreadEntry {
+        }
+        let entry = self
+            .threads
+            .entry(thread_id)
+            .or_insert_with(|| AgentPickerThreadEntry {
                 agent_nickname: None,
                 agent_role: None,
+                agent_path: None,
+                is_running: false,
                 is_closed: false,
                 model: None,
                 reasoning_effort: None,
                 token_context_percent_used: None,
-            }
-        });
+            });
         if model.is_some() {
             entry.model = model;
         }
@@ -126,22 +177,28 @@ impl AgentNavigationState {
         }
     }
 
+    // fork-local: last-known context-window usage percentage for the agent picker.
     pub(crate) fn update_token_context_percent_used(
         &mut self,
         thread_id: ThreadId,
         token_context_percent_used: Option<i64>,
     ) {
-        let entry = self.threads.entry(thread_id).or_insert_with(|| {
+        if !self.threads.contains_key(&thread_id) {
             self.order.push(thread_id);
-            AgentPickerThreadEntry {
+        }
+        let entry = self
+            .threads
+            .entry(thread_id)
+            .or_insert_with(|| AgentPickerThreadEntry {
                 agent_nickname: None,
                 agent_role: None,
+                agent_path: None,
+                is_running: false,
                 is_closed: false,
                 model: None,
                 reasoning_effort: None,
                 token_context_percent_used: None,
-            }
-        });
+            });
         entry.token_context_percent_used = token_context_percent_used;
     }
 
@@ -154,6 +211,7 @@ impl AgentNavigationState {
     pub(crate) fn mark_closed(&mut self, thread_id: ThreadId) {
         if let Some(entry) = self.threads.get_mut(&thread_id) {
             entry.is_closed = true;
+            entry.is_running = false;
         } else {
             self.upsert(
                 thread_id, /*agent_nickname*/ None, /*agent_role*/ None,
@@ -201,6 +259,22 @@ impl AgentNavigationState {
         self.order
             .iter()
             .filter_map(|thread_id| self.threads.get(thread_id).map(|entry| (*thread_id, entry)))
+            .collect()
+    }
+
+    pub(crate) fn ordered_path_backed_subagent_threads(
+        &self,
+        primary_thread_id: Option<ThreadId>,
+    ) -> Vec<(ThreadId, &AgentPickerThreadEntry)> {
+        self.ordered_threads()
+            .into_iter()
+            .filter(|(thread_id, entry)| {
+                Some(*thread_id) != primary_thread_id
+                    && entry
+                        .agent_path
+                        .as_deref()
+                        .is_some_and(|agent_path| !agent_path.trim().is_empty())
+            })
             .collect()
     }
 
@@ -266,6 +340,14 @@ impl AgentNavigationState {
             self.threads
                 .get(&thread_id)
                 .map(|entry| {
+                    if !is_primary
+                        && let Some(agent_path) = entry
+                            .agent_path
+                            .as_deref()
+                            .filter(|agent_path| !agent_path.trim().is_empty())
+                    {
+                        return format!("`{agent_path}`");
+                    }
                     format_agent_picker_item_name(
                         entry.agent_nickname.as_deref(),
                         entry.agent_role.as_deref(),

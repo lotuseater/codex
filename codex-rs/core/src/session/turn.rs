@@ -1787,6 +1787,13 @@ struct SamplingRequestResult {
     last_agent_message: Option<String>,
 }
 
+// fork-local: plan-mode streaming state and helpers were extracted into the
+// `plan_mode` submodule (see `use plan_mode::*` above). Upstream still defines
+// these inline; we intentionally keep the fork's empty side here to avoid
+// duplicate definitions. Upstream's newer plan-mode refactor
+// (finalize_non_tool_response_item / turn_store / SubAgentActivity arm) must be
+// ported into session/turn/plan_mode.rs by that file's owner.
+
 async fn drain_in_flight(
     in_flight: &mut FuturesOrdered<BoxFuture<'static, CodexResult<ResponseInputItem>>>,
     sess: Arc<Session>,

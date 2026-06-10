@@ -27,6 +27,7 @@ pub use codex_apps::CodexAppsToolsCacheState;
 pub use codex_apps::CodexAppsToolsCacheStatus;
 pub use codex_apps::codex_apps_tools_cache_key;
 pub use codex_apps::codex_apps_tools_cache_status;
+pub use mcp::codex_apps_mcp_server_config;
 pub use mcp::configured_mcp_servers;
 pub use mcp::effective_mcp_servers;
 pub use mcp::effective_mcp_servers_from_configured;

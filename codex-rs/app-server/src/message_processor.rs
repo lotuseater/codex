@@ -95,6 +95,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 const EXTERNAL_AUTH_REFRESH_TIMEOUT: Duration = Duration::from_secs(10);
+const CONNECTION_RPC_DRAIN_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 30);
 
 #[derive(Clone)]
 struct ExternalAuthRefreshBridge {
@@ -322,6 +323,14 @@ impl MessageProcessor {
         );
         let live_thread_factory = Arc::new(StoreLiveThreadFactory::new());
         let environment_manager_for_requests = Arc::clone(&environment_manager);
+        let environment_manager_for_extensions = Arc::clone(&environment_manager);
+        let restriction_product = session_source.restriction_product();
+        let executor_skill_provider: Arc<dyn codex_skills_extension::SkillProvider> = Arc::new(
+            codex_skills_extension::ExecutorSkillProvider::new_with_restriction_product(
+                environment_manager_for_extensions,
+                restriction_product,
+            ),
+        );
         let goal_service = Arc::new(GoalService::new());
         let thread_manager = Arc::new_cyclic(|thread_manager| {
             ThreadManager::new(
@@ -336,6 +345,7 @@ impl MessageProcessor {
                     state_db.clone(),
                     thread_manager.clone(),
                     Arc::clone(&goal_service),
+                    Arc::clone(&executor_skill_provider),
                 ),
                 Some(analytics_events_client.clone()),
                 Arc::clone(&thread_store),
@@ -492,6 +502,7 @@ impl MessageProcessor {
         let external_agent_config_processor = ExternalAgentConfigRequestProcessor::new(
             outgoing.clone(),
             Arc::clone(&thread_manager),
+            Arc::clone(&thread_store),
             config_manager.clone(),
             config_processor.clone(),
             arg0_paths,
@@ -741,7 +752,19 @@ impl MessageProcessor {
         connection_id: ConnectionId,
         session_state: &ConnectionSessionState,
     ) {
-        session_state.rpc_gate.shutdown().await;
+        if timeout(
+            CONNECTION_RPC_DRAIN_TIMEOUT,
+            session_state.rpc_gate.shutdown(),
+        )
+        .await
+        .is_err()
+        {
+            tracing::warn!(
+                ?connection_id,
+                timeout_seconds = CONNECTION_RPC_DRAIN_TIMEOUT.as_secs(),
+                "timed out waiting for connection RPCs to drain"
+            );
+        }
         self.outgoing.connection_closed(connection_id).await;
         self.fs_processor.connection_closed(connection_id).await;
         self.command_exec_processor

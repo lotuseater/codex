@@ -69,6 +69,7 @@ members = [
     "ext/guardian",
     "ext/image-generation",
     "ext/memories",
+    "ext/mcp",
     "ext/skills",
     "ext/web-search",
     "external-agent-migration",
@@ -116,6 +117,7 @@ members = [
     "workflow-batch",
     "v8-poc",
     "utils/absolute-path",
+    "utils/path-uri",
     "utils/cargo-bin",
     "git-utils",
     "utils/cache",
@@ -264,6 +266,7 @@ codex-memories-read = { path = "memories/read" }
 codex-memories-write = { path = "memories/write" }
 codex-mcp = { path = "codex-mcp" }
 codex-mcp-elicitation-api = { path = "mcp/elicitation-api" }
+codex-mcp-extension = { path = "ext/mcp" }
 codex-mcp-server = { path = "mcp-server" }
 codex-model-provider-info = { path = "model-provider-info" }
 codex-models-manager = { path = "models-manager" }
@@ -295,6 +298,7 @@ codex-secrets = { path = "secrets" }
 codex-session-api = { path = "session/session-api" }
 codex-shell-command = { path = "shell-command" }
 codex-shell-escalation = { path = "shell-escalation" }
+codex-skills-extension = { path = "ext/skills" }
 codex-skills = { path = "skills" }
 codex-state = { path = "state" }
 codex-task-memory = { path = "task-memory" }
@@ -402,9 +406,9 @@ hex = "0.4"
 hmac = "0.13"
 http = "1"
 iana-time-zone = "0.1"
-icu_decimal = "~2.1"
-icu_locale_core = "~2.1"
-icu_provider = { version = "~2.1", features = ["sync"] }
+icu_decimal = "2.1"
+icu_locale_core = "2.1"
+icu_provider = { version = "2.1", features = ["sync"] }
 ignore = "0.4"
 image = { version = "^0.25.9", default-features = false }
 include_dir = "0.7.4"
@@ -501,10 +505,10 @@ sqlx = { version = "0.9.0", default-features = false, features = [
     "time",
     "uuid",
 ] }
-starlark = "0.13"
+starlark = { version = "0.14.2", default-features = false }
 strum = "0.28"
-strum_macros = "0.28"
-supports-color = "3"
+strum_macros = "0.28.0"
+supports-color = "3.0.2"
 syntect = "5"
 sys-locale = "0.3"
 tar = { version = "=0.4.45", default-features = false }
@@ -541,10 +545,10 @@ unicode-width = "0.2"
 url = "2"
 urlencoding = "2.1"
 uuid = "1"
-v8 = "=146.4.0"
-vt100 = "0.16"
-walkdir = "2"
-webbrowser = "1"
+v8 = "=149.2.0"
+vt100 = "0.16.2"
+walkdir = "2.5.0"
+webbrowser = "1.0"
 which = "8"
 whoami = "2"
 wildmatch = "2"
@@ -621,10 +625,11 @@ strip = "symbols"
 
 [profile.release]
 lto = "thin"
+debug = "line-tables-only"
 split-debuginfo = "off"
-# Because we bundle some of these executables with the TypeScript CLI, we
-# remove everything to make the binary as small as possible.
-strip = "symbols"
+# Keep release binaries symbolicateable until packaging has archived the
+# sidecar symbols and stripped the binaries.
+strip = false
 
 # See https://github.com/openai/codex/issues/1411 for details.
 codegen-units = 1

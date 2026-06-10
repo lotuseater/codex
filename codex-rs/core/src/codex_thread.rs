@@ -21,6 +21,7 @@ use codex_protocol::protocol::Submission;
 use codex_protocol::protocol::ThreadMemoryMode;
 use codex_protocol::protocol::TokenUsageInfo;
 use codex_protocol::protocol::TurnEnvironmentSelection;
+use codex_protocol::protocol::TurnEnvironmentSelections;
 use codex_protocol::protocol::W3cTraceContext;
 use codex_protocol::user_input::UserInput;
 pub use codex_thread_manager_api::CodexThreadSettingsOverrides;
@@ -175,6 +176,16 @@ impl CodexThread {
         client_user_message_id: Option<String>,
     ) -> CodexResult<String> {
         let id = uuid::Uuid::now_v7().to_string();
+        // Upstream execution-capacity gate (matches the spawn-side V2 residency limiter).
+        self.codex
+            .session
+            .services
+            .agent_control
+            .ensure_execution_capacity_for_op(self.session_configured.thread_id, &op)
+            .await?;
+        // fork-local: `Codex` exposes `submit_with_id` (not the upstream
+        // `submit_user_input_with_client_user_message_id`), so submit the built
+        // `Submission` directly while preserving upstream's capacity check above.
         self.codex
             .submit_with_id(Submission {
                 id: id.clone(),
@@ -282,7 +293,7 @@ impl CodexThread {
         overrides: CodexThreadSettingsOverrides,
     ) -> SessionSettingsUpdate {
         let CodexThreadSettingsOverrides {
-            cwd,
+            environments,
             workspace_roots,
             profile_workspace_roots,
             approval_policy,
@@ -310,7 +321,7 @@ impl CodexThread {
         };
 
         SessionSettingsUpdate {
-            cwd,
+            environments,
             workspace_roots,
             profile_workspace_roots,
             approval_policy,

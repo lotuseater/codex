@@ -90,12 +90,8 @@ pub(crate) async fn handle_message_string_tool(
     let receiver_agent = session
         .services
         .agent_control
-        .get_agent_metadata(receiver_thread_id)
-        .ok_or_else(|| {
-            FunctionCallError::RespondToModel(format!(
-                "agent with id {receiver_thread_id} not found"
-            ))
-        })?;
+        .ensure_agent_known(receiver_thread_id)
+        .map_err(|err| collab_agent_error(receiver_thread_id, err))?;
     if mode == MessageDeliveryMode::TriggerTurn
         && receiver_agent
             .agent_path
@@ -164,7 +160,8 @@ pub(crate) async fn handle_message_string_tool(
         .session_source
         .get_agent_path()
         .unwrap_or_else(AgentPath::root);
-    let communication = communication_from_tool_message(author, receiver_agent_path, message);
+    let communication =
+        communication_from_tool_message(author, receiver_agent_path.clone(), message);
     let result = session
         .services
         .agent_control

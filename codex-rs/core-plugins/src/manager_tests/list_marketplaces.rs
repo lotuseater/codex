@@ -1,5 +1,5 @@
-use super::*;
 use super::super::*;
+use super::*;
 
 #[tokio::test]
 async fn list_marketplaces_includes_enabled_state() {

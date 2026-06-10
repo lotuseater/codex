@@ -19,9 +19,6 @@ use codex_protocol::protocol::TokenUsage;
 use serde::Serialize;
 use std::path::PathBuf;
 
-const INVALID_REQUEST_SUBREASON_MAX_BYTES: usize = 512;
-const INVALID_REQUEST_SUBREASON_TRUNCATION_SUFFIX: &str = "...";
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct AcceptedLineFingerprint {
     pub path_hash: String,
@@ -172,7 +169,6 @@ pub enum CodexErrKind {
 #[derive(Clone)]
 pub struct TurnCodexError {
     pub kind: CodexErrKind,
-    pub subreason: Option<String>,
     pub http_status_code: Option<u16>,
 }
 
@@ -180,26 +176,6 @@ impl TurnCodexError {
     fn from_codex_err(error: &CodexErr) -> Self {
         Self {
             kind: error.into(),
-            subreason: match error {
-                CodexErr::InvalidRequest(message) => {
-                    // InvalidRequest can contain raw provider response bodies, so bound the
-                    // analytics copy without changing the source CodexErr.
-                    let subreason = if message.len() <= INVALID_REQUEST_SUBREASON_MAX_BYTES {
-                        message.clone()
-                    } else {
-                        let truncated_len = message.floor_char_boundary(
-                            INVALID_REQUEST_SUBREASON_MAX_BYTES
-                                .saturating_sub(INVALID_REQUEST_SUBREASON_TRUNCATION_SUFFIX.len()),
-                        );
-                        format!(
-                            "{}{INVALID_REQUEST_SUBREASON_TRUNCATION_SUFFIX}",
-                            &message[..truncated_len]
-                        )
-                    };
-                    Some(subreason)
-                }
-                _ => None,
-            },
             http_status_code: error.http_status_code_value(),
         }
     }
@@ -429,6 +405,8 @@ pub struct CodexCompactionEvent {
     pub error: Option<String>,
     pub active_context_tokens_before: i64,
     pub active_context_tokens_after: i64,
+    pub retained_image_count: Option<usize>,
+    pub compaction_summary_tokens: Option<i64>,
     pub started_at: u64,
     pub completed_at: u64,
     pub duration_ms: Option<u64>,

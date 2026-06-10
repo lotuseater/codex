@@ -1,5 +1,5 @@
-use super::*;
 use super::super::*;
+use super::*;
 
 #[tokio::test]
 async fn install_plugin_updates_config_with_relative_path_and_plugin_key() {

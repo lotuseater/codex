@@ -1,5 +1,5 @@
-use super::*;
 use super::super::*;
+use super::*;
 
 #[tokio::test]
 async fn featured_plugin_ids_for_config_uses_restriction_product_query_param() {

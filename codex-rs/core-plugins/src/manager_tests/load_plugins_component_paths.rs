@@ -1,5 +1,5 @@
-use super::*;
 use super::super::*;
+use super::*;
 
 #[tokio::test]
 async fn load_plugins_uses_manifest_configured_component_paths() {

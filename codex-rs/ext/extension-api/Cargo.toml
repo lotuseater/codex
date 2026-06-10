@@ -15,9 +15,14 @@ workspace = true
 
 [dependencies]
 async-trait = { workspace = true }
+codex-config = { workspace = true }
 codex-context-fragments = { workspace = true }
 codex-core-domain-types = { workspace = true }
 codex-protocol = { workspace = true }
 codex-tool-execution-api = { workspace = true }
 codex-tool-registry-api = { workspace = true }
 codex-tools = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

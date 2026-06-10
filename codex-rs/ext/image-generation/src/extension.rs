@@ -23,6 +23,7 @@ struct ImageGenerationExtension {
 
 #[derive(Clone)]
 struct ImageGenerationExtensionConfig {
+    // fork-local: feature-gated availability (Feature::ImageGenExt) in addition to provider check.
     enabled: bool,
     provider: ModelProviderInfo,
     codex_home: AbsolutePathBuf,
@@ -32,6 +33,7 @@ impl From<&Config> for ImageGenerationExtensionConfig {
     /// Resolves whether standalone image generation should be available for a thread.
     fn from(config: &Config) -> Self {
         Self {
+            // fork-local: gate behind the ImageGenExt feature in addition to provider support.
             enabled: config.features.enabled(Feature::ImageGenExt)
                 && config.model_provider.is_openai(),
             provider: config.model_provider.clone(),

@@ -1,5 +1,5 @@
-use super::*;
 use super::super::*;
+use super::*;
 
 #[tokio::test]
 async fn sync_plugins_from_remote_returns_default_when_feature_disabled() {

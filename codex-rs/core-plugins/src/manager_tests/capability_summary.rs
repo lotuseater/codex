@@ -1,5 +1,5 @@
-use super::*;
 use super::super::*;
+use super::*;
 
 #[tokio::test]
 async fn plugin_telemetry_metadata_uses_default_mcp_config_path() {

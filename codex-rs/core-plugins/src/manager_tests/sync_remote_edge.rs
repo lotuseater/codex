@@ -1,5 +1,5 @@
-use super::*;
 use super::super::*;
+use super::*;
 
 #[tokio::test]
 async fn sync_plugins_from_remote_ignores_unknown_remote_plugins() {

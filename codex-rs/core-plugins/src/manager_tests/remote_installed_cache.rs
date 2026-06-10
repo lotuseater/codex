@@ -1,5 +1,5 @@
-use super::*;
 use super::super::*;
+use super::*;
 
 #[tokio::test]
 async fn remote_installed_cache_ignores_plugins_missing_local_cache() {

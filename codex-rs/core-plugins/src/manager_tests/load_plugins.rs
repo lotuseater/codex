@@ -1,5 +1,5 @@
-use super::*;
 use super::super::*;
+use super::*;
 
 #[tokio::test]
 async fn load_plugins_loads_default_skills_and_mcp_servers() {

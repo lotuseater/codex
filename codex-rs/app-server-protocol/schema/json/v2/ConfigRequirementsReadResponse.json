@@ -103,6 +103,15 @@
             "null"
           ]
         },
+        "allowedPermissionProfiles": {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        },
         "allowedPermissions": {
           "items": {
             "type": "string"
@@ -147,6 +156,12 @@
             {
               "type": "null"
             }
+          ]
+        },
+        "defaultPermissions": {
+          "type": [
+            "string",
+            "null"
           ]
         },
         "enforceResidency": {

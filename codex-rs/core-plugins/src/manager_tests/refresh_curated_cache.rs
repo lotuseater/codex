@@ -1,5 +1,5 @@
-use super::*;
 use super::super::*;
+use super::*;
 
 #[test]
 fn refresh_curated_plugin_cache_replaces_existing_local_version_with_short_sha_version() {

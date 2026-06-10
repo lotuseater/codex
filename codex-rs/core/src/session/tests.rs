@@ -54,6 +54,7 @@ use codex_protocol::permissions::FileSystemSpecialPath;
 use codex_protocol::protocol::NonSteerableTurnKind;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::TurnEnvironmentSelection;
+use codex_protocol::protocol::TurnEnvironmentSelections;
 use codex_protocol::request_permissions::PermissionGrantScope;
 use codex_protocol::request_permissions::RequestPermissionProfile;
 use tracing::Span;
@@ -207,9 +208,12 @@ mod shutdown_lifecycle_tests;
 mod span_trace_tests;
 mod startup_prewarm_tests;
 mod stream_parser_seed_tests;
-mod support_fixtures;
-mod support_rollout;
-mod support_session;
+// fork-local: support_fixtures/support_rollout/support_session module files were never
+// committed (the test-split was incomplete). Declarations + re-exports are disabled until
+// the test-repair wave recreates these files; re-enable them together with their .rs files.
+// mod support_fixtures;
+// mod support_rollout;
+// mod support_session;
 mod thread_history_tests;
 mod thread_rollback_tests;
 mod token_usage_tests;
@@ -217,6 +221,7 @@ mod turn_environment_tests;
 mod turn_flow_tests;
 mod workspace_roots_tests;
 mod zsh_fork_tests;
-pub(crate) use support_fixtures::*;
-pub(crate) use support_rollout::*;
-pub(crate) use support_session::*;
+// fork-local: disabled with their module declarations above (missing files) — re-enable in the test-repair wave.
+// pub(crate) use support_fixtures::*;
+// pub(crate) use support_rollout::*;
+// pub(crate) use support_session::*;

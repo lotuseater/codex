@@ -1,5 +1,5 @@
-use super::*;
 use super::super::*;
+use super::*;
 
 #[tokio::test]
 async fn read_plugin_for_config_returns_plugins_disabled_when_feature_disabled() {
