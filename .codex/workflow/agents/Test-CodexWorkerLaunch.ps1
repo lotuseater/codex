@@ -33,6 +33,32 @@ function Assert-FileContains {
     }
 }
 
+function Assert-LauncherContainsWorkerArgs {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Repo,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Prompt
+    )
+
+    Assert-FileContains `
+        -Path $Path `
+        -Needles @(
+            "`$codexArgs = @(",
+            "'--cd'",
+            (ConvertTo-CodexPowerShellSingleQuotedLiteral $Repo),
+            "'--ask-for-approval'",
+            "'never'",
+            "'--sandbox'",
+            "'danger-full-access'",
+            (ConvertTo-CodexPowerShellSingleQuotedLiteral $Prompt)
+        )
+}
+
 $resolvedRepo = (Resolve-Path -LiteralPath $Repo).Path
 $prompt = "spawn worker launch canary prompt"
 
@@ -64,6 +90,21 @@ $resumeArgs = New-CodexWorkerResumeArgs `
     -LoopPeriod 300
 Assert-CodexWorkerArgs -Args $resumeArgs -Mode Resume -Repo $resolvedRepo -Prompt $prompt
 
+$nonDefaultArgs = New-CodexWorkerExecArgs `
+    -Repo $resolvedRepo `
+    -Prompt $prompt `
+    -WorkerModel $WorkerModel `
+    -WorkerReasoningEffort $WorkerReasoningEffort `
+    -ApprovalPolicy "on-request" `
+    -SandboxMode "workspace-write"
+Assert-CodexWorkerArgs `
+    -Args $nonDefaultArgs `
+    -Mode Exec `
+    -Repo $resolvedRepo `
+    -Prompt $prompt `
+    -ExpectedApprovalPolicy "on-request" `
+    -ExpectedSandboxMode "workspace-write"
+
 Assert-FileContains `
     -Path (Join-Path $PSScriptRoot "start-codex-workers.ps1") `
     -Needles @("CodexWorkerLaunch.psm1", "New-CodexWorkerExecArgs", "New-CodexWorkerResumeArgs")
@@ -85,6 +126,10 @@ try {
         -WorkerNames $workerProbeName `
         -Prompt $prompt `
         -DryRun | Out-Null
+    Assert-LauncherContainsWorkerArgs `
+        -Path $workerProbeLauncher `
+        -Repo $resolvedRepo `
+        -Prompt $prompt
 } finally {
     Remove-Item -LiteralPath $workerProbeLauncher -Force -ErrorAction SilentlyContinue
 }
@@ -97,6 +142,10 @@ try {
         -Name $interactiveProbeName `
         -Prompt $prompt `
         -DryRun | Out-Null
+    Assert-LauncherContainsWorkerArgs `
+        -Path $interactiveProbeLauncher `
+        -Repo $resolvedRepo `
+        -Prompt $prompt
 } finally {
     Remove-Item -LiteralPath $interactiveProbeLauncher -Force -ErrorAction SilentlyContinue
 }

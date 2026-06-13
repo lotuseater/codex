@@ -237,7 +237,11 @@ function Assert-CodexWorkerArgs {
         [string]$Repo,
 
         [Parameter(Mandatory = $true)]
-        [string]$Prompt
+        [string]$Prompt,
+
+        [string]$ExpectedApprovalPolicy = "never",
+
+        [string]$ExpectedSandboxMode = "danger-full-access"
     )
 
     $cdIndex = [Array]::IndexOf($Args, "--cd")
@@ -247,11 +251,11 @@ function Assert-CodexWorkerArgs {
     if ($cdIndex -lt 0 -or $Args[$cdIndex + 1] -ne $Repo) {
         throw "Worker args must include --cd followed by the target repo."
     }
-    if ($approvalIndex -lt 0 -or $Args[$approvalIndex + 1] -ne "never") {
-        throw "Worker args must include --ask-for-approval never."
+    if ($approvalIndex -lt 0 -or $Args[$approvalIndex + 1] -ne $ExpectedApprovalPolicy) {
+        throw "Worker args must include --ask-for-approval $ExpectedApprovalPolicy."
     }
-    if ($sandboxIndex -lt 0 -or $Args[$sandboxIndex + 1] -ne "danger-full-access") {
-        throw "Worker args must include --sandbox danger-full-access."
+    if ($sandboxIndex -lt 0 -or $Args[$sandboxIndex + 1] -ne $ExpectedSandboxMode) {
+        throw "Worker args must include --sandbox $ExpectedSandboxMode."
     }
     if ($Args[$Args.Count - 1] -ne $Prompt) {
         throw "Worker prompt must be the final argument so PowerShell quoting cannot swallow later flags."
