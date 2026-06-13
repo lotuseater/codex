@@ -6,6 +6,50 @@
       "description": "A path that is guaranteed to be absolute and normalized (though it is not guaranteed to be canonicalized or exist on the filesystem).\n\nIMPORTANT: When deserializing an `AbsolutePathBuf`, a base path must be set using [AbsolutePathBufGuard::new]. If no base path is set, the deserialization will fail unless the path being deserialized is already absolute.",
       "type": "string"
     },
+    "ActionOptimizationInstructionsModeToml": {
+      "enum": [
+        "off",
+        "plan",
+        "first_turn",
+        "tool_turn",
+        "always"
+      ],
+      "type": "string"
+    },
+    "ActionOptimizationInstructionsToml": {
+      "additionalProperties": false,
+      "properties": {
+        "max_tokens": {
+          "description": "Maximum approximate tokens rendered in the prompt body. Defaults to 120.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "mode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ActionOptimizationInstructionsModeToml"
+            }
+          ],
+          "description": "Run mode: off, plan, first_turn, tool_turn, or always. Defaults to off."
+        },
+        "variant": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ActionOptimizationInstructionsVariantToml"
+            }
+          ],
+          "description": "Prompt variant. Defaults to action_route_selection."
+        }
+      },
+      "type": "object"
+    },
+    "ActionOptimizationInstructionsVariantToml": {
+      "enum": [
+        "action_route_selection"
+      ],
+      "type": "string"
+    },
     "AgentRoleToml": {
       "additionalProperties": false,
       "properties": {
@@ -4631,6 +4675,14 @@
   },
   "description": "Base config deserialized from ~/.codex/config.toml.",
   "properties": {
+    "action_optimization_instructions": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/ActionOptimizationInstructionsToml"
+        }
+      ],
+      "description": "Disabled-by-default action-route optimization instructions."
+    },
     "agents": {
       "allOf": [
         {

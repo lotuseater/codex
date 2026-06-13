@@ -855,6 +855,38 @@ impl Config {
         let include_apps_instructions = cfg.include_apps_instructions.unwrap_or(true);
         let include_collaboration_mode_instructions =
             cfg.include_collaboration_mode_instructions.unwrap_or(true);
+        let action_optimization_instructions =
+            if let Some(config_toml) = cfg.action_optimization_instructions.as_ref() {
+                ActionOptimizationInstructionsConfig {
+                    mode: match config_toml.mode.unwrap_or_default() {
+                        ActionOptimizationInstructionsModeToml::Off => {
+                            ActionOptimizationInstructionsMode::Off
+                        }
+                        ActionOptimizationInstructionsModeToml::Plan => {
+                            ActionOptimizationInstructionsMode::Plan
+                        }
+                        ActionOptimizationInstructionsModeToml::FirstTurn => {
+                            ActionOptimizationInstructionsMode::FirstTurn
+                        }
+                        ActionOptimizationInstructionsModeToml::ToolTurn => {
+                            ActionOptimizationInstructionsMode::ToolTurn
+                        }
+                        ActionOptimizationInstructionsModeToml::Always => {
+                            ActionOptimizationInstructionsMode::Always
+                        }
+                    },
+                    variant: match config_toml.variant.unwrap_or_default() {
+                        ActionOptimizationInstructionsVariantToml::ActionRouteSelection => {
+                            ActionOptimizationInstructionsVariant::ActionRouteSelection
+                        }
+                    },
+                    max_tokens: config_toml
+                        .max_tokens
+                        .unwrap_or(ActionOptimizationInstructionsConfig::default().max_tokens),
+                }
+            } else {
+                ActionOptimizationInstructionsConfig::default()
+            };
         let include_skill_instructions = cfg
             .skills
             .as_ref()
@@ -1058,6 +1090,7 @@ impl Config {
             include_permissions_instructions,
             include_apps_instructions,
             include_collaboration_mode_instructions,
+            action_optimization_instructions,
             include_skill_instructions,
             include_environment_context,
             // The config.toml omits "_mode" because it's a config file. However, "_mode"

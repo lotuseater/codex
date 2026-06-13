@@ -91,6 +91,9 @@ pub struct Config {
     /// Whether to inject the `<collaboration_mode>` developer block.
     pub include_collaboration_mode_instructions: bool,
 
+    /// Disabled-by-default action-route optimization instructions.
+    pub action_optimization_instructions: ActionOptimizationInstructionsConfig,
+
     /// Whether to inject the `<skills_instructions>` developer block.
     pub include_skill_instructions: bool,
 
@@ -480,6 +483,37 @@ pub struct Config {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct CodeModeConfig {
     pub excluded_tool_namespaces: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ActionOptimizationInstructionsConfig {
+    pub mode: ActionOptimizationInstructionsMode,
+    pub variant: ActionOptimizationInstructionsVariant,
+    pub max_tokens: usize,
+}
+
+impl Default for ActionOptimizationInstructionsConfig {
+    fn default() -> Self {
+        Self {
+            mode: ActionOptimizationInstructionsMode::Off,
+            variant: ActionOptimizationInstructionsVariant::ActionRouteSelection,
+            max_tokens: 120,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActionOptimizationInstructionsMode {
+    Off,
+    Plan,
+    FirstTurn,
+    ToolTurn,
+    Always,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActionOptimizationInstructionsVariant {
+    ActionRouteSelection,
 }
 
 impl AuthManagerConfig for Config {

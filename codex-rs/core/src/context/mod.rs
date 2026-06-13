@@ -1,6 +1,7 @@
 //! Context fragments injected into model input.
 
 mod approved_command_prefix_saved;
+mod action_optimization_instructions;
 mod apps_instructions;
 mod available_plugins_instructions;
 mod available_skills_instructions;
@@ -30,6 +31,7 @@ mod user_instructions;
 mod user_shell_command;
 
 pub(crate) use approved_command_prefix_saved::ApprovedCommandPrefixSaved;
+pub(crate) use action_optimization_instructions::ActionOptimizationInstructions;
 pub(crate) use apps_instructions::AppsInstructions;
 pub(crate) use available_plugins_instructions::AvailablePluginsInstructions;
 pub(crate) use available_skills_instructions::AvailableSkillsInstructions;

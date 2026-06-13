@@ -76,6 +76,27 @@ impl Session {
         {
             developer_sections.push(collab_instructions.render());
         }
+        let is_first_turn = reference_context_item.is_none();
+        let render_action_optimization_instructions =
+            match turn_context.config.action_optimization_instructions.mode {
+                crate::config::ActionOptimizationInstructionsMode::Off => false,
+                crate::config::ActionOptimizationInstructionsMode::Plan => {
+                    turn_context.collaboration_mode.mode
+                        == codex_protocol::config_types::ModeKind::Plan
+                }
+                crate::config::ActionOptimizationInstructionsMode::FirstTurn => is_first_turn,
+                // Reserved for a future tool-turn update hook; initial context
+                // rendering intentionally stays off for this mode.
+                crate::config::ActionOptimizationInstructionsMode::ToolTurn => false,
+                crate::config::ActionOptimizationInstructionsMode::Always => true,
+            };
+        if render_action_optimization_instructions
+            && let Some(instructions) = crate::context::ActionOptimizationInstructions::from_config(
+                &turn_context.config.action_optimization_instructions,
+            )
+        {
+            developer_sections.push(instructions.render());
+        }
         if turn_context.tools_config.workflow_batch_enabled
             && turn_context.tools_config.environment_mode.has_environment()
         {

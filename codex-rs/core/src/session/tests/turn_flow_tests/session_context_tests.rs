@@ -1,5 +1,21 @@
 use super::*;
 
+const ACTION_OPTIMIZATION_OPEN_TAG: &str = "<action_optimization_instructions>";
+
+fn enable_action_optimization(
+    turn_context: &mut TurnContext,
+    mode: crate::config::ActionOptimizationInstructionsMode,
+    max_tokens: usize,
+) {
+    let mut config = turn_context.config.as_ref().clone();
+    config.action_optimization_instructions = crate::config::ActionOptimizationInstructionsConfig {
+        mode,
+        variant: crate::config::ActionOptimizationInstructionsVariant::ActionRouteSelection,
+        max_tokens,
+    };
+    turn_context.config = std::sync::Arc::new(config);
+}
+
 #[tokio::test]
 async fn build_initial_context_uses_turn_collaboration_mode() {
     let (session, mut turn_context) = make_session_and_context().await;
@@ -28,6 +44,135 @@ async fn build_initial_context_uses_turn_collaboration_mode() {
 
     assert!(developer_text.contains("PLAN TURN INSTRUCTIONS"));
     assert!(!developer_text.contains("DEFAULT SESSION INSTRUCTIONS"));
+}
+
+#[tokio::test]
+async fn build_initial_context_omits_action_optimization_by_default() {
+    let (session, turn_context) = make_session_and_context().await;
+
+    let context = session.build_initial_context(&turn_context).await;
+    let developer_text = developer_input_texts(&context).join("\n");
+
+    assert!(!developer_text.contains(ACTION_OPTIMIZATION_OPEN_TAG));
+    assert!(!developer_text.contains("Select the lightest action route"));
+}
+
+#[tokio::test]
+async fn build_initial_context_includes_action_optimization_always_before_batch() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    enable_action_optimization(
+        &mut turn_context,
+        crate::config::ActionOptimizationInstructionsMode::Always,
+        120,
+    );
+    turn_context.collaboration_mode = CollaborationMode {
+        mode: ModeKind::Default,
+        settings: Settings {
+            model: turn_context.model_info.slug.clone(),
+            reasoning_effort: None,
+            developer_instructions: Some("COLLABORATION MODE INSTRUCTIONS".to_string()),
+        },
+    };
+    turn_context.tools_config.workflow_batch_enabled = true;
+    turn_context.tools_config.environment_mode = ToolEnvironmentMode::Single;
+
+    let context = session.build_initial_context(&turn_context).await;
+    let developer_text = developer_input_texts(&context).join("\n");
+
+    let collaboration_index = developer_text
+        .find("COLLABORATION MODE INSTRUCTIONS")
+        .expect("collaboration instructions should render");
+    let action_index = developer_text
+        .find(ACTION_OPTIMIZATION_OPEN_TAG)
+        .expect("action optimization instructions should render");
+    let batch_index = developer_text
+        .find("<batch_mini_programming_instructions>")
+        .expect("batch mini-programming instructions should render");
+    assert!(collaboration_index < action_index);
+    assert!(action_index < batch_index);
+    assert!(developer_text.contains("Select the lightest action route"));
+    assert!(developer_text.contains("workflow_batch for repetitive deterministic"));
+    assert!(!developer_text.contains("exactly one of `spec` or `spec_path`"));
+}
+
+#[tokio::test]
+async fn build_initial_context_respects_action_optimization_plan_mode() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    enable_action_optimization(
+        &mut turn_context,
+        crate::config::ActionOptimizationInstructionsMode::Plan,
+        120,
+    );
+
+    let default_context = session.build_initial_context(&turn_context).await;
+    let default_developer_text = developer_input_texts(&default_context).join("\n");
+    assert!(!default_developer_text.contains(ACTION_OPTIMIZATION_OPEN_TAG));
+
+    turn_context.collaboration_mode = CollaborationMode {
+        mode: ModeKind::Plan,
+        settings: Settings {
+            model: turn_context.model_info.slug.clone(),
+            reasoning_effort: None,
+            developer_instructions: None,
+        },
+    };
+    let plan_context = session.build_initial_context(&turn_context).await;
+    let plan_developer_text = developer_input_texts(&plan_context).join("\n");
+    assert!(plan_developer_text.contains(ACTION_OPTIMIZATION_OPEN_TAG));
+}
+
+#[tokio::test]
+async fn build_initial_context_respects_action_optimization_first_turn_mode() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    enable_action_optimization(
+        &mut turn_context,
+        crate::config::ActionOptimizationInstructionsMode::FirstTurn,
+        120,
+    );
+
+    let initial_context = session.build_initial_context(&turn_context).await;
+    let initial_developer_text = developer_input_texts(&initial_context).join("\n");
+    assert!(initial_developer_text.contains(ACTION_OPTIMIZATION_OPEN_TAG));
+
+    let previous_context_item = turn_context.to_turn_context_item();
+    {
+        let mut state = session.state.lock().await;
+        state.set_reference_context_item(Some(previous_context_item));
+    }
+    let resumed_context = session.build_initial_context(&turn_context).await;
+    let resumed_developer_text = developer_input_texts(&resumed_context).join("\n");
+    assert!(!resumed_developer_text.contains(ACTION_OPTIMIZATION_OPEN_TAG));
+}
+
+#[tokio::test]
+async fn build_initial_context_respects_action_optimization_max_tokens() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    enable_action_optimization(
+        &mut turn_context,
+        crate::config::ActionOptimizationInstructionsMode::Always,
+        8,
+    );
+
+    let context = session.build_initial_context(&turn_context).await;
+    let developer_text = developer_input_texts(&context).join("\n");
+
+    assert!(developer_text.contains("Select the lightest action route that still verifies"));
+    assert!(!developer_text.contains("work. Answer directly"));
+}
+
+#[tokio::test]
+async fn build_initial_context_omits_reserved_action_optimization_tool_turn_mode() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    enable_action_optimization(
+        &mut turn_context,
+        crate::config::ActionOptimizationInstructionsMode::ToolTurn,
+        120,
+    );
+
+    let context = session.build_initial_context(&turn_context).await;
+    let developer_text = developer_input_texts(&context).join("\n");
+
+    assert!(!developer_text.contains(ACTION_OPTIMIZATION_OPEN_TAG));
 }
 
 #[tokio::test]

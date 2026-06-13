@@ -223,6 +223,9 @@ pub struct ConfigToml {
     /// Whether to inject the `<collaboration_mode>` developer block.
     pub include_collaboration_mode_instructions: Option<bool>,
 
+    /// Disabled-by-default action-route optimization instructions.
+    pub action_optimization_instructions: Option<ActionOptimizationInstructionsToml>,
+
     /// Whether to inject the `<environment_context>` user block.
     pub include_environment_context: Option<bool>,
 
@@ -572,6 +575,37 @@ pub enum ThreadStoreToml {
 pub struct AutoReviewToml {
     /// Additional policy instructions inserted into the guardian prompt.
     pub policy: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct ActionOptimizationInstructionsToml {
+    /// Run mode: off, plan, first_turn, tool_turn, or always. Defaults to off.
+    pub mode: Option<ActionOptimizationInstructionsModeToml>,
+
+    /// Prompt variant. Defaults to action_route_selection.
+    pub variant: Option<ActionOptimizationInstructionsVariantToml>,
+
+    /// Maximum approximate tokens rendered in the prompt body. Defaults to 120.
+    pub max_tokens: Option<usize>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ActionOptimizationInstructionsModeToml {
+    #[default]
+    Off,
+    Plan,
+    FirstTurn,
+    ToolTurn,
+    Always,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ActionOptimizationInstructionsVariantToml {
+    #[default]
+    ActionRouteSelection,
 }
 
 impl From<ConfigToml> for UserSavedConfig {
