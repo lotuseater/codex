@@ -25,6 +25,8 @@ use crate::tools::handlers::shell_spec::create_write_stdin_tool;
 use crate::tools::handlers::shell_spec::request_permissions_tool_description;
 use crate::tools::handlers::view_image_spec::ViewImageToolOptions;
 use crate::tools::handlers::view_image_spec::create_view_image_tool;
+use crate::tools::namespace_alias_policy::HostedNamespaceAliasPolicy;
+use crate::tools::namespace_alias_policy::NamespaceAliasAllocator;
 use crate::tools::registry::ToolRegistry;
 use codex_app_catalog_types::AppInfo;
 #[cfg(windows)]
@@ -72,6 +74,7 @@ use codex_tool_schema::JsonSchemaType;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -1600,6 +1603,58 @@ fn namespaced_dynamic_specs_are_hidden_when_namespace_tools_are_disabled() {
 
     assert_lacks_tool_name(&tools, "codex_app");
     assert_contains_tool_names(&tools, &["plain_dynamic"]);
+}
+
+#[test]
+fn namespace_alias_allocator_sanitizes_and_avoids_collisions() {
+    let mut allocator = NamespaceAliasAllocator::new(BTreeSet::from([
+        "codex_ext_web_tools".to_string(),
+        "codex_ext_namespace".to_string(),
+    ]));
+
+    assert_eq!(allocator.allocate("Web Tools!!"), "codex_ext_web_tools_2");
+    assert_eq!(allocator.allocate("---"), "codex_ext_namespace_2");
+    assert_eq!(allocator.allocate("already_OK"), "codex_ext_already_ok");
+}
+
+#[test]
+fn hosted_namespace_alias_policy_aliases_only_hosted_reserved_namespaces() {
+    let hosted_specs = vec![ToolSpec::WebSearch {
+        external_web_access: Some(false),
+        filters: None,
+        user_location: None,
+        search_context_size: None,
+        search_content_types: None,
+    }];
+    let mut policy = HostedNamespaceAliasPolicy::for_hosted_specs(
+        &hosted_specs,
+        BTreeSet::from(["codex_ext_web".to_string()]),
+    );
+
+    assert!(policy.has_reserved_namespaces());
+    assert_eq!(policy.alias_for_source_namespace("codex_app"), None);
+    assert_eq!(
+        policy.alias_for_source_namespace("web"),
+        Some("codex_ext_web_2".to_string())
+    );
+    assert_eq!(
+        policy.alias_for_source_namespace("web"),
+        Some("codex_ext_web_2".to_string())
+    );
+}
+
+#[test]
+fn hosted_namespace_alias_policy_is_inactive_without_hosted_web_search() {
+    let hosted_specs = vec![ToolSpec::ImageGeneration {
+        output_format: "png".to_string(),
+    }];
+    let mut policy = HostedNamespaceAliasPolicy::for_hosted_specs(
+        &hosted_specs,
+        BTreeSet::from(["codex_ext_web".to_string()]),
+    );
+
+    assert!(!policy.has_reserved_namespaces());
+    assert_eq!(policy.alias_for_source_namespace("web"), None);
 }
 
 #[test]
