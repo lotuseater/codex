@@ -16,6 +16,25 @@ $ErrorActionPreference = "Stop"
 $launchModule = Join-Path $PSScriptRoot "CodexWorkerLaunch.psm1"
 Import-Module $launchModule -Force -DisableNameChecking
 
+function Assert-Equal {
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowNull()]
+        [object]$Actual,
+
+        [Parameter(Mandatory = $true)]
+        [AllowNull()]
+        [object]$Expected,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Message
+    )
+
+    if ($Actual -ne $Expected) {
+        throw "$Message Expected=[$Expected] Actual=[$Actual]"
+    }
+}
+
 function Assert-FileContains {
     param(
         [Parameter(Mandatory = $true)]
@@ -70,14 +89,26 @@ $execArgs = New-CodexWorkerExecArgs `
     -Prompt $prompt `
     -WorkerModel $WorkerModel `
     -WorkerReasoningEffort $WorkerReasoningEffort
-Assert-CodexWorkerArgs -Args $execArgs -Mode Exec -Repo $resolvedRepo -Prompt $prompt
+Assert-CodexWorkerArgs `
+    -Args $execArgs `
+    -Mode Exec `
+    -Repo $resolvedRepo `
+    -Prompt $prompt `
+    -ExpectedWorkerModel $WorkerModel `
+    -ExpectedWorkerReasoningEffort $WorkerReasoningEffort
 
 $interactiveArgs = New-CodexWorkerInteractiveArgs `
     -Repo $resolvedRepo `
     -Prompt $prompt `
     -WorkerModel $WorkerModel `
     -WorkerReasoningEffort $WorkerReasoningEffort
-Assert-CodexWorkerArgs -Args $interactiveArgs -Mode Interactive -Repo $resolvedRepo -Prompt $prompt
+Assert-CodexWorkerArgs `
+    -Args $interactiveArgs `
+    -Mode Interactive `
+    -Repo $resolvedRepo `
+    -Prompt $prompt `
+    -ExpectedWorkerModel $WorkerModel `
+    -ExpectedWorkerReasoningEffort $WorkerReasoningEffort
 
 $resumeArgs = New-CodexWorkerResumeArgs `
     -Repo $resolvedRepo `
@@ -88,7 +119,13 @@ $resumeArgs = New-CodexWorkerResumeArgs `
     -Loop `
     -LoopMessage "go on" `
     -LoopPeriod 300
-Assert-CodexWorkerArgs -Args $resumeArgs -Mode Resume -Repo $resolvedRepo -Prompt $prompt
+Assert-CodexWorkerArgs `
+    -Args $resumeArgs `
+    -Mode Resume `
+    -Repo $resolvedRepo `
+    -Prompt $prompt `
+    -ExpectedWorkerModel $WorkerModel `
+    -ExpectedWorkerReasoningEffort $WorkerReasoningEffort
 
 $nonDefaultArgs = New-CodexWorkerExecArgs `
     -Repo $resolvedRepo `
@@ -102,15 +139,17 @@ Assert-CodexWorkerArgs `
     -Mode Exec `
     -Repo $resolvedRepo `
     -Prompt $prompt `
+    -ExpectedWorkerModel $WorkerModel `
+    -ExpectedWorkerReasoningEffort $WorkerReasoningEffort `
     -ExpectedApprovalPolicy "on-request" `
     -ExpectedSandboxMode "workspace-write"
 
 Assert-FileContains `
     -Path (Join-Path $PSScriptRoot "start-codex-workers.ps1") `
-    -Needles @("CodexWorkerLaunch.psm1", "New-CodexWorkerExecArgs", "New-CodexWorkerResumeArgs")
+    -Needles @("CodexWorkerLaunch.psm1", "New-CodexWorkerExecArgs", "New-CodexWorkerResumeArgs", "Marker")
 Assert-FileContains `
     -Path (Join-Path $PSScriptRoot "start-codex-interactive.ps1") `
-    -Needles @("CodexWorkerLaunch.psm1", "New-CodexWorkerInteractiveArgs", "New-CodexWorkerResumeArgs")
+    -Needles @("CodexWorkerLaunch.psm1", "New-CodexWorkerInteractiveArgs", "New-CodexWorkerResumeArgs", "MarkerPath")
 Assert-FileContains `
     -Path (Join-Path $PSScriptRoot "..\scripts\Invoke-CodexWorker.ps1") `
     -Needles @("CodexWorkerLaunch.psm1", "New-CodexWorkerExecArgs", "New-CodexWorkerInteractiveArgs")
@@ -119,35 +158,68 @@ Assert-FileContains `
     -Needles @("-CodexCommand", "-WorkerModel", "-WorkerReasoningEffort")
 
 $workerProbeName = "_worker_launch_canary"
+$workerProbePrompt = Join-Path $PSScriptRoot "$workerProbeName.prompt.md"
 $workerProbeLauncher = Join-Path $PSScriptRoot "$workerProbeName.exec.launch.ps1"
+$workerProbeLog = Join-Path $PSScriptRoot "$workerProbeName.exec.visible.log"
+$workerProbeMarker = Join-Path $PSScriptRoot "$workerProbeName.exec.marker.txt"
+$workerProbeText = "spawn worker launch canary prompt from file"
 try {
-    & (Join-Path $PSScriptRoot "start-codex-workers.ps1") `
+    Set-Content -LiteralPath $workerProbePrompt -Value $workerProbeText -NoNewline -Encoding UTF8
+    $workerDryRun = @( & (Join-Path $PSScriptRoot "start-codex-workers.ps1") `
         -Repo $resolvedRepo `
         -WorkerNames $workerProbeName `
-        -Prompt $prompt `
-        -DryRun | Out-Null
+        -DryRun )
+    Assert-Equal -Actual $workerDryRun.Count -Expected 1 -Message "Worker dry-run must return exactly one canary row."
+    Assert-Equal -Actual $workerDryRun[0].Prompt -Expected $workerProbePrompt -Message "Worker dry-run must report the prompt file path."
+    Assert-Equal -Actual $workerDryRun[0].Launcher -Expected $workerProbeLauncher -Message "Worker dry-run launcher path must be deterministic."
+    Assert-Equal -Actual $workerDryRun[0].Log -Expected $workerProbeLog -Message "Worker dry-run log path must be deterministic."
+    Assert-Equal -Actual $workerDryRun[0].Marker -Expected $workerProbeMarker -Message "Worker dry-run marker path must be deterministic."
+    Assert-CodexWorkerArgs `
+        -Args ([string[]]$workerDryRun[0].CodexArgs) `
+        -Mode Exec `
+        -Repo $resolvedRepo `
+        -Prompt $workerProbeText `
+        -ExpectedWorkerModel $WorkerModel `
+        -ExpectedWorkerReasoningEffort $WorkerReasoningEffort
     Assert-LauncherContainsWorkerArgs `
         -Path $workerProbeLauncher `
         -Repo $resolvedRepo `
-        -Prompt $prompt
+        -Prompt $workerProbeText
 } finally {
-    Remove-Item -LiteralPath $workerProbeLauncher -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $workerProbePrompt, $workerProbeLauncher -Force -ErrorAction SilentlyContinue
 }
 
 $interactiveProbeName = "_interactive_launch_canary"
+$interactiveProbePrompt = Join-Path $PSScriptRoot "$interactiveProbeName.prompt.md"
 $interactiveProbeLauncher = Join-Path $PSScriptRoot "handoffs\$interactiveProbeName.launch.ps1"
+$interactiveProbeHandoff = Join-Path $PSScriptRoot "handoffs\$interactiveProbeName.handoff.md"
+$interactiveProbeMarker = Join-Path $PSScriptRoot "handoffs\$interactiveProbeName.marker.txt"
+$interactiveProbeText = "interactive worker launch canary prompt from file"
 try {
-    & (Join-Path $PSScriptRoot "start-codex-interactive.ps1") `
+    Set-Content -LiteralPath $interactiveProbePrompt -Value $interactiveProbeText -NoNewline -Encoding UTF8
+    $interactiveDryRunJson = & (Join-Path $PSScriptRoot "start-codex-interactive.ps1") `
         -Repo $resolvedRepo `
         -Name $interactiveProbeName `
-        -Prompt $prompt `
-        -DryRun | Out-Null
+        -PromptPath $interactiveProbePrompt `
+        -DryRun
+    $interactiveDryRun = ($interactiveDryRunJson | Out-String) | ConvertFrom-Json
+    Assert-Equal -Actual $interactiveDryRun.PromptPath -Expected $interactiveProbePrompt -Message "Interactive dry-run must report the prompt file path."
+    Assert-Equal -Actual $interactiveDryRun.HandoffPath -Expected $interactiveProbeHandoff -Message "Interactive handoff path must be deterministic."
+    Assert-Equal -Actual $interactiveDryRun.LauncherPath -Expected $interactiveProbeLauncher -Message "Interactive launcher path must be deterministic."
+    Assert-Equal -Actual $interactiveDryRun.MarkerPath -Expected $interactiveProbeMarker -Message "Interactive marker path must be deterministic."
+    Assert-CodexWorkerArgs `
+        -Args ([string[]]$interactiveDryRun.CodexArgs) `
+        -Mode Interactive `
+        -Repo $resolvedRepo `
+        -Prompt $interactiveProbeText `
+        -ExpectedWorkerModel $WorkerModel `
+        -ExpectedWorkerReasoningEffort $WorkerReasoningEffort
     Assert-LauncherContainsWorkerArgs `
         -Path $interactiveProbeLauncher `
         -Repo $resolvedRepo `
-        -Prompt $prompt
+        -Prompt $interactiveProbeText
 } finally {
-    Remove-Item -LiteralPath $interactiveProbeLauncher -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $interactiveProbePrompt, $interactiveProbeLauncher -Force -ErrorAction SilentlyContinue
 }
 
 [pscustomobject]@{

@@ -101,7 +101,7 @@ $launched = for ($i = 0; $i -lt $WorkerNames.Count; $i++) {
     $markerPath = Join-Path $agentsDir "$safeName.exec.marker.txt"
     $launcherPath = Join-Path $agentsDir "$safeName.exec.launch.ps1"
 
-    if (Test-Path -LiteralPath $logPath) {
+    if (-not $DryRun -and (Test-Path -LiteralPath $logPath)) {
         Remove-Item -LiteralPath $logPath -Force
     }
 
@@ -169,6 +169,7 @@ if (`$redirectToLog) {
             WorkerModel = $WorkerModel
             WorkerReasoningEffort = $WorkerReasoningEffort
             Launcher = $launcherPath
+            Marker = $markerPath
             CodexArgs = $codexArgs
             DryRun = $true
         }
@@ -197,7 +198,13 @@ if (`$redirectToLog) {
         Mode = $mode
         WorkerModel = $WorkerModel
         WorkerReasoningEffort = $WorkerReasoningEffort
+        Launcher = $launcherPath
+        Marker = $markerPath
     }
 }
 
-$launched | Format-Table -AutoSize
+if ($DryRun) {
+    $launched
+} else {
+    $launched | Format-Table -AutoSize
+}

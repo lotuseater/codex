@@ -138,6 +138,7 @@ if ($DryRun) {
         WindowTitle = "Codex worker: $Name"
         Launcher = "powershell.exe"
         LauncherPath = $launcherPath
+        MarkerPath = $markerPath
         CodexArgs = $codexArgs
         Arguments = $args -join " "
     } | ConvertTo-Json -Depth 4
@@ -172,4 +173,5 @@ $process = Start-Process @startArgs
     Mode = $mode
     WindowTitle = "Codex worker: $Name"
     LauncherPath = $launcherPath
+    MarkerPath = $markerPath
 } | ConvertTo-Json -Depth 4

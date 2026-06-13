@@ -239,15 +239,27 @@ function Assert-CodexWorkerArgs {
         [Parameter(Mandatory = $true)]
         [string]$Prompt,
 
+        [string]$ExpectedWorkerModel = "gpt-5.5",
+
+        [string]$ExpectedWorkerReasoningEffort = "xhigh",
+
         [string]$ExpectedApprovalPolicy = "never",
 
         [string]$ExpectedSandboxMode = "danger-full-access"
     )
 
+    $modelConfigIndex = [Array]::IndexOf($Args, "model=$ExpectedWorkerModel")
+    $reasoningConfigIndex = [Array]::IndexOf($Args, "model_reasoning_effort=$ExpectedWorkerReasoningEffort")
     $cdIndex = [Array]::IndexOf($Args, "--cd")
     $approvalIndex = [Array]::IndexOf($Args, "--ask-for-approval")
     $sandboxIndex = [Array]::IndexOf($Args, "--sandbox")
 
+    if ($modelConfigIndex -lt 1 -or $Args[$modelConfigIndex - 1] -ne "-c") {
+        throw "Worker args must include root config flag -c model=$ExpectedWorkerModel."
+    }
+    if ($reasoningConfigIndex -lt 1 -or $Args[$reasoningConfigIndex - 1] -ne "-c") {
+        throw "Worker args must include root config flag -c model_reasoning_effort=$ExpectedWorkerReasoningEffort."
+    }
     if ($cdIndex -lt 0 -or $Args[$cdIndex + 1] -ne $Repo) {
         throw "Worker args must include --cd followed by the target repo."
     }
@@ -267,7 +279,7 @@ function Assert-CodexWorkerArgs {
         if ($modeIndex -lt 0) {
             throw "Worker args must include the $modeToken subcommand."
         }
-        foreach ($flagIndex in @($cdIndex, $approvalIndex, $sandboxIndex)) {
+        foreach ($flagIndex in @(($modelConfigIndex - 1), ($reasoningConfigIndex - 1), $cdIndex, $approvalIndex, $sandboxIndex)) {
             if ($flagIndex -gt $modeIndex) {
                 throw "Worker runtime flags must be root CLI flags before the $modeToken subcommand."
             }

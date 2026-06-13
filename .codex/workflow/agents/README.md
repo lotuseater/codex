@@ -37,7 +37,9 @@ the repo canaries on the deployed fixed build.
   terminal workers unless the fixed build has just been deployed and a live
   spawned-terminal probe proves shell/file tools are present.
 
-Cheap static canary:
+Cheap static canary. This does not spawn a terminal; it verifies generated
+root flags, prompt-file handling, approval/sandbox arguments, and deterministic
+launcher/log/marker paths from dry-run data:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .codex\workflow\agents\Test-CodexWorkerLaunch.ps1 -Repo C:\Users\Oleh\Documents\GitHub\open_ai\codex
