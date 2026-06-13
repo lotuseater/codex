@@ -9,10 +9,20 @@ param(
     [ValidateSet("Interactive", "Exec", "Version")]
     [string]$Mode = "Interactive",
 
-    [string]$MarkerFile
+    [string]$MarkerFile,
+
+    [string]$CodexCommand = "codex",
+
+    [string]$WorkerModel = "gpt-5.5",
+
+    [string]$WorkerReasoningEffort = "xhigh"
 )
 
 $ErrorActionPreference = "Stop"
+
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+$launchModule = Join-Path $scriptDir "..\agents\CodexWorkerLaunch.psm1"
+Import-Module $launchModule -Force -DisableNameChecking
 
 function Write-Marker {
     param([string]$Message)
@@ -32,24 +42,34 @@ $repoPath = (Resolve-Path -LiteralPath $Repo).Path
 $promptPath = (Resolve-Path -LiteralPath $PromptFile).Path
 
 Set-Location -LiteralPath $repoPath
-$codexCommand = Get-Command codex -ErrorAction Stop
+$commandHealth = Get-CodexWorkerCommandHealth -CodexCommand $CodexCommand
 
-Write-Marker "starting mode=$Mode repo=$repoPath prompt=$promptPath codex=$($codexCommand.Source)"
+Write-Marker "starting mode=$Mode repo=$repoPath prompt=$promptPath codex=$($commandHealth.Source) wrapper_real_exe=$($commandHealth.WrapperRealExe)"
 
 try {
     switch ($Mode) {
         "Version" {
-            & codex --version
+            & $CodexCommand --version
             $exitCode = $LASTEXITCODE
         }
         "Exec" {
             $prompt = Get-Content -Raw -LiteralPath $promptPath
-            & codex exec $prompt
+            $codexArgs = New-CodexWorkerExecArgs `
+                -Repo $repoPath `
+                -Prompt $prompt `
+                -WorkerModel $WorkerModel `
+                -WorkerReasoningEffort $WorkerReasoningEffort
+            & $CodexCommand @codexArgs
             $exitCode = $LASTEXITCODE
         }
         "Interactive" {
             $prompt = Get-Content -Raw -LiteralPath $promptPath
-            & codex $prompt
+            $codexArgs = New-CodexWorkerInteractiveArgs `
+                -Repo $repoPath `
+                -Prompt $prompt `
+                -WorkerModel $WorkerModel `
+                -WorkerReasoningEffort $WorkerReasoningEffort
+            & $CodexCommand @codexArgs
             $exitCode = $LASTEXITCODE
         }
     }

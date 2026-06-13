@@ -12,6 +12,12 @@ param(
 
     [string]$MarkerFile,
 
+    [string]$CodexCommand = "codex",
+
+    [string]$WorkerModel = "gpt-5.5",
+
+    [string]$WorkerReasoningEffort = "xhigh",
+
     [switch]$CurrentWindow
 )
 
@@ -38,7 +44,10 @@ $runnerArgs = @(
     "-File", $runner,
     "-Repo", $Repo,
     "-PromptFile", $PromptFile,
-    "-Mode", $Mode
+    "-Mode", $Mode,
+    "-CodexCommand", $CodexCommand,
+    "-WorkerModel", $WorkerModel,
+    "-WorkerReasoningEffort", $WorkerReasoningEffort
 )
 
 if ($MarkerFile) {

@@ -3,9 +3,9 @@ param(
 
     [string]$CodexCommand = "codex",
 
-    [string]$WorkerModel = "gpt-5.3-codex",
+    [string]$WorkerModel = "gpt-5.5",
 
-    [string]$WorkerReasoningEffort = "high",
+    [string]$WorkerReasoningEffort = "xhigh",
 
     [string]$Pattern = "solid_refactor_wave3_*.prompt.md",
 
@@ -34,28 +34,8 @@ param(
 $ErrorActionPreference = "Stop"
 
 $agentsDir = $PSScriptRoot
-
-function ConvertTo-PowerShellSingleQuotedLiteral {
-    param([string]$Value)
-
-    "'" + $Value.Replace("'", "''") + "'"
-}
-
-function ConvertTo-PowerShellArrayLiteral {
-    param([string[]]$Values)
-
-    "@(" + (($Values | ForEach-Object { ConvertTo-PowerShellSingleQuotedLiteral $_ }) -join ", ") + ")"
-}
-
-function Convert-ToSafeFileName {
-    param([string]$Value)
-
-    $invalid = [System.IO.Path]::GetInvalidFileNameChars()
-    $chars = $Value.ToCharArray() | ForEach-Object {
-        if ($invalid -contains $_) { "_" } else { $_ }
-    }
-    -join $chars
-}
+$launchModule = Join-Path $agentsDir "CodexWorkerLaunch.psm1"
+Import-Module $launchModule -Force -DisableNameChecking
 
 if ($Loop -and (-not $Resume -or $Resume.Count -eq 0)) {
     throw "-Loop is only supported with -Resume."
@@ -99,7 +79,11 @@ $launched = for ($i = 0; $i -lt $WorkerNames.Count; $i++) {
     $resumeSession = if ($Resume -and $Resume.Count -gt 0) { $Resume[$i] } else { $null }
     $promptPath = Join-Path $agentsDir "$name.prompt.md"
 
-    if ([string]::IsNullOrWhiteSpace($resumeSession) -and -not (Test-Path -LiteralPath $promptPath)) {
+    if (
+        [string]::IsNullOrWhiteSpace($resumeSession) -and
+        [string]::IsNullOrWhiteSpace($Prompt) -and
+        -not (Test-Path -LiteralPath $promptPath)
+    ) {
         throw "Prompt file not found: $promptPath"
     }
 
@@ -112,7 +96,7 @@ $launched = for ($i = 0; $i -lt $WorkerNames.Count; $i++) {
         }
     }
 
-    $safeName = Convert-ToSafeFileName -Value $name
+    $safeName = ConvertTo-CodexSafeFileName -Value $name
     $logPath = Join-Path $agentsDir "$safeName.exec.visible.log"
     $markerPath = Join-Path $agentsDir "$safeName.exec.marker.txt"
     $launcherPath = Join-Path $agentsDir "$safeName.exec.launch.ps1"
@@ -122,49 +106,23 @@ $launched = for ($i = 0; $i -lt $WorkerNames.Count; $i++) {
     }
 
     if ([string]::IsNullOrWhiteSpace($resumeSession)) {
-        $codexArgs = @(
-            "-c",
-            "model=$WorkerModel",
-            "-c",
-            "model_reasoning_effort=$WorkerReasoningEffort",
-            "--cd",
-            $Repo,
-            "--ask-for-approval",
-            "never",
-            "--sandbox",
-            "danger-full-access",
-            "exec",
-            $promptText
-        )
+        $codexArgs = New-CodexWorkerExecArgs `
+            -Repo $Repo `
+            -Prompt $promptText `
+            -WorkerModel $WorkerModel `
+            -WorkerReasoningEffort $WorkerReasoningEffort
         $mode = "ExecFullPromptVisible"
         $redirectToLog = $true
     } else {
-        $codexArgs = @(
-            "-c",
-            "model=$WorkerModel",
-            "-c",
-            "model_reasoning_effort=$WorkerReasoningEffort",
-            "--cd",
-            $Repo,
-            "--ask-for-approval",
-            "never",
-            "--sandbox",
-            "danger-full-access"
-        )
-        $codexArgs += "resume"
-        if ($Loop) {
-            $codexArgs += "--loop"
-            if (-not [string]::IsNullOrWhiteSpace($LoopMessage)) {
-                $codexArgs += "--loop-message"
-                $codexArgs += $LoopMessage
-            }
-            if ($LoopPeriod -gt 0) {
-                $codexArgs += "--loop-period"
-                $codexArgs += [string]$LoopPeriod
-            }
-        }
-        $codexArgs += $resumeSession
-        $codexArgs += $promptText
+        $codexArgs = New-CodexWorkerResumeArgs `
+            -Repo $Repo `
+            -ResumeSession $resumeSession `
+            -Prompt $promptText `
+            -WorkerModel $WorkerModel `
+            -WorkerReasoningEffort $WorkerReasoningEffort `
+            -Loop:$Loop `
+            -LoopMessage $LoopMessage `
+            -LoopPeriod $LoopPeriod
         $mode = if ($Loop) { "ResumeLoop" } else { "Resume" }
         $redirectToLog = $false
     }
@@ -172,14 +130,14 @@ $launched = for ($i = 0; $i -lt $WorkerNames.Count; $i++) {
     $redirectLiteral = if ($redirectToLog) { '$true' } else { '$false' }
     $childCommand = @"
 `$ErrorActionPreference = "Stop"
-`$Host.UI.RawUI.WindowTitle = $(ConvertTo-PowerShellSingleQuotedLiteral "Codex worker: $name")
-Set-Location -LiteralPath $(ConvertTo-PowerShellSingleQuotedLiteral $Repo)
-`$codexArgs = $(ConvertTo-PowerShellArrayLiteral $codexArgs)
+`$Host.UI.RawUI.WindowTitle = $(ConvertTo-CodexPowerShellSingleQuotedLiteral "Codex worker: $name")
+Set-Location -LiteralPath $(ConvertTo-CodexPowerShellSingleQuotedLiteral $Repo)
+`$codexArgs = $(ConvertTo-CodexPowerShellArrayLiteral $codexArgs)
 `$redirectToLog = $redirectLiteral
 if (`$redirectToLog) {
-    & $(ConvertTo-PowerShellSingleQuotedLiteral $CodexCommand) @codexArgs *>&1 | Tee-Object -FilePath $(ConvertTo-PowerShellSingleQuotedLiteral $logPath)
+    & $(ConvertTo-CodexPowerShellSingleQuotedLiteral $CodexCommand) @codexArgs *>&1 | Tee-Object -FilePath $(ConvertTo-CodexPowerShellSingleQuotedLiteral $logPath)
 } else {
-    & $(ConvertTo-PowerShellSingleQuotedLiteral $CodexCommand) @codexArgs
+    & $(ConvertTo-CodexPowerShellSingleQuotedLiteral $CodexCommand) @codexArgs
 }
 "@
 
@@ -211,6 +169,7 @@ if (`$redirectToLog) {
             WorkerModel = $WorkerModel
             WorkerReasoningEffort = $WorkerReasoningEffort
             Launcher = $launcherPath
+            CodexArgs = $codexArgs
             DryRun = $true
         }
         continue

@@ -4,8 +4,8 @@ param(
     [string]$Prompt,
     [string]$Name = "codex-interactive-worker",
     [string]$CodexCommand = "codex",
-    [string]$WorkerModel = "gpt-5.3-codex",
-    [string]$WorkerReasoningEffort = "high",
+    [string]$WorkerModel = "gpt-5.5",
+    [string]$WorkerReasoningEffort = "xhigh",
     [string]$HandoffPath,
     [Alias("ResumeSession")]
     [string]$Resume,
@@ -17,6 +17,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+$launchModule = Join-Path $PSScriptRoot "CodexWorkerLaunch.psm1"
+Import-Module $launchModule -Force -DisableNameChecking
 
 function Resolve-RepoPath {
     param([string]$PathValue)
@@ -45,28 +48,6 @@ function Resolve-InputPath {
     return (Resolve-Path -LiteralPath (Join-Path $BasePath $PathValue)).Path
 }
 
-function Convert-ToSafeFileName {
-    param([string]$Value)
-
-    $invalid = [System.IO.Path]::GetInvalidFileNameChars()
-    $chars = $Value.ToCharArray() | ForEach-Object {
-        if ($invalid -contains $_) { "_" } else { $_ }
-    }
-    -join $chars
-}
-
-function ConvertTo-PowerShellSingleQuotedLiteral {
-    param([string]$Value)
-
-    "'" + $Value.Replace("'", "''") + "'"
-}
-
-function ConvertTo-PowerShellArrayLiteral {
-    param([string[]]$Values)
-
-    "@(" + (($Values | ForEach-Object { ConvertTo-PowerShellSingleQuotedLiteral $_ }) -join ", ") + ")"
-}
-
 $resolvedRepo = Resolve-RepoPath -PathValue $Repo
 $resolvedPrompt = Resolve-InputPath -BasePath $resolvedRepo -PathValue $PromptPath
 
@@ -86,7 +67,7 @@ $handoffDir = Join-Path $resolvedRepo ".codex\workflow\agents\handoffs"
 New-Item -ItemType Directory -Force -Path $handoffDir | Out-Null
 
 if ([string]::IsNullOrWhiteSpace($HandoffPath)) {
-    $safeName = Convert-ToSafeFileName -Value $Name
+    $safeName = ConvertTo-CodexSafeFileName -Value $Name
     $HandoffPath = Join-Path $handoffDir "$safeName.handoff.md"
 } elseif (-not [System.IO.Path]::IsPathRooted($HandoffPath)) {
     $HandoffPath = Join-Path $resolvedRepo $HandoffPath
@@ -97,50 +78,36 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedHandoffParent)) {
     New-Item -ItemType Directory -Force -Path $resolvedHandoffParent | Out-Null
 }
 
-$codexArgs = @(
-    "-c",
-    "model=$WorkerModel",
-    "-c",
-    "model_reasoning_effort=$WorkerReasoningEffort",
-    "--cd",
-    $resolvedRepo,
-        "--ask-for-approval",
-    "never",
-    "--sandbox",
-    "danger-full-access"
-)
-
 if ([string]::IsNullOrWhiteSpace($Resume)) {
-    $codexArgs += $Prompt
+    $codexArgs = New-CodexWorkerInteractiveArgs `
+        -Repo $resolvedRepo `
+        -Prompt $Prompt `
+        -WorkerModel $WorkerModel `
+        -WorkerReasoningEffort $WorkerReasoningEffort
     $mode = "NewInteractivePrompt"
 } else {
-    $codexArgs += "resume"
-    if ($Loop) {
-        $codexArgs += "--loop"
-        if (-not [string]::IsNullOrWhiteSpace($LoopMessage)) {
-            $codexArgs += "--loop-message"
-            $codexArgs += $LoopMessage
-        }
-        if ($LoopPeriod -gt 0) {
-            $codexArgs += "--loop-period"
-            $codexArgs += [string]$LoopPeriod
-        }
-    }
-    $codexArgs += $Resume
-    $codexArgs += $Prompt
+    $codexArgs = New-CodexWorkerResumeArgs `
+        -Repo $resolvedRepo `
+        -ResumeSession $Resume `
+        -Prompt $Prompt `
+        -WorkerModel $WorkerModel `
+        -WorkerReasoningEffort $WorkerReasoningEffort `
+        -Loop:$Loop `
+        -LoopMessage $LoopMessage `
+        -LoopPeriod $LoopPeriod
     $mode = if ($Loop) { "ResumeLoop" } else { "Resume" }
 }
 
-$safeNameForFile = Convert-ToSafeFileName -Value $Name
+$safeNameForFile = ConvertTo-CodexSafeFileName -Value $Name
 $launcherPath = Join-Path $handoffDir "$safeNameForFile.launch.ps1"
 $markerPath = Join-Path $handoffDir "$safeNameForFile.marker.txt"
 
 $childCommand = @"
 `$ErrorActionPreference = "Stop"
-`$Host.UI.RawUI.WindowTitle = $(ConvertTo-PowerShellSingleQuotedLiteral "Codex worker: $Name")
-Set-Location -LiteralPath $(ConvertTo-PowerShellSingleQuotedLiteral $resolvedRepo)
-`$codexArgs = $(ConvertTo-PowerShellArrayLiteral $codexArgs)
-& $(ConvertTo-PowerShellSingleQuotedLiteral $CodexCommand) @codexArgs
+`$Host.UI.RawUI.WindowTitle = $(ConvertTo-CodexPowerShellSingleQuotedLiteral "Codex worker: $Name")
+Set-Location -LiteralPath $(ConvertTo-CodexPowerShellSingleQuotedLiteral $resolvedRepo)
+`$codexArgs = $(ConvertTo-CodexPowerShellArrayLiteral $codexArgs)
+& $(ConvertTo-CodexPowerShellSingleQuotedLiteral $CodexCommand) @codexArgs
 "@
 
 $childCommand | Set-Content -LiteralPath $launcherPath -Encoding UTF8
@@ -171,6 +138,7 @@ if ($DryRun) {
         WindowTitle = "Codex worker: $Name"
         Launcher = "powershell.exe"
         LauncherPath = $launcherPath
+        CodexArgs = $codexArgs
         Arguments = $args -join " "
     } | ConvertTo-Json -Depth 4
     exit 0
