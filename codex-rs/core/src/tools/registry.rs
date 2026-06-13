@@ -32,7 +32,9 @@ use codex_protocol::protocol::EventMsg;
 use codex_tool_execution_api::FunctionCallError;
 use codex_tool_execution_api::ToolName;
 use codex_tool_execution_api::ToolOutputPayload;
+use codex_tool_registry_api::LoadableToolSpec;
 use codex_tool_registry_api::ToolSpec;
+use codex_tool_registry_api::default_namespace_description;
 use codex_tools::ToolSearchInfo;
 use futures::future::BoxFuture;
 use serde_json::Value;
@@ -379,6 +381,26 @@ pub(crate) fn override_tool_exposure(
     Arc::new(ExposureOverride { handler, exposure })
 }
 
+pub(crate) fn override_tool_model_namespace(
+    handler: Arc<dyn RegisteredTool>,
+    model_namespace: String,
+) -> Arc<dyn RegisteredTool> {
+    let source_tool_name = handler.tool_name();
+    let Some(source_namespace) = source_tool_name.namespace.clone() else {
+        return handler;
+    };
+    if source_namespace == model_namespace {
+        return handler;
+    }
+
+    Arc::new(ModelNamespaceOverride {
+        handler,
+        source_namespace,
+        model_namespace: model_namespace.clone(),
+        tool_name: ToolName::namespaced(model_namespace, source_tool_name.name),
+    })
+}
+
 struct ExposureOverride {
     handler: Arc<dyn RegisteredTool>,
     exposure: ToolExposure,
@@ -455,6 +477,147 @@ impl CoreToolRuntime for ExposureOverride {
     fn create_diff_consumer(&self) -> Option<Box<dyn ToolArgumentDiffConsumer>> {
         self.handler.create_diff_consumer()
     }
+}
+
+struct ModelNamespaceOverride {
+    handler: Arc<dyn RegisteredTool>,
+    source_namespace: String,
+    model_namespace: String,
+    tool_name: ToolName,
+}
+
+impl ModelNamespaceOverride {
+    fn source_invocation(&self, invocation: &ToolInvocation) -> ToolInvocation {
+        ToolInvocation {
+            tool_name: self.handler.tool_name(),
+            ..invocation.clone()
+        }
+    }
+
+    fn restore_model_invocation(&self, invocation: ToolInvocation) -> ToolInvocation {
+        ToolInvocation {
+            tool_name: self.tool_name.clone(),
+            ..invocation
+        }
+    }
+}
+
+impl ToolExecutor<ToolInvocation> for ModelNamespaceOverride {
+    type Output = Box<dyn ToolOutput>;
+
+    fn tool_name(&self) -> ToolName {
+        self.tool_name.clone()
+    }
+
+    fn spec(&self) -> Option<ToolSpec> {
+        self.handler.spec().map(|spec| {
+            alias_tool_spec_namespace(spec, &self.source_namespace, &self.model_namespace)
+        })
+    }
+
+    fn exposure(&self) -> ToolExposure {
+        self.handler.exposure()
+    }
+
+    fn supports_parallel_tool_calls(&self) -> bool {
+        self.handler.supports_parallel_tool_calls()
+    }
+
+    async fn handle(
+        &self,
+        invocation: ToolInvocation,
+    ) -> Result<Box<dyn ToolOutput>, FunctionCallError> {
+        self.handler
+            .handle(self.source_invocation(&invocation))
+            .await
+    }
+}
+
+impl CoreToolRuntime for ModelNamespaceOverride {
+    fn search_info(&self) -> Option<ToolSearchInfo> {
+        self.handler.search_info().map(|info| {
+            alias_tool_search_info_namespace(info, &self.source_namespace, &self.model_namespace)
+        })
+    }
+
+    fn matches_kind(&self, payload: &ToolPayload) -> bool {
+        self.handler.matches_kind(payload)
+    }
+
+    fn waits_for_runtime_cancellation(&self) -> bool {
+        self.handler.waits_for_runtime_cancellation()
+    }
+
+    fn pre_tool_use_payload(&self, invocation: &ToolInvocation) -> Option<PreToolUsePayload> {
+        self.handler
+            .pre_tool_use_payload(&self.source_invocation(invocation))
+    }
+
+    fn post_tool_use_payload(
+        &self,
+        invocation: &ToolInvocation,
+        result: &dyn ToolOutput,
+    ) -> Option<PostToolUsePayload> {
+        self.handler
+            .post_tool_use_payload(&self.source_invocation(invocation), result)
+    }
+
+    fn with_updated_hook_input(
+        &self,
+        invocation: ToolInvocation,
+        updated_input: Value,
+    ) -> Result<ToolInvocation, FunctionCallError> {
+        let updated = self
+            .handler
+            .with_updated_hook_input(self.source_invocation(&invocation), updated_input)?;
+        Ok(self.restore_model_invocation(updated))
+    }
+
+    fn telemetry_tags<'a>(
+        &'a self,
+        invocation: &'a ToolInvocation,
+    ) -> BoxFuture<'a, ToolTelemetryTags> {
+        let source_invocation = self.source_invocation(invocation);
+        Box::pin(async move { self.handler.telemetry_tags(&source_invocation).await })
+    }
+
+    fn create_diff_consumer(&self) -> Option<Box<dyn ToolArgumentDiffConsumer>> {
+        self.handler.create_diff_consumer()
+    }
+}
+
+fn alias_tool_spec_namespace(
+    spec: ToolSpec,
+    source_namespace: &str,
+    model_namespace: &str,
+) -> ToolSpec {
+    match spec {
+        ToolSpec::Namespace(mut namespace) if namespace.name == source_namespace => {
+            namespace.name = model_namespace.to_string();
+            if namespace.description == default_namespace_description(source_namespace) {
+                namespace.description = default_namespace_description(model_namespace);
+            }
+            ToolSpec::Namespace(namespace)
+        }
+        spec => spec,
+    }
+}
+
+fn alias_tool_search_info_namespace(
+    mut info: ToolSearchInfo,
+    source_namespace: &str,
+    model_namespace: &str,
+) -> ToolSearchInfo {
+    if let LoadableToolSpec::Namespace(namespace) = &mut info.entry.output
+        && namespace.name == source_namespace
+    {
+        namespace.name = model_namespace.to_string();
+        if namespace.description == default_namespace_description(source_namespace) {
+            namespace.description = default_namespace_description(model_namespace);
+        }
+        info.entry.search_text = format!("{} {}", info.entry.search_text, model_namespace);
+    }
+    info
 }
 
 #[derive(Default)]

@@ -51,6 +51,7 @@ use crate::tools::registry::RegisteredTool;
 use crate::tools::registry::ToolExposure;
 use crate::tools::registry::ToolRegistryBuilder;
 use crate::tools::registry::override_tool_exposure;
+use crate::tools::registry::override_tool_model_namespace;
 use crate::tools::spec_plan_types::ToolRegistryBuildParams;
 use crate::tools::spec_plan_types::agent_type_description;
 use codex_extension_api::ExtensionToolExecutor;
@@ -69,6 +70,7 @@ use codex_tool_registry_api::create_first_moves_tools;
 use codex_tool_registry_api::create_workflow_batch_tool;
 use codex_tool_registry_api::default_namespace_description;
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tracing::warn;
@@ -78,6 +80,7 @@ pub(crate) fn build_tool_registry_builder_from_executors(
     executors: Vec<Arc<dyn RegisteredTool>>,
     hosted_specs: Vec<ToolSpec>,
 ) -> ToolRegistryBuilder {
+    let executors = alias_hosted_reserved_namespace_executors(executors, &hosted_specs);
     let mut builder = ToolRegistryBuilder::new();
     let deferred_tools_available = executors
         .iter()
@@ -141,6 +144,112 @@ pub(crate) fn build_tool_registry_builder_from_executors(
     }
 
     builder
+}
+
+fn alias_hosted_reserved_namespace_executors(
+    executors: Vec<Arc<dyn RegisteredTool>>,
+    hosted_specs: &[ToolSpec],
+) -> Vec<Arc<dyn RegisteredTool>> {
+    let reserved_namespaces = hosted_reserved_model_namespaces(hosted_specs);
+    if reserved_namespaces.is_empty() {
+        return executors;
+    }
+
+    let mut occupied_model_tool_names = executors
+        .iter()
+        .map(|executor| {
+            let tool_name = executor.tool_name();
+            tool_name.namespace.unwrap_or(tool_name.name)
+        })
+        .collect::<BTreeSet<_>>();
+    occupied_model_tool_names.extend(hosted_specs.iter().map(|spec| spec.name().to_string()));
+    occupied_model_tool_names.extend(reserved_namespaces.iter().cloned());
+
+    let mut aliases = BTreeMap::<String, String>::new();
+    executors
+        .into_iter()
+        .map(|executor| {
+            let tool_name = executor.tool_name();
+            let Some(namespace) = tool_name.namespace.as_deref() else {
+                return executor;
+            };
+            if !reserved_namespaces.contains(namespace) {
+                return executor;
+            }
+            let model_namespace = aliases
+                .entry(namespace.to_string())
+                .or_insert_with(|| {
+                    allocate_model_namespace_alias(namespace, &mut occupied_model_tool_names)
+                })
+                .clone();
+            warn!(
+                "Aliasing tool namespace `{namespace}` to `{model_namespace}` because it collides with a hosted Responses API namespace"
+            );
+            override_tool_model_namespace(executor, model_namespace)
+        })
+        .collect()
+}
+
+fn hosted_reserved_model_namespaces(hosted_specs: &[ToolSpec]) -> BTreeSet<String> {
+    let mut reserved_namespaces = BTreeSet::new();
+    for spec in hosted_specs {
+        match spec {
+            // The Responses API exposes hosted web search through the
+            // `web_search` tool type, but rejects user-defined namespace `web`
+            // in the same request.
+            ToolSpec::WebSearch { .. } => {
+                reserved_namespaces.insert("web".to_string());
+            }
+            ToolSpec::Function(_)
+            | ToolSpec::Namespace(_)
+            | ToolSpec::ToolSearch { .. }
+            | ToolSpec::LocalShell {}
+            | ToolSpec::ImageGeneration { .. }
+            | ToolSpec::Freeform(_) => {}
+        }
+    }
+    reserved_namespaces
+}
+
+fn allocate_model_namespace_alias(
+    source_namespace: &str,
+    occupied_namespaces: &mut BTreeSet<String>,
+) -> String {
+    let sanitized = sanitize_namespace_for_alias(source_namespace);
+    let base = format!("codex_ext_{sanitized}");
+    if occupied_namespaces.insert(base.clone()) {
+        return base;
+    }
+
+    for suffix in 2.. {
+        let candidate = format!("{base}_{suffix}");
+        if occupied_namespaces.insert(candidate.clone()) {
+            return candidate;
+        }
+    }
+    unreachable!("unbounded alias allocation should always return")
+}
+
+fn sanitize_namespace_for_alias(namespace: &str) -> String {
+    let mut sanitized = namespace
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' {
+                ch.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    while sanitized.contains("__") {
+        sanitized = sanitized.replace("__", "_");
+    }
+    sanitized = sanitized.trim_matches('_').to_string();
+    if sanitized.is_empty() {
+        "namespace".to_string()
+    } else {
+        sanitized
+    }
 }
 
 pub(crate) fn hosted_model_tool_specs(config: &ToolsConfig) -> Vec<ToolSpec> {

@@ -57,6 +57,7 @@ use codex_tool_registry_api::DiscoverableTool;
 use codex_tool_registry_api::FIRST_MOVES_PREDICT_TOOL_NAME;
 use codex_tool_registry_api::FIRST_MOVES_STATS_TOOL_NAME;
 use codex_tool_registry_api::FreeformTool;
+use codex_tool_registry_api::LoadableToolSpec;
 use codex_tool_registry_api::REQUEST_PLUGIN_INSTALL_TOOL_NAME;
 use codex_tool_registry_api::ResponsesApiNamespaceTool;
 use codex_tool_registry_api::ResponsesApiTool;
@@ -1599,6 +1600,269 @@ fn namespaced_dynamic_specs_are_hidden_when_namespace_tools_are_disabled() {
 
     assert_lacks_tool_name(&tools, "codex_app");
     assert_contains_tool_names(&tools, &["plain_dynamic"]);
+}
+
+#[test]
+fn dynamic_web_namespace_is_aliased_when_hosted_web_search_is_enabled() {
+    let model_info = search_capable_model_info();
+    let features = Features::with_defaults();
+    let available_models = Vec::new();
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        image_generation_tool_auth_allowed: true,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        permission_profile: &PermissionProfile::Disabled,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+    let dynamic_tools = vec![DynamicToolSpec {
+        namespace: Some("web".to_string()),
+        name: "open".to_string(),
+        description: "Open a page.".to_string(),
+        input_schema: json!({"type": "object", "properties": {}}),
+        defer_loading: false,
+    }];
+
+    let (tools, registry) = build_specs(
+        &tools_config,
+        /*mcp_tools*/ None,
+        /*deferred_mcp_tools*/ None,
+        &dynamic_tools,
+    );
+
+    assert_lacks_tool_name(&tools, "web");
+    assert_contains_tool_names(&tools, &["web_search", "codex_ext_web"]);
+    assert_eq!(
+        namespace_function_names(&tools, "codex_ext_web"),
+        vec!["open".to_string()]
+    );
+    assert!(registry.has_handler(&ToolName::namespaced("codex_ext_web", "open")));
+    assert!(!registry.has_handler(&ToolName::namespaced("web", "open")));
+}
+
+#[test]
+fn dynamic_web_namespace_alias_avoids_plain_tool_name_collision() {
+    let model_info = search_capable_model_info();
+    let features = Features::with_defaults();
+    let available_models = Vec::new();
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        image_generation_tool_auth_allowed: true,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        permission_profile: &PermissionProfile::Disabled,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+    let dynamic_tools = vec![
+        DynamicToolSpec {
+            namespace: Some("web".to_string()),
+            name: "open".to_string(),
+            description: "Open a page.".to_string(),
+            input_schema: json!({"type": "object", "properties": {}}),
+            defer_loading: false,
+        },
+        DynamicToolSpec {
+            namespace: None,
+            name: "codex_ext_web".to_string(),
+            description: "Plain tool occupying the first alias.".to_string(),
+            input_schema: json!({"type": "object", "properties": {}}),
+            defer_loading: false,
+        },
+    ];
+
+    let (tools, registry) = build_specs(
+        &tools_config,
+        /*mcp_tools*/ None,
+        /*deferred_mcp_tools*/ None,
+        &dynamic_tools,
+    );
+
+    assert_lacks_tool_name(&tools, "web");
+    assert_contains_tool_names(&tools, &["web_search", "codex_ext_web", "codex_ext_web_2"]);
+    assert_eq!(
+        namespace_function_names(&tools, "codex_ext_web_2"),
+        vec!["open".to_string()]
+    );
+    assert!(registry.has_handler(&ToolName::namespaced("codex_ext_web_2", "open")));
+    assert!(registry.has_handler(&ToolName::plain("codex_ext_web")));
+}
+
+#[test]
+fn mcp_web_namespace_is_aliased_when_hosted_web_search_is_enabled() {
+    let model_info = search_capable_model_info();
+    let features = Features::with_defaults();
+    let available_models = Vec::new();
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        image_generation_tool_auth_allowed: true,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        permission_profile: &PermissionProfile::Disabled,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+
+    let (tools, registry) = build_specs(
+        &tools_config,
+        Some(HashMap::from([(
+            ToolName::namespaced("web", "open"),
+            mcp_tool("open", "Open a page", serde_json::json!({"type": "object"})),
+        )])),
+        /*deferred_mcp_tools*/ None,
+        &[],
+    );
+
+    assert_lacks_tool_name(&tools, "web");
+    assert_contains_tool_names(&tools, &["web_search", "codex_ext_web"]);
+    assert_eq!(
+        namespace_function_names(&tools, "codex_ext_web"),
+        vec!["open".to_string()]
+    );
+    assert!(registry.has_handler(&ToolName::namespaced("codex_ext_web", "open")));
+    assert!(!registry.has_handler(&ToolName::namespaced("web", "open")));
+}
+
+#[test]
+fn dynamic_web_namespace_is_aliased_but_hidden_when_namespace_tools_are_disabled() {
+    let model_info = search_capable_model_info();
+    let features = Features::with_defaults();
+    let available_models = Vec::new();
+    let mut tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        image_generation_tool_auth_allowed: true,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        permission_profile: &PermissionProfile::Disabled,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+    tools_config.namespace_tools = false;
+    let dynamic_tools = vec![DynamicToolSpec {
+        namespace: Some("web".to_string()),
+        name: "open".to_string(),
+        description: "Open a page.".to_string(),
+        input_schema: json!({"type": "object", "properties": {}}),
+        defer_loading: false,
+    }];
+
+    let (tools, registry) = build_specs(
+        &tools_config,
+        /*mcp_tools*/ None,
+        /*deferred_mcp_tools*/ None,
+        &dynamic_tools,
+    );
+
+    assert_lacks_tool_name(&tools, "web");
+    assert_lacks_tool_name(&tools, "codex_ext_web");
+    assert_contains_tool_names(&tools, &["web_search"]);
+    assert!(registry.has_handler(&ToolName::namespaced("codex_ext_web", "open")));
+    assert!(!registry.has_handler(&ToolName::namespaced("web", "open")));
+}
+
+#[test]
+fn deferred_dynamic_web_namespace_is_aliased_in_tool_search_output() {
+    let model_info = search_capable_model_info();
+    let mut features = Features::with_defaults();
+    features.enable(Feature::ToolSearch);
+    let available_models = Vec::new();
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        image_generation_tool_auth_allowed: true,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        permission_profile: &PermissionProfile::Disabled,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+    let dynamic_tools = vec![DynamicToolSpec {
+        namespace: Some("web".to_string()),
+        name: "open".to_string(),
+        description: "Open a page.".to_string(),
+        input_schema: json!({"type": "object", "properties": {}}),
+        defer_loading: true,
+    }];
+    let params = ToolRegistryBuildParams {
+        mcp_tools: None,
+        deferred_mcp_tools: None,
+        discoverable_tools: None,
+        extension_tool_executors: &[],
+        dynamic_tools: &dynamic_tools,
+        default_agent_type_description: DEFAULT_AGENT_TYPE_DESCRIPTION,
+        wait_agent_timeouts: wait_agent_timeout_options(),
+    };
+    let executors = alias_hosted_reserved_namespace_executors(
+        collect_tool_executors(&tools_config, params),
+        &hosted_model_tool_specs(&tools_config),
+    );
+    let dynamic_executor = executors
+        .iter()
+        .find(|executor| executor.tool_name() == ToolName::namespaced("codex_ext_web", "open"))
+        .expect("aliased dynamic executor");
+    let search_info = dynamic_executor.search_info().expect("search info");
+
+    let LoadableToolSpec::Namespace(namespace) = search_info.entry.output else {
+        panic!("expected namespace search output");
+    };
+    assert_eq!(namespace.name, "codex_ext_web");
+    assert_eq!(namespace.tools.len(), 1);
+    assert!(search_info.entry.search_text.contains("codex_ext_web"));
+}
+
+#[test]
+fn deferred_mcp_web_namespace_is_aliased_in_tool_search_output() {
+    let model_info = search_capable_model_info();
+    let mut features = Features::with_defaults();
+    features.enable(Feature::ToolSearch);
+    let available_models = Vec::new();
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        image_generation_tool_auth_allowed: true,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        permission_profile: &PermissionProfile::Disabled,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+    let deferred_mcp_tools = vec![deferred_mcp_tool(
+        "open",
+        "web",
+        "web_server",
+        None,
+        Some("Open a page."),
+    )];
+    let params = ToolRegistryBuildParams {
+        mcp_tools: None,
+        deferred_mcp_tools: Some(deferred_mcp_tools.as_slice()),
+        discoverable_tools: None,
+        extension_tool_executors: &[],
+        dynamic_tools: &[],
+        default_agent_type_description: DEFAULT_AGENT_TYPE_DESCRIPTION,
+        wait_agent_timeouts: wait_agent_timeout_options(),
+    };
+    let executors = alias_hosted_reserved_namespace_executors(
+        collect_tool_executors(&tools_config, params),
+        &hosted_model_tool_specs(&tools_config),
+    );
+    let mcp_executor = executors
+        .iter()
+        .find(|executor| executor.tool_name() == ToolName::namespaced("codex_ext_web", "open"))
+        .expect("aliased MCP executor");
+    let search_info = mcp_executor.search_info().expect("search info");
+
+    let LoadableToolSpec::Namespace(namespace) = search_info.entry.output else {
+        panic!("expected namespace search output");
+    };
+    assert_eq!(namespace.name, "codex_ext_web");
+    assert_eq!(namespace.tools.len(), 1);
+    assert!(search_info.entry.search_text.contains("codex_ext_web"));
 }
 
 #[test]
