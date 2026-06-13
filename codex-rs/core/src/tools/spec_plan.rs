@@ -146,7 +146,7 @@ pub(crate) fn build_tool_registry_builder_from_executors(
     builder
 }
 
-fn alias_hosted_reserved_namespace_executors(
+pub(crate) fn alias_hosted_reserved_namespace_executors(
     executors: Vec<Arc<dyn RegisteredTool>>,
     hosted_specs: &[ToolSpec],
 ) -> Vec<Arc<dyn RegisteredTool>> {

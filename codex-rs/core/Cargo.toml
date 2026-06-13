@@ -238,6 +238,10 @@ name = "web_search_protocol"
 path = "tests/web_search_protocol.rs"
 
 [[test]]
+name = "namespace_alias_request"
+path = "tests/namespace_alias_request.rs"
+
+[[test]]
 name = "window_headers"
 path = "tests/window_headers.rs"
 
