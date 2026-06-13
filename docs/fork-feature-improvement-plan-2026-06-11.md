@@ -89,6 +89,17 @@ Acceptance:
 
 This document is the Wave 0 planning artifact. It must be kept current as research and implementation waves complete.
 
+### Baseline And Wave 42 Update
+
+Status as of the Wave 42 fan-out:
+
+- Codex commit `9aa9371b4a` (`Fix hosted web namespace collisions`) is the Wave 0 namespace/doc baseline. Hosted `web_search` reserves the model-visible `web` namespace, external `web` namespaces are exposed through deterministic aliases such as `codex_ext_web`, alias calls dispatch back to the source namespace, deferred `tool_search` descriptions use the alias, and this long plan exists.
+- Lab commit `083d87c` in `context-reducer-lab` (`Add prompt economics comparison harness`) is the Wave 1 deterministic prompt-economics baseline. It adds the comparison harness, 39 prompt variants, 13 representative tasks, and `reports/prompt-economics-compare-2026-06-11.{json,md}`. The deterministic report nominates `action_route_selection` for live-model extension, but it does not promote a runtime default.
+- Wave 41 `codex exec` audit workers were useful as an orchestration canary, not as full audit workers: nested exec sessions started and repeatedly logged hosted-web aliasing from `web` to `codex_ext_web`, but they lacked usable local shell/file tools for source inspection. Until that worker surface is repaired, use visible worktrees or normal spawned workers for mutating and source-review lanes.
+- Wave 42 uses four mutating worktrees plus review gates: namespace hardening in `C:\w\c42n`, action-optimization config canary work in `C:\w\c42a`, lab live-manifest research in `C:\w\l42b`, and this plan-doc sync in `C:\w\c42p`; a separate read-only critic reviews overlap and self-review evidence, and one verifier owns expensive checks.
+
+The research-first rule still holds: no prompt becomes a runtime default until the deterministic candidate survives live/sandbox gates, verifier-owned checks, and the normal release/deploy/smoke promotion cadence.
+
 ## Wave 1: Prompt-Economics Lab
 
 Prompt-economics must be research-first. No prompt injection becomes a default because it sounds good.
