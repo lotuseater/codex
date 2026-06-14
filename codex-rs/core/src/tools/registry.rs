@@ -22,6 +22,7 @@ use crate::tools::handlers::multi_agents_spec::MULTI_AGENT_V1_NAMESPACE;
 use crate::tools::hook_names::HookToolName;
 use crate::tools::lifecycle::notify_tool_finish;
 use crate::tools::lifecycle::notify_tool_start;
+use crate::tools::operation_cache;
 use crate::tools::tool_dispatch_trace::ToolDispatchTrace;
 use crate::util::error_or_panic;
 use codex_extension_api::ToolCallOutcome;
@@ -831,7 +832,8 @@ impl ToolRegistry {
 
         notify_tool_start(&invocation).await;
 
-        if let Some(pre_tool_use_payload) = tool.pre_tool_use_payload(&invocation) {
+        let pre_tool_use_payload = tool.pre_tool_use_payload(&invocation);
+        if let Some(pre_tool_use_payload) = &pre_tool_use_payload {
             match run_pre_tool_use_hooks(
                 &invocation.session,
                 &invocation.turn,
@@ -877,12 +879,41 @@ impl ToolRegistry {
             }
         }
 
+        let pre_tool_use_payload = tool.pre_tool_use_payload(&invocation);
+        let operation_cache_cwd = operation_cache::cwd(&invocation);
+        let mut served_from_operation_cache = false;
         let response_cell = tokio::sync::Mutex::new(None);
         let invocation_for_tool = invocation.clone();
         let log_payload = invocation.payload.log_payload();
 
-        let result = otel
-            .log_tool_result_with_tags(
+        let result = if let Some(pre_tool_use_payload) = &pre_tool_use_payload
+            && let Some(cache_hit) = operation_cache::lookup(
+                pre_tool_use_payload,
+                operation_cache_cwd.as_path(),
+                tool.supports_parallel_tool_calls(),
+            )
+            .await
+        {
+            served_from_operation_cache = true;
+            let cached =
+                operation_cache::result_from_hit(&invocation, pre_tool_use_payload, cache_hit);
+            let preview = cached.result.result.log_preview();
+            let success = cached.result.result.success_for_logging();
+            otel.tool_result_with_tags(
+                tool_name_flat.as_ref(),
+                &call_id_owned,
+                log_payload.as_ref(),
+                cached.duration,
+                success,
+                &preview,
+                &tool_result_tags,
+                &extra_trace_fields,
+            );
+            let mut guard = response_cell.lock().await;
+            *guard = Some(cached.result);
+            Ok((preview, success))
+        } else {
+            otel.log_tool_result_with_tags(
                 tool_name_flat.as_ref(),
                 &call_id_owned,
                 log_payload.as_ref(),
@@ -905,7 +936,8 @@ impl ToolRegistry {
                     }
                 },
             )
-            .await;
+            .await
+        };
         let success = match &result {
             Ok((_, success)) => *success,
             Err(_) => false,
@@ -919,6 +951,7 @@ impl ToolRegistry {
         } else {
             None
         };
+        let cache_store_payload = post_tool_use_payload.clone();
         let post_tool_use_outcome = if let Some(post_tool_use_payload) = post_tool_use_payload {
             Some(
                 run_post_tool_use_hooks(
@@ -936,6 +969,7 @@ impl ToolRegistry {
             None
         };
 
+        let mut replaced_by_post_tool_use = false;
         if let Some(outcome) = &post_tool_use_outcome {
             record_additional_contexts(
                 &invocation.session,
@@ -955,6 +989,7 @@ impl ToolRegistry {
                 outcome.feedback_message.clone()
             };
             if let Some(replacement_text) = replacement_text {
+                replaced_by_post_tool_use = true;
                 let mut guard = response_cell.lock().await;
                 if let Some(mut result) = guard.take() {
                     result.result = Box::new(PostToolUseFeedbackOutput {
@@ -967,6 +1002,18 @@ impl ToolRegistry {
                     *guard = Some(result);
                 }
             }
+        }
+
+        if !served_from_operation_cache
+            && !replaced_by_post_tool_use
+            && let Some(cache_store_payload) = &cache_store_payload
+        {
+            operation_cache::store(
+                cache_store_payload,
+                operation_cache_cwd.as_path(),
+                tool.supports_parallel_tool_calls(),
+            )
+            .await;
         }
 
         let lifecycle_outcome = match &result {

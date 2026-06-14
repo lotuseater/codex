@@ -16,6 +16,31 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $codexRs = Join-Path $repoRoot "codex-rs"
 $wizardRootFull = (Resolve-Path -LiteralPath $WizardRoot).Path
 
+$toolsMod = Join-Path $repoRoot "codex-rs\core\src\tools\mod.rs"
+$toolsRegistry = Join-Path $repoRoot "codex-rs\core\src\tools\registry.rs"
+$operationCache = Join-Path $repoRoot "codex-rs\core\src\tools\operation_cache.rs"
+
+function Assert-FileContainsText {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Needle
+    )
+
+    $content = Get-Content -Raw -LiteralPath $Path
+    if (-not $content.Contains($Needle)) {
+        throw "$Path is missing required operation-cache wiring: $Needle"
+    }
+}
+
+Assert-FileContainsText -Path $toolsMod -Needle "pub(crate) mod operation_cache;"
+Assert-FileContainsText -Path $toolsRegistry -Needle "operation_cache::lookup"
+Assert-FileContainsText -Path $toolsRegistry -Needle "operation_cache::store"
+Assert-FileContainsText -Path $operationCache -Needle "mod tests"
+Assert-FileContainsText -Path $operationCache -Needle "tool_is_cacheable"
+
 if (-not $SkipPython) {
     Push-Location $wizardRootFull
     try {
@@ -57,5 +82,13 @@ if (-not $SkipRust) {
     Get-Content -LiteralPath $log -Tail 120
     if ($exit -ne 0) {
         throw "Codex operation-cache lib tests failed with exit code $exit. Log: $log"
+    }
+
+    $logText = Get-Content -Raw -LiteralPath $log
+    if ($logText -match "running\s+0\s+tests") {
+        throw "Codex operation-cache lib test filter matched zero tests. Log: $log"
+    }
+    if ($logText -notmatch "operation_cache::tests::") {
+        throw "Codex operation-cache lib test log did not show operation_cache tests. Log: $log"
     }
 }
