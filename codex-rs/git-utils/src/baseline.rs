@@ -6,6 +6,7 @@ use gix::objs::tree::EntryKind;
 use gix::objs::tree::EntryMode;
 use similar::TextDiff;
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
@@ -16,6 +17,7 @@ use crate::operations::run_git_for_status;
 
 const BASELINE_COMMIT_MESSAGE: &str =
     "Initialize Codex git baseline\n\nCo-authored-by: Codex <noreply@openai.com>";
+pub const GIT_BASELINE_IGNORE_FILENAME: &str = ".codex-git-baseline-ignore";
 
 /// File-level change status between a git baseline and the current directory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,6 +64,61 @@ struct GitBaselineFileEntry {
     mode: EntryMode,
 }
 
+#[derive(Debug, Default)]
+struct GitBaselineIgnore {
+    exact_top_level: BTreeSet<String>,
+    prefix_top_level: Vec<String>,
+}
+
+impl GitBaselineIgnore {
+    fn load(root: &Path) -> anyhow::Result<Self> {
+        let path = root.join(GIT_BASELINE_IGNORE_FILENAME);
+        let content = match fs::read_to_string(&path) {
+            Ok(content) => content,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Self::default()),
+            Err(err) => {
+                return Err(err).with_context(|| format!("read {}", path.display()));
+            }
+        };
+
+        let mut ignore = Self::default();
+        for raw_line in content.lines() {
+            let line = raw_line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let normalized = line.replace('\\', "/").trim_end_matches('/').to_string();
+            if normalized.is_empty() || normalized.contains('/') {
+                continue;
+            }
+            if let Some(prefix) = normalized.strip_suffix('*') {
+                if !prefix.is_empty() {
+                    ignore.prefix_top_level.push(prefix.to_string());
+                }
+            } else {
+                ignore.exact_top_level.insert(normalized);
+            }
+        }
+
+        Ok(ignore)
+    }
+
+    fn matches(&self, root: &Path, path: &Path) -> bool {
+        let Ok(relative) = path.strip_prefix(root) else {
+            return false;
+        };
+        let Some(first_component) = relative.components().next() else {
+            return false;
+        };
+        let first = first_component.as_os_str().to_string_lossy();
+        self.exact_top_level.contains(first.as_ref())
+            || self
+                .prefix_top_level
+                .iter()
+                .any(|prefix| first.starts_with(prefix))
+    }
+}
+
 /// Replaces any existing `.git` metadata in `root` with a fresh one-commit baseline.
 ///
 /// This is intentionally destructive for `root/.git`. It is meant for internal directories where
@@ -94,9 +151,10 @@ pub async fn ensure_git_baseline_repository(root: &Path) -> anyhow::Result<()> {
 fn reset_git_repository_sync(root: &Path) -> anyhow::Result<()> {
     fs::create_dir_all(root)
         .with_context(|| format!("create git baseline root {}", root.display()))?;
+    let ignore = GitBaselineIgnore::load(root)?;
     remove_git_metadata(root)?;
     let repo = gix::init(root).with_context(|| format!("init git repo {}", root.display()))?;
-    commit_current_tree(&repo, BASELINE_COMMIT_MESSAGE)?;
+    commit_current_tree(&repo, BASELINE_COMMIT_MESSAGE, &ignore)?;
     write_index_from_head(root)?;
     Ok(())
 }
@@ -107,7 +165,8 @@ pub async fn diff_since_latest_init(root: &Path) -> anyhow::Result<GitBaselineDi
     task::spawn_blocking(move || {
         let repo = gix::open(&root).with_context(|| format!("open git repo {}", root.display()))?;
         let head_entries = head_file_entries(&repo)?;
-        let current_entries = current_file_entries(&repo, &root)?;
+        let ignore = GitBaselineIgnore::load(&root)?;
+        let current_entries = current_file_entries(&repo, &root, &ignore)?;
         let changes = diff_entries(&head_entries, &current_entries);
         let unified_diff =
             render_unified_diff(&repo, &root, &head_entries, &current_entries, &changes)?;
@@ -134,11 +193,15 @@ fn remove_git_metadata(root: &Path) -> anyhow::Result<()> {
     }
 }
 
-fn commit_current_tree(repo: &gix::Repository, message: &str) -> anyhow::Result<()> {
+fn commit_current_tree(
+    repo: &gix::Repository,
+    message: &str,
+    ignore: &GitBaselineIgnore,
+) -> anyhow::Result<()> {
     let root = repo
         .workdir()
         .context("git baseline repo must have a worktree")?;
-    let tree_id = write_tree(repo, root)?;
+    let tree_id = write_tree(repo, root, root, ignore)?;
     let signature = codex_signature();
     let mut time = gix::date::parse::TimeBuf::default();
     let signature_ref = signature.to_ref(&mut time);
@@ -170,19 +233,27 @@ fn codex_signature() -> gix::actor::Signature {
     }
 }
 
-fn write_tree(repo: &gix::Repository, dir: &Path) -> anyhow::Result<ObjectId> {
+fn write_tree(
+    repo: &gix::Repository,
+    root: &Path,
+    dir: &Path,
+    ignore: &GitBaselineIgnore,
+) -> anyhow::Result<ObjectId> {
     let mut entries = Vec::new();
     for entry in fs::read_dir(dir).with_context(|| format!("read {}", dir.display()))? {
         let entry = entry?;
         let path = entry.path();
         let file_name = entry.file_name();
-        if file_name == OsStr::new(".git") {
+        if file_name == OsStr::new(".git")
+            || file_name == OsStr::new(GIT_BASELINE_IGNORE_FILENAME)
+            || ignore.matches(root, &path)
+        {
             continue;
         }
 
         let file_type = entry.file_type()?;
         if file_type.is_dir() {
-            let oid = write_tree(repo, &path)?;
+            let oid = write_tree(repo, root, &path, ignore)?;
             let tree = repo
                 .find_tree(oid)
                 .with_context(|| format!("load tree {}", path.display()))?;
@@ -267,9 +338,10 @@ fn collect_tree_entries(
 fn current_file_entries(
     repo: &gix::Repository,
     root: &Path,
+    ignore: &GitBaselineIgnore,
 ) -> anyhow::Result<BTreeMap<String, GitBaselineFileEntry>> {
     let mut entries = BTreeMap::new();
-    collect_current_entries(repo, root, root, &mut entries)?;
+    collect_current_entries(repo, root, root, ignore, &mut entries)?;
     Ok(entries)
 }
 
@@ -277,18 +349,22 @@ fn collect_current_entries(
     repo: &gix::Repository,
     root: &Path,
     dir: &Path,
+    ignore: &GitBaselineIgnore,
     entries: &mut BTreeMap<String, GitBaselineFileEntry>,
 ) -> anyhow::Result<()> {
     for entry in fs::read_dir(dir).with_context(|| format!("read {}", dir.display()))? {
         let entry = entry?;
         let path = entry.path();
-        if path.file_name() == Some(OsStr::new(".git")) {
+        if path.file_name() == Some(OsStr::new(".git"))
+            || path.file_name() == Some(OsStr::new(GIT_BASELINE_IGNORE_FILENAME))
+            || ignore.matches(root, &path)
+        {
             continue;
         }
 
         let file_type = entry.file_type()?;
         if file_type.is_dir() {
-            collect_current_entries(repo, root, &path, entries)?;
+            collect_current_entries(repo, root, &path, ignore, entries)?;
         } else if file_type.is_file() {
             let bytes = fs::read(&path).with_context(|| format!("read {}", path.display()))?;
             entries.insert(
@@ -582,6 +658,35 @@ mod tests {
         assert!(!diff.has_changes());
         assert_eq!(git_stdout(&root, &["status", "--porcelain"]), "");
         assert_eq!(git_stdout(&root, &["ls-files"]), "MEMORY.md\n");
+    }
+
+    #[tokio::test]
+    async fn baseline_ignore_skips_configured_top_level_entries() {
+        let home = TempDir::new().expect("tempdir");
+        let root = home.path().join("repo");
+        fs::create_dir_all(root.join("tmp-stale")).expect("create temp dir");
+        fs::create_dir_all(root.join("pytesttmp")).expect("create pytest dir");
+        fs::write(root.join(GIT_BASELINE_IGNORE_FILENAME), "tmp*\npytest*\n")
+            .expect("write baseline ignore");
+        fs::write(root.join("MEMORY.md"), "memory").expect("write memory");
+        fs::write(root.join("tmp-stale/ignored.md"), "ignored").expect("write ignored temp");
+        fs::write(root.join("pytesttmp/ignored.md"), "ignored").expect("write ignored pytest");
+
+        reset_git_repository(&root).await.expect("reset repo");
+
+        assert_eq!(git_stdout(&root, &["ls-files"]), "MEMORY.md\n");
+
+        fs::write(root.join("tmp-stale/changed.md"), "changed").expect("write ignored change");
+        fs::write(root.join("memory_summary.md"), "summary").expect("write visible change");
+
+        let diff = diff_since_latest_init(&root).await.expect("diff");
+        assert_eq!(
+            diff.changes,
+            vec![GitBaselineChange {
+                status: GitBaselineChangeStatus::Added,
+                path: "memory_summary.md".to_string(),
+            }]
+        );
     }
 
     #[cfg(unix)]

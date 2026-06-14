@@ -1,9 +1,16 @@
 use anyhow::Context;
+use codex_git_utils::GIT_BASELINE_IGNORE_FILENAME;
 use codex_git_utils::GitBaselineDiff;
 use codex_git_utils::diff_since_latest_init;
 use codex_git_utils::ensure_git_baseline_repository;
 use codex_git_utils::reset_git_repository;
 use std::path::Path;
+
+const MEMORY_BASELINE_IGNORE: &str = "\
+# Local test and temporary residue must not participate in the memory baseline.
+pytest*
+tmp*
+";
 
 /// Prepares the memory directory for git-baseline diffing.
 ///
@@ -15,8 +22,16 @@ pub async fn prepare_memory_workspace(root: &Path) -> anyhow::Result<()> {
         .await
         .with_context(|| format!("create memory workspace {}", root.display()))?;
     remove_workspace_diff(root).await?;
+    write_memory_baseline_ignore(root).await?;
     ensure_git_baseline_repository(root).await?;
     Ok(())
+}
+
+async fn write_memory_baseline_ignore(root: &Path) -> anyhow::Result<()> {
+    let path = root.join(GIT_BASELINE_IGNORE_FILENAME);
+    tokio::fs::write(&path, MEMORY_BASELINE_IGNORE)
+        .await
+        .with_context(|| format!("write memory baseline ignore {}", path.display()))
 }
 
 /// Returns the current workspace diff after removing any stale generated diff artifact.

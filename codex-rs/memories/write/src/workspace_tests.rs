@@ -71,6 +71,35 @@ async fn prepare_memory_workspace_recovers_unusable_git_dir() {
     assert_eq!(diff.changes, Vec::new());
 }
 
+#[tokio::test]
+async fn prepare_memory_workspace_ignores_temp_residue() {
+    let home = TempDir::new().expect("tempdir");
+    let root = home.path().join("memories");
+    fs::create_dir_all(root.join("pytesttmp")).expect("create pytest temp");
+    fs::create_dir_all(root.join("tmpabcdef")).expect("create temp dir");
+    fs::write(root.join("pytesttmp/ignored.md"), "ignored").expect("write pytest temp");
+    fs::write(root.join("tmpabcdef/ignored.md"), "ignored").expect("write temp");
+    fs::write(root.join("MEMORY.md"), "memory").expect("write memory");
+
+    prepare_memory_workspace(&root)
+        .await
+        .expect("prepare memory workspace");
+
+    fs::write(root.join("pytesttmp/changed.md"), "changed").expect("write ignored change");
+    fs::write(root.join("memory_summary.md"), "summary").expect("write visible change");
+
+    let diff = memory_workspace_diff(&root)
+        .await
+        .expect("load workspace diff");
+    assert_eq!(
+        diff.changes,
+        vec![GitBaselineChange {
+            status: GitBaselineChangeStatus::Added,
+            path: "memory_summary.md".to_string(),
+        }]
+    );
+}
+
 #[test]
 fn previous_char_boundary_handles_multibyte_text() {
     let text = "aé";
