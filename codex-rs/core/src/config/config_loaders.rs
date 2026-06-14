@@ -703,11 +703,7 @@ impl Config {
                     "agents.max_threads cannot be set when multi_agent_v2 is enabled",
                 ));
             }
-            Some(
-                multi_agent_v2
-                    .max_concurrent_threads_per_session
-                    .saturating_sub(1),
-            )
+            None
         } else {
             let agent_max_threads = agent_max_threads_from_config.or(DEFAULT_AGENT_MAX_THREADS);
             if agent_max_threads == Some(0) {

@@ -29,6 +29,15 @@ pub(super) async fn spawn_review_thread(
     let _ = review_features.disable(Feature::WebSearchRequest);
     let _ = review_features.disable(Feature::WebSearchCached);
     let review_web_search_mode = WebSearchMode::Disabled;
+    let review_multi_agent_version = if review_features.enabled(Feature::MultiAgentV2) {
+        MultiAgentVersion::V2
+    } else {
+        MultiAgentVersion::V1
+    };
+    let review_agent_max_threads = config
+        .effective_agent_max_threads(review_multi_agent_version)
+        .ok()
+        .flatten();
     let available_models = sess
         .services
         .models_manager
@@ -70,7 +79,7 @@ pub(super) async fn spawn_review_thread(
     )
     .with_first_moves_config(config.first_moves.enabled())
     .with_repo_context_scout_config(config.repo_context_scout.mode.tool_enabled())
-    .with_max_concurrent_threads_per_session(config.agent_max_threads)
+    .with_max_concurrent_threads_per_session(review_agent_max_threads)
     .with_wait_agent_min_timeout_ms(
         review_features
             .enabled(Feature::MultiAgentV2)

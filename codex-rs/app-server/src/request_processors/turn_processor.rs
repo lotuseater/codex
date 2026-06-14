@@ -526,9 +526,10 @@ impl TurnRequestProcessor {
         }
 
         let snapshot = thread.config_snapshot().await;
-        // The thread config snapshot no longer carries environment
-        // selections; default to an empty list when the request omits them.
-        let environment_selections = environment_selections.unwrap_or_default();
+        let environment_selections = match environment_selections {
+            Some(environment_selections) => environment_selections,
+            None => thread.environment_selections().await,
+        };
         let legacy_fallback_cwd = cwd.unwrap_or_else(|| {
             environment_selections
                 .iter()

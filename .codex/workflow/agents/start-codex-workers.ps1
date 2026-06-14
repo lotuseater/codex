@@ -132,6 +132,7 @@ $launched = for ($i = 0; $i -lt $WorkerNames.Count; $i++) {
 `$ErrorActionPreference = "Stop"
 `$Host.UI.RawUI.WindowTitle = $(ConvertTo-CodexPowerShellSingleQuotedLiteral "Codex worker: $name")
 Set-Location -LiteralPath $(ConvertTo-CodexPowerShellSingleQuotedLiteral $Repo)
+Remove-Item Env:\CODEX_THREAD_ID, Env:\CODEX_SHELL, Env:\CODEX_INTERNAL_ORIGINATOR_OVERRIDE -ErrorAction SilentlyContinue
 `$codexArgs = $(ConvertTo-CodexPowerShellArrayLiteral $codexArgs)
 `$redirectToLog = $redirectLiteral
 if (`$redirectToLog) {

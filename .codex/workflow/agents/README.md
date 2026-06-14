@@ -57,7 +57,7 @@ Post-deploy live terminal probe:
 ```powershell
 $marker = ".codex\workflow\tmp\spawn-terminal-shell-tools.txt"
 Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue
-powershell -ExecutionPolicy Bypass -File .codex\workflow\agents\start-codex-workers.ps1 -Repo C:\Users\Oleh\Documents\GitHub\open_ai\codex -WorkerNames spawn_terminal_shell_canary -Prompt "You are a spawned terminal canary. Use shell_command to create .codex\workflow\tmp\spawn-terminal-shell-tools.txt containing spawn-shell-ok, then use shell_command to read it back. Finish by reporting the marker path and exact content. Do not edit any other files." -CodexCommand codex
+powershell -ExecutionPolicy Bypass -File .codex\workflow\agents\start-codex-workers.ps1 -Repo C:\Users\Oleh\Documents\GitHub\open_ai\codex -WorkerNames spawn_terminal_shell_canary -Prompt "You are a spawned terminal canary. Use the local command execution tool available in this terminal session, shell_command if present otherwise exec_command, to create .codex\workflow\tmp\spawn-terminal-shell-tools.txt containing spawn-shell-ok, then read it back with that same tool. Do not use tool_search or desktop automation. Finish by reporting the marker path and exact content. Do not edit any other files." -CodexCommand codex
 ```
 
 After the visible worker exits:

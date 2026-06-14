@@ -321,11 +321,14 @@ impl CodexThread {
         };
 
         // The override only carries an optional `cwd`; map it into the
-        // environments selection by using it as the legacy fallback cwd.
-        let environments = cwd.map(|cwd| TurnEnvironmentSelections {
-            legacy_fallback_cwd: cwd,
-            environments: Vec::new(),
-        });
+        // environments selection by using it as the legacy fallback cwd while
+        // preserving the thread's sticky environment selection.
+        let environments = if let Some(cwd) = cwd {
+            let environments = self.codex.thread_environment_selections().await;
+            Some(TurnEnvironmentSelections::new(cwd, environments))
+        } else {
+            None
+        };
 
         SessionSettingsUpdate {
             environments,

@@ -106,6 +106,7 @@ $childCommand = @"
 `$ErrorActionPreference = "Stop"
 `$Host.UI.RawUI.WindowTitle = $(ConvertTo-CodexPowerShellSingleQuotedLiteral "Codex worker: $Name")
 Set-Location -LiteralPath $(ConvertTo-CodexPowerShellSingleQuotedLiteral $resolvedRepo)
+Remove-Item Env:\CODEX_THREAD_ID, Env:\CODEX_SHELL, Env:\CODEX_INTERNAL_ORIGINATOR_OVERRIDE -ErrorAction SilentlyContinue
 `$codexArgs = $(ConvertTo-CodexPowerShellArrayLiteral $codexArgs)
 & $(ConvertTo-CodexPowerShellSingleQuotedLiteral $CodexCommand) @codexArgs
 "@

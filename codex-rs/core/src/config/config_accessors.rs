@@ -22,19 +22,11 @@ impl Config {
         multi_agent_version: MultiAgentVersion,
     ) -> std::io::Result<Option<usize>> {
         match multi_agent_version {
-            MultiAgentVersion::V2 => {
-                if self.agent_max_threads.is_some() {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        "agents.max_threads cannot be set when the multi-agent runtime is v2",
-                    ));
-                }
-                Ok(Some(
-                    self.multi_agent_v2
-                        .max_concurrent_threads_per_session
-                        .saturating_sub(1),
-                ))
-            }
+            MultiAgentVersion::V2 => Ok(Some(
+                self.multi_agent_v2
+                    .max_concurrent_threads_per_session
+                    .saturating_sub(1),
+            )),
             MultiAgentVersion::Disabled | MultiAgentVersion::V1 => {
                 Ok(self.agent_max_threads.or(DEFAULT_AGENT_MAX_THREADS))
             }

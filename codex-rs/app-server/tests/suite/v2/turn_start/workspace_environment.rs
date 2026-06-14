@@ -371,6 +371,108 @@ url = "ws://127.0.0.1:1"
     Ok(())
 }
 
+#[tokio::test]
+async fn turn_start_cwd_only_override_preserves_sticky_local_environment_tools() -> Result<()> {
+    let tmp = TempDir::new()?;
+    let codex_home = tmp.path().join("codex_home");
+    std::fs::create_dir(&codex_home)?;
+    let workspace = tmp.path().join("workspace");
+    std::fs::create_dir(&workspace)?;
+    let turn_cwd = workspace.join("turn");
+    std::fs::create_dir(&turn_cwd)?;
+
+    let responses = vec![
+        create_shell_command_sse_response(
+            vec!["echo".to_string(), "cwd-only".to_string()],
+            /*workdir*/ None,
+            Some(5000),
+            "call-cwd-only",
+        )?,
+        create_final_assistant_message_sse_response("done")?,
+    ];
+    let server = create_mock_responses_server_sequence(responses).await;
+    create_config_toml(&codex_home, &server.uri(), "never", &BTreeMap::default())?;
+
+    let mut mcp = McpProcess::new(&codex_home).await?;
+    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
+
+    let thread_req = mcp
+        .send_thread_start_request(ThreadStartParams {
+            model: Some("mock-model".to_string()),
+            cwd: Some(workspace.to_string_lossy().into_owned()),
+            environments: environment_params(Some(&["local"]), &workspace)?,
+            ..Default::default()
+        })
+        .await?;
+    let thread_resp: JSONRPCResponse = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(thread_req)),
+    )
+    .await??;
+    let ThreadStartResponse { thread, .. } = to_response::<ThreadStartResponse>(thread_resp)?;
+
+    let turn_req = mcp
+        .send_turn_start_request(TurnStartParams {
+            thread_id: thread.id,
+            input: vec![V2UserInput::Text {
+                text: "run in selected local environment".to_string(),
+                text_elements: Vec::new(),
+            }],
+            cwd: Some(turn_cwd.clone()),
+            environments: None,
+            model: Some("mock-model".to_string()),
+            ..Default::default()
+        })
+        .await?;
+    let turn_resp: JSONRPCResponse = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(turn_req)),
+    )
+    .await??;
+    let TurnStartResponse { turn } = to_response::<TurnStartResponse>(turn_resp)?;
+    assert!(!turn.id.is_empty());
+
+    let command_item = timeout(DEFAULT_READ_TIMEOUT, async {
+        loop {
+            let item_started_notification = mcp
+                .read_stream_until_notification_message("item/started")
+                .await?;
+            let item_started: ItemStartedNotification = serde_json::from_value(
+                item_started_notification
+                    .params
+                    .expect("item/started should include params"),
+            )?;
+            if matches!(item_started.item, ThreadItem::CommandExecution { .. }) {
+                return Ok::<ThreadItem, anyhow::Error>(item_started.item);
+            }
+        }
+    })
+    .await??;
+    let ThreadItem::CommandExecution { cwd, status, .. } = command_item else {
+        unreachable!("loop returns only command execution items");
+    };
+    assert_eq!(cwd.as_path(), turn_cwd.as_path());
+    assert_eq!(status, CommandExecutionStatus::InProgress);
+
+    timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_notification_message("turn/completed"),
+    )
+    .await??;
+
+    let body = first_responses_request_body(&server).await?;
+    let tool_names = response_tool_names(&body);
+    assert!(
+        tool_names
+            .iter()
+            .any(|name| matches!(*name, "shell_command" | "exec_command")),
+        "cwd-only turn override should retain the sticky local environment shell tool; tools: {:?}",
+        body.get("tools")
+    );
+
+    Ok(())
+}
+
 struct EnvironmentSelectionCase {
     name: &'static str,
     sticky: Option<&'static [&'static str]>,
@@ -466,4 +568,26 @@ fn environment_params(
             .collect()
     })
     .transpose()
+}
+
+async fn first_responses_request_body(server: &wiremock::MockServer) -> Result<Value> {
+    server
+        .received_requests()
+        .await
+        .context("failed to fetch received requests")?
+        .into_iter()
+        .filter(|request| request.url.path().ends_with("/responses"))
+        .next()
+        .context("expected at least one Responses API request")?
+        .body_json::<Value>()
+        .context("Responses API request body should be JSON")
+}
+
+fn response_tool_names(body: &Value) -> Vec<&str> {
+    body.get("tools")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|tool| tool.get("name").and_then(Value::as_str))
+        .collect()
 }

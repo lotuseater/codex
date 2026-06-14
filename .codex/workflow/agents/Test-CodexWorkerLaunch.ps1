@@ -74,6 +74,7 @@ function Assert-LauncherContainsWorkerArgs {
             "'never'",
             "'--sandbox'",
             "'danger-full-access'",
+            "Remove-Item Env:\CODEX_THREAD_ID, Env:\CODEX_SHELL, Env:\CODEX_INTERNAL_ORIGINATOR_OVERRIDE",
             (ConvertTo-CodexPowerShellSingleQuotedLiteral $Prompt)
         )
 }

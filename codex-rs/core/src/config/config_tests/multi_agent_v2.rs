@@ -79,7 +79,11 @@ non_code_mode_only = true
     assert_eq!(config.multi_agent_v2.min_wait_timeout_ms, 2500);
     assert_eq!(config.multi_agent_v2.max_wait_timeout_ms, 120000);
     assert_eq!(config.multi_agent_v2.default_wait_timeout_ms, 30000);
-    assert_eq!(config.agent_max_threads, Some(4));
+    assert_eq!(config.agent_max_threads, None);
+    assert_eq!(
+        config.effective_agent_max_threads(codex_protocol::protocol::MultiAgentVersion::V2)?,
+        Some(4)
+    );
     assert!(!config.multi_agent_v2.usage_hint_enabled);
     assert_eq!(
         config.multi_agent_v2.usage_hint_text.as_deref(),
@@ -123,7 +127,11 @@ enabled = true
     assert_eq!(config.multi_agent_v2.min_wait_timeout_ms, 10_000);
     assert_eq!(config.multi_agent_v2.max_wait_timeout_ms, 3_600_000);
     assert_eq!(config.multi_agent_v2.default_wait_timeout_ms, 30_000);
-    assert_eq!(config.agent_max_threads, Some(3));
+    assert_eq!(config.agent_max_threads, None);
+    assert_eq!(
+        config.effective_agent_max_threads(codex_protocol::protocol::MultiAgentVersion::V2)?,
+        Some(3)
+    );
     assert!(!config.multi_agent_v2.non_code_mode_only);
 
     Ok(())
@@ -153,6 +161,30 @@ max_threads = 3
     assert_eq!(
         err.to_string(),
         "agents.max_threads cannot be set when multi_agent_v2 is enabled"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn runtime_selected_multi_agent_v2_ignores_legacy_agent_max_threads() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let mut config = ConfigBuilder::without_managed_config_for_tests()
+        .codex_home(codex_home.path().to_path_buf())
+        .fallback_cwd(Some(codex_home.path().to_path_buf()))
+        .build()
+        .await?;
+
+    config.agent_max_threads = Some(7);
+    config.multi_agent_v2.max_concurrent_threads_per_session = 6;
+
+    assert_eq!(
+        config.effective_agent_max_threads(codex_protocol::protocol::MultiAgentVersion::V2)?,
+        Some(5)
+    );
+    assert_eq!(
+        config.effective_agent_max_threads(codex_protocol::protocol::MultiAgentVersion::V1)?,
+        Some(7)
     );
 
     Ok(())
@@ -411,7 +443,11 @@ max_concurrent_threads_per_session = 1
         .await?;
 
     assert_eq!(config.multi_agent_v2.max_concurrent_threads_per_session, 1);
-    assert_eq!(config.agent_max_threads, Some(0));
+    assert_eq!(config.agent_max_threads, None);
+    assert_eq!(
+        config.effective_agent_max_threads(codex_protocol::protocol::MultiAgentVersion::V2)?,
+        Some(0)
+    );
 
     Ok(())
 }
@@ -511,4 +547,3 @@ async fn feature_requirements_warn_and_ignore_unknown_feature() -> std::io::Resu
 
     Ok(())
 }
-
