@@ -52,6 +52,23 @@ function Assert-FileContains {
     }
 }
 
+function Assert-FileDoesNotContain {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string[]]$Needles
+    )
+
+    $content = Get-Content -Raw -LiteralPath $Path
+    foreach ($needle in $Needles) {
+        if ($content.Contains($needle)) {
+            throw "$Path contains raw prompt text that should only appear as an encoded argv value: $needle"
+        }
+    }
+}
+
 function Assert-PowerShellParses {
     param(
         [Parameter(Mandatory = $true)]
@@ -96,11 +113,14 @@ function Assert-LauncherContainsWorkerArgs {
             "Remove-Item Env:\CODEX_THREAD_ID, Env:\CODEX_SHELL, Env:\CODEX_INTERNAL_ORIGINATOR_OVERRIDE",
             (ConvertTo-CodexPowerShellUtf8StringExpression $Prompt)
         )
+    Assert-FileDoesNotContain `
+        -Path $Path `
+        -Needles @($Prompt)
     Assert-PowerShellParses -Path $Path
 }
 
 $resolvedRepo = (Resolve-Path -LiteralPath $Repo).Path
-$prompt = "spawn worker launch canary prompt with user's ASCII quote, user’s smart quote, a backtick ``, and a second line`nsecond line"
+$prompt = "Task: improve benchmark coverage for the user's general branch-feature research goal while preserving user’s smart quote, a backtick ``, and a second line`nsecond line"
 
 $health = Get-CodexWorkerCommandHealth -CodexCommand $CodexCommand
 Assert-CodexWorkerCommandHealth -Health $health -AllowCustomBuild:$AllowCustomBuild
@@ -183,7 +203,7 @@ $workerProbePrompt = Join-Path $PSScriptRoot "$workerProbeName.prompt.md"
 $workerProbeLauncher = Join-Path $PSScriptRoot "$workerProbeName.exec.launch.ps1"
 $workerProbeLog = Join-Path $PSScriptRoot "$workerProbeName.exec.visible.log"
 $workerProbeMarker = Join-Path $PSScriptRoot "$workerProbeName.exec.marker.txt"
-$workerProbeText = "spawn worker launch canary prompt from file with user's ASCII quote and user’s smart quote"
+$workerProbeText = "Task: improve benchmark coverage for the user's general branch-feature research goal from file with user’s smart quote"
 try {
     Set-Content -LiteralPath $workerProbePrompt -Value $workerProbeText -NoNewline -Encoding UTF8
     $workerDryRun = @( & (Join-Path $PSScriptRoot "start-codex-workers.ps1") `
@@ -215,7 +235,7 @@ $interactiveProbePrompt = Join-Path $PSScriptRoot "$interactiveProbeName.prompt.
 $interactiveProbeLauncher = Join-Path $PSScriptRoot "handoffs\$interactiveProbeName.launch.ps1"
 $interactiveProbeHandoff = Join-Path $PSScriptRoot "handoffs\$interactiveProbeName.handoff.md"
 $interactiveProbeMarker = Join-Path $PSScriptRoot "handoffs\$interactiveProbeName.marker.txt"
-$interactiveProbeText = "interactive worker launch canary prompt from file with user's ASCII quote and user’s smart quote"
+$interactiveProbeText = "Task: improve benchmark coverage for the user's general branch-feature research goal in interactive mode with user’s smart quote"
 try {
     Set-Content -LiteralPath $interactiveProbePrompt -Value $interactiveProbeText -NoNewline -Encoding UTF8
     $interactiveDryRunJson = & (Join-Path $PSScriptRoot "start-codex-interactive.ps1") `

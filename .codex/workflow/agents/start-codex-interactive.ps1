@@ -112,6 +112,7 @@ Remove-Item Env:\CODEX_THREAD_ID, Env:\CODEX_SHELL, Env:\CODEX_INTERNAL_ORIGINAT
 "@
 
 $childCommand | Set-Content -LiteralPath $launcherPath -Encoding UTF8
+Assert-CodexPowerShellFileParses -Path $launcherPath
 
 $args = @(
     "-NoExit",

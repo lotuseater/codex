@@ -37,6 +37,28 @@ function ConvertTo-CodexSafeFileName {
     [string]::Concat($safeChars)
 }
 
+function Assert-CodexPowerShellFileParses {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $tokens = $null
+    $parseErrors = $null
+    [System.Management.Automation.Language.Parser]::ParseFile(
+        $Path,
+        [ref]$tokens,
+        [ref]$parseErrors
+    ) | Out-Null
+
+    if ($parseErrors -and $parseErrors.Count -gt 0) {
+        $messages = $parseErrors | ForEach-Object {
+            "line $($_.Extent.StartLineNumber), column $($_.Extent.StartColumnNumber): $($_.Message)"
+        }
+        throw "Generated Codex worker launcher does not parse: $Path`n$($messages -join "`n")"
+    }
+}
+
 function New-CodexWorkerRootArgs {
     param(
         [Parameter(Mandatory = $true)]
@@ -305,6 +327,7 @@ Export-ModuleMember `
         ConvertTo-CodexPowerShellArrayLiteral, `
         ConvertTo-CodexPowerShellUtf8StringExpression, `
         ConvertTo-CodexSafeFileName, `
+        Assert-CodexPowerShellFileParses, `
         New-CodexWorkerExecArgs, `
         New-CodexWorkerInteractiveArgs, `
         New-CodexWorkerResumeArgs, `

@@ -143,6 +143,7 @@ if (`$redirectToLog) {
 "@
 
     $childCommand | Set-Content -LiteralPath $launcherPath -Encoding UTF8
+    Assert-CodexPowerShellFileParses -Path $launcherPath
 
     $startArgs = @{
         FilePath = "powershell.exe"
