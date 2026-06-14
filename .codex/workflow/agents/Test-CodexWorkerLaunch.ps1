@@ -52,6 +52,24 @@ function Assert-FileContains {
     }
 }
 
+function Assert-PowerShellParses {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $tokens = $null
+    $parseErrors = $null
+    [System.Management.Automation.Language.Parser]::ParseFile(
+        $Path,
+        [ref]$tokens,
+        [ref]$parseErrors
+    ) | Out-Null
+    if ($parseErrors -and $parseErrors.Count -gt 0) {
+        throw "$Path has PowerShell parse errors: $($parseErrors | ForEach-Object { $_.Message } | Out-String)"
+    }
+}
+
 function Assert-LauncherContainsWorkerArgs {
     param(
         [Parameter(Mandatory = $true)]
@@ -68,19 +86,21 @@ function Assert-LauncherContainsWorkerArgs {
         -Path $Path `
         -Needles @(
             "`$codexArgs = @(",
-            "'--cd'",
-            (ConvertTo-CodexPowerShellSingleQuotedLiteral $Repo),
-            "'--ask-for-approval'",
-            "'never'",
-            "'--sandbox'",
-            "'danger-full-access'",
+            "FromBase64String",
+            (ConvertTo-CodexPowerShellUtf8StringExpression "--cd"),
+            (ConvertTo-CodexPowerShellUtf8StringExpression $Repo),
+            (ConvertTo-CodexPowerShellUtf8StringExpression "--ask-for-approval"),
+            (ConvertTo-CodexPowerShellUtf8StringExpression "never"),
+            (ConvertTo-CodexPowerShellUtf8StringExpression "--sandbox"),
+            (ConvertTo-CodexPowerShellUtf8StringExpression "danger-full-access"),
             "Remove-Item Env:\CODEX_THREAD_ID, Env:\CODEX_SHELL, Env:\CODEX_INTERNAL_ORIGINATOR_OVERRIDE",
-            (ConvertTo-CodexPowerShellSingleQuotedLiteral $Prompt)
+            (ConvertTo-CodexPowerShellUtf8StringExpression $Prompt)
         )
+    Assert-PowerShellParses -Path $Path
 }
 
 $resolvedRepo = (Resolve-Path -LiteralPath $Repo).Path
-$prompt = "spawn worker launch canary prompt"
+$prompt = "spawn worker launch canary prompt with user's ASCII quote, user’s smart quote, a backtick ``, and a second line`nsecond line"
 
 $health = Get-CodexWorkerCommandHealth -CodexCommand $CodexCommand
 Assert-CodexWorkerCommandHealth -Health $health -AllowCustomBuild:$AllowCustomBuild
@@ -163,7 +183,7 @@ $workerProbePrompt = Join-Path $PSScriptRoot "$workerProbeName.prompt.md"
 $workerProbeLauncher = Join-Path $PSScriptRoot "$workerProbeName.exec.launch.ps1"
 $workerProbeLog = Join-Path $PSScriptRoot "$workerProbeName.exec.visible.log"
 $workerProbeMarker = Join-Path $PSScriptRoot "$workerProbeName.exec.marker.txt"
-$workerProbeText = "spawn worker launch canary prompt from file"
+$workerProbeText = "spawn worker launch canary prompt from file with user's ASCII quote and user’s smart quote"
 try {
     Set-Content -LiteralPath $workerProbePrompt -Value $workerProbeText -NoNewline -Encoding UTF8
     $workerDryRun = @( & (Join-Path $PSScriptRoot "start-codex-workers.ps1") `
@@ -195,7 +215,7 @@ $interactiveProbePrompt = Join-Path $PSScriptRoot "$interactiveProbeName.prompt.
 $interactiveProbeLauncher = Join-Path $PSScriptRoot "handoffs\$interactiveProbeName.launch.ps1"
 $interactiveProbeHandoff = Join-Path $PSScriptRoot "handoffs\$interactiveProbeName.handoff.md"
 $interactiveProbeMarker = Join-Path $PSScriptRoot "handoffs\$interactiveProbeName.marker.txt"
-$interactiveProbeText = "interactive worker launch canary prompt from file"
+$interactiveProbeText = "interactive worker launch canary prompt from file with user's ASCII quote and user’s smart quote"
 try {
     Set-Content -LiteralPath $interactiveProbePrompt -Value $interactiveProbeText -NoNewline -Encoding UTF8
     $interactiveDryRunJson = & (Join-Path $PSScriptRoot "start-codex-interactive.ps1") `

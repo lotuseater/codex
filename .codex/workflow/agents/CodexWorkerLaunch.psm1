@@ -13,7 +13,18 @@ function ConvertTo-CodexPowerShellSingleQuotedLiteral {
 function ConvertTo-CodexPowerShellArrayLiteral {
     param([AllowEmptyCollection()][string[]]$Values)
 
-    "@(" + (($Values | ForEach-Object { ConvertTo-CodexPowerShellSingleQuotedLiteral $_ }) -join ", ") + ")"
+    "@(" + (($Values | ForEach-Object { ConvertTo-CodexPowerShellUtf8StringExpression $_ }) -join ", ") + ")"
+}
+
+function ConvertTo-CodexPowerShellUtf8StringExpression {
+    param([AllowNull()][string]$Value)
+
+    if ($null -eq $Value) {
+        return '$null'
+    }
+
+    $encoded = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($Value))
+    "[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('$encoded'))"
 }
 
 function ConvertTo-CodexSafeFileName {
@@ -292,6 +303,7 @@ function Assert-CodexWorkerArgs {
 Export-ModuleMember `
     -Function ConvertTo-CodexPowerShellSingleQuotedLiteral, `
         ConvertTo-CodexPowerShellArrayLiteral, `
+        ConvertTo-CodexPowerShellUtf8StringExpression, `
         ConvertTo-CodexSafeFileName, `
         New-CodexWorkerExecArgs, `
         New-CodexWorkerInteractiveArgs, `
