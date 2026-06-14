@@ -16,6 +16,13 @@ fn enable_action_optimization(
     turn_context.config = std::sync::Arc::new(config);
 }
 
+fn disable_action_optimization(turn_context: &mut TurnContext) {
+    let mut config = turn_context.config.as_ref().clone();
+    config.action_optimization_instructions.mode =
+        crate::config::ActionOptimizationInstructionsMode::Off;
+    turn_context.config = std::sync::Arc::new(config);
+}
+
 #[tokio::test]
 async fn build_initial_context_uses_turn_collaboration_mode() {
     let (session, mut turn_context) = make_session_and_context().await;
@@ -47,14 +54,27 @@ async fn build_initial_context_uses_turn_collaboration_mode() {
 }
 
 #[tokio::test]
-async fn build_initial_context_omits_action_optimization_by_default() {
+async fn build_initial_context_includes_action_optimization_by_default_on_first_turn() {
     let (session, turn_context) = make_session_and_context().await;
 
     let context = session.build_initial_context(&turn_context).await;
     let developer_text = developer_input_texts(&context).join("\n");
 
+    assert!(developer_text.contains(ACTION_OPTIMIZATION_OPEN_TAG));
+    assert!(developer_text.contains("Keep simple tasks simple"));
+    assert!(developer_text.contains("Select the lightest route"));
+}
+
+#[tokio::test]
+async fn build_initial_context_omits_action_optimization_when_explicitly_off() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    disable_action_optimization(&mut turn_context);
+
+    let context = session.build_initial_context(&turn_context).await;
+    let developer_text = developer_input_texts(&context).join("\n");
+
     assert!(!developer_text.contains(ACTION_OPTIMIZATION_OPEN_TAG));
-    assert!(!developer_text.contains("Select the lightest action route"));
+    assert!(!developer_text.contains("Keep simple tasks simple"));
 }
 
 #[tokio::test]
@@ -90,7 +110,7 @@ async fn build_initial_context_includes_action_optimization_always_before_batch(
         .expect("batch mini-programming instructions should render");
     assert!(collaboration_index < action_index);
     assert!(action_index < batch_index);
-    assert!(developer_text.contains("Select the lightest action route"));
+    assert!(developer_text.contains("Keep simple tasks simple"));
     assert!(developer_text.contains("workflow_batch for repetitive deterministic"));
     assert!(!developer_text.contains("exactly one of `spec` or `spec_path`"));
 }
@@ -156,8 +176,8 @@ async fn build_initial_context_respects_action_optimization_max_tokens() {
     let context = session.build_initial_context(&turn_context).await;
     let developer_text = developer_input_texts(&context).join("\n");
 
-    assert!(developer_text.contains("Select the lightest action route that still verifies"));
-    assert!(!developer_text.contains("work. Answer directly"));
+    assert!(developer_text.contains("Keep simple tasks simple: answer directly when enough"));
+    assert!(!developer_text.contains("evidence is present"));
 }
 
 #[tokio::test]
@@ -189,15 +209,16 @@ async fn build_initial_context_includes_batch_mini_programming_when_workflow_bat
     assert!(developer_text.contains("step payloads are objects"));
     assert!(developer_text.contains("Use focused shell/rg for one-off searches"));
     assert!(!developer_text.contains("When the `workflow_batch` tool is available"));
-    assert!(developer_text.contains("compact root-confined deterministic local file/JSON IO"));
     assert!(
-        developer_text.contains("bounded scans, transforms, assertions, loops, and reductions")
+        developer_text
+            .contains("several deterministic local file/JSON reads, bounded scans, transforms")
     );
-    assert!(developer_text.contains("Use `workflow_batch` for compact root-confined"));
+    assert!(developer_text.contains("one diagnosable batch beats repeated tool calls"));
     assert!(developer_text.contains("`spec` is `{\"steps\":[...]}`"));
     assert!(developer_text.contains("exactly one of `spec` or `spec_path`"));
     assert!(developer_text.contains("Python for richer algorithms or reusable prototypes"));
-    assert!(developer_text.contains("Keep batches small"));
+    assert!(developer_text.contains("Keep simple tasks simple"));
+    assert!(developer_text.contains("would hide which file, query, or step failed"));
 }
 
 #[tokio::test]

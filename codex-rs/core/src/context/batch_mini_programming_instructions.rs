@@ -21,11 +21,11 @@ impl ContextualUserFragment for BatchMiniProgrammingInstructions {
 
     fn body(&self) -> String {
         r#"
-Use `workflow_batch` for compact root-confined deterministic local file/JSON IO, bounded scans, transforms, assertions, loops, and reductions. Use focused shell/rg for one-off searches and Python for richer algorithms or reusable prototypes.
+Use `workflow_batch` when several deterministic local file/JSON reads, bounded scans, transforms, assertions, loops, or reductions are already clear and one diagnosable batch beats repeated tool calls. Use focused shell/rg for one-off searches and Python for richer algorithms or reusable prototypes.
 
 `workflow_batch` args: exactly one of `spec` or `spec_path`, plus optional `workdir`, `report_path`, and `log_path`. `spec` is `{"steps":[...]}`; step payloads are objects; never include `response_length`.
 
-Keep batches small; split when work needs user input, command execution, crosses permissions, is destructive, or would be harder to diagnose if batched.
+Keep simple tasks simple; keep batches small. Split when work needs user input, command execution, crosses permissions, is destructive, uncertain, or would hide which file, query, or step failed.
 "#
             .to_string()
     }

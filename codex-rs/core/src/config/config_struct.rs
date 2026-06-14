@@ -91,7 +91,7 @@ pub struct Config {
     /// Whether to inject the `<collaboration_mode>` developer block.
     pub include_collaboration_mode_instructions: bool,
 
-    /// Disabled-by-default action-route optimization instructions.
+    /// Lightweight first-turn action-route optimization instructions.
     pub action_optimization_instructions: ActionOptimizationInstructionsConfig,
 
     /// Whether to inject the `<skills_instructions>` developer block.
@@ -495,7 +495,7 @@ pub struct ActionOptimizationInstructionsConfig {
 impl Default for ActionOptimizationInstructionsConfig {
     fn default() -> Self {
         Self {
-            mode: ActionOptimizationInstructionsMode::Off,
+            mode: ActionOptimizationInstructionsMode::FirstTurn,
             variant: ActionOptimizationInstructionsVariant::ActionRouteSelection,
             max_tokens: 120,
         }
