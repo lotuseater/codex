@@ -3,26 +3,30 @@ use codex_repo_context_scout::ScoutCommandMode;
 use codex_repo_context_scout::ScoutRequest;
 use codex_repo_context_scout::ScoutTrigger;
 use codex_repo_context_scout::run_scout;
+use codex_tool_execution_api::FunctionCallError;
 use codex_tool_execution_api::ToolName;
-use codex_tool_registry_api::REPO_CONTEXT_SCOUT_TOOL_NAME;
+use codex_tool_registry_api::ToolSpec;
 use serde::Deserialize;
 use serde_json::Value;
 
-use codex_tool_execution_api::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::handlers::parse_arguments;
+use crate::tools::registry::ToolExecutor;
 use crate::tools::registry::ToolHandler;
-use crate::tools::registry::ToolKind;
 
 pub struct RepoContextScoutHandler {
     tool_name: ToolName,
+    spec: ToolSpec,
 }
 
 impl RepoContextScoutHandler {
-    pub fn new(tool_name: ToolName) -> Self {
-        Self { tool_name }
+    pub fn new(spec: ToolSpec) -> Self {
+        Self {
+            tool_name: ToolName::plain(spec.name()),
+            spec,
+        }
     }
 }
 
@@ -43,15 +47,19 @@ enum RepoContextScoutModeArg {
     Refresh,
 }
 
-impl ToolHandler for RepoContextScoutHandler {
+impl ToolExecutor<ToolInvocation> for RepoContextScoutHandler {
     type Output = FunctionToolOutput;
 
     fn tool_name(&self) -> ToolName {
         self.tool_name.clone()
     }
 
-    fn kind(&self) -> ToolKind {
-        ToolKind::Function
+    fn spec(&self) -> Option<ToolSpec> {
+        Some(self.spec.clone())
+    }
+
+    fn supports_parallel_tool_calls(&self) -> bool {
+        true
     }
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {
@@ -64,14 +72,11 @@ impl ToolHandler for RepoContextScoutHandler {
             }
         };
 
-        match invocation.tool_name.name.as_str() {
-            REPO_CONTEXT_SCOUT_TOOL_NAME => handle_scout(invocation, arguments.as_str()).await,
-            other => Err(FunctionCallError::RespondToModel(format!(
-                "unknown repo context scout tool: {other}"
-            ))),
-        }
+        handle_scout(invocation, arguments.as_str()).await
     }
 }
+
+impl ToolHandler for RepoContextScoutHandler {}
 
 async fn handle_scout(
     invocation: ToolInvocation,

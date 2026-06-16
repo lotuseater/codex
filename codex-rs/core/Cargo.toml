@@ -310,6 +310,7 @@ codex-rollout = { workspace = true }
 codex-rollout-trace = { workspace = true }
 codex-rmcp-client = { workspace = true }
 codex-sandboxing = { workspace = true }
+codex-self-review = { workspace = true }
 codex-session-api = { workspace = true }
 codex-state = { workspace = true }
 codex-task-memory = { workspace = true }

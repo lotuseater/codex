@@ -19,6 +19,7 @@ use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
 use crate::tools::flat_tool_name;
 use crate::tools::handlers::multi_agents_spec::MULTI_AGENT_V1_NAMESPACE;
+use crate::tools::handlers::spawn_record_tool_use_hit;
 use crate::tools::hook_names::HookToolName;
 use crate::tools::lifecycle::notify_tool_finish;
 use crate::tools::lifecycle::notify_tool_start;
@@ -943,6 +944,7 @@ impl ToolRegistry {
             Err(_) => false,
         };
         emit_metric_for_tool_read(&invocation, success).await;
+        maybe_spawn_first_moves_hit(&invocation, pre_tool_use_payload.as_ref(), success);
         let post_tool_use_payload = if success {
             let guard = response_cell.lock().await;
             guard
@@ -1072,6 +1074,27 @@ impl ToolRegistry {
             }
         }
     }
+}
+
+fn maybe_spawn_first_moves_hit(
+    invocation: &ToolInvocation,
+    pre_tool_use_payload: Option<&PreToolUsePayload>,
+    success: bool,
+) {
+    if !success || !invocation.turn.config.first_moves.enabled() {
+        return;
+    }
+    let Some(pre_tool_use_payload) = pre_tool_use_payload else {
+        return;
+    };
+    let tool_input = serde_json::to_string(&pre_tool_use_payload.tool_input)
+        .unwrap_or_else(|_| pre_tool_use_payload.tool_input.to_string());
+    spawn_record_tool_use_hit(
+        invocation.turn.cwd.to_path_buf(),
+        invocation.turn.config.codex_home.to_path_buf(),
+        pre_tool_use_payload.tool_name.name().to_string(),
+        tool_input,
+    );
 }
 
 async fn notify_tool_finish_if_unclaimed(

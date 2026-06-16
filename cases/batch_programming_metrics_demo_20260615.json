@@ -1,0 +1,248 @@
+{
+  "schema_version": 1,
+  "generated": "2026-06-15",
+  "scope": "Prompt/demo simulation for comparing batch-programming variants before changing Codex defaults.",
+  "quality_dimensions": [
+    "correctness",
+    "diagnosability",
+    "blast_radius_control",
+    "operator_token_load",
+    "wall_clock_latency"
+  ],
+  "operation_weights": {
+    "file_reads": 1.0,
+    "json_transforms": 1.4,
+    "bounded_scans": 1.2,
+    "mechanical_edits": 1.8,
+    "assertions": 1.1,
+    "failure_localization": 1.6
+  },
+  "tasks": [
+    {
+      "id": "inventory_reduce",
+      "name": "Repo-visible file inventory with summaries",
+      "input_tokens": 1800,
+      "prompt_template": "Inventory repo-visible paths from {path_manifest}, reduce them by extension and ownership, assert no duplicate paths, and write a compact evidence summary with artifact paths.",
+      "operation_counts": {
+        "file_reads": 14,
+        "json_transforms": 1,
+        "bounded_scans": 3,
+        "mechanical_edits": 0,
+        "assertions": 2,
+        "failure_localization": 1
+      },
+      "quality_risks": [
+        "missed files",
+        "unclear failure point",
+        "overlong transcript"
+      ]
+    },
+    {
+      "id": "json_normalize",
+      "name": "Normalize JSON fixtures and verify schema keys",
+      "input_tokens": 1400,
+      "prompt_template": "Normalize {fixture_paths} as JSON, preserve schema keys, emit changed artifact paths, and assert required keys plus row counts before reporting success.",
+      "operation_counts": {
+        "file_reads": 6,
+        "json_transforms": 8,
+        "bounded_scans": 2,
+        "mechanical_edits": 1,
+        "assertions": 6,
+        "failure_localization": 2
+      },
+      "quality_risks": [
+        "string-based JSON edits",
+        "partial writes",
+        "weak assertions"
+      ]
+    },
+    {
+      "id": "md_audit",
+      "name": "Markdown evidence audit and gap report",
+      "input_tokens": 2200,
+      "prompt_template": "Audit {markdown_paths} against {evidence_paths}, separate verified facts from inferences, cite artifact paths, and produce a gap report with concrete follow-up criteria.",
+      "operation_counts": {
+        "file_reads": 10,
+        "json_transforms": 0,
+        "bounded_scans": 5,
+        "mechanical_edits": 1,
+        "assertions": 3,
+        "failure_localization": 2
+      },
+      "quality_risks": [
+        "mixing inference with verified facts",
+        "not citing artifacts",
+        "missing follow-up plan"
+      ]
+    },
+    {
+      "id": "mechanical_patch",
+      "name": "Small mechanical code/doc patch with assertions",
+      "input_tokens": 2600,
+      "prompt_template": "Apply the same mechanical edit pattern to {target_paths}, keep unrelated changes intact, then run bounded assertions and summarize changed files plus verification commands.",
+      "operation_counts": {
+        "file_reads": 8,
+        "json_transforms": 1,
+        "bounded_scans": 4,
+        "mechanical_edits": 4,
+        "assertions": 5,
+        "failure_localization": 3
+      },
+      "quality_risks": [
+        "hidden unrelated edits",
+        "bad conflict handling",
+        "slow test triage"
+      ]
+    },
+    {
+      "id": "one_off_micro_probe",
+      "name": "One-off direct file check",
+      "input_tokens": 700,
+      "prompt_template": "Check {single_path} for one exact symbol or key, report whether it exists, and cite the line or JSON path using the simplest direct command that returns the fact.",
+      "operation_counts": {
+        "file_reads": 1,
+        "json_transforms": 0,
+        "bounded_scans": 0,
+        "mechanical_edits": 0,
+        "assertions": 1,
+        "failure_localization": 0
+      },
+      "quality_risks": [
+        "over-engineered batching",
+        "unnecessary setup",
+        "prompt overhead larger than work"
+      ],
+      "variant_adjustments": {
+        "interactive_sequential": {
+          "repair_turns_delta": -2,
+          "quality_delta": 6,
+          "diagnosability_delta": 6,
+          "notes_suffix": "Micro-probe winner because direct inspection has less setup overhead."
+        },
+        "focused_shell_batch": {
+          "setup_ms_delta": 350,
+          "quality_delta": -1,
+          "notes_suffix": "Slightly overbuilt for one direct fact."
+        },
+        "workflow_batch_inline": {
+          "setup_ms_delta": 700,
+          "quality_delta": -2,
+          "notes_suffix": "Batch setup dominates a one-check task."
+        },
+        "workflow_batch_spec_file": {
+          "setup_ms_delta": 900,
+          "quality_delta": -3,
+          "notes_suffix": "Spec-file setup is not justified for one fact path."
+        },
+        "python_script": {
+          "setup_ms_delta": 1300,
+          "quality_delta": -2,
+          "notes_suffix": "Script setup is reusable only after repeated probes."
+        },
+        "delegated_worker_batch": {
+          "setup_ms_delta": 1800,
+          "quality_delta": -4,
+          "notes_suffix": "Delegation overhead dominates tiny deterministic work."
+        },
+        "hybrid_scout_batch": {
+          "setup_ms_delta": 900,
+          "quality_delta": -2,
+          "notes_suffix": "Scouting overhead is unnecessary when the exact path is known."
+        }
+      }
+    }
+  ],
+  "variants": [
+    {
+      "id": "interactive_sequential",
+      "label": "Interactive sequential tools",
+      "prompt": "Inspect each file or query one at a time. Summarize after every result and decide the next command interactively.",
+      "setup_ms": 850,
+      "per_weight_ms": 420,
+      "prompt_tokens": 44,
+      "diagnosability": 72,
+      "hidden_failure_penalty": 0,
+      "quality_penalty": 7,
+      "repair_turns": 2,
+      "notes": "Transparent, but slow and token-heavy on repeated deterministic operations."
+    },
+    {
+      "id": "focused_shell_batch",
+      "label": "Focused shell/rg batch",
+      "prompt": "Use one focused shell batch for independent reads/searches, then inspect only the returned files that matter.",
+      "setup_ms": 950,
+      "per_weight_ms": 250,
+      "prompt_tokens": 58,
+      "diagnosability": 78,
+      "hidden_failure_penalty": 2,
+      "quality_penalty": 5,
+      "repair_turns": 1,
+      "notes": "Good for read-only probes; weaker for structured transforms and per-step assertions."
+    },
+    {
+      "id": "workflow_batch_inline",
+      "label": "Inline workflow_batch spec",
+      "prompt": "Use workflow_batch for deterministic file/JSON reads, transforms, bounded scans, assertions, and a compact report.",
+      "setup_ms": 1150,
+      "per_weight_ms": 145,
+      "prompt_tokens": 72,
+      "diagnosability": 86,
+      "hidden_failure_penalty": 1,
+      "quality_penalty": 3,
+      "repair_turns": 1,
+      "notes": "Best canary path for repeated deterministic local work before promoting a reusable spec."
+    },
+    {
+      "id": "workflow_batch_spec_file",
+      "label": "Checked-in workflow_batch spec file",
+      "prompt": "Run a reviewed workflow_batch spec_path with named reports and assertions; update the spec only after a canary passes.",
+      "setup_ms": 1450,
+      "per_weight_ms": 120,
+      "prompt_tokens": 96,
+      "diagnosability": 90,
+      "hidden_failure_penalty": 1,
+      "quality_penalty": 2,
+      "repair_turns": 1,
+      "notes": "Fastest repeat path once the operation is stable; overkill for one-off probes."
+    },
+    {
+      "id": "python_script",
+      "label": "Purpose-built Python script",
+      "prompt": "Write or reuse a small Python runner for richer algorithms, fixture generation, or reusable metrics; emit JSON and Markdown reports.",
+      "setup_ms": 2100,
+      "per_weight_ms": 105,
+      "prompt_tokens": 88,
+      "diagnosability": 88,
+      "hidden_failure_penalty": 2,
+      "quality_penalty": 2,
+      "repair_turns": 1,
+      "notes": "Best for reusable metrics and richer data structures; initial setup cost is higher."
+    },
+    {
+      "id": "delegated_worker_batch",
+      "label": "Delegated worker batch",
+      "prompt": "Delegate an isolated implementation, review, or test triage packet with exact files, verification, and a short handoff.",
+      "setup_ms": 4200,
+      "per_weight_ms": 155,
+      "prompt_tokens": 180,
+      "diagnosability": 80,
+      "hidden_failure_penalty": 4,
+      "quality_penalty": 4,
+      "repair_turns": 2,
+      "notes": "Useful for parallel review or long-running tests; inefficient for tiny local deterministic work."
+    },
+    {
+      "id": "hybrid_scout_batch",
+      "label": "Hybrid scout plus local batch",
+      "prompt": "Use first-moves/context scouting to choose exact files, then run workflow_batch or a script for deterministic operations.",
+      "setup_ms": 1650,
+      "per_weight_ms": 118,
+      "prompt_tokens": 120,
+      "diagnosability": 88,
+      "hidden_failure_penalty": 1,
+      "quality_penalty": 2,
+      "repair_turns": 1,
+      "notes": "Best general default when the file set is uncertain but the operation becomes deterministic after routing."
+    }
+  ]
+}

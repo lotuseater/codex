@@ -36,7 +36,7 @@ impl ContextualUserFragment for ActionOptimizationInstructions {
     fn body(&self) -> String {
         let body = match self.variant {
             ActionOptimizationInstructionsVariant::ActionRouteSelection => {
-                "Keep simple tasks simple: answer directly when enough evidence is present, or run one focused command/read when that decides the next branch. Select the lightest route that still verifies the work: use shell/rg for one-off facts; use a tiny script or workflow_batch for repetitive deterministic local file/JSON work; reproduce before repair; plan, delegate, or batch only when ordering, ambiguity, or repeated work justifies the overhead."
+                "Answer directly when evidence suffices. Else: one focused read/command to decide the branch; batch repeated deterministic work; split risky/opaque steps; verify before reporting."
             }
         };
 

@@ -527,7 +527,7 @@ pub struct BatchMiniProgrammingInstructionsConfig {
 impl Default for BatchMiniProgrammingInstructionsConfig {
     fn default() -> Self {
         Self {
-            mode: BatchMiniProgrammingInstructionsMode::Off,
+            mode: BatchMiniProgrammingInstructionsMode::Always,
         }
     }
 }

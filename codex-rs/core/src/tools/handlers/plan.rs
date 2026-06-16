@@ -18,13 +18,13 @@ use serde_json::Value as JsonValue;
 
 pub struct PlanHandler;
 
-pub struct PlanToolOutput;
-
-const PLAN_UPDATED_MESSAGE: &str = "Plan updated";
+pub struct PlanToolOutput {
+    message: String,
+}
 
 impl ToolOutput for PlanToolOutput {
     fn log_preview(&self) -> String {
-        PLAN_UPDATED_MESSAGE.to_string()
+        self.message.clone()
     }
 
     fn success_for_logging(&self) -> bool {
@@ -36,7 +36,7 @@ impl ToolOutput for PlanToolOutput {
         call_id: &str,
         _payload: &dyn ToolOutputPayload,
     ) -> ResponseInputItem {
-        let mut output = FunctionCallOutputPayload::from_text(PLAN_UPDATED_MESSAGE.to_string());
+        let mut output = FunctionCallOutputPayload::from_text(self.message.clone());
         output.success = Some(true);
 
         ResponseInputItem::FunctionCallOutput {
@@ -89,11 +89,23 @@ impl ToolExecutor<ToolInvocation> for PlanHandler {
         }
 
         let args = parse_update_plan_arguments(&arguments)?;
+        let has_completed_step = args.plan.iter().any(|item| {
+            matches!(
+                item.status,
+                codex_protocol::plan_tool::StepStatus::Completed
+            )
+        });
+        let include_checkpoint = codex_self_review::is_plan_review_candidate(
+            args.plan.len(),
+            args.explanation.as_deref(),
+            has_completed_step,
+        );
+        let message = codex_self_review::plan_tool_response(include_checkpoint);
         session
             .send_event(turn.as_ref(), EventMsg::PlanUpdate(args))
             .await;
 
-        Ok(boxed_tool_output(PlanToolOutput))
+        Ok(boxed_tool_output(PlanToolOutput { message }))
     }
 }
 

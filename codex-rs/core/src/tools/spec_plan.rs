@@ -15,6 +15,7 @@ use crate::tools::handlers::ListMcpResourcesHandler;
 use crate::tools::handlers::McpHandler;
 use crate::tools::handlers::PlanHandler;
 use crate::tools::handlers::ReadMcpResourceHandler;
+use crate::tools::handlers::RepoContextScoutHandler;
 use crate::tools::handlers::RequestPermissionsHandler;
 use crate::tools::handlers::RequestPluginInstallHandler;
 use crate::tools::handlers::RequestUserInputHandler;
@@ -68,6 +69,7 @@ use codex_tool_registry_api::collect_code_mode_exec_prompt_tool_definitions;
 use codex_tool_registry_api::create_context_ops_tools;
 use codex_tool_registry_api::create_desktop_automation_tools;
 use codex_tool_registry_api::create_first_moves_tools;
+use codex_tool_registry_api::create_repo_context_scout_tool;
 use codex_tool_registry_api::create_workflow_batch_tool;
 use codex_tool_registry_api::default_namespace_description;
 use std::collections::BTreeMap;
@@ -489,6 +491,12 @@ pub(crate) fn collect_tool_executors(
         for tool in create_first_moves_tools() {
             executors.push(Arc::new(FirstMovesHandler::new(tool)));
         }
+    }
+
+    if config.repo_context_scout_tool_enabled && config.environment_mode.has_environment() {
+        executors.push(Arc::new(RepoContextScoutHandler::new(
+            create_repo_context_scout_tool(),
+        )));
     }
 
     if let Some(mcp_tools) = params.mcp_tools {
