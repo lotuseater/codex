@@ -1,45 +1,8 @@
 $ErrorActionPreference = "Stop"
 $Host.UI.RawUI.WindowTitle = 'Codex worker: solid_refactor_wave3_core_api_boundary_worker'
 Set-Location -LiteralPath 'C:\Users\Oleh\Documents\GitHub\open_ai\codex'
-$codexArgs = @('-c', 'model=gpt-5.3-codex', '-c', 'model_reasoning_effort=high', '--cd', 'C:\Users\Oleh\Documents\GitHub\open_ai\codex', '--ask-for-approval', 'never', '--sandbox', 'danger-full-access', 'exec', '# solid_refactor_wave3_core_api_boundary_worker
-
-You are a separate external Codex exec worker in `C:\Users\Oleh\Documents\GitHub\open_ai\codex`.
-
-You are not alone in the codebase. Other external workers may edit different files. Do not revert, overwrite, reformat, or clean up changes you did not make; adapt to the current dirty tree.
-
-First read:
-
-- `AGENTS.md`
-- `.codex/workflow/solid-refactor-handoff.md`
-- `.codex/workflow/agents/solid_refactor_wave1_core_api_boundary_worker.prompt.md`
-
-Ownership:
-
-- `codex-rs/core-api/**`
-- boundary call sites in `codex-rs/core/src/**`
-- excluding `codex-rs/core/src/session/**`, `codex-rs/core/src/tools/**`, `codex-rs/core/tests/**`
-- handoff: `.codex/workflow/agents/solid_refactor_wave3_core_api_boundary_worker.handoff.md`
-
-Task:
-
-- Implement one concrete SOLID boundary improvement that narrows `codex-core` ownership by moving suitable API/domain abstractions into `codex-core-api` or by using existing abstractions cleanly.
-- Avoid catch-all re-exports and do not add broad direct/transitive dependencies back into `codex-core`.
-- Preserve real data flow through proper models/APIs.
-
-Hard command ban:
-
-- Do not execute `cargo`, `rustc`, `just`, `bazel`, build scripts, test scripts, schema generation, deploy scripts, or git staging/commits.
-- If verification seems needed, write the exact command in your handoff instead of running it.
-
-Allowed commands:
-
-- Read/search/status/diff commands such as `rg`, `Get-Content`, `git diff`, `git status`.
-- `apply_patch` edits inside ownership only.
-
-Handoff:
-
-Write the handoff with changed files, boundary improvement, dependency impact, remaining fallout, and exact narrow verification commands for root.
-')
+Remove-Item Env:\CODEX_THREAD_ID, Env:\CODEX_SHELL, Env:\CODEX_INTERNAL_ORIGINATOR_OVERRIDE -ErrorAction SilentlyContinue
+$codexArgs = @([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('LWM=')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('bW9kZWw9Z3B0LTUuNQ==')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('LWM=')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('bW9kZWxfcmVhc29uaW5nX2VmZm9ydD14aGlnaA==')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('LS1jZA==')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('QzpcVXNlcnNcT2xlaFxEb2N1bWVudHNcR2l0SHViXG9wZW5fYWlcY29kZXg=')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('LS1hc2stZm9yLWFwcHJvdmFs')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('bmV2ZXI=')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('LS1zYW5kYm94')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('ZGFuZ2VyLWZ1bGwtYWNjZXNz')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('ZXhlYw==')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('IyBzb2xpZF9yZWZhY3Rvcl93YXZlM19jb3JlX2FwaV9ib3VuZGFyeV93b3JrZXIKCllvdSBhcmUgYSBzZXBhcmF0ZSBleHRlcm5hbCBDb2RleCBleGVjIHdvcmtlciBpbiBgQzpcVXNlcnNcT2xlaFxEb2N1bWVudHNcR2l0SHViXG9wZW5fYWlcY29kZXhgLgoKWW91IGFyZSBub3QgYWxvbmUgaW4gdGhlIGNvZGViYXNlLiBPdGhlciBleHRlcm5hbCB3b3JrZXJzIG1heSBlZGl0IGRpZmZlcmVudCBmaWxlcy4gRG8gbm90IHJldmVydCwgb3ZlcndyaXRlLCByZWZvcm1hdCwgb3IgY2xlYW4gdXAgY2hhbmdlcyB5b3UgZGlkIG5vdCBtYWtlOyBhZGFwdCB0byB0aGUgY3VycmVudCBkaXJ0eSB0cmVlLgoKRmlyc3QgcmVhZDoKCi0gYEFHRU5UUy5tZGAKLSBgLmNvZGV4L3dvcmtmbG93L3NvbGlkLXJlZmFjdG9yLWhhbmRvZmYubWRgCi0gYC5jb2RleC93b3JrZmxvdy9hZ2VudHMvc29saWRfcmVmYWN0b3Jfd2F2ZTFfY29yZV9hcGlfYm91bmRhcnlfd29ya2VyLnByb21wdC5tZGAKCk93bmVyc2hpcDoKCi0gYGNvZGV4LXJzL2NvcmUtYXBpLyoqYAotIGJvdW5kYXJ5IGNhbGwgc2l0ZXMgaW4gYGNvZGV4LXJzL2NvcmUvc3JjLyoqYAotIGV4Y2x1ZGluZyBgY29kZXgtcnMvY29yZS9zcmMvc2Vzc2lvbi8qKmAsIGBjb2RleC1ycy9jb3JlL3NyYy90b29scy8qKmAsIGBjb2RleC1ycy9jb3JlL3Rlc3RzLyoqYAotIGhhbmRvZmY6IGAuY29kZXgvd29ya2Zsb3cvYWdlbnRzL3NvbGlkX3JlZmFjdG9yX3dhdmUzX2NvcmVfYXBpX2JvdW5kYXJ5X3dvcmtlci5oYW5kb2ZmLm1kYAoKVGFzazoKCi0gSW1wbGVtZW50IG9uZSBjb25jcmV0ZSBTT0xJRCBib3VuZGFyeSBpbXByb3ZlbWVudCB0aGF0IG5hcnJvd3MgYGNvZGV4LWNvcmVgIG93bmVyc2hpcCBieSBtb3Zpbmcgc3VpdGFibGUgQVBJL2RvbWFpbiBhYnN0cmFjdGlvbnMgaW50byBgY29kZXgtY29yZS1hcGlgIG9yIGJ5IHVzaW5nIGV4aXN0aW5nIGFic3RyYWN0aW9ucyBjbGVhbmx5LgotIEF2b2lkIGNhdGNoLWFsbCByZS1leHBvcnRzIGFuZCBkbyBub3QgYWRkIGJyb2FkIGRpcmVjdC90cmFuc2l0aXZlIGRlcGVuZGVuY2llcyBiYWNrIGludG8gYGNvZGV4LWNvcmVgLgotIFByZXNlcnZlIHJlYWwgZGF0YSBmbG93IHRocm91Z2ggcHJvcGVyIG1vZGVscy9BUElzLgoKSGFyZCBjb21tYW5kIGJhbjoKCi0gRG8gbm90IGV4ZWN1dGUgYGNhcmdvYCwgYHJ1c3RjYCwgYGp1c3RgLCBgYmF6ZWxgLCBidWlsZCBzY3JpcHRzLCB0ZXN0IHNjcmlwdHMsIHNjaGVtYSBnZW5lcmF0aW9uLCBkZXBsb3kgc2NyaXB0cywgb3IgZ2l0IHN0YWdpbmcvY29tbWl0cy4KLSBJZiB2ZXJpZmljYXRpb24gc2VlbXMgbmVlZGVkLCB3cml0ZSB0aGUgZXhhY3QgY29tbWFuZCBpbiB5b3VyIGhhbmRvZmYgaW5zdGVhZCBvZiBydW5uaW5nIGl0LgoKQWxsb3dlZCBjb21tYW5kczoKCi0gUmVhZC9zZWFyY2gvc3RhdHVzL2RpZmYgY29tbWFuZHMgc3VjaCBhcyBgcmdgLCBgR2V0LUNvbnRlbnRgLCBgZ2l0IGRpZmZgLCBgZ2l0IHN0YXR1c2AuCi0gYGFwcGx5X3BhdGNoYCBlZGl0cyBpbnNpZGUgb3duZXJzaGlwIG9ubHkuCgpIYW5kb2ZmOgoKV3JpdGUgdGhlIGhhbmRvZmYgd2l0aCBjaGFuZ2VkIGZpbGVzLCBib3VuZGFyeSBpbXByb3ZlbWVudCwgZGVwZW5kZW5jeSBpbXBhY3QsIHJlbWFpbmluZyBmYWxsb3V0LCBhbmQgZXhhY3QgbmFycm93IHZlcmlmaWNhdGlvbiBjb21tYW5kcyBmb3Igcm9vdC4K')))
 $redirectToLog = $true
 if ($redirectToLog) {
     & 'codex' @codexArgs *>&1 | Tee-Object -FilePath 'C:\Users\Oleh\Documents\GitHub\open_ai\codex\.codex\workflow\agents\solid_refactor_wave3_core_api_boundary_worker.exec.visible.log'

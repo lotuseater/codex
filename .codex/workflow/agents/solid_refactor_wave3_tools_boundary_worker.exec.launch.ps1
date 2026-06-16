@@ -1,47 +1,8 @@
 $ErrorActionPreference = "Stop"
 $Host.UI.RawUI.WindowTitle = 'Codex worker: solid_refactor_wave3_tools_boundary_worker'
 Set-Location -LiteralPath 'C:\Users\Oleh\Documents\GitHub\open_ai\codex'
-$codexArgs = @('-c', 'model=gpt-5.3-codex', '-c', 'model_reasoning_effort=high', '--cd', 'C:\Users\Oleh\Documents\GitHub\open_ai\codex', '--ask-for-approval', 'never', '--sandbox', 'danger-full-access', 'exec', '# solid_refactor_wave3_tools_boundary_worker
-
-You are a separate external Codex exec worker in `C:\Users\Oleh\Documents\GitHub\open_ai\codex`.
-
-You are not alone in the codebase. Other external workers may edit different files. Do not revert, overwrite, reformat, or clean up changes you did not make; adapt to the current dirty tree.
-
-First read:
-
-- `AGENTS.md`
-- `.codex/workflow/solid-refactor-handoff.md`
-- `.codex/workflow/agents/solid_refactor_wave1_tools_boundary_worker.prompt.md`
-
-Ownership:
-
-- `codex-rs/core/src/tools/**`
-- `codex-rs/tools/**`
-- `codex-rs/tools-domain/**`
-- handoff: `.codex/workflow/agents/solid_refactor_wave3_tools_boundary_worker.handoff.md`
-
-Do not edit session/thread files, agent-specific handlers outside tools ownership, core tests outside tools-owned inline tests, workspace manifests, Bazel files, generated schemas, AGENTS files, or unrelated app-server protocol files.
-
-Task:
-
-- Implement one concrete tools runtime/domain boundary improvement that reduces `codex-core` dependence on concrete tool runtime details where a small boundary trait/domain type/policy object fits.
-- Avoid broad compatibility re-exports and do not add broad dependencies into `codex-core`.
-- Preserve real data flow through proper models/APIs.
-
-Hard command ban:
-
-- Do not execute `cargo`, `rustc`, `just`, `bazel`, build scripts, test scripts, schema generation, deploy scripts, or git staging/commits.
-- If verification seems needed, write the exact command in your handoff instead of running it.
-
-Allowed commands:
-
-- Read/search/status/diff commands such as `rg`, `Get-Content`, `git diff`, `git status`.
-- `apply_patch` edits inside ownership only.
-
-Handoff:
-
-Write the handoff with changed files, boundary improvement, dependency impact, remaining fallout, and exact narrow verification commands for root.
-')
+Remove-Item Env:\CODEX_THREAD_ID, Env:\CODEX_SHELL, Env:\CODEX_INTERNAL_ORIGINATOR_OVERRIDE -ErrorAction SilentlyContinue
+$codexArgs = @([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('LWM=')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('bW9kZWw9Z3B0LTUuNQ==')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('LWM=')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('bW9kZWxfcmVhc29uaW5nX2VmZm9ydD14aGlnaA==')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('LS1jZA==')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('QzpcVXNlcnNcT2xlaFxEb2N1bWVudHNcR2l0SHViXG9wZW5fYWlcY29kZXg=')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('LS1hc2stZm9yLWFwcHJvdmFs')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('bmV2ZXI=')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('LS1zYW5kYm94')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('ZGFuZ2VyLWZ1bGwtYWNjZXNz')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('ZXhlYw==')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('IyBzb2xpZF9yZWZhY3Rvcl93YXZlM190b29sc19ib3VuZGFyeV93b3JrZXIKCllvdSBhcmUgYSBzZXBhcmF0ZSBleHRlcm5hbCBDb2RleCBleGVjIHdvcmtlciBpbiBgQzpcVXNlcnNcT2xlaFxEb2N1bWVudHNcR2l0SHViXG9wZW5fYWlcY29kZXhgLgoKWW91IGFyZSBub3QgYWxvbmUgaW4gdGhlIGNvZGViYXNlLiBPdGhlciBleHRlcm5hbCB3b3JrZXJzIG1heSBlZGl0IGRpZmZlcmVudCBmaWxlcy4gRG8gbm90IHJldmVydCwgb3ZlcndyaXRlLCByZWZvcm1hdCwgb3IgY2xlYW4gdXAgY2hhbmdlcyB5b3UgZGlkIG5vdCBtYWtlOyBhZGFwdCB0byB0aGUgY3VycmVudCBkaXJ0eSB0cmVlLgoKRmlyc3QgcmVhZDoKCi0gYEFHRU5UUy5tZGAKLSBgLmNvZGV4L3dvcmtmbG93L3NvbGlkLXJlZmFjdG9yLWhhbmRvZmYubWRgCi0gYC5jb2RleC93b3JrZmxvdy9hZ2VudHMvc29saWRfcmVmYWN0b3Jfd2F2ZTFfdG9vbHNfYm91bmRhcnlfd29ya2VyLnByb21wdC5tZGAKCk93bmVyc2hpcDoKCi0gYGNvZGV4LXJzL2NvcmUvc3JjL3Rvb2xzLyoqYAotIGBjb2RleC1ycy90b29scy8qKmAKLSBgY29kZXgtcnMvdG9vbHMtZG9tYWluLyoqYAotIGhhbmRvZmY6IGAuY29kZXgvd29ya2Zsb3cvYWdlbnRzL3NvbGlkX3JlZmFjdG9yX3dhdmUzX3Rvb2xzX2JvdW5kYXJ5X3dvcmtlci5oYW5kb2ZmLm1kYAoKRG8gbm90IGVkaXQgc2Vzc2lvbi90aHJlYWQgZmlsZXMsIGFnZW50LXNwZWNpZmljIGhhbmRsZXJzIG91dHNpZGUgdG9vbHMgb3duZXJzaGlwLCBjb3JlIHRlc3RzIG91dHNpZGUgdG9vbHMtb3duZWQgaW5saW5lIHRlc3RzLCB3b3Jrc3BhY2UgbWFuaWZlc3RzLCBCYXplbCBmaWxlcywgZ2VuZXJhdGVkIHNjaGVtYXMsIEFHRU5UUyBmaWxlcywgb3IgdW5yZWxhdGVkIGFwcC1zZXJ2ZXIgcHJvdG9jb2wgZmlsZXMuCgpUYXNrOgoKLSBJbXBsZW1lbnQgb25lIGNvbmNyZXRlIHRvb2xzIHJ1bnRpbWUvZG9tYWluIGJvdW5kYXJ5IGltcHJvdmVtZW50IHRoYXQgcmVkdWNlcyBgY29kZXgtY29yZWAgZGVwZW5kZW5jZSBvbiBjb25jcmV0ZSB0b29sIHJ1bnRpbWUgZGV0YWlscyB3aGVyZSBhIHNtYWxsIGJvdW5kYXJ5IHRyYWl0L2RvbWFpbiB0eXBlL3BvbGljeSBvYmplY3QgZml0cy4KLSBBdm9pZCBicm9hZCBjb21wYXRpYmlsaXR5IHJlLWV4cG9ydHMgYW5kIGRvIG5vdCBhZGQgYnJvYWQgZGVwZW5kZW5jaWVzIGludG8gYGNvZGV4LWNvcmVgLgotIFByZXNlcnZlIHJlYWwgZGF0YSBmbG93IHRocm91Z2ggcHJvcGVyIG1vZGVscy9BUElzLgoKSGFyZCBjb21tYW5kIGJhbjoKCi0gRG8gbm90IGV4ZWN1dGUgYGNhcmdvYCwgYHJ1c3RjYCwgYGp1c3RgLCBgYmF6ZWxgLCBidWlsZCBzY3JpcHRzLCB0ZXN0IHNjcmlwdHMsIHNjaGVtYSBnZW5lcmF0aW9uLCBkZXBsb3kgc2NyaXB0cywgb3IgZ2l0IHN0YWdpbmcvY29tbWl0cy4KLSBJZiB2ZXJpZmljYXRpb24gc2VlbXMgbmVlZGVkLCB3cml0ZSB0aGUgZXhhY3QgY29tbWFuZCBpbiB5b3VyIGhhbmRvZmYgaW5zdGVhZCBvZiBydW5uaW5nIGl0LgoKQWxsb3dlZCBjb21tYW5kczoKCi0gUmVhZC9zZWFyY2gvc3RhdHVzL2RpZmYgY29tbWFuZHMgc3VjaCBhcyBgcmdgLCBgR2V0LUNvbnRlbnRgLCBgZ2l0IGRpZmZgLCBgZ2l0IHN0YXR1c2AuCi0gYGFwcGx5X3BhdGNoYCBlZGl0cyBpbnNpZGUgb3duZXJzaGlwIG9ubHkuCgpIYW5kb2ZmOgoKV3JpdGUgdGhlIGhhbmRvZmYgd2l0aCBjaGFuZ2VkIGZpbGVzLCBib3VuZGFyeSBpbXByb3ZlbWVudCwgZGVwZW5kZW5jeSBpbXBhY3QsIHJlbWFpbmluZyBmYWxsb3V0LCBhbmQgZXhhY3QgbmFycm93IHZlcmlmaWNhdGlvbiBjb21tYW5kcyBmb3Igcm9vdC4K')))
 $redirectToLog = $true
 if ($redirectToLog) {
     & 'codex' @codexArgs *>&1 | Tee-Object -FilePath 'C:\Users\Oleh\Documents\GitHub\open_ai\codex\.codex\workflow\agents\solid_refactor_wave3_tools_boundary_worker.exec.visible.log'

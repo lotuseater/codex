@@ -1,49 +1,8 @@
 $ErrorActionPreference = "Stop"
 $Host.UI.RawUI.WindowTitle = 'Codex worker: solid_refactor_wave3_protocol_domain_tests_worker'
 Set-Location -LiteralPath 'C:\Users\Oleh\Documents\GitHub\open_ai\codex'
-$codexArgs = @('-c', 'model=gpt-5.3-codex', '-c', 'model_reasoning_effort=high', '--cd', 'C:\Users\Oleh\Documents\GitHub\open_ai\codex', '--ask-for-approval', 'never', '--sandbox', 'danger-full-access', 'exec', '# solid_refactor_wave3_protocol_domain_tests_worker
-
-You are a separate external Codex exec worker in `C:\Users\Oleh\Documents\GitHub\open_ai\codex`.
-
-You are not alone in the codebase. Other external workers may edit different files. Do not revert, overwrite, reformat, or clean up changes you did not make; adapt to the current dirty tree.
-
-First read:
-
-- `AGENTS.md`
-- `.codex/workflow/solid-refactor-handoff.md`
-- `.codex/workflow/agents/core_test_split_next_lane_worker.handoff.md`
-- `.codex/workflow/agents/core_test_split_followup_lane_worker.handoff.md`
-
-Ownership:
-
-- protocol/domain-only core tests under `codex-rs/core/tests/**`
-- protocol/domain fixture support under `codex-rs/core/tests/common/**`
-- narrowly needed `codex-rs/core/Cargo.toml` test target entries for that split
-- excluding compact files owned by the compact worker
-- handoff: `.codex/workflow/agents/solid_refactor_wave3_protocol_domain_tests_worker.handoff.md`
-
-Do not edit core runtime source except tiny support imports required by moved tests. Do not edit compact files, workspace root manifests, Bazel files, generated schemas, AGENTS files, app-server protocol files, session/thread source, tools source, or agent runtime source.
-
-Task:
-
-- Identify one protocol/domain-only core test family that can be split from runtime-instantiating core tests.
-- Move or retarget that family into a smaller test target/harness with minimal dependency fan-in.
-- Keep runtime helpers out of protocol/domain-only fixture support.
-
-Hard command ban:
-
-- Do not execute `cargo`, `rustc`, `just`, `bazel`, build scripts, test scripts, schema generation, deploy scripts, or git staging/commits.
-- If verification seems needed, write the exact command in your handoff instead of running it.
-
-Allowed commands:
-
-- Read/search/status/diff commands such as `rg`, `Get-Content`, `git diff`, `git status`.
-- `apply_patch` edits inside ownership only.
-
-Handoff:
-
-Write the handoff with changed files, split target/test family, boundary improvement, remaining fallout, and exact narrow verification commands for root.
-')
+Remove-Item Env:\CODEX_THREAD_ID, Env:\CODEX_SHELL, Env:\CODEX_INTERNAL_ORIGINATOR_OVERRIDE -ErrorAction SilentlyContinue
+$codexArgs = @([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('LWM=')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('bW9kZWw9Z3B0LTUuNQ==')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('LWM=')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('bW9kZWxfcmVhc29uaW5nX2VmZm9ydD14aGlnaA==')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('LS1jZA==')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('QzpcVXNlcnNcT2xlaFxEb2N1bWVudHNcR2l0SHViXG9wZW5fYWlcY29kZXg=')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('LS1hc2stZm9yLWFwcHJvdmFs')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('bmV2ZXI=')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('LS1zYW5kYm94')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('ZGFuZ2VyLWZ1bGwtYWNjZXNz')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('ZXhlYw==')), [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('IyBzb2xpZF9yZWZhY3Rvcl93YXZlM19wcm90b2NvbF9kb21haW5fdGVzdHNfd29ya2VyCgpZb3UgYXJlIGEgc2VwYXJhdGUgZXh0ZXJuYWwgQ29kZXggZXhlYyB3b3JrZXIgaW4gYEM6XFVzZXJzXE9sZWhcRG9jdW1lbnRzXEdpdEh1YlxvcGVuX2FpXGNvZGV4YC4KCllvdSBhcmUgbm90IGFsb25lIGluIHRoZSBjb2RlYmFzZS4gT3RoZXIgZXh0ZXJuYWwgd29ya2VycyBtYXkgZWRpdCBkaWZmZXJlbnQgZmlsZXMuIERvIG5vdCByZXZlcnQsIG92ZXJ3cml0ZSwgcmVmb3JtYXQsIG9yIGNsZWFuIHVwIGNoYW5nZXMgeW91IGRpZCBub3QgbWFrZTsgYWRhcHQgdG8gdGhlIGN1cnJlbnQgZGlydHkgdHJlZS4KCkZpcnN0IHJlYWQ6CgotIGBBR0VOVFMubWRgCi0gYC5jb2RleC93b3JrZmxvdy9zb2xpZC1yZWZhY3Rvci1oYW5kb2ZmLm1kYAotIGAuY29kZXgvd29ya2Zsb3cvYWdlbnRzL2NvcmVfdGVzdF9zcGxpdF9uZXh0X2xhbmVfd29ya2VyLmhhbmRvZmYubWRgCi0gYC5jb2RleC93b3JrZmxvdy9hZ2VudHMvY29yZV90ZXN0X3NwbGl0X2ZvbGxvd3VwX2xhbmVfd29ya2VyLmhhbmRvZmYubWRgCgpPd25lcnNoaXA6CgotIHByb3RvY29sL2RvbWFpbi1vbmx5IGNvcmUgdGVzdHMgdW5kZXIgYGNvZGV4LXJzL2NvcmUvdGVzdHMvKipgCi0gcHJvdG9jb2wvZG9tYWluIGZpeHR1cmUgc3VwcG9ydCB1bmRlciBgY29kZXgtcnMvY29yZS90ZXN0cy9jb21tb24vKipgCi0gbmFycm93bHkgbmVlZGVkIGBjb2RleC1ycy9jb3JlL0NhcmdvLnRvbWxgIHRlc3QgdGFyZ2V0IGVudHJpZXMgZm9yIHRoYXQgc3BsaXQKLSBleGNsdWRpbmcgY29tcGFjdCBmaWxlcyBvd25lZCBieSB0aGUgY29tcGFjdCB3b3JrZXIKLSBoYW5kb2ZmOiBgLmNvZGV4L3dvcmtmbG93L2FnZW50cy9zb2xpZF9yZWZhY3Rvcl93YXZlM19wcm90b2NvbF9kb21haW5fdGVzdHNfd29ya2VyLmhhbmRvZmYubWRgCgpEbyBub3QgZWRpdCBjb3JlIHJ1bnRpbWUgc291cmNlIGV4Y2VwdCB0aW55IHN1cHBvcnQgaW1wb3J0cyByZXF1aXJlZCBieSBtb3ZlZCB0ZXN0cy4gRG8gbm90IGVkaXQgY29tcGFjdCBmaWxlcywgd29ya3NwYWNlIHJvb3QgbWFuaWZlc3RzLCBCYXplbCBmaWxlcywgZ2VuZXJhdGVkIHNjaGVtYXMsIEFHRU5UUyBmaWxlcywgYXBwLXNlcnZlciBwcm90b2NvbCBmaWxlcywgc2Vzc2lvbi90aHJlYWQgc291cmNlLCB0b29scyBzb3VyY2UsIG9yIGFnZW50IHJ1bnRpbWUgc291cmNlLgoKVGFzazoKCi0gSWRlbnRpZnkgb25lIHByb3RvY29sL2RvbWFpbi1vbmx5IGNvcmUgdGVzdCBmYW1pbHkgdGhhdCBjYW4gYmUgc3BsaXQgZnJvbSBydW50aW1lLWluc3RhbnRpYXRpbmcgY29yZSB0ZXN0cy4KLSBNb3ZlIG9yIHJldGFyZ2V0IHRoYXQgZmFtaWx5IGludG8gYSBzbWFsbGVyIHRlc3QgdGFyZ2V0L2hhcm5lc3Mgd2l0aCBtaW5pbWFsIGRlcGVuZGVuY3kgZmFuLWluLgotIEtlZXAgcnVudGltZSBoZWxwZXJzIG91dCBvZiBwcm90b2NvbC9kb21haW4tb25seSBmaXh0dXJlIHN1cHBvcnQuCgpIYXJkIGNvbW1hbmQgYmFuOgoKLSBEbyBub3QgZXhlY3V0ZSBgY2FyZ29gLCBgcnVzdGNgLCBganVzdGAsIGBiYXplbGAsIGJ1aWxkIHNjcmlwdHMsIHRlc3Qgc2NyaXB0cywgc2NoZW1hIGdlbmVyYXRpb24sIGRlcGxveSBzY3JpcHRzLCBvciBnaXQgc3RhZ2luZy9jb21taXRzLgotIElmIHZlcmlmaWNhdGlvbiBzZWVtcyBuZWVkZWQsIHdyaXRlIHRoZSBleGFjdCBjb21tYW5kIGluIHlvdXIgaGFuZG9mZiBpbnN0ZWFkIG9mIHJ1bm5pbmcgaXQuCgpBbGxvd2VkIGNvbW1hbmRzOgoKLSBSZWFkL3NlYXJjaC9zdGF0dXMvZGlmZiBjb21tYW5kcyBzdWNoIGFzIGByZ2AsIGBHZXQtQ29udGVudGAsIGBnaXQgZGlmZmAsIGBnaXQgc3RhdHVzYC4KLSBgYXBwbHlfcGF0Y2hgIGVkaXRzIGluc2lkZSBvd25lcnNoaXAgb25seS4KCkhhbmRvZmY6CgpXcml0ZSB0aGUgaGFuZG9mZiB3aXRoIGNoYW5nZWQgZmlsZXMsIHNwbGl0IHRhcmdldC90ZXN0IGZhbWlseSwgYm91bmRhcnkgaW1wcm92ZW1lbnQsIHJlbWFpbmluZyBmYWxsb3V0LCBhbmQgZXhhY3QgbmFycm93IHZlcmlmaWNhdGlvbiBjb21tYW5kcyBmb3Igcm9vdC4K')))
 $redirectToLog = $true
 if ($redirectToLog) {
     & 'codex' @codexArgs *>&1 | Tee-Object -FilePath 'C:\Users\Oleh\Documents\GitHub\open_ai\codex\.codex\workflow\agents\solid_refactor_wave3_protocol_domain_tests_worker.exec.visible.log'
