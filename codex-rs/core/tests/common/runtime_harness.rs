@@ -11,6 +11,7 @@ use codex_core::CodexThreadSettingsOverrides;
 use codex_core::config::Config;
 use codex_core::config::ConfigBuilder;
 use codex_core::config::ConfigOverrides;
+use codex_protocol::protocol::ThreadSettingsOverrides;
 #[cfg(target_os = "linux")]
 use codex_utils_cargo_bin::CargoBinError;
 use ctor::ctor;
@@ -151,10 +152,50 @@ where
 
 pub async fn submit_thread_settings(
     codex: &CodexThread,
-    thread_settings: CodexThreadSettingsOverrides,
+    thread_settings: ThreadSettingsOverrides,
 ) -> anyhow::Result<()> {
+    let ThreadSettingsOverrides {
+        cwd,
+        environments,
+        workspace_roots,
+        profile_workspace_roots,
+        approval_policy,
+        approvals_reviewer,
+        sandbox_policy,
+        permission_profile,
+        active_permission_profile,
+        windows_sandbox_level,
+        model,
+        effort,
+        summary,
+        service_tier,
+        collaboration_mode,
+        personality,
+    } = thread_settings;
+
+    if environments.is_some() {
+        anyhow::bail!("submit_thread_settings does not support environment selection overrides");
+    }
+
     codex
-        .apply_thread_settings_overrides(thread_settings)
+        .apply_thread_settings_overrides(CodexThreadSettingsOverrides {
+            cwd,
+            workspace_roots,
+            profile_workspace_roots,
+            approval_policy,
+            approvals_reviewer,
+            sandbox_policy,
+            permission_profile,
+            active_permission_profile,
+            windows_sandbox_level,
+            model,
+            effort,
+            summary,
+            service_tier,
+            context_budget_mode: None,
+            collaboration_mode,
+            personality,
+        })
         .await?;
     Ok(())
 }

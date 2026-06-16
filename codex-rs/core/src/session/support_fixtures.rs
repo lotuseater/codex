@@ -266,6 +266,11 @@ pub(crate) fn model_with_default_service_tier(default_service_tier: Option<&str>
         id: ServiceTier::Fast.request_value().to_string(),
         name: "Fast".to_string(),
         description: "Priority processing.".to_string(),
+        default_service_tier: None,
+        use_responses_lite: false,
+        auto_review_model_override: None,
+        tool_mode: None,
+        multi_agent_version: None,
     }];
     model_info.default_service_tier = default_service_tier.map(str::to_string);
     model_info

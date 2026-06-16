@@ -39,14 +39,25 @@ use std::path::Path;
 use tempfile::tempdir;
 use toml::Value as TomlValue;
 
+#[path = "config_loader_tests/common.rs"]
 mod common;
+#[path = "config_loader_tests/errors_and_schema.rs"]
 mod errors_and_schema;
+#[path = "config_loader_tests/layers.rs"]
 mod layers;
+#[path = "config_loader_tests/macos_managed_preferences.rs"]
 mod macos_managed_preferences;
+#[path = "config_loader_tests/paths_and_instructions.rs"]
 mod paths_and_instructions;
+#[path = "config_loader_tests/permissions.rs"]
 mod permissions;
+#[path = "config_loader_tests/project_layers.rs"]
 mod project_layers;
+#[path = "config_loader_tests/project_trust.rs"]
 mod project_trust;
+#[path = "config_loader_tests/project_worktree_hooks.rs"]
 mod project_worktree_hooks;
+#[path = "config_loader_tests/requirements_exec_policy_tests.rs"]
 mod requirements_exec_policy_tests;
+#[path = "config_loader_tests/requirements_toml.rs"]
 mod requirements_toml;

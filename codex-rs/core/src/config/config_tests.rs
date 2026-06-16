@@ -1,5 +1,6 @@
 use crate::agents_md::DEFAULT_AGENTS_MD_FILENAME;
 use crate::agents_md::LOCAL_AGENTS_MD_FILENAME;
+use crate::config::BatchMiniProgrammingInstructionsMode;
 use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
 use crate::config::edit::apply_blocking;
@@ -11,6 +12,8 @@ use codex_config::RequirementSource;
 use codex_config::config_toml::AgentRoleToml;
 use codex_config::config_toml::AgentsToml;
 use codex_config::config_toml::AutoReviewToml;
+use codex_config::config_toml::BatchMiniProgrammingInstructionsModeToml;
+use codex_config::config_toml::BatchMiniProgrammingInstructionsToml;
 use codex_config::config_toml::ConfigToml;
 use codex_config::config_toml::ExperimentalRequestUserInput;
 use codex_config::config_toml::FirstMovesModeToml;
@@ -120,53 +123,53 @@ use tempfile::TempDir;
 #[path = "config_tests/common.rs"]
 mod common;
 
+#[path = "config_tests/agent_role_discovery.rs"]
+mod agent_role_discovery;
+#[path = "config_tests/agent_role_files.rs"]
+mod agent_role_files;
+#[path = "config_tests/features_and_approvals.rs"]
+mod features_and_approvals;
+#[path = "config_tests/features_and_mcp_loading.rs"]
+mod features_and_mcp_loading;
 #[path = "config_tests/loading_and_parsing.rs"]
 mod loading_and_parsing;
-#[path = "config_tests/provider_and_tui_basics.rs"]
-mod provider_and_tui_basics;
-#[path = "config_tests/permission_profiles_a.rs"]
-mod permission_profiles_a;
+#[path = "config_tests/mcp_filter.rs"]
+mod mcp_filter;
+#[path = "config_tests/mcp_rebuild_and_to_config.rs"]
+mod mcp_rebuild_and_to_config;
+#[path = "config_tests/mcp_replace_serialization.rs"]
+mod mcp_replace_serialization;
+#[path = "config_tests/mcp_to_config_serialization.rs"]
+mod mcp_to_config_serialization;
+#[path = "config_tests/multi_agent_v2.rs"]
+mod multi_agent_v2;
 #[path = "config_tests/network_proxy_feature.rs"]
 mod network_proxy_feature;
+#[path = "config_tests/oss_and_sandbox_derive.rs"]
+mod oss_and_sandbox_derive;
+#[path = "config_tests/permission_profiles_a.rs"]
+mod permission_profiles_a;
 #[path = "config_tests/permission_profiles_b.rs"]
 mod permission_profiles_b;
 #[path = "config_tests/permission_profiles_c.rs"]
 mod permission_profiles_c;
 #[path = "config_tests/permission_profiles_d.rs"]
 mod permission_profiles_d;
-#[path = "config_tests/tui_misc_and_sandbox.rs"]
-mod tui_misc_and_sandbox;
-#[path = "config_tests/mcp_filter.rs"]
-mod mcp_filter;
-#[path = "config_tests/mcp_rebuild_and_to_config.rs"]
-mod mcp_rebuild_and_to_config;
-#[path = "config_tests/runtime_auth_and_websearch.rs"]
-mod runtime_auth_and_websearch;
-#[path = "config_tests/features_and_mcp_loading.rs"]
-mod features_and_mcp_loading;
-#[path = "config_tests/mcp_to_config_serialization.rs"]
-mod mcp_to_config_serialization;
-#[path = "config_tests/mcp_replace_serialization.rs"]
-mod mcp_replace_serialization;
-#[path = "config_tests/set_model_and_guardian.rs"]
-mod set_model_and_guardian;
-#[path = "config_tests/agent_role_files.rs"]
-mod agent_role_files;
-#[path = "config_tests/agent_role_discovery.rs"]
-mod agent_role_discovery;
-#[path = "config_tests/precedence_otel_service_tier.rs"]
-mod precedence_otel_service_tier;
 #[path = "config_tests/precedence_fixtures.rs"]
 mod precedence_fixtures;
-#[path = "config_tests/oss_and_sandbox_derive.rs"]
-mod oss_and_sandbox_derive;
+#[path = "config_tests/precedence_otel_service_tier.rs"]
+mod precedence_otel_service_tier;
+#[path = "config_tests/provider_and_tui_basics.rs"]
+mod provider_and_tui_basics;
 #[path = "config_tests/requirements_fallbacks.rs"]
 mod requirements_fallbacks;
-#[path = "config_tests/features_and_approvals.rs"]
-mod features_and_approvals;
-#[path = "config_tests/multi_agent_v2.rs"]
-mod multi_agent_v2;
+#[path = "config_tests/runtime_auth_and_websearch.rs"]
+mod runtime_auth_and_websearch;
+#[path = "config_tests/set_model_and_guardian.rs"]
+mod set_model_and_guardian;
 #[path = "config_tests/tool_suggest_and_realtime.rs"]
 mod tool_suggest_and_realtime;
+#[path = "config_tests/tui_misc_and_sandbox.rs"]
+mod tui_misc_and_sandbox;
 #[path = "config_tests/tui_notifications.rs"]
 mod tui_notifications;

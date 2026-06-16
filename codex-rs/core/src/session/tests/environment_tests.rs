@@ -115,8 +115,54 @@ async fn absolute_cwd_update_with_turn_environment_is_allowed() {
 #[tokio::test]
 async fn build_initial_context_omits_batch_mini_programming_without_environment() {
     let (session, mut turn_context) = make_session_and_context().await;
+    let mut config = turn_context.config.as_ref().clone();
+    config.batch_mini_programming_instructions.mode =
+        crate::config::BatchMiniProgrammingInstructionsMode::Always;
+    turn_context.config = std::sync::Arc::new(config);
     turn_context.tools_config.workflow_batch_enabled = true;
     turn_context.tools_config.environment_mode = ToolEnvironmentMode::None;
+
+    let context = session.build_initial_context(&turn_context).await;
+    let developer_text = developer_input_texts(&context).join("\n");
+
+    assert!(!developer_text.contains("<batch_mini_programming_instructions>"));
+}
+
+#[tokio::test]
+async fn build_initial_context_omits_batch_mini_programming_by_default() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    turn_context.tools_config.workflow_batch_enabled = true;
+
+    let context = session.build_initial_context(&turn_context).await;
+    let developer_text = developer_input_texts(&context).join("\n");
+
+    assert!(!developer_text.contains("<batch_mini_programming_instructions>"));
+}
+
+#[tokio::test]
+async fn build_initial_context_includes_batch_mini_programming_when_enabled() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    let mut config = turn_context.config.as_ref().clone();
+    config.batch_mini_programming_instructions.mode =
+        crate::config::BatchMiniProgrammingInstructionsMode::Always;
+    turn_context.config = std::sync::Arc::new(config);
+    turn_context.tools_config.workflow_batch_enabled = true;
+
+    let context = session.build_initial_context(&turn_context).await;
+    let developer_text = developer_input_texts(&context).join("\n");
+
+    assert!(developer_text.contains("<batch_mini_programming_instructions>"));
+    assert!(developer_text.contains("workflow_batch"));
+}
+
+#[tokio::test]
+async fn build_initial_context_omits_batch_mini_programming_without_tool() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    let mut config = turn_context.config.as_ref().clone();
+    config.batch_mini_programming_instructions.mode =
+        crate::config::BatchMiniProgrammingInstructionsMode::Always;
+    turn_context.config = std::sync::Arc::new(config);
+    turn_context.tools_config.workflow_batch_enabled = false;
 
     let context = session.build_initial_context(&turn_context).await;
     let developer_text = developer_input_texts(&context).join("\n");

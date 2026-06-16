@@ -127,6 +127,8 @@ async fn handle_shell_command_autoapprove_from_config_records_tool_decision() {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await
         .unwrap();
@@ -180,6 +182,8 @@ async fn handle_shell_command_user_approved_records_tool_decision() {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await
         .unwrap();
@@ -248,6 +252,8 @@ async fn handle_shell_command_user_approved_for_session_records_tool_decision() 
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await
         .unwrap();
@@ -316,6 +322,8 @@ async fn handle_sandbox_error_user_approves_retry_records_tool_decision() {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await
         .unwrap();
@@ -384,6 +392,8 @@ async fn handle_shell_command_user_denies_records_tool_decision() {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await
         .unwrap();
@@ -452,6 +462,8 @@ async fn handle_sandbox_error_user_approves_for_session_records_tool_decision() 
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await
         .unwrap();
@@ -521,6 +533,8 @@ async fn handle_sandbox_error_user_denies_records_tool_decision() {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await
         .unwrap();

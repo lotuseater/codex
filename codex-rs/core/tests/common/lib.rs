@@ -41,6 +41,7 @@ pub use runtime_harness::format_with_current_shell_display_non_login;
 pub use runtime_harness::format_with_current_shell_non_login;
 pub use runtime_harness::sandbox_env_var;
 pub use runtime_harness::sandbox_network_env_var;
+pub use runtime_harness::submit_thread_settings;
 
 /// Waits for a configured MCP server to finish startup and requires it to be ready.
 pub async fn wait_for_mcp_server(codex: &CodexThread, server_name: &str) -> anyhow::Result<()> {

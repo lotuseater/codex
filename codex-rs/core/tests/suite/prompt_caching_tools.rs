@@ -2,6 +2,17 @@
 
 use codex_apply_patch::APPLY_PATCH_TOOL_INSTRUCTIONS;
 use codex_core::shell::default_user_shell;
+use codex_core_test_runtime::TempDirExt;
+use codex_core_test_runtime::responses::ev_completed;
+use codex_core_test_runtime::responses::ev_response_created;
+use codex_core_test_runtime::responses::mount_sse_once;
+use codex_core_test_runtime::responses::sse;
+use codex_core_test_runtime::responses::start_mock_server;
+use codex_core_test_runtime::skip_if_no_network;
+use codex_core_test_runtime::test_codex::TestCodex;
+use codex_core_test_runtime::test_codex::test_codex;
+use codex_core_test_runtime::test_codex::turn_permission_fields;
+use codex_core_test_runtime::wait_for_event;
 use codex_features::Feature;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::ModeKind;
@@ -16,17 +27,6 @@ use codex_protocol::protocol::ENVIRONMENT_CONTEXT_OPEN_TAG;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
 use codex_protocol::user_input::UserInput;
-use codex_core_test_runtime::TempDirExt;
-use codex_core_test_runtime::responses::ev_completed;
-use codex_core_test_runtime::responses::ev_response_created;
-use codex_core_test_runtime::responses::mount_sse_once;
-use codex_core_test_runtime::responses::sse;
-use codex_core_test_runtime::responses::start_mock_server;
-use codex_core_test_runtime::skip_if_no_network;
-use codex_core_test_runtime::test_codex::TestCodex;
-use codex_core_test_runtime::test_codex::test_codex;
-use codex_core_test_runtime::test_codex::turn_permission_fields;
-use codex_core_test_runtime::wait_for_event;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 
@@ -153,6 +153,8 @@ async fn prompt_tools_are_consistent_across_requests() -> anyhow::Result<()> {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await?;
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
@@ -166,6 +168,8 @@ async fn prompt_tools_are_consistent_across_requests() -> anyhow::Result<()> {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await?;
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
@@ -211,7 +215,7 @@ async fn prompt_tools_are_consistent_across_requests() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn gpt_5_tools_without_apply_patch_append_apply_patch_instructions() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
     use pretty_assertions::assert_eq;
@@ -253,6 +257,8 @@ async fn gpt_5_tools_without_apply_patch_append_apply_patch_instructions() -> an
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await?;
 
@@ -266,6 +272,8 @@ async fn gpt_5_tools_without_apply_patch_append_apply_patch_instructions() -> an
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await?;
 
@@ -291,5 +299,3 @@ async fn gpt_5_tools_without_apply_patch_append_apply_patch_instructions() -> an
 
     Ok(())
 }
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -446,5 +446,3 @@ speaker = "Desk Speakers"
     );
     Ok(())
 }
-
-#[derive(Deserialize, Debug, PartialEq)]

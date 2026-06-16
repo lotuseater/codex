@@ -135,6 +135,8 @@ async fn handle_responses_span_records_response_kind_and_tool_name() {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await
         .unwrap();
@@ -227,6 +229,8 @@ async fn record_responses_sets_span_fields_for_response_events() {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await
         .unwrap();
@@ -314,6 +318,8 @@ async fn handle_response_item_records_tool_result_for_custom_tool_call() {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await
         .unwrap();
@@ -388,6 +394,8 @@ async fn handle_response_item_records_tool_result_for_function_call() {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await
         .unwrap();
@@ -463,6 +471,8 @@ async fn handle_response_item_records_tool_result_for_shell_command_call() {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await
         .unwrap();

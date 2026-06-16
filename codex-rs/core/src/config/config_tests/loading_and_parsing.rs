@@ -19,6 +19,41 @@ async fn load_config_normalizes_relative_cwd_override() -> std::io::Result<()> {
 }
 
 #[tokio::test]
+async fn load_config_resolves_batch_mini_programming_instructions() -> std::io::Result<()> {
+    let codex_home = tempdir()?;
+    let default_config = Config::load_from_base_config_with_overrides(
+        ConfigToml::default(),
+        ConfigOverrides::default(),
+        codex_home.abs(),
+    )
+    .await?;
+
+    assert_eq!(
+        default_config.batch_mini_programming_instructions.mode,
+        BatchMiniProgrammingInstructionsMode::Off
+    );
+
+    let enabled_config = Config::load_from_base_config_with_overrides(
+        ConfigToml {
+            batch_mini_programming_instructions: Some(BatchMiniProgrammingInstructionsToml {
+                mode: Some(BatchMiniProgrammingInstructionsModeToml::Always),
+            }),
+            ..Default::default()
+        },
+        ConfigOverrides::default(),
+        codex_home.abs(),
+    )
+    .await?;
+
+    assert_eq!(
+        enabled_config.batch_mini_programming_instructions.mode,
+        BatchMiniProgrammingInstructionsMode::Always
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn load_config_resolves_model_compact_percentage() -> std::io::Result<()> {
     let codex_home = tempdir()?;
     let default_config = Config::load_from_base_config_with_overrides(
@@ -356,4 +391,3 @@ max_candidates = 6
     assert_eq!(config.max_output_tokens, Some(900));
     assert_eq!(config.max_candidates, Some(6));
 }
-

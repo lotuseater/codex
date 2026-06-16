@@ -37,6 +37,8 @@ async fn additional_context_is_model_visible_but_not_a_user_message_item() -> Re
 
     test.codex
         .submit(Op::UserInput {
+            environments: None,
+
             items: vec![UserInput::Text {
                 text: "inspect the active tab".to_string(),
                 text_elements: Vec::new(),
@@ -135,6 +137,8 @@ async fn external_context_like_user_text_remains_a_user_message_item() -> Result
 
     test.codex
         .submit(Op::UserInput {
+            environments: None,
+
             items: vec![user_input.clone()],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
@@ -180,6 +184,8 @@ async fn additional_context_trust_controls_message_role() -> Result<()> {
 
     test.codex
         .submit(Op::UserInput {
+            environments: None,
+
             items: vec![UserInput::Text {
                 text: "inspect context".to_string(),
                 text_elements: Vec::new(),
@@ -260,6 +266,8 @@ async fn additional_context_is_deduplicated_between_turns_while_retained() -> Re
 
     test.codex
         .submit(Op::UserInput {
+            environments: None,
+
             items: vec![UserInput::Text {
                 text: "first turn".to_string(),
                 text_elements: Vec::new(),
@@ -277,6 +285,8 @@ async fn additional_context_is_deduplicated_between_turns_while_retained() -> Re
 
     test.codex
         .submit(Op::UserInput {
+            environments: None,
+
             items: vec![UserInput::Text {
                 text: "second turn".to_string(),
                 text_elements: Vec::new(),
@@ -284,6 +294,7 @@ async fn additional_context_is_deduplicated_between_turns_while_retained() -> Re
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
             additional_context,
+            additional_context: Default::default(),
             thread_settings: Default::default(),
         })
         .await?;
@@ -338,6 +349,8 @@ async fn additional_context_removes_one_value_while_adding_another() -> Result<(
 
     test.codex
         .submit(Op::UserInput {
+            environments: None,
+
             items: vec![UserInput::Text {
                 text: "first turn".to_string(),
                 text_elements: Vec::new(),
@@ -370,6 +383,8 @@ async fn additional_context_removes_one_value_while_adding_another() -> Result<(
 
     test.codex
         .submit(Op::UserInput {
+            environments: None,
+
             items: vec![UserInput::Text {
                 text: "second turn".to_string(),
                 text_elements: Vec::new(),
@@ -402,6 +417,8 @@ async fn additional_context_removes_one_value_while_adding_another() -> Result<(
 
     test.codex
         .submit(Op::UserInput {
+            environments: None,
+
             items: vec![UserInput::Text {
                 text: "third turn".to_string(),
                 text_elements: Vec::new(),
@@ -498,6 +515,8 @@ async fn additional_context_values_are_truncated_before_model_input() -> Result<
 
     test.codex
         .submit(Op::UserInput {
+            environments: None,
+
             items: vec![UserInput::Text {
                 text: "summarize context".to_string(),
                 text_elements: Vec::new(),

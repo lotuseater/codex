@@ -1,6 +1,7 @@
 use super::*;
 
 const ACTION_OPTIMIZATION_OPEN_TAG: &str = "<action_optimization_instructions>";
+const BATCH_MINI_PROGRAMMING_OPEN_TAG: &str = "<batch_mini_programming_instructions>";
 
 fn enable_action_optimization(
     turn_context: &mut TurnContext,
@@ -20,6 +21,13 @@ fn disable_action_optimization(turn_context: &mut TurnContext) {
     let mut config = turn_context.config.as_ref().clone();
     config.action_optimization_instructions.mode =
         crate::config::ActionOptimizationInstructionsMode::Off;
+    turn_context.config = std::sync::Arc::new(config);
+}
+
+fn enable_batch_mini_programming(turn_context: &mut TurnContext) {
+    let mut config = turn_context.config.as_ref().clone();
+    config.batch_mini_programming_instructions.mode =
+        crate::config::BatchMiniProgrammingInstructionsMode::Always;
     turn_context.config = std::sync::Arc::new(config);
 }
 
@@ -85,6 +93,7 @@ async fn build_initial_context_includes_action_optimization_always_before_batch(
         crate::config::ActionOptimizationInstructionsMode::Always,
         120,
     );
+    enable_batch_mini_programming(&mut turn_context);
     turn_context.collaboration_mode = CollaborationMode {
         mode: ModeKind::Default,
         settings: Settings {
@@ -106,7 +115,7 @@ async fn build_initial_context_includes_action_optimization_always_before_batch(
         .find(ACTION_OPTIMIZATION_OPEN_TAG)
         .expect("action optimization instructions should render");
     let batch_index = developer_text
-        .find("<batch_mini_programming_instructions>")
+        .find(BATCH_MINI_PROGRAMMING_OPEN_TAG)
         .expect("batch mini-programming instructions should render");
     assert!(collaboration_index < action_index);
     assert!(action_index < batch_index);
@@ -198,13 +207,14 @@ async fn build_initial_context_omits_reserved_action_optimization_tool_turn_mode
 #[tokio::test]
 async fn build_initial_context_includes_batch_mini_programming_when_workflow_batch_available() {
     let (session, mut turn_context) = make_session_and_context().await;
+    enable_batch_mini_programming(&mut turn_context);
     turn_context.tools_config.workflow_batch_enabled = true;
     turn_context.tools_config.environment_mode = ToolEnvironmentMode::Single;
 
     let context = session.build_initial_context(&turn_context).await;
     let developer_text = developer_input_texts(&context).join("\n");
 
-    assert!(developer_text.contains("<batch_mini_programming_instructions>"));
+    assert!(developer_text.contains(BATCH_MINI_PROGRAMMING_OPEN_TAG));
     assert!(developer_text.contains("never include `response_length`"));
     assert!(developer_text.contains("step payloads are objects"));
     assert!(developer_text.contains("Use focused shell/rg for one-off searches"));
@@ -222,15 +232,41 @@ async fn build_initial_context_includes_batch_mini_programming_when_workflow_bat
 }
 
 #[tokio::test]
+async fn build_initial_context_omits_batch_mini_programming_by_default() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    turn_context.tools_config.workflow_batch_enabled = true;
+    turn_context.tools_config.environment_mode = ToolEnvironmentMode::Single;
+
+    let context = session.build_initial_context(&turn_context).await;
+    let developer_text = developer_input_texts(&context).join("\n");
+
+    assert!(!developer_text.contains(BATCH_MINI_PROGRAMMING_OPEN_TAG));
+}
+
+#[tokio::test]
 async fn build_initial_context_omits_batch_mini_programming_without_workflow_batch() {
     let (session, mut turn_context) = make_session_and_context().await;
+    enable_batch_mini_programming(&mut turn_context);
     turn_context.tools_config.workflow_batch_enabled = false;
     turn_context.tools_config.environment_mode = ToolEnvironmentMode::Single;
 
     let context = session.build_initial_context(&turn_context).await;
     let developer_text = developer_input_texts(&context).join("\n");
 
-    assert!(!developer_text.contains("<batch_mini_programming_instructions>"));
+    assert!(!developer_text.contains(BATCH_MINI_PROGRAMMING_OPEN_TAG));
+}
+
+#[tokio::test]
+async fn build_initial_context_omits_batch_mini_programming_without_environment() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    enable_batch_mini_programming(&mut turn_context);
+    turn_context.tools_config.workflow_batch_enabled = true;
+    turn_context.tools_config.environment_mode = ToolEnvironmentMode::None;
+
+    let context = session.build_initial_context(&turn_context).await;
+    let developer_text = developer_input_texts(&context).join("\n");
+
+    assert!(!developer_text.contains(BATCH_MINI_PROGRAMMING_OPEN_TAG));
 }
 
 #[tokio::test]

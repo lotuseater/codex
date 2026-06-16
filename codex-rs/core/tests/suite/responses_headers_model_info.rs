@@ -96,6 +96,7 @@ async fn responses_respects_model_info_overrides_from_config() {
         /*installation_id*/ TEST_INSTALLATION_ID.to_string(),
         provider.clone(),
         session_source,
+        /*parent_thread_id*/ None,
         config.model_verbosity,
         /*enable_request_compression*/ false,
         /*include_timing_metrics*/ false,

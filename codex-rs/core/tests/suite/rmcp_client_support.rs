@@ -17,6 +17,7 @@ pub(crate) use std::time::Duration;
 pub(crate) use std::time::SystemTime;
 pub(crate) use std::time::UNIX_EPOCH;
 
+pub(crate) use codex_config::DEFAULT_MCP_SERVER_ENVIRONMENT_ID;
 pub(crate) use codex_config::types::McpServerConfig;
 pub(crate) use codex_config::types::McpServerEnvVar;
 pub(crate) use codex_config::types::McpServerTransportConfig;
@@ -134,6 +135,11 @@ pub(crate) enum McpCallEvent {
 }
 
 const REMOTE_MCP_ENVIRONMENT: &str = "remote";
+/// Remote runtime websocket URL used by remote-aware MCP integration tests.
+pub(crate) const REMOTE_EXEC_SERVER_URL_ENV_VAR: &str = "CODEX_TEST_REMOTE_EXEC_SERVER_URL";
+/// OAuth metadata path served by the Streamable HTTP MCP test server.
+pub(crate) const STREAMABLE_HTTP_METADATA_PATH: &str =
+    "/.well-known/oauth-authorization-server/mcp";
 
 pub(crate) fn remote_aware_experimental_environment() -> Option<String> {
     // These tests run locally in normal CI and against the Docker-backed
@@ -325,7 +331,9 @@ pub(crate) fn insert_mcp_server(
         server_name.to_string(),
         McpServerConfig {
             transport,
-            experimental_environment: options.experimental_environment,
+            environment_id: options
+                .experimental_environment
+                .unwrap_or_else(|| DEFAULT_MCP_SERVER_ENVIRONMENT_ID.to_string()),
             enabled: true,
             required: false,
             supports_parallel_tool_calls: options.supports_parallel_tool_calls,
@@ -337,6 +345,7 @@ pub(crate) fn insert_mcp_server(
             disabled_tools: None,
             scopes: None,
             oauth_resource: None,
+            oauth: None,
             tools: HashMap::new(),
         },
     );

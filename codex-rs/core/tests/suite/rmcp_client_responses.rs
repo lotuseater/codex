@@ -83,6 +83,7 @@ async fn stdio_image_responses_round_trip() -> anyhow::Result<()> {
                 arguments: Some(json!({})),
             },
             mcp_app_resource_uri: None,
+            plugin_id: None,
         },
     );
 
@@ -255,6 +256,7 @@ async fn stdio_image_responses_are_sanitized_for_text_only_model() -> anyhow::Re
                 priority: 1,
                 additional_speed_tiers: Vec::new(),
                 service_tiers: Vec::new(),
+                default_service_tier: None,
                 upgrade: None,
                 base_instructions: "base instructions".to_string(),
                 model_messages: None,
@@ -276,6 +278,10 @@ async fn stdio_image_responses_are_sanitized_for_text_only_model() -> anyhow::Re
                 input_modalities: vec![InputModality::Text],
                 used_fallback_model_metadata: false,
                 supports_search_tool: false,
+                use_responses_lite: false,
+                auto_review_model_override: None,
+                tool_mode: None,
+                multi_agent_version: None,
             }],
         },
     )

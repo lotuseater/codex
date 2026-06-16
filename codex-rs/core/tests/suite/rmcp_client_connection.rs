@@ -1,7 +1,7 @@
 #![allow(clippy::expect_used)]
 
-use anyhow::Context as _;
 use crate::rmcp_client_support::*;
+use anyhow::Context as _;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[serial(mcp_cwd)]
@@ -473,10 +473,3 @@ async fn remote_stdio_env_var_source_does_not_copy_local_env() -> anyhow::Result
     server.verify().await;
     Ok(())
 }
-
-/// Remote runtime websocket URL used by remote-aware MCP integration tests.
-const REMOTE_EXEC_SERVER_URL_ENV_VAR: &str = "CODEX_TEST_REMOTE_EXEC_SERVER_URL";
-/// OAuth metadata path served by the Streamable HTTP MCP test server.
-const STREAMABLE_HTTP_METADATA_PATH: &str = "/.well-known/oauth-authorization-server/mcp";
-
-/// Streamable HTTP test server plus the process handle needed for cleanup.

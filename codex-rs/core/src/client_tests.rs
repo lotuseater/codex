@@ -94,6 +94,16 @@ fn test_model_client_with_parent(
 
 fn test_model_info() -> ModelInfo {
     serde_json::from_value(json!({
+
+    default_service_tier: None,
+
+    use_responses_lite: false,
+
+    auto_review_model_override: None,
+
+    tool_mode: None,
+
+    multi_agent_version: None,
         "slug": "gpt-test",
         "display_name": "gpt-test",
         "description": "desc",

@@ -167,6 +167,8 @@ fn op_kind_distinguishes_turn_ops() {
             items: vec![],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         }
         .kind(),
         "user_input"

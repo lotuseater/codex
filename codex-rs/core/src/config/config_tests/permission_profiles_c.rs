@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn workspace_profile_applies_rules_to_runtime_and_profile_workspace_roots()

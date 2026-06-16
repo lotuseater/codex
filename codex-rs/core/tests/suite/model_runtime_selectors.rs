@@ -123,6 +123,8 @@ async fn response_body_for_remote_model(
     .await?;
     test.codex
         .submit(Op::UserInput {
+            environments: None,
+
             items: vec![UserInput::Text {
                 text: "list tools".into(),
                 text_elements: Vec::new(),
@@ -272,6 +274,8 @@ async fn remote_multi_agent_selector_uses_model_selected_before_first_turn() -> 
 
     test.codex
         .submit(Op::UserInput {
+            environments: None,
+
             items: vec![UserInput::Text {
                 text: ROOT_PROMPT.into(),
                 text_elements: Vec::new(),

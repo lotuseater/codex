@@ -125,6 +125,11 @@ pub(crate) fn test_remote_model_with_policy(
         input_modalities: default_input_modalities(),
         used_fallback_model_metadata: false,
         supports_search_tool: false,
+        default_service_tier: None,
+        use_responses_lite: false,
+        auto_review_model_override: None,
+        tool_mode: None,
+        multi_agent_version: None,
         priority,
         additional_speed_tiers: Vec::new(),
         service_tiers: Vec::new(),
@@ -146,5 +151,10 @@ pub(crate) fn test_remote_model_with_policy(
         auto_compact_token_limit: None,
         effective_context_window_percent: 95,
         experimental_supported_tools: Vec::new(),
+        default_service_tier: None,
+        use_responses_lite: false,
+        auto_review_model_override: None,
+        tool_mode: None,
+        multi_agent_version: None,
     }
 }
