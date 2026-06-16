@@ -15,6 +15,7 @@ pub use apply::parse_git_apply_output;
 pub use apply::stage_paths;
 pub use baseline::GitBaselineChange;
 pub use baseline::GitBaselineChangeStatus;
+pub use baseline::GIT_BASELINE_IGNORE_FILENAME;
 pub use baseline::GitBaselineDiff;
 pub use baseline::diff_since_latest_init;
 pub use baseline::ensure_git_baseline_repository;
