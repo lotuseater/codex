@@ -50,6 +50,27 @@
       ],
       "type": "string"
     },
+    "BatchMiniProgrammingInstructionsModeToml": {
+      "enum": [
+        "off",
+        "always"
+      ],
+      "type": "string"
+    },
+    "BatchMiniProgrammingInstructionsToml": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/BatchMiniProgrammingInstructionsModeToml"
+            }
+          ],
+          "description": "Run mode: off or always. Defaults to off."
+        }
+      },
+      "type": "object"
+    },
     "AgentRoleToml": {
       "additionalProperties": false,
       "properties": {
@@ -4682,6 +4703,14 @@
         }
       ],
       "description": "Disabled-by-default action-route optimization instructions."
+    },
+    "batch_mini_programming_instructions": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/BatchMiniProgrammingInstructionsToml"
+        }
+      ],
+      "description": "Disabled-by-default workflow_batch usage guidance."
     },
     "agents": {
       "allOf": [

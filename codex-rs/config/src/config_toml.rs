@@ -226,6 +226,9 @@ pub struct ConfigToml {
     /// Disabled-by-default action-route optimization instructions.
     pub action_optimization_instructions: Option<ActionOptimizationInstructionsToml>,
 
+    /// Disabled-by-default workflow_batch usage guidance.
+    pub batch_mini_programming_instructions: Option<BatchMiniProgrammingInstructionsToml>,
+
     /// Whether to inject the `<environment_context>` user block.
     pub include_environment_context: Option<bool>,
 
@@ -606,6 +609,21 @@ pub enum ActionOptimizationInstructionsModeToml {
 pub enum ActionOptimizationInstructionsVariantToml {
     #[default]
     ActionRouteSelection,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct BatchMiniProgrammingInstructionsToml {
+    /// Run mode: off or always. Defaults to off.
+    pub mode: Option<BatchMiniProgrammingInstructionsModeToml>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BatchMiniProgrammingInstructionsModeToml {
+    #[default]
+    Off,
+    Always,
 }
 
 impl From<ConfigToml> for UserSavedConfig {

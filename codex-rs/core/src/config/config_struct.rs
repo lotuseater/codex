@@ -94,6 +94,9 @@ pub struct Config {
     /// Lightweight first-turn action-route optimization instructions.
     pub action_optimization_instructions: ActionOptimizationInstructionsConfig,
 
+    /// Lightweight workflow_batch usage guidance.
+    pub batch_mini_programming_instructions: BatchMiniProgrammingInstructionsConfig,
+
     /// Whether to inject the `<skills_instructions>` developer block.
     pub include_skill_instructions: bool,
 
@@ -514,6 +517,25 @@ pub enum ActionOptimizationInstructionsMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActionOptimizationInstructionsVariant {
     ActionRouteSelection,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BatchMiniProgrammingInstructionsConfig {
+    pub mode: BatchMiniProgrammingInstructionsMode,
+}
+
+impl Default for BatchMiniProgrammingInstructionsConfig {
+    fn default() -> Self {
+        Self {
+            mode: BatchMiniProgrammingInstructionsMode::Off,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BatchMiniProgrammingInstructionsMode {
+    Off,
+    Always,
 }
 
 impl AuthManagerConfig for Config {

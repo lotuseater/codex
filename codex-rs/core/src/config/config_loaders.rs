@@ -883,6 +883,21 @@ impl Config {
             } else {
                 ActionOptimizationInstructionsConfig::default()
             };
+        let batch_mini_programming_instructions =
+            if let Some(config_toml) = cfg.batch_mini_programming_instructions.as_ref() {
+                BatchMiniProgrammingInstructionsConfig {
+                    mode: match config_toml.mode.unwrap_or_default() {
+                        BatchMiniProgrammingInstructionsModeToml::Off => {
+                            BatchMiniProgrammingInstructionsMode::Off
+                        }
+                        BatchMiniProgrammingInstructionsModeToml::Always => {
+                            BatchMiniProgrammingInstructionsMode::Always
+                        }
+                    },
+                }
+            } else {
+                BatchMiniProgrammingInstructionsConfig::default()
+            };
         let include_skill_instructions = cfg
             .skills
             .as_ref()
@@ -1087,6 +1102,7 @@ impl Config {
             include_apps_instructions,
             include_collaboration_mode_instructions,
             action_optimization_instructions,
+            batch_mini_programming_instructions,
             include_skill_instructions,
             include_environment_context,
             // The config.toml omits "_mode" because it's a config file. However, "_mode"

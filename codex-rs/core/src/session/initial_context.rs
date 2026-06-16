@@ -97,7 +97,10 @@ impl Session {
         {
             developer_sections.push(instructions.render());
         }
-        if turn_context.tools_config.workflow_batch_enabled
+        if matches!(
+            turn_context.config.batch_mini_programming_instructions.mode,
+            crate::config::BatchMiniProgrammingInstructionsMode::Always
+        ) && turn_context.tools_config.workflow_batch_enabled
             && turn_context.tools_config.environment_mode.has_environment()
         {
             developer_sections.push(BatchMiniProgrammingInstructions.render());
