@@ -268,6 +268,78 @@ function Get-RepoBuildProcesses {
         }
 }
 
+function Get-CodexBuildCpuRatio {
+    # Computes the CPU-utilization ratio (cpu-seconds / wall-seconds) for the
+    # repo-local build processes ALREADY detected by Get-RepoBuildProcesses.
+    # A genuinely busy rustc/link runs near 80-100% per core; a DEADLOCKED one
+    # sits at a few percent while its detailed log mtime is frozen. Surfacing
+    # this ratio lets the read-only report distinguish "stalled" from "slow".
+    #
+    # Reuses the exact PIDs from the canonical detector (no parallel detection):
+    # each PID is re-resolved via the .NET Process API to read live timing
+    # (TotalProcessorTime + StartTime), which the projected CIM hashtables omit.
+    # Returns:
+    #   processes        @( @{ process_name; process_id; cpu_ratio_pct; runtime_min; cpu_seconds } )
+    #   max_cpu_ratio_pct  highest cpu_ratio_pct across sampled processes ($null if none)
+    #   sampled_count      number of processes successfully sampled
+    param([object[]]$Procs)
+
+    $results = @()
+    $now = Get-Date
+    foreach ($proc in @($Procs)) {
+        if ($null -eq $proc) { continue }
+        $procPid = [int]$proc["process_id"]
+        $procName = [string]$proc["process_name"]
+        if ($procPid -le 0) { continue }
+
+        $cpuSeconds = $null
+        $runtimeSeconds = $null
+        $cpuRatioPct = $null
+        $runtimeMin = $null
+
+        # StartTime/TotalProcessorTime throw Access Denied for processes the
+        # current token cannot open (e.g. elevated rustc) - skip those rows.
+        try {
+            $previousWhatIfPreference = $WhatIfPreference
+            $WhatIfPreference = $false
+            try {
+                $osProc = Get-Process -Id $procPid -ErrorAction Stop
+            }
+            finally {
+                $WhatIfPreference = $previousWhatIfPreference
+            }
+            $cpuSeconds = [double]$osProc.TotalProcessorTime.TotalSeconds
+            $runtimeSeconds = [double]((New-TimeSpan -Start $osProc.StartTime -End $now).TotalSeconds)
+            if ($runtimeSeconds -gt 0) {
+                $cpuRatioPct = [math]::Round($cpuSeconds / $runtimeSeconds * 100, 1)
+                $runtimeMin = [math]::Round($runtimeSeconds / 60, 1)
+            }
+        }
+        catch {
+            # Access Denied / process already exited - leave fields $null and
+            # still emit the row so the report shows the PID was seen.
+            $cpuSeconds = $null
+        }
+
+        $results += [ordered]@{
+            process_name = $procName
+            process_id = $procPid
+            cpu_ratio_pct = $cpuRatioPct
+            runtime_min = $runtimeMin
+            cpu_seconds = if ($null -ne $cpuSeconds) { [math]::Round($cpuSeconds, 1) } else { $null }
+        }
+    }
+
+    $ratios = @($results | ForEach-Object { $_["cpu_ratio_pct"] } | Where-Object { $null -ne $_ })
+    $maxRatio = if ($ratios.Count -gt 0) { ($ratios | Measure-Object -Maximum).Maximum } else { $null }
+
+    return [ordered]@{
+        processes = @($results)
+        max_cpu_ratio_pct = $maxRatio
+        sampled_count = @($ratios).Count
+    }
+}
+
 function Get-RecommendedJobs {
     param(
         [int]$PerJobMemoryMB = 1800,
@@ -1514,6 +1586,31 @@ function Invoke-Rollback {
 $targetRoot = Assert-UnderRoot -Path (Join-Path $RepoRoot "codex-rs\target") -Root $RepoRoot -Label "target root"
 $releaseBinary = Assert-UnderRoot -Path (Join-Path $targetRoot "release\codex.exe") -Root $targetRoot -Label "release binary"
 $activeBuilds = @(Get-RepoBuildProcesses -Root $RepoRoot)
+
+# CPU-utilization ratio for the active build processes (deadlock signal).
+# Computed once here so every read-only report below can reuse it. The
+# stall_suspect flag combines a low max CPU ratio with a frozen newest log:
+# a busy build runs near 80-100%/core, a deadlocked rustc sits at a few
+# percent while its detailed log mtime stops advancing.
+$cpuRatioReport = Get-CodexBuildCpuRatio -Procs $activeBuilds
+$newestBuildLog = $null
+$buildLogDir = Join-Path $RepoRoot "logs"
+if (Test-Path -LiteralPath $buildLogDir) {
+    $newestBuildLog = Get-ChildItem -LiteralPath $buildLogDir -Filter "local-codex-build-*.log" -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+}
+$buildLogStaleMin = if ($newestBuildLog) {
+    [math]::Round((New-TimeSpan -Start $newestBuildLog.LastWriteTime -End (Get-Date)).TotalMinutes, 1)
+} else { $null }
+$stallSuspect = $false
+if ($activeBuilds.Count -gt 0 -and
+    $null -ne $cpuRatioReport["max_cpu_ratio_pct"] -and
+    [double]$cpuRatioReport["max_cpu_ratio_pct"] -lt 15 -and
+    $null -ne $buildLogStaleMin -and
+    [double]$buildLogStaleMin -gt 8) {
+    $stallSuspect = $true
+}
+
 $envPath = if (Test-Path -LiteralPath (Join-Path $WrapperDir "system.codex-wrapper.env.json")) {
     Get-WrapperEnvPath -Dir $WrapperDir
 }
@@ -1556,6 +1653,10 @@ if ($Mode -in @("Status", "Diagnose")) {
         mode = $Mode
         repo_root = $RepoRoot
         active_build_processes = $activeBuilds
+        build_cpu_ratio = $cpuRatioReport
+        max_cpu_ratio_pct = $cpuRatioReport["max_cpu_ratio_pct"]
+        newest_build_log_stale_min = $buildLogStaleMin
+        stall_suspect = $stallSuspect
         release_binary = if (Test-Path -LiteralPath $releaseBinary) {
             $item = Get-Item -LiteralPath $releaseBinary
             [ordered]@{
@@ -1625,11 +1726,25 @@ if ($Mode -eq "Progress") {
             first_error = if ($errors) { @($errors)[0].Line.Trim() } else { $null }
         }
     }
+    # CPU-ratio detail for the active build processes + stall_suspect flag,
+    # so a Progress snapshot can tell a deadlocked rustc from a busy one.
+    $rustcCpuRatioPct = $null
+    if ($rustcProc) {
+        $rustcRow = @($cpuRatioReport["processes"]) |
+            Where-Object { $_["process_id"] -eq [int]$rustcProc.ProcessId } |
+            Select-Object -First 1
+        if ($rustcRow) { $rustcCpuRatioPct = $rustcRow["cpu_ratio_pct"] }
+    }
     [ordered]@{
         status = "ok"
         repo_root = $RepoRoot
         active_build_processes = $activeBuilds.Count
         rustc = $rustcInfo
+        rustc_cpu_ratio_pct = $rustcCpuRatioPct
+        build_cpu_ratio = $cpuRatioReport
+        max_cpu_ratio_pct = $cpuRatioReport["max_cpu_ratio_pct"]
+        newest_build_log_stale_min = $buildLogStaleMin
+        stall_suspect = $stallSuspect
         log = $logSummary
         free_c_drive_gb = [math]::Round((Get-PSDrive C).Free / 1GB, 1)
         memory = Get-PageFileSnapshot
