@@ -2,6 +2,7 @@ use crate::tools::code_mode::execute_spec::create_code_mode_tool;
 use crate::tools::handlers::ApplyPatchHandler;
 use crate::tools::handlers::CodeModeExecuteHandler;
 use crate::tools::handlers::CodeModeWaitHandler;
+use crate::tools::handlers::CognosOpsHandler;
 use crate::tools::handlers::ContextOpsHandler;
 use crate::tools::handlers::CreateGoalHandler;
 use crate::tools::handlers::DesktopAutomationHandler;
@@ -66,6 +67,7 @@ use codex_tool_registry_api::TOOL_SEARCH_TOOL_NAME;
 use codex_tool_registry_api::ToolSpec;
 use codex_tool_registry_api::augment_tool_spec_for_code_mode;
 use codex_tool_registry_api::collect_code_mode_exec_prompt_tool_definitions;
+use codex_tool_registry_api::create_cognos_ops_tools;
 use codex_tool_registry_api::create_context_ops_tools;
 use codex_tool_registry_api::create_desktop_automation_tools;
 use codex_tool_registry_api::create_first_moves_tools;
@@ -407,6 +409,9 @@ pub(crate) fn collect_tool_executors(
     }
 
     if config.context_ops_enabled {
+        for tool in create_cognos_ops_tools() {
+            executors.push(Arc::new(CognosOpsHandler::new(tool)));
+        }
         for tool in create_context_ops_tools() {
             executors.push(Arc::new(ContextOpsHandler::new(tool)));
         }

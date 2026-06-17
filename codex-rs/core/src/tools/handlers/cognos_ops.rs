@@ -8,36 +8,41 @@ use codex_tool_registry_api::EVIDENCE_FUSION_SUMMARY_TOOL_NAME;
 use codex_tool_registry_api::MISSION_TRACE_EXPORT_TOOL_NAME;
 use codex_tool_registry_api::OPERATION_CACHE_STATS_TOOL_NAME;
 use codex_tool_registry_api::PROBLEM_MEMORY_LOOKUP_TOOL_NAME;
+use codex_tool_registry_api::ToolSpec;
 use serde_json::Value;
 use serde_json::json;
 
-use codex_tool_execution_api::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::handlers::parse_arguments;
+use crate::tools::registry::ToolExecutor;
 use crate::tools::registry::ToolHandler;
-use crate::tools::registry::ToolKind;
+use codex_tool_execution_api::FunctionCallError;
 
 pub struct CognosOpsHandler {
     tool_name: ToolName,
+    spec: ToolSpec,
 }
 
 impl CognosOpsHandler {
-    pub fn new(tool_name: ToolName) -> Self {
-        Self { tool_name }
+    pub fn new(spec: ToolSpec) -> Self {
+        Self {
+            tool_name: ToolName::plain(spec.name()),
+            spec,
+        }
     }
 }
 
-impl ToolHandler for CognosOpsHandler {
+impl ToolExecutor<ToolInvocation> for CognosOpsHandler {
     type Output = FunctionToolOutput;
 
     fn tool_name(&self) -> ToolName {
         self.tool_name.clone()
     }
 
-    fn kind(&self) -> ToolKind {
-        ToolKind::Function
+    fn spec(&self) -> Option<ToolSpec> {
+        Some(self.spec.clone())
     }
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {
@@ -129,7 +134,7 @@ async fn handle_agent_graph_scout(
             "recommendation": "fresh_spawn_if_roi_positive",
         }));
     };
-    let root_thread_id: ThreadId = invocation.session.conversation_id;
+    let root_thread_id: ThreadId = invocation.session.thread_id;
     let mut children = match status_filter {
         Some(status) => {
             state_db
@@ -165,6 +170,8 @@ async fn handle_agent_graph_scout(
         "valid_scout_evidence": true,
     }))
 }
+
+impl ToolHandler for CognosOpsHandler {}
 
 fn json_output(value: Value) -> Result<FunctionToolOutput, FunctionCallError> {
     let text = serde_json::to_string_pretty(&value)
