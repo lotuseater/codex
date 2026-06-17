@@ -55,6 +55,12 @@ mod imp {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            // Kill the bridge process if its handle is dropped before it exits. On the
+            // timeout branch below, `timeout` drops the in-flight `wait_with_output`
+            // future (which owns the `Child`), and this flag ensures that drop also
+            // terminates the still-running process instead of leaking it and letting it
+            // keep injecting GUI input after we have already returned an error.
+            .kill_on_drop(true)
             .spawn()
             .map_err(|err| {
                 let _ = std::fs::remove_file(&script_path);

@@ -964,6 +964,8 @@ try {
             $hasTarget = Test-HasTarget $ArgsObj
             $window = if ($hasTarget) { Resolve-TargetWindow $ArgsObj } else { $null }
             if ($hasTarget -and $null -eq $window) { Write-DabResult ([pscustomobject]@{ ok = $false; error = 'target window not found' }); break }
+            $missing = @(Get-MissingNumericFields $ArgsObj @('x', 'y'))
+            if ($missing.Count -gt 0) { Write-DabResult ([pscustomobject]@{ ok = $false; error = "missing or invalid numeric click fields: $($missing -join ', ')" }); break }
             if ($window) { [void][CodexDabNative]::SetForegroundWindow((Get-Hwnd $window.hwnd)); Start-Sleep -Milliseconds 80 }
             Invoke-ForegroundClick $ArgsObj.x $ArgsObj.y
             Write-DabResult ([pscustomobject]@{ ok = $true; window = $window; clicked = @{ x = [int]$ArgsObj.x; y = [int]$ArgsObj.y; mode = 'foreground' } })
@@ -989,6 +991,8 @@ try {
         'dab_bg_click' {
             $window = Resolve-TargetWindow $ArgsObj
             if ($null -eq $window) { Write-DabResult ([pscustomobject]@{ ok = $false; error = 'target window not found' }); break }
+            $missing = @(Get-MissingNumericFields $ArgsObj @('x', 'y'))
+            if ($missing.Count -gt 0) { Write-DabResult ([pscustomobject]@{ ok = $false; error = "missing or invalid numeric click fields: $($missing -join ', ')" }); break }
             Invoke-BackgroundClick $window $ArgsObj.x $ArgsObj.y
             Write-DabResult ([pscustomobject]@{ ok = $true; window = $window; clicked = @{ x = [int]$ArgsObj.x; y = [int]$ArgsObj.y; mode = 'background' } })
         }

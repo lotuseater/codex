@@ -183,17 +183,37 @@ impl codex_analytics::AnalyticsReducer for AppServerReducer {
     }
 }
 
+/// Whether this custom fact has no app-server connection dependency and is
+/// therefore delegated verbatim to [`codex_analytics::CustomFactReducer`]
+/// (so core and app-server emit byte-identical events). The remaining,
+/// connection-gated facts are reduced by this crate's `ingest` using its own
+/// state.
+///
+/// This match is intentionally EXHAUSTIVE with no `_ =>` catch-all: when
+/// upstream adds a new `CustomAnalyticsFact` variant, this fails to compile,
+/// forcing a conscious decision about whether the new fact is unconditional
+/// (delegate here) or connection-gated (handle in `ingest`). Without that, a
+/// new variant would silently fall through to `AnalyticsFact::Custom(_) => {}`
+/// in `ingest` and be dropped, causing silent analytics loss and drift from
+/// upstream.
 fn is_unconditional_custom(custom: &CustomAnalyticsFact) -> bool {
-    matches!(
-        custom,
+    match custom {
         CustomAnalyticsFact::SubAgentThreadStarted(_)
-            | CustomAnalyticsFact::SkillInvoked(_)
-            | CustomAnalyticsFact::AppMentioned(_)
-            | CustomAnalyticsFact::AppUsed(_)
-            | CustomAnalyticsFact::HookRun(_)
-            | CustomAnalyticsFact::PluginUsed(_)
-            | CustomAnalyticsFact::PluginStateChanged(_)
-    )
+        | CustomAnalyticsFact::SkillInvoked(_)
+        | CustomAnalyticsFact::AppMentioned(_)
+        | CustomAnalyticsFact::AppUsed(_)
+        | CustomAnalyticsFact::HookRun(_)
+        | CustomAnalyticsFact::PluginUsed(_)
+        | CustomAnalyticsFact::PluginStateChanged(_) => true,
+        // Connection-gated: these need this reducer's connection/thread/turn
+        // state and are handled by `AppServerReducer::ingest`, not delegated.
+        CustomAnalyticsFact::Compaction(_)
+        | CustomAnalyticsFact::GuardianReview(_)
+        | CustomAnalyticsFact::TurnResolvedConfig(_)
+        | CustomAnalyticsFact::TurnTokenUsage(_)
+        | CustomAnalyticsFact::TurnProfile(_)
+        | CustomAnalyticsFact::TurnCodexError(_) => false,
+    }
 }
 
 struct ConnectionState {
