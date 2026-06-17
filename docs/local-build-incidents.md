@@ -29,6 +29,12 @@ expensive or unsafe lanes.
   `target/release/deps`.
 - If `target/debug` appears, remove it with `build-local-codex.ps1 -Mode CleanSafe`; local schema
   and generated-artifact recipes must use release Cargo commands.
+- A build whose detailed log mtime is frozen more than ~8 minutes while its repo-local `rustc`
+  shows near-zero CPU (cumulative CPU-seconds / elapsed wall ~ 0, vs ~80-90% when healthy) is
+  deadlocked, not slow - even with RAM and pagefile free. Kill the rustc/cargo tree, remove
+  stale `codex-rs/target/release/.cargo-lock`, and restart the SAME `-Mode` from repo-root; the
+  preserved incremental cache means lower crates are not rebuilt. Do not delete `target/release`
+  or any `deps` generation to "fix" a stall.
 
 ## Long Compile/Test Refactor Backlog
 
@@ -62,6 +68,7 @@ crate or dependency observed compiling, and the ownership refactor that would ma
 | 2026-05-07 | `just write-app-server-schema` before the release-only fix | The recipe used debug `cargo run`, creating 3.44 GB in `target/debug` while C: had about 1 GB free. | Switched generated-artifact Just recipes to `cargo run --release` and added `CleanSafe` cleanup. |
 | 2026-05-07 | release test lanes after repeated focused checks | `target/release/deps` included 24 disposable test executables totaling about 2.18 GB, plus release PDBs. | `CleanSafe -CleanTestArtifacts` removes release test `.exe` files and matching PDBs only under explicit disk-pressure cleanup. |
 | 2026-05-07 | `cargo check -p codex-core --release --quiet` overlapping a deploy build | A second Codex Cargo command was active while `FastRelease -Jobs 1` was compiling `codex-tui`, increasing memory and Cargo-cache pressure. | Extended `build-local-codex.ps1` process detection to catch Codex package commands even when their command line does not include the repo root. |
+| 2026-06-17 | `logs/local-codex-build-lowmemrelease-*` (LowMemRelease) | `rustc` (PID 3508) compiling `codex-analytics-appserver/src/reducer.rs` deadlocked: alive 51.6 min but only ~151 CPU-seconds (~5% CPU), detailed log mtime frozen ~50 min, ~5 GB RAM free, pagefile only ~660 MB used - a genuine deadlock/livelock, not memory thrashing. Default `-TimeoutSeconds 0` meant no watchdog caught it. | Diagnose via the CPU-seconds-vs-runtime ratio: a healthy `rustc` runs ~80-90% CPU; cumulative `(KernelModeTime+UserModeTime)/1e7` sec / elapsed wall-sec near zero (here ~5%) with a frozen log mtime means stalled, not slow. Recover: `taskkill /T /F` the stuck rustc/cargo tree, remove stale `codex-rs/target/release/.cargo-lock`, then restart the SAME `-Mode` from repo-root - the preserved incremental cache meant ~140 min of lower-crate artifacts were not rebuilt, and the restart compiled `analytics-appserver` cleanly, so the deadlock was transient, not a source-level infinite loop. Follow-up: add a CPU-ratio + log-mtime stall watchdog and bounded auto-restart to `build-local-codex.ps1`. |
 
 ## Verification Lanes That Worked
 
