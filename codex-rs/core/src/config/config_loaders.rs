@@ -875,7 +875,14 @@ impl Config {
                         ActionOptimizationInstructionsVariantToml::ActionRouteSelection => {
                             ActionOptimizationInstructionsVariant::ActionRouteSelection
                         }
+                        ActionOptimizationInstructionsVariantToml::Routing => {
+                            ActionOptimizationInstructionsVariant::Routing
+                        }
+                        ActionOptimizationInstructionsVariantToml::Verbose => {
+                            ActionOptimizationInstructionsVariant::Verbose
+                        }
                     },
+                    custom_text: config_toml.custom_text.clone(),
                     max_tokens: config_toml
                         .max_tokens
                         .unwrap_or(ActionOptimizationInstructionsConfig::default().max_tokens),
@@ -894,6 +901,18 @@ impl Config {
                             BatchMiniProgrammingInstructionsMode::Always
                         }
                     },
+                    variant: match config_toml.variant.unwrap_or_default() {
+                        BatchMiniProgrammingInstructionsVariantToml::Current => {
+                            BatchMiniProgrammingInstructionsVariant::Current
+                        }
+                        BatchMiniProgrammingInstructionsVariantToml::Aggressive => {
+                            BatchMiniProgrammingInstructionsVariant::Aggressive
+                        }
+                        BatchMiniProgrammingInstructionsVariantToml::Compact => {
+                            BatchMiniProgrammingInstructionsVariant::Compact
+                        }
+                    },
+                    custom_text: config_toml.custom_text.clone(),
                 }
             } else {
                 BatchMiniProgrammingInstructionsConfig::default()

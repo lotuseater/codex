@@ -247,6 +247,12 @@ impl ChatWidget {
             SlashCommand::Slow => {
                 self.toggle_slow_mode_from_ui();
             }
+            SlashCommand::ActionPrompt => {
+                self.show_action_prompt_status();
+            }
+            SlashCommand::BatchPrompt => {
+                self.show_batch_prompt_status();
+            }
             SlashCommand::Realtime => {
                 if !self.realtime_conversation_enabled() {
                     return;
@@ -674,6 +680,12 @@ impl ChatWidget {
                     }
                 }
             }
+            SlashCommand::ActionPrompt => {
+                self.handle_action_prompt_command_args(trimmed);
+            }
+            SlashCommand::BatchPrompt => {
+                self.handle_batch_prompt_command_args(trimmed);
+            }
             SlashCommand::Ide => {
                 self.handle_ide_command_args(trimmed);
             }
@@ -1063,6 +1075,8 @@ impl ChatWidget {
         match cmd {
             SlashCommand::Fast
             | SlashCommand::Slow
+            | SlashCommand::ActionPrompt
+            | SlashCommand::BatchPrompt
             | SlashCommand::Ide
             | SlashCommand::Status
             | SlashCommand::DebugConfig

@@ -488,10 +488,13 @@ pub struct CodeModeConfig {
     pub excluded_tool_namespaces: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActionOptimizationInstructionsConfig {
     pub mode: ActionOptimizationInstructionsMode,
     pub variant: ActionOptimizationInstructionsVariant,
+    /// Optional user-supplied prompt body. When `Some` and non-empty it
+    /// overrides `variant`, allowing a custom variant persisted across sessions.
+    pub custom_text: Option<String>,
     pub max_tokens: usize,
 }
 
@@ -500,6 +503,7 @@ impl Default for ActionOptimizationInstructionsConfig {
         Self {
             mode: ActionOptimizationInstructionsMode::FirstTurn,
             variant: ActionOptimizationInstructionsVariant::ActionRouteSelection,
+            custom_text: None,
             max_tokens: 120,
         }
     }
@@ -517,17 +521,25 @@ pub enum ActionOptimizationInstructionsMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActionOptimizationInstructionsVariant {
     ActionRouteSelection,
+    Routing,
+    Verbose,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BatchMiniProgrammingInstructionsConfig {
     pub mode: BatchMiniProgrammingInstructionsMode,
+    pub variant: BatchMiniProgrammingInstructionsVariant,
+    /// Optional user-supplied prompt body. When `Some` and non-empty it
+    /// overrides `variant`, allowing a custom variant persisted across sessions.
+    pub custom_text: Option<String>,
 }
 
 impl Default for BatchMiniProgrammingInstructionsConfig {
     fn default() -> Self {
         Self {
             mode: BatchMiniProgrammingInstructionsMode::Always,
+            variant: BatchMiniProgrammingInstructionsVariant::Current,
+            custom_text: None,
         }
     }
 }
@@ -536,6 +548,13 @@ impl Default for BatchMiniProgrammingInstructionsConfig {
 pub enum BatchMiniProgrammingInstructionsMode {
     Off,
     Always,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BatchMiniProgrammingInstructionsVariant {
+    Current,
+    Aggressive,
+    Compact,
 }
 
 impl AuthManagerConfig for Config {

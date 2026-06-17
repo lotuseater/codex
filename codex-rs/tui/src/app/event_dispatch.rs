@@ -2074,6 +2074,134 @@ impl App {
             AppEvent::SyntaxThemePreviewed => {
                 self.refresh_status_line();
             }
+            AppEvent::PersistActionPromptMode { mode_token } => {
+                let edit = codex_config::edit::action_optimization_mode_edit(&mode_token);
+                match ConfigEditsBuilder::new(&self.config.codex_home)
+                    .with_edits([edit])
+                    .apply()
+                    .await
+                {
+                    Ok(()) => {
+                        if let Some(mode) =
+                            crate::chatwidget::prompt_injection::action_mode_from_token(&mode_token)
+                        {
+                            self.config.action_optimization_instructions.mode = mode;
+                        }
+                    }
+                    Err(err) => {
+                        tracing::error!(error = %err, "failed to persist action prompt mode");
+                        self.chat_widget
+                            .add_error_message(format!("Failed to save action prompt mode: {err}"));
+                    }
+                }
+            }
+            AppEvent::PersistActionPromptVariant { variant } => {
+                let edit = codex_config::edit::action_optimization_variant_edit(&variant);
+                match ConfigEditsBuilder::new(&self.config.codex_home)
+                    .with_edits([edit])
+                    .apply()
+                    .await
+                {
+                    Ok(()) => {
+                        if let Some(value) =
+                            crate::chatwidget::prompt_injection::action_variant_from_token(&variant)
+                        {
+                            self.config.action_optimization_instructions.variant = value;
+                        }
+                    }
+                    Err(err) => {
+                        tracing::error!(error = %err, "failed to persist action prompt variant");
+                        self.chat_widget.add_error_message(format!(
+                            "Failed to save action prompt variant: {err}"
+                        ));
+                    }
+                }
+            }
+            AppEvent::PersistActionPromptCustomText { custom_text } => {
+                let edit = codex_config::edit::action_optimization_custom_text_edit(
+                    custom_text.as_deref(),
+                );
+                match ConfigEditsBuilder::new(&self.config.codex_home)
+                    .with_edits([edit])
+                    .apply()
+                    .await
+                {
+                    Ok(()) => {
+                        self.config.action_optimization_instructions.custom_text =
+                            custom_text.clone();
+                    }
+                    Err(err) => {
+                        tracing::error!(error = %err, "failed to persist action prompt custom text");
+                        self.chat_widget.add_error_message(format!(
+                            "Failed to save action prompt custom text: {err}"
+                        ));
+                    }
+                }
+            }
+            AppEvent::PersistBatchPromptMode { mode_token } => {
+                let edit = codex_config::edit::batch_mini_programming_mode_edit(&mode_token);
+                match ConfigEditsBuilder::new(&self.config.codex_home)
+                    .with_edits([edit])
+                    .apply()
+                    .await
+                {
+                    Ok(()) => {
+                        if let Some(mode) =
+                            crate::chatwidget::prompt_injection::batch_mode_from_token(&mode_token)
+                        {
+                            self.config.batch_mini_programming_instructions.mode = mode;
+                        }
+                    }
+                    Err(err) => {
+                        tracing::error!(error = %err, "failed to persist batch prompt mode");
+                        self.chat_widget
+                            .add_error_message(format!("Failed to save batch prompt mode: {err}"));
+                    }
+                }
+            }
+            AppEvent::PersistBatchPromptVariant { variant } => {
+                let edit = codex_config::edit::batch_mini_programming_variant_edit(&variant);
+                match ConfigEditsBuilder::new(&self.config.codex_home)
+                    .with_edits([edit])
+                    .apply()
+                    .await
+                {
+                    Ok(()) => {
+                        if let Some(value) =
+                            crate::chatwidget::prompt_injection::batch_variant_from_token(&variant)
+                        {
+                            self.config.batch_mini_programming_instructions.variant = value;
+                        }
+                    }
+                    Err(err) => {
+                        tracing::error!(error = %err, "failed to persist batch prompt variant");
+                        self.chat_widget.add_error_message(format!(
+                            "Failed to save batch prompt variant: {err}"
+                        ));
+                    }
+                }
+            }
+            AppEvent::PersistBatchPromptCustomText { custom_text } => {
+                let edit = codex_config::edit::batch_mini_programming_custom_text_edit(
+                    custom_text.as_deref(),
+                );
+                match ConfigEditsBuilder::new(&self.config.codex_home)
+                    .with_edits([edit])
+                    .apply()
+                    .await
+                {
+                    Ok(()) => {
+                        self.config.batch_mini_programming_instructions.custom_text =
+                            custom_text.clone();
+                    }
+                    Err(err) => {
+                        tracing::error!(error = %err, "failed to persist batch prompt custom text");
+                        self.chat_widget.add_error_message(format!(
+                            "Failed to save batch prompt custom text: {err}"
+                        ));
+                    }
+                }
+            }
             AppEvent::OpenKeymapActionMenu { context, action } => {
                 self.chat_widget
                     .open_keymap_action_menu(context, action, &self.keymap);

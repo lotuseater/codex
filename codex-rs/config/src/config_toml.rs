@@ -589,6 +589,10 @@ pub struct ActionOptimizationInstructionsToml {
     /// Prompt variant. Defaults to action_route_selection.
     pub variant: Option<ActionOptimizationInstructionsVariantToml>,
 
+    /// Optional custom prompt body. When set and non-empty it overrides
+    /// `variant`, persisting a user-defined variant across sessions.
+    pub custom_text: Option<String>,
+
     /// Maximum approximate tokens rendered in the prompt body. Defaults to 120.
     pub max_tokens: Option<usize>,
 }
@@ -609,6 +613,8 @@ pub enum ActionOptimizationInstructionsModeToml {
 pub enum ActionOptimizationInstructionsVariantToml {
     #[default]
     ActionRouteSelection,
+    Routing,
+    Verbose,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
@@ -616,6 +622,13 @@ pub enum ActionOptimizationInstructionsVariantToml {
 pub struct BatchMiniProgrammingInstructionsToml {
     /// Run mode: off or always. Defaults to off.
     pub mode: Option<BatchMiniProgrammingInstructionsModeToml>,
+
+    /// Prompt variant. Defaults to current.
+    pub variant: Option<BatchMiniProgrammingInstructionsVariantToml>,
+
+    /// Optional custom prompt body. When set and non-empty it overrides
+    /// `variant`, persisting a user-defined variant across sessions.
+    pub custom_text: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, PartialEq, Eq, JsonSchema)]
@@ -624,6 +637,15 @@ pub enum BatchMiniProgrammingInstructionsModeToml {
     #[default]
     Off,
     Always,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BatchMiniProgrammingInstructionsVariantToml {
+    #[default]
+    Current,
+    Aggressive,
+    Compact,
 }
 
 impl From<ConfigToml> for UserSavedConfig {

@@ -103,7 +103,12 @@ impl Session {
         ) && turn_context.tools_config.workflow_batch_enabled
             && turn_context.tools_config.environment_mode.has_environment()
         {
-            developer_sections.push(BatchMiniProgrammingInstructions.render());
+            developer_sections.push(
+                BatchMiniProgrammingInstructions::from_config(
+                    &turn_context.config.batch_mini_programming_instructions,
+                )
+                .render(),
+            );
         }
         if let Some(realtime_update) = crate::context_manager::updates::build_initial_realtime_item(
             reference_context_item.as_ref(),

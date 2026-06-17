@@ -15,6 +15,8 @@ pub enum SlashCommand {
     Model,
     Fast,
     Slow,
+    ActionPrompt,
+    BatchPrompt,
     Ide,
     Permissions,
     Keymap,
@@ -118,6 +120,12 @@ impl SlashCommand {
                 "toggle Fast mode to enable fastest inference with increased plan usage"
             }
             SlashCommand::Slow => "toggle Slow mode to reduce avoidable context token usage",
+            SlashCommand::ActionPrompt => {
+                "configure the action-optimization prompt injection (variant/custom/on/off)"
+            }
+            SlashCommand::BatchPrompt => {
+                "configure the batch mini-programming prompt injection (variant/custom/on/off)"
+            }
             SlashCommand::Ide => {
                 "include current selection, open files, and other context from your IDE"
             }
@@ -165,6 +173,8 @@ impl SlashCommand {
                 | SlashCommand::Goal
                 | SlashCommand::Fast
                 | SlashCommand::Slow
+                | SlashCommand::ActionPrompt
+                | SlashCommand::BatchPrompt
                 | SlashCommand::Ide
                 | SlashCommand::Keymap
                 | SlashCommand::Mcp
@@ -203,6 +213,8 @@ impl SlashCommand {
             | SlashCommand::Model
             | SlashCommand::Fast
             | SlashCommand::Slow
+            | SlashCommand::ActionPrompt
+            | SlashCommand::BatchPrompt
             | SlashCommand::Personality
             | SlashCommand::Permissions
             | SlashCommand::Keymap

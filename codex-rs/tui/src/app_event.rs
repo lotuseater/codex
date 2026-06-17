@@ -673,6 +673,36 @@ pub(crate) enum AppEvent {
         mode: ContextBudgetMode,
     },
 
+    /// Persist the action-optimization prompt-injection mode (snake_case token).
+    PersistActionPromptMode {
+        mode_token: String,
+    },
+
+    /// Persist the action-optimization prompt-injection variant selection.
+    PersistActionPromptVariant {
+        variant: String,
+    },
+
+    /// Persist the action-optimization prompt-injection custom text (None clears it).
+    PersistActionPromptCustomText {
+        custom_text: Option<String>,
+    },
+
+    /// Persist the batch mini-programming prompt-injection mode (snake_case token).
+    PersistBatchPromptMode {
+        mode_token: String,
+    },
+
+    /// Persist the batch mini-programming prompt-injection variant selection.
+    PersistBatchPromptVariant {
+        variant: String,
+    },
+
+    /// Persist the batch mini-programming prompt-injection custom text (None clears it).
+    PersistBatchPromptCustomText {
+        custom_text: Option<String>,
+    },
+
     /// Open the device picker for a realtime microphone or speaker.
     OpenRealtimeAudioDeviceSelection {
         kind: RealtimeAudioDeviceKind,

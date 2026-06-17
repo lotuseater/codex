@@ -328,6 +328,7 @@ mod command_lifecycle;
 mod connectors;
 mod constructor;
 mod context_budget;
+pub(crate) mod prompt_injection;
 use self::connectors::ConnectorsState;
 mod exec_state;
 use self::exec_state::RunningCommand;

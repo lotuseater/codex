@@ -96,6 +96,90 @@ pub fn syntax_theme_edit(name: &str) -> ConfigEdit {
     }
 }
 
+/// Produces a config edit that sets
+/// `[action_optimization_instructions].mode = "<mode>"`.
+pub fn action_optimization_mode_edit(mode: &str) -> ConfigEdit {
+    ConfigEdit::SetPath {
+        segments: vec![
+            "action_optimization_instructions".to_string(),
+            "mode".to_string(),
+        ],
+        value: value(mode.to_string()),
+    }
+}
+
+/// Produces a config edit that sets
+/// `[action_optimization_instructions].variant = "<variant>"`.
+pub fn action_optimization_variant_edit(variant: &str) -> ConfigEdit {
+    ConfigEdit::SetPath {
+        segments: vec![
+            "action_optimization_instructions".to_string(),
+            "variant".to_string(),
+        ],
+        value: value(variant.to_string()),
+    }
+}
+
+/// Produces a config edit that sets or clears
+/// `[action_optimization_instructions].custom_text`.
+///
+/// `None` removes the key so the configured `variant` text applies again.
+pub fn action_optimization_custom_text_edit(text: Option<&str>) -> ConfigEdit {
+    let segments = vec![
+        "action_optimization_instructions".to_string(),
+        "custom_text".to_string(),
+    ];
+    match text {
+        Some(text) => ConfigEdit::SetPath {
+            segments,
+            value: value(text.to_string()),
+        },
+        None => ConfigEdit::ClearPath { segments },
+    }
+}
+
+/// Produces a config edit that sets
+/// `[batch_mini_programming_instructions].mode = "<mode>"`.
+pub fn batch_mini_programming_mode_edit(mode: &str) -> ConfigEdit {
+    ConfigEdit::SetPath {
+        segments: vec![
+            "batch_mini_programming_instructions".to_string(),
+            "mode".to_string(),
+        ],
+        value: value(mode.to_string()),
+    }
+}
+
+/// Produces a config edit that sets
+/// `[batch_mini_programming_instructions].variant = "<variant>"`.
+pub fn batch_mini_programming_variant_edit(variant: &str) -> ConfigEdit {
+    ConfigEdit::SetPath {
+        segments: vec![
+            "batch_mini_programming_instructions".to_string(),
+            "variant".to_string(),
+        ],
+        value: value(variant.to_string()),
+    }
+}
+
+/// Produces a config edit that sets or clears
+/// `[batch_mini_programming_instructions].custom_text`.
+///
+/// `None` removes the key so the configured `variant` text applies again.
+pub fn batch_mini_programming_custom_text_edit(text: Option<&str>) -> ConfigEdit {
+    let segments = vec![
+        "batch_mini_programming_instructions".to_string(),
+        "custom_text".to_string(),
+    ];
+    match text {
+        Some(text) => ConfigEdit::SetPath {
+            segments,
+            value: value(text.to_string()),
+        },
+        None => ConfigEdit::ClearPath { segments },
+    }
+}
+
 /// Produces a config edit that sets `[tui].session_picker_view = "<mode>"`.
 pub fn session_picker_view_edit(mode: SessionPickerViewMode) -> ConfigEdit {
     ConfigEdit::SetPath {
