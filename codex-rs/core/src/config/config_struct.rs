@@ -501,8 +501,8 @@ pub struct ActionOptimizationInstructionsConfig {
 impl Default for ActionOptimizationInstructionsConfig {
     fn default() -> Self {
         Self {
-            mode: ActionOptimizationInstructionsMode::FirstTurn,
-            variant: ActionOptimizationInstructionsVariant::ActionRouteSelection,
+            mode: ActionOptimizationInstructionsMode::Always,
+            variant: ActionOptimizationInstructionsVariant::Routing,
             custom_text: None,
             max_tokens: 120,
         }
