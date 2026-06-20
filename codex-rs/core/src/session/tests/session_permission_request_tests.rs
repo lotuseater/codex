@@ -45,7 +45,7 @@ async fn resumed_subagent_session_keeps_inherited_session_id() {
             rollout_path: None,
         }),
         session_source,
-        AgentControl::default().with_session_id(parent_session_id),
+        AgentControl::default().with_session_id(parent_session_id, usize::MAX),
     )
     .await
     .expect("resume should succeed");

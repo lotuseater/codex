@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[test]
 fn rejects_provider_auth_with_env_key() {
@@ -317,4 +318,3 @@ async fn runtime_config_uses_tui_raw_output_mode() {
 
     assert!(cfg.tui_raw_output_mode);
 }
-

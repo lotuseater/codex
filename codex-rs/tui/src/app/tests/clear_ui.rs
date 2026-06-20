@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 async fn render_clear_ui_header_after_long_transcript_for_snapshot() -> String {
     let mut app = make_test_app().await;

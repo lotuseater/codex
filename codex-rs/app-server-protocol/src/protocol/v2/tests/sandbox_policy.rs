@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[test]
 fn sandbox_policy_round_trips_external_sandbox_network_access() {

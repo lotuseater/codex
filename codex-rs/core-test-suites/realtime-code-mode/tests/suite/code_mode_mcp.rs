@@ -1,6 +1,8 @@
 #![allow(dead_code, unused_imports, clippy::expect_used, clippy::unwrap_used)]
 
 include!("code_mode_shared.rs");
+use pretty_assertions::assert_eq;
+use pretty_assertions::assert_ne;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn code_mode_can_print_structured_mcp_tool_result_fields() -> Result<()> {

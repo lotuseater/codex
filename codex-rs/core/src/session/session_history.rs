@@ -405,7 +405,9 @@ impl Session {
                     .max()
             });
             state.observe_visible_context_percent_for_semantic_compact(
-                crate::context_reduction_adapter::context_reduction_policy(),
+                crate::context_reduction_adapter::context_reduction_policy(
+                    turn_context.config.model_compact_percentage,
+                ),
                 visible_context_percent_used,
             );
             (info, rate_limits)

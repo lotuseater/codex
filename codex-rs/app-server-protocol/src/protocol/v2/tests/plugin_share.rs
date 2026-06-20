@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[test]
 fn plugin_share_params_and_response_serialization_use_camel_case_fields() {

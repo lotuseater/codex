@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[test]
 fn command_execution_request_approval_rejects_relative_additional_permission_paths() {

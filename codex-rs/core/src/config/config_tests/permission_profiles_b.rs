@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn default_permissions_profile_populates_runtime_sandbox_policy() -> std::io::Result<()> {
@@ -292,7 +293,10 @@ async fn managed_unrestricted_permission_profile_still_enables_network_requireme
             enabled: Some(true),
             ..Default::default()
         },
-        RequirementSource::CloudRequirements,
+        RequirementSource::EnterpriseManaged {
+            id: "cloud_requirements".to_string(),
+            name: "Cloud requirements".to_string(),
+        },
     ));
     let mut requirements_toml = config.config_layer_stack.requirements_toml().clone();
     requirements_toml.network = Some(codex_config::NetworkRequirementsToml {
@@ -621,4 +625,3 @@ async fn default_permissions_read_only_keeps_add_dir_read_only() -> std::io::Res
     );
     Ok(())
 }
-

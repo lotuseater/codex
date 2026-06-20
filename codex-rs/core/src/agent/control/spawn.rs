@@ -99,6 +99,24 @@ fn is_multi_agent_v2_usage_hint_message(item: &ResponseItem, usage_hint_texts: &
         .any(|usage_hint_text| usage_hint_text == text)
 }
 
+fn append_multi_agent_v2_subagent_usage_hint(
+    mut operation: Op,
+    subagent_usage_hint_text: Option<&str>,
+) -> Op {
+    let Some(subagent_usage_hint_text) = subagent_usage_hint_text else {
+        return operation;
+    };
+
+    if let Op::UserInput { items, .. } = &mut operation {
+        items.push(UserInput::Text {
+            text: subagent_usage_hint_text.to_string(),
+            text_elements: Vec::new(),
+        });
+    }
+
+    operation
+}
+
 impl AgentControl {
     /// Spawn a new agent thread and submit the initial prompt.
     #[cfg(test)]
@@ -278,6 +296,13 @@ impl AgentControl {
             other => (other, AgentMetadata::default()),
         };
         let notification_source = session_source.clone();
+        let subagent_usage_hint_text = if multi_agent_version == MultiAgentVersion::V2
+            && config.multi_agent_v2.usage_hint_enabled
+        {
+            config.multi_agent_v2.subagent_usage_hint_text.clone()
+        } else {
+            None
+        };
 
         // The same `AgentControl` is sent to spawn the thread.
         let new_thread = match (session_source, options.fork_mode.as_ref(), inheritance) {
@@ -371,6 +396,10 @@ impl AgentControl {
         )
         .await;
 
+        let initial_operation = append_multi_agent_v2_subagent_usage_hint(
+            initial_operation,
+            subagent_usage_hint_text.as_deref(),
+        );
         self.send_input_after_capacity_check(new_thread.thread_id, &state, initial_operation)
             .await?;
         if multi_agent_version != MultiAgentVersion::V2 {

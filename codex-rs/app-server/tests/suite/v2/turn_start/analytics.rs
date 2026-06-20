@@ -1,7 +1,8 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
-use super::super::analytics::mount_analytics_capture;
-use super::super::analytics::wait_for_analytics_event;
+use crate::analytics::mount_analytics_capture;
+use crate::analytics::wait_for_analytics_event;
 
 #[tokio::test]
 async fn turn_start_tracks_turn_event_analytics() -> Result<()> {

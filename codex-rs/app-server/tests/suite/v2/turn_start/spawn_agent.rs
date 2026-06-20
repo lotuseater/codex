@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn turn_start_emits_spawn_agent_item_with_model_metadata_v2() -> Result<()> {

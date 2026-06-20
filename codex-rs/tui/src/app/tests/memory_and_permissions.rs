@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn update_memory_settings_persists_and_updates_widget_config() -> Result<()> {

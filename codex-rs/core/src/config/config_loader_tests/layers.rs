@@ -1,4 +1,7 @@
 use super::*;
+use codex_config::CloudConfigBundleLoader;
+use codex_config::ConfigLoadOptions;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn ignore_user_config_keeps_empty_user_layer() -> std::io::Result<()> {
@@ -20,13 +23,12 @@ invalid = ["#,
             ignore_user_config: true,
             ..Default::default()
         },
-        CloudRequirementsLoader::default(),
         &codex_config::NoopThreadConfigLoader,
     )
     .await?;
 
     let user_layer = layers
-        .get_active_user_layer()
+        .get_user_layer()
         .expect("expected a user layer even when CODEX_HOME/config.toml is ignored");
     assert_eq!(
         user_layer.config,
@@ -51,7 +53,6 @@ async fn ignore_rules_marks_config_stack_for_exec_policy_rule_skip() -> std::io:
             ignore_user_and_project_exec_policy_rules: true,
             ..Default::default()
         },
-        CloudRequirementsLoader::default(),
         &codex_config::NoopThreadConfigLoader,
     )
     .await?;
@@ -94,7 +95,6 @@ extra = true
         Some(cwd),
         &[] as &[(String, TomlValue)],
         overrides,
-        CloudRequirementsLoader::default(),
         &codex_config::NoopThreadConfigLoader,
     )
     .await
@@ -128,13 +128,12 @@ async fn returns_empty_when_all_layers_missing() {
         Some(cwd),
         &[] as &[(String, TomlValue)],
         overrides,
-        CloudRequirementsLoader::default(),
         &codex_config::NoopThreadConfigLoader,
     )
     .await
     .expect("load layers");
     let user_layer = layers
-        .get_active_user_layer()
+        .get_user_layer()
         .expect("expected a user layer even when CODEX_HOME/config.toml does not exist");
     let expected_user_layer = ConfigLayerEntry::new(
         ConfigLayerSource::User {
@@ -205,16 +204,19 @@ approval_policy = "on-failure"
         Some(cwd),
         &[] as &[(String, TomlValue)],
         overrides,
-        CloudRequirementsLoader::default(),
         &codex_config::NoopThreadConfigLoader,
     )
     .await
     .expect("load layers");
 
-    let user_layers = layers.get_user_layers(
-        super::ConfigLayerStackOrdering::LowestPrecedenceFirst,
-        /*include_disabled*/ false,
-    );
+    let user_layers: Vec<_> = layers
+        .get_layers(
+            super::ConfigLayerStackOrdering::LowestPrecedenceFirst,
+            /*include_disabled*/ false,
+        )
+        .into_iter()
+        .filter(|layer| matches!(layer.name, ConfigLayerSource::User { .. }))
+        .collect();
     assert_eq!(user_layers.len(), 2);
     assert_eq!(
         user_layers[0].name,
@@ -224,7 +226,7 @@ approval_policy = "on-failure"
             profile: None,
         }
     );
-    let user_layer = layers.get_active_user_layer().expect("selected user layer");
+    let user_layer = layers.get_user_layer().expect("selected user layer");
     assert_eq!(
         user_layer.name,
         ConfigLayerSource::User {
@@ -268,7 +270,6 @@ async fn includes_thread_config_layers_in_stack() -> anyhow::Result<()> {
         Some(cwd),
         &[("features.plugins".to_string(), TomlValue::Boolean(true))],
         overrides,
-        CloudRequirementsLoader::default(),
         &StaticThreadConfigLoader::new(vec![ThreadConfigSource::Session(SessionThreadConfig {
             features: BTreeMap::from([("plugins".to_string(), false)]),
             ..Default::default()
@@ -343,8 +344,13 @@ async fn load_config_layers_includes_cloud_requirements() -> anyhow::Result<()> 
         &codex_home,
         Some(cwd),
         &[] as &[(String, TomlValue)],
-        LoaderOverrides::default(),
-        cloud_requirements,
+        ConfigLoadOptions {
+            loader_overrides: LoaderOverrides::default(),
+            strict_config: false,
+            cloud_config_bundle: CloudConfigBundleLoader::from_requirements_loader(
+                cloud_requirements,
+            ),
+        },
         &codex_config::NoopThreadConfigLoader,
     )
     .await?;
@@ -362,7 +368,10 @@ async fn load_config_layers_includes_cloud_requirements() -> anyhow::Result<()> 
             field_name: "approval_policy",
             candidate: "OnRequest".into(),
             allowed: "[Never]".into(),
-            requirement_source: RequirementSource::CloudRequirements,
+            requirement_source: RequirementSource::EnterpriseManaged {
+                id: "cloud_requirements".to_string(),
+                name: "Cloud requirements".to_string(),
+            },
         })
     );
 

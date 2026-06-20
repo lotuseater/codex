@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn update_feature_flags_enabling_guardian_selects_auto_review() -> Result<()> {

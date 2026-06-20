@@ -3,3 +3,8 @@
   Build and deploy in the end. No build/tests before the end of merging, just  code reading and editing. you should
   spawn helper non-interactive sessions, on each stage splitting work between them, checking results, sleeping for 5
   minutes between checks - you are just a spawner, overseer
+  
+Be careful. Conflicts may be numerous. We shouldn't loose our features. And we need to keep code decoupled, keep in
+  mind SOLID principles, refactoring done on the branch. And we need make merging easier next times.
+  
+Delegate freely to spawned codex sessions. While you review and coordinate and plan.

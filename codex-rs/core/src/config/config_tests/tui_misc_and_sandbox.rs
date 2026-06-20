@@ -1,5 +1,6 @@
-use super::*;
 use super::common::*;
+use super::*;
+use pretty_assertions::assert_eq;
 
 #[test]
 fn tui_theme_deserializes_from_toml() {
@@ -585,4 +586,3 @@ exclude_slash_tmp = true
 
     Ok(())
 }
-

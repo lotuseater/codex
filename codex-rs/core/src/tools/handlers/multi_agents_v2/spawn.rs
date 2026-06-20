@@ -1,11 +1,8 @@
 use super::*;
 use crate::agent::control::SpawnAgentForkMode;
 use crate::agent::control::SpawnAgentOptions;
-use crate::agent::next_thread_spawn_depth;
-use crate::agent::policy::MULTI_AGENT_V2_NESTED_SPAWN_REJECTION;
-use crate::agent::policy::MultiAgentV2SpawnLineage;
-use crate::agent::policy::MultiAgentV2SpawnParent;
-use crate::agent::policy::root_can_spawn_child;
+use crate::agent::exceeds_thread_spawn_depth_limit;
+use crate::agent::next_thread_spawn_depth_for_session_source;
 use crate::agent::role::DEFAULT_ROLE_NAME;
 use crate::agent::role::apply_role_to_config;
 use crate::tools::handlers::multi_agents_spec::SpawnAgentToolOptions;
@@ -70,20 +67,13 @@ async fn handle_spawn_agent(
     let prompt = String::new();
 
     let session_source = turn.session_source.clone();
-    let child_depth = next_thread_spawn_depth(&session_source);
-    let parent = if matches!(
-        session_source,
-        SessionSource::SubAgent(_) | SessionSource::Internal(_)
-    ) {
-        MultiAgentV2SpawnParent::Nested
-    } else {
-        MultiAgentV2SpawnParent::Root
-    };
-    if !root_can_spawn_child(MultiAgentV2SpawnLineage::new(parent, child_depth)) {
+    let child_depth = next_thread_spawn_depth_for_session_source(&session_source);
+    if exceeds_thread_spawn_depth_limit(child_depth, turn.config.agent_max_depth) {
         return Err(FunctionCallError::RespondToModel(
-            MULTI_AGENT_V2_NESTED_SPAWN_REJECTION.to_string(),
+            "Agent depth limit reached. Solve the task yourself.".to_string(),
         ));
     }
+
     session
         .send_event(
             &turn,

@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn turn_start_defaults_local_image_detail_to_high() -> Result<()> {

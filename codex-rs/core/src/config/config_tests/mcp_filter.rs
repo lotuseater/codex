@@ -1,5 +1,6 @@
-use super::*;
 use super::common::*;
+use super::*;
+use pretty_assertions::assert_eq;
 
 #[test]
 fn filter_mcp_servers_by_allowlist_enforces_identity_rules() {
@@ -150,7 +151,10 @@ fn filter_plugin_mcp_servers_by_allowlist_enforces_plugin_and_identity_rules() {
             http_mcp("https://example.com/mcp"),
         ),
     ]);
-    let source = RequirementSource::CloudRequirements;
+    let source = RequirementSource::EnterpriseManaged {
+        id: "cloud_requirements".to_string(),
+        name: "Cloud requirements".to_string(),
+    };
     let requirements = Sourced::new(
         BTreeMap::from([(
             "sample@test".to_string(),
@@ -200,7 +204,10 @@ fn filter_plugin_mcp_servers_by_allowlist_enforces_plugin_and_identity_rules() {
 #[test]
 fn filter_plugin_mcp_servers_by_allowlist_blocks_unlisted_plugin() {
     let mut servers = HashMap::from([("server-a".to_string(), stdio_mcp("cmd-a"))]);
-    let source = RequirementSource::CloudRequirements;
+    let source = RequirementSource::EnterpriseManaged {
+        id: "cloud_requirements".to_string(),
+        name: "Cloud requirements".to_string(),
+    };
     let requirements = Sourced::new(
         BTreeMap::from([(
             "other@test".to_string(),
@@ -237,4 +244,3 @@ fn filter_plugin_mcp_servers_by_allowlist_blocks_unlisted_plugin() {
         )])
     );
 }
-

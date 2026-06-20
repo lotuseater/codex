@@ -1,6 +1,7 @@
 #![allow(clippy::expect_used)]
 
 use crate::compact_remote_support::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn snapshot_request_shape_remote_pre_turn_compaction_restates_realtime_start() -> Result<()> {

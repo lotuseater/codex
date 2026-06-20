@@ -1,5 +1,6 @@
-use super::*;
 use super::common::*;
+use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn project_profiles_are_ignored() -> std::io::Result<()> {
@@ -193,7 +194,6 @@ async fn managed_config_overrides_oauth_store_mode() -> anyhow::Result<()> {
         Some(cwd),
         &Vec::new(),
         overrides,
-        CloudRequirementsLoader::default(),
         &codex_config::NoopThreadConfigLoader,
     )
     .await?;
@@ -269,6 +269,7 @@ async fn replace_mcp_servers_round_trips_entries() -> anyhow::Result<()> {
 
     apply_blocking(
         codex_home.path(),
+        None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
@@ -299,6 +300,7 @@ async fn replace_mcp_servers_round_trips_entries() -> anyhow::Result<()> {
     let empty = BTreeMap::new();
     apply_blocking(
         codex_home.path(),
+        None,
         &[ConfigEdit::ReplaceMcpServers(empty.clone())],
     )?;
     let loaded = load_global_mcp_servers(codex_home.path()).await?;
@@ -327,7 +329,6 @@ async fn managed_config_wins_over_cli_overrides() -> anyhow::Result<()> {
         Some(cwd),
         &[("model".to_string(), TomlValue::String("cli".to_string()))],
         overrides,
-        CloudRequirementsLoader::default(),
         &codex_config::NoopThreadConfigLoader,
     )
     .await?;
@@ -439,4 +440,3 @@ approval_mode = "approve"
         }
     );
 }
-

@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[test]
 fn active_turn_not_steerable_turn_error_extracts_structured_server_error() {

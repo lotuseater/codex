@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn record_initial_history_resumed_aborted_turn_without_id_clears_active_turn_for_compaction_accounting()

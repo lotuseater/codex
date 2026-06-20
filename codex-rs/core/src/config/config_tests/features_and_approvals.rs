@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn debug_config_lockfile_export_settings_load_from_nested_table() -> std::io::Result<()> {
@@ -348,4 +349,3 @@ smart_approvals = true
 
     Ok(())
 }
-

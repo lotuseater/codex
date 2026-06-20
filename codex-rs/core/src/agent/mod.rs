@@ -13,5 +13,6 @@ pub(crate) use mailbox::Mailbox;
 pub(crate) use mailbox::MailboxReceiver;
 pub(crate) use policy::exceeds_thread_spawn_depth_limit;
 pub(crate) use policy::next_thread_spawn_depth_for_session_source as next_thread_spawn_depth;
+pub(crate) use policy::next_thread_spawn_depth_for_session_source;
 pub(crate) use registry::AgentMetadata;
 pub(crate) use status::agent_status_from_event;

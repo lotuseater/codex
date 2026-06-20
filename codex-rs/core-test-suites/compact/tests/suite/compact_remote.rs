@@ -1,6 +1,7 @@
 #![allow(clippy::expect_used)]
 
 use crate::compact_remote_support::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn remote_compact_replaces_history_for_followups() -> Result<()> {

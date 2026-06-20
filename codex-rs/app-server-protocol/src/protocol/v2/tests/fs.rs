@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[test]
 fn fs_get_metadata_response_round_trips_minimal_fields() {

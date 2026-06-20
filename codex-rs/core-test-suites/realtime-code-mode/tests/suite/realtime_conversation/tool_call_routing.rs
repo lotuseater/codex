@@ -1,4 +1,5 @@
 use crate::realtime_conversation_support::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn realtime_v2_noop_tool_call_returns_empty_function_output_without_response() -> Result<()> {

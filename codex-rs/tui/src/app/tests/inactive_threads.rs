@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn inactive_subagent_activity_renders_indented_in_primary_view() -> Result<()> {

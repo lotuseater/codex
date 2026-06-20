@@ -327,8 +327,9 @@ async fn active_profile_update_rebuilds_network_proxy_config() -> std::io::Resul
         .await?;
 
     let mut session_configuration = make_session_configuration_for_tests().await;
-    session_configuration.permission_profile_state =
-        locked_config.permissions.permission_profile_state().clone();
+    session_configuration.permission_profile = locked_config.permissions.permission_profile.clone();
+    session_configuration.active_permission_profile =
+        locked_config.permissions.active_permission_profile();
     session_configuration.original_config_do_not_use = Arc::clone(&locked_config);
 
     let updated = session_configuration

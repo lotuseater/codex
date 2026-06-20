@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn permissions_profiles_proxy_policy_does_not_start_managed_network_proxy_without_feature()
@@ -522,4 +523,3 @@ async fn permissions_profiles_network_disabled_by_default_does_not_start_proxy()
     assert!(config.permissions.network.is_none());
     Ok(())
 }
-

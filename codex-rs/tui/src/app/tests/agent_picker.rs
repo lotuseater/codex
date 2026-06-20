@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn open_agent_picker_keeps_missing_threads_for_replay() -> Result<()> {

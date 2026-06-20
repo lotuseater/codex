@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn turn_start_with_empty_input_runs_model_request() -> Result<()> {

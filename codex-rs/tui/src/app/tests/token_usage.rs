@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn token_usage_update_refreshes_status_line_with_runtime_context_window() {

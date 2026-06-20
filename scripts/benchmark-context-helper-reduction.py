@@ -178,7 +178,9 @@ def parse_session(path: Path) -> SessionSummary:
             if record.get("type") == "session_meta" and isinstance(payload, dict):
                 session_id = str(payload.get("id") or session_id)
                 cwd = str(payload.get("cwd") or cwd)
-                started_at = str(payload.get("timestamp") or record.get("timestamp") or started_at)
+                started_at = str(
+                    payload.get("timestamp") or record.get("timestamp") or started_at
+                )
                 continue
 
             if not isinstance(payload, dict):
@@ -285,7 +287,11 @@ def calculate_gross_saved(
     trigger_set = set(trigger_indices)
     gross_saved = 0
     for position, trigger_index in enumerate(trigger_indices):
-        next_trigger = trigger_indices[position + 1] if position + 1 < len(trigger_indices) else len(events)
+        next_trigger = (
+            trigger_indices[position + 1]
+            if position + 1 < len(trigger_indices)
+            else len(events)
+        )
         end_index = min(next_trigger, trigger_index + cooldown_turns + 1, len(events))
         for future_index in range(trigger_index + 1, end_index):
             if future_index in trigger_set:
@@ -294,12 +300,16 @@ def calculate_gross_saved(
     return gross_saved
 
 
-def calculate_helper_cost(trigger_count: int, model: HelperCostModel) -> tuple[int, int, int]:
+def calculate_helper_cost(
+    trigger_count: int, model: HelperCostModel
+) -> tuple[int, int, int]:
     if trigger_count == 0:
         return 0, 0, 0
 
     if model.compact_every is None and model.name == "one_shot":
-        per_trigger = model.bundle_tokens + model.summary_tokens + model.parent_overhead_tokens
+        per_trigger = (
+            model.bundle_tokens + model.summary_tokens + model.parent_overhead_tokens
+        )
         return per_trigger * trigger_count, 0, 0
 
     helper_state = 0
@@ -387,7 +397,9 @@ def evaluate_policy(
     )
 
 
-def make_one_shot_model(bundle_tokens: int, parent_overhead: int, summary_tokens: int) -> HelperCostModel:
+def make_one_shot_model(
+    bundle_tokens: int, parent_overhead: int, summary_tokens: int
+) -> HelperCostModel:
     return HelperCostModel(
         name="one_shot",
         bundle_tokens=bundle_tokens,
@@ -405,7 +417,11 @@ def make_persistent_model(
     summary_tokens: int,
     compact_every: int | None,
 ) -> HelperCostModel:
-    name = "persistent_no_compact" if compact_every is None else f"persistent_compact_every_{compact_every}"
+    name = (
+        "persistent_no_compact"
+        if compact_every is None
+        else f"persistent_compact_every_{compact_every}"
+    )
     return HelperCostModel(
         name=name,
         bundle_tokens=bundle_tokens,
@@ -455,9 +471,15 @@ def markdown_table(headers: list[str], rows: list[list[str]]) -> str:
     return "\n".join(lines)
 
 
-def result_to_row(result: PolicyResult, session_count: int, token_event_count: int) -> list[str]:
-    trigger_rate = result.triggers / token_event_count * 1000 if token_event_count else 0
-    session_rate = result.sessions_triggered / session_count * 100 if session_count else 0
+def result_to_row(
+    result: PolicyResult, session_count: int, token_event_count: int
+) -> list[str]:
+    trigger_rate = (
+        result.triggers / token_event_count * 1000 if token_event_count else 0
+    )
+    session_rate = (
+        result.sessions_triggered / session_count * 100 if session_count else 0
+    )
     return [
         f"{result.threshold_percent}%",
         str(result.cooldown_turns),
@@ -474,7 +496,9 @@ def result_to_row(result: PolicyResult, session_count: int, token_event_count: i
 
 def summarize_sessions(sessions: list[SessionSummary]) -> dict[str, Any]:
     token_sessions = [session for session in sessions if session.token_events]
-    windows = Counter(session.context_window for session in token_sessions if session.context_window)
+    windows = Counter(
+        session.context_window for session in token_sessions if session.context_window
+    )
     agent_call_sessions = sum(1 for session in sessions if session.agent_calls)
     total_agent_calls = Counter()
     for session in sessions:
@@ -483,9 +507,13 @@ def summarize_sessions(sessions: list[SessionSummary]) -> dict[str, Any]:
     return {
         "session_count": len(sessions),
         "token_session_count": len(token_sessions),
-        "token_event_count": sum(session.token_event_count for session in token_sessions),
+        "token_event_count": sum(
+            session.token_event_count for session in token_sessions
+        ),
         "context_windows": dict(windows),
-        "sessions_over_80k": sum(1 for session in token_sessions if session.max_input_tokens >= 80_000),
+        "sessions_over_80k": sum(
+            1 for session in token_sessions if session.max_input_tokens >= 80_000
+        ),
         "sessions_over_55pct": pct_count(token_sessions, 55),
         "sessions_over_60pct": pct_count(token_sessions, 60),
         "sessions_over_65pct": pct_count(token_sessions, 65),
@@ -496,8 +524,12 @@ def summarize_sessions(sessions: list[SessionSummary]) -> dict[str, Any]:
     }
 
 
-def top_sessions(sessions: list[SessionSummary], limit: int = 8) -> list[SessionSummary]:
-    return sorted(sessions, key=SessionSummary.max_input_tokens.fget, reverse=True)[:limit]
+def top_sessions(
+    sessions: list[SessionSummary], limit: int = 8
+) -> list[SessionSummary]:
+    return sorted(sessions, key=SessionSummary.max_input_tokens.fget, reverse=True)[
+        :limit
+    ]
 
 
 def session_snapshot(session: SessionSummary) -> dict[str, Any]:
@@ -571,7 +603,9 @@ def render_markdown(
 
     core_rows = [
         result_to_row(result, session_count, token_event_count)
-        for result in sorted(core_results, key=lambda item: (item.threshold_percent, item.cooldown_turns))
+        for result in sorted(
+            core_results, key=lambda item: (item.threshold_percent, item.cooldown_turns)
+        )
     ]
 
     sensitivity_rows = [
@@ -606,7 +640,9 @@ def render_markdown(
         [
             "turn-only" if cooldown == 0 else format_tokens(cooldown),
             format_int(result.triggers),
-            f"{result.triggers / token_event_count * 1000:.1f}" if token_event_count else "0.0",
+            f"{result.triggers / token_event_count * 1000:.1f}"
+            if token_event_count
+            else "0.0",
             format_tokens(result.helper_cost_tokens),
             format_tokens(result.net_saved_tokens),
         ]
@@ -616,13 +652,17 @@ def render_markdown(
     agent_calls = summary["agent_calls"]
     if agent_calls:
         agent_call_text = ", ".join(
-            f"`{name}` {count}" for name, count in sorted(agent_calls.items(), key=lambda item: item[0])
+            f"`{name}` {count}"
+            for name, count in sorted(agent_calls.items(), key=lambda item: item[0])
         )
     else:
         agent_call_text = "none"
 
     windows = summary["context_windows"]
-    window_text = ", ".join(f"{window}: {count}" for window, count in sorted(windows.items())) or "none"
+    window_text = (
+        ", ".join(f"{window}: {count}" for window, count in sorted(windows.items()))
+        or "none"
+    )
 
     recommendation = (
         "Use a bounded sidecar helper at 65% context pressure with a 24-turn cooldown, "
@@ -634,7 +674,7 @@ def render_markdown(
     )
 
     helper_recommendation = (
-        "Prefer one-shot helpers with `fork_turns: \"none\"` for the reducer. If a persistent helper "
+        'Prefer one-shot helpers with `fork_turns: "none"` for the reducer. If a persistent helper '
         "is kept warm for several reductions, compact it after every 2 reductions or when its retained "
         "state approaches roughly 30k-40k tokens; the helper state is a real model input cost even "
         "when it is not retained by the root agent."
@@ -731,10 +771,22 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sessions-root", type=Path, default=default_sessions_root())
     parser.add_argument("--limit", type=int, default=80)
-    parser.add_argument("--thresholds", type=parse_int_list, default=parse_int_list("55,60,65,70,75"))
-    parser.add_argument("--cooldowns", type=parse_int_list, default=parse_int_list("6,12,24,48"))
-    parser.add_argument("--helper-costs", type=parse_int_list, default=parse_int_list("12000,30000,60000"))
-    parser.add_argument("--summary-sizes", type=parse_int_list, default=parse_int_list("6000,8000,10000,20000"))
+    parser.add_argument(
+        "--thresholds", type=parse_int_list, default=parse_int_list("55,60,65,70,75")
+    )
+    parser.add_argument(
+        "--cooldowns", type=parse_int_list, default=parse_int_list("6,12,24,48")
+    )
+    parser.add_argument(
+        "--helper-costs",
+        type=parse_int_list,
+        default=parse_int_list("12000,30000,60000"),
+    )
+    parser.add_argument(
+        "--summary-sizes",
+        type=parse_int_list,
+        default=parse_int_list("6000,8000,10000,20000"),
+    )
     parser.add_argument("--baseline-threshold", type=int, default=65)
     parser.add_argument("--baseline-cooldown", type=int, default=24)
     parser.add_argument("--baseline-helper-cost", type=int, default=12_000)
@@ -785,18 +837,42 @@ def main() -> int:
                 evaluate_policy(
                     token_sessions,
                     Policy(args.baseline_threshold, args.baseline_cooldown),
-                    make_one_shot_model(helper_cost, args.parent_overhead, summary_size),
+                    make_one_shot_model(
+                        helper_cost, args.parent_overhead, summary_size
+                    ),
                     args.new_input_cooldown,
                     args.min_future_turns,
                 )
             )
 
     helper_strategy_models = [
-        make_one_shot_model(args.baseline_helper_cost, args.parent_overhead, args.baseline_summary_size),
-        make_persistent_model(args.baseline_helper_cost, args.parent_overhead, args.baseline_summary_size, 1),
-        make_persistent_model(args.baseline_helper_cost, args.parent_overhead, args.baseline_summary_size, 2),
-        make_persistent_model(args.baseline_helper_cost, args.parent_overhead, args.baseline_summary_size, 3),
-        make_persistent_model(args.baseline_helper_cost, args.parent_overhead, args.baseline_summary_size, None),
+        make_one_shot_model(
+            args.baseline_helper_cost, args.parent_overhead, args.baseline_summary_size
+        ),
+        make_persistent_model(
+            args.baseline_helper_cost,
+            args.parent_overhead,
+            args.baseline_summary_size,
+            1,
+        ),
+        make_persistent_model(
+            args.baseline_helper_cost,
+            args.parent_overhead,
+            args.baseline_summary_size,
+            2,
+        ),
+        make_persistent_model(
+            args.baseline_helper_cost,
+            args.parent_overhead,
+            args.baseline_summary_size,
+            3,
+        ),
+        make_persistent_model(
+            args.baseline_helper_cost,
+            args.parent_overhead,
+            args.baseline_summary_size,
+            None,
+        ),
     ]
     helper_strategy_results = [
         evaluate_policy(
@@ -857,13 +933,17 @@ def main() -> int:
         "cadence_results": cadence_results,
         "top_sessions": [
             session_snapshot(session)
-            for session in top_sessions([session for session in sessions if session.token_events])
+            for session in top_sessions(
+                [session for session in sessions if session.token_events]
+            )
         ],
     }
 
     if args.out_json:
         args.out_json.parent.mkdir(parents=True, exist_ok=True)
-        args.out_json.write_text(json.dumps(output, indent=2, default=json_default) + "\n", encoding="utf-8")
+        args.out_json.write_text(
+            json.dumps(output, indent=2, default=json_default) + "\n", encoding="utf-8"
+        )
 
     if args.out_markdown:
         markdown = render_markdown(

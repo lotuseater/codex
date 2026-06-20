@@ -54,7 +54,7 @@ pub(crate) fn http_mcp(url: &str) -> McpServerConfig {
 pub(crate) async fn derive_legacy_sandbox_policy_for_test(
     cfg: &ConfigToml,
     sandbox_mode_override: Option<SandboxMode>,
-    profile_sandbox_mode: Option<SandboxMode>,
+    _profile_sandbox_mode: Option<SandboxMode>,
     windows_sandbox_level: WindowsSandboxLevel,
     active_project: Option<&ProjectConfig>,
     permission_profile_constraint: Option<&Constrained<PermissionProfile>>,
@@ -62,7 +62,6 @@ pub(crate) async fn derive_legacy_sandbox_policy_for_test(
     let permission_profile = cfg
         .derive_permission_profile(
             sandbox_mode_override,
-            profile_sandbox_mode,
             windows_sandbox_level,
             active_project,
             permission_profile_constraint,
@@ -88,6 +87,10 @@ pub(crate) struct PrecedenceTestFixture {
 impl PrecedenceTestFixture {
     pub(crate) fn cwd_path(&self) -> PathBuf {
         self.cwd.path().to_path_buf()
+    }
+
+    pub(crate) fn cwd(&self) -> AbsolutePathBuf {
+        self.cwd.abs()
     }
 
     pub(crate) fn codex_home(&self) -> AbsolutePathBuf {

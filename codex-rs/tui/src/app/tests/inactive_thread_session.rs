@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn inactive_thread_started_notification_initializes_replay_session() -> Result<()> {

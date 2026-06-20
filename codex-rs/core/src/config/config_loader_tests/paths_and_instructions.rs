@@ -1,5 +1,6 @@
-use super::*;
 use super::common::make_config_for_test;
+use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn cli_overrides_resolve_relative_paths_against_cwd() -> std::io::Result<()> {

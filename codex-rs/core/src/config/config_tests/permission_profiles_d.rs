@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn permissions_profiles_allow_direct_write_roots_outside_workspace_root()
@@ -380,4 +381,3 @@ async fn permissions_profiles_allow_network_enablement() -> std::io::Result<()> 
     assert!(config.legacy_sandbox_policy().has_full_network_access());
     Ok(())
 }
-

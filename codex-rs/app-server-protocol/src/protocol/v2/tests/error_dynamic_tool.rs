@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[test]
 fn codex_error_info_serializes_http_status_code_in_camel_case() {

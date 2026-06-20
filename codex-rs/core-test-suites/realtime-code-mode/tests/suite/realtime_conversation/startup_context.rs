@@ -1,4 +1,5 @@
 use crate::realtime_conversation_support::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn conversation_uses_experimental_realtime_ws_startup_context_override() -> Result<()> {

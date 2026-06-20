@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn backtrack_selection_with_duplicate_history_targets_unique_turn() {

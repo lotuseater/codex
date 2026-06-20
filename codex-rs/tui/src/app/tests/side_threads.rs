@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn side_defers_parent_approval_overlay_until_parent_replay() -> Result<()> {

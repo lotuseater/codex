@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[test]
 fn turn_defaults_legacy_missing_items_view_to_full() {

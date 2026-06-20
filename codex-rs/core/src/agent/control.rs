@@ -715,6 +715,18 @@ fn thread_spawn_depth(session_source: &SessionSource) -> Option<i32> {
         _ => None,
     }
 }
+
+pub(crate) fn next_thread_spawn_depth_for_session_source(session_source: &SessionSource) -> i32 {
+    thread_spawn_depth(session_source).map_or(1, |depth| depth.saturating_add(1))
+}
+
+pub(crate) fn exceeds_thread_spawn_depth_limit(
+    child_thread_spawn_depth: i32,
+    agent_max_depth: i32,
+) -> bool {
+    child_thread_spawn_depth > agent_max_depth
+}
+
 #[cfg(test)]
 #[path = "control_tests.rs"]
 mod tests;

@@ -1,5 +1,6 @@
-use super::*;
 use super::common::make_config_for_test;
+use super::*;
+use pretty_assertions::assert_eq;
 
 async fn write_linked_worktree_pointer(
     repo_root: &Path,
@@ -94,7 +95,6 @@ async fn linked_worktree_project_layers_keep_worktree_config_but_use_root_repo_h
         Some(cwd),
         &[] as &[(String, TomlValue)],
         LoaderOverrides::default(),
-        CloudRequirementsLoader::default(),
         &codex_config::NoopThreadConfigLoader,
     )
     .await?;
@@ -176,7 +176,6 @@ async fn linked_worktree_project_layers_use_root_repo_hooks_without_worktree_con
         Some(cwd),
         &[] as &[(String, TomlValue)],
         LoaderOverrides::default(),
-        CloudRequirementsLoader::default(),
         &codex_config::NoopThreadConfigLoader,
     )
     .await?;
@@ -247,7 +246,6 @@ async fn nested_project_root_markers_do_not_redirect_regular_repo_hooks() -> std
         Some(cwd),
         &[] as &[(String, TomlValue)],
         LoaderOverrides::default(),
-        CloudRequirementsLoader::default(),
         &codex_config::NoopThreadConfigLoader,
     )
     .await?;

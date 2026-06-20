@@ -1,4 +1,5 @@
 use super::support::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn webrtc_v2_background_agent_tool_call_delegates_and_returns_function_output() -> Result<()>

@@ -1,5 +1,6 @@
-use super::*;
 use super::common::make_config_for_test;
+use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn system_requirements_define_managed_permission_profiles() -> anyhow::Result<()> {

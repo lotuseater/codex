@@ -1,5 +1,6 @@
-use super::*;
 use super::common::make_config_for_test;
+use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn project_layers_prefer_closest_cwd() -> std::io::Result<()> {
@@ -39,7 +40,6 @@ async fn project_layers_prefer_closest_cwd() -> std::io::Result<()> {
         Some(cwd),
         &[] as &[(String, TomlValue)],
         LoaderOverrides::default(),
-        CloudRequirementsLoader::default(),
         &codex_config::NoopThreadConfigLoader,
     )
     .await?;
@@ -93,7 +93,6 @@ async fn project_layer_is_added_when_dot_codex_exists_without_config_toml() -> s
         Some(cwd),
         &[] as &[(String, TomlValue)],
         LoaderOverrides::default(),
-        CloudRequirementsLoader::default(),
         &codex_config::NoopThreadConfigLoader,
     )
     .await?;
@@ -134,7 +133,6 @@ async fn codex_home_is_not_loaded_as_project_layer_from_home_dir() -> std::io::R
         Some(cwd),
         &[] as &[(String, TomlValue)],
         LoaderOverrides::default(),
-        CloudRequirementsLoader::default(),
         &codex_config::NoopThreadConfigLoader,
     )
     .await?;
@@ -200,7 +198,6 @@ async fn codex_home_within_project_tree_is_not_double_loaded() -> std::io::Resul
         Some(cwd),
         &[] as &[(String, TomlValue)],
         LoaderOverrides::default(),
-        CloudRequirementsLoader::default(),
         &codex_config::NoopThreadConfigLoader,
     )
     .await?;
@@ -289,7 +286,6 @@ wire_api = "responses"
         Some(cwd),
         &[] as &[(String, TomlValue)],
         LoaderOverrides::default(),
-        CloudRequirementsLoader::default(),
         &codex_config::NoopThreadConfigLoader,
     )
     .await?;
@@ -390,7 +386,6 @@ async fn project_root_markers_supports_alternate_markers() -> std::io::Result<()
         Some(cwd),
         &[] as &[(String, TomlValue)],
         LoaderOverrides::default(),
-        CloudRequirementsLoader::default(),
         &codex_config::NoopThreadConfigLoader,
     )
     .await?;

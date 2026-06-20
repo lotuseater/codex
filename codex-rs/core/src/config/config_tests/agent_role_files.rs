@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn load_config_rejects_missing_agent_role_config_file() -> std::io::Result<()> {
@@ -476,4 +477,3 @@ config_file = "./agents/researcher.toml"
 
     Ok(())
 }
-

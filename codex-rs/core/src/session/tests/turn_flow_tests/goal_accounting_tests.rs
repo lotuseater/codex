@@ -166,7 +166,7 @@ async fn budget_limited_accounting_steers_active_turn_without_aborting() -> anyh
     .await?;
 
     let pending_input = sess.get_pending_input().await;
-    let [TurnInput::ResponseInputItem(ResponseInputItem::Message { role, content, .. })] =
+    let [TurnInput::ResponseItem(ResponseItem::Message { role, content, .. })] =
         pending_input.as_slice()
     else {
         panic!("expected one budget-limit steering message, got {pending_input:#?}");

@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn set_model_updates_defaults() -> anyhow::Result<()> {
@@ -329,4 +330,3 @@ async fn load_config_ignores_empty_requirements_guardian_policy_config() -> std:
 
     Ok(())
 }
-

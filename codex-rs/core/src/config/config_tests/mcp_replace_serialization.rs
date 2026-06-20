@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn replace_mcp_servers_serializes_env_sorted() -> anyhow::Result<()> {
@@ -36,6 +37,7 @@ async fn replace_mcp_servers_serializes_env_sorted() -> anyhow::Result<()> {
 
     apply_blocking(
         codex_home.path(),
+        None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
@@ -112,6 +114,7 @@ async fn replace_mcp_servers_serializes_env_vars() -> anyhow::Result<()> {
 
     apply_blocking(
         codex_home.path(),
+        None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
@@ -173,6 +176,7 @@ async fn replace_mcp_servers_serializes_sourced_env_vars() -> anyhow::Result<()>
 
     apply_blocking(
         codex_home.path(),
+        None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
@@ -224,6 +228,7 @@ async fn replace_mcp_servers_serializes_cwd() -> anyhow::Result<()> {
 
     apply_blocking(
         codex_home.path(),
+        None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
@@ -278,6 +283,7 @@ async fn replace_mcp_servers_streamable_http_serializes_bearer_token() -> anyhow
 
     apply_blocking(
         codex_home.path(),
+        None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
@@ -347,6 +353,7 @@ async fn replace_mcp_servers_streamable_http_serializes_custom_headers() -> anyh
     )]);
     apply_blocking(
         codex_home.path(),
+        None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
@@ -430,6 +437,7 @@ async fn replace_mcp_servers_streamable_http_removes_optional_sections() -> anyh
 
     apply_blocking(
         codex_home.path(),
+        None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
     let serialized_with_optional = std::fs::read_to_string(&config_path)?;
@@ -464,6 +472,7 @@ async fn replace_mcp_servers_streamable_http_removes_optional_sections() -> anyh
     );
     apply_blocking(
         codex_home.path(),
+        None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
@@ -562,6 +571,7 @@ async fn replace_mcp_servers_streamable_http_isolates_headers_between_servers() 
 
     apply_blocking(
         codex_home.path(),
+        None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
@@ -649,6 +659,7 @@ async fn replace_mcp_servers_serializes_disabled_flag() -> anyhow::Result<()> {
 
     apply_blocking(
         codex_home.path(),
+        None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
@@ -699,6 +710,7 @@ async fn replace_mcp_servers_serializes_required_flag() -> anyhow::Result<()> {
 
     apply_blocking(
         codex_home.path(),
+        None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
@@ -749,6 +761,7 @@ async fn replace_mcp_servers_serializes_tool_filters() -> anyhow::Result<()> {
 
     apply_blocking(
         codex_home.path(),
+        None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
@@ -805,6 +818,7 @@ async fn replace_mcp_servers_streamable_http_serializes_oauth_resource() -> anyh
 
     apply_blocking(
         codex_home.path(),
+        None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
@@ -824,4 +838,3 @@ async fn replace_mcp_servers_streamable_http_serializes_oauth_resource() -> anyh
 
     Ok(())
 }
-

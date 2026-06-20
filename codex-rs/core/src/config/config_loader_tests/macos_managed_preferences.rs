@@ -1,4 +1,6 @@
 use super::*;
+use codex_config::CloudConfigBundleLoader;
+use codex_config::ConfigLoadOptions;
 
 #[cfg(target_os = "macos")]
 #[tokio::test]
@@ -41,7 +43,6 @@ flag = false
         Some(cwd),
         &[] as &[(String, TomlValue)],
         overrides,
-        CloudRequirementsLoader::default(),
         &codex_config::NoopThreadConfigLoader,
     )
     .await
@@ -145,7 +146,6 @@ allowed_sandbox_modes = ["read-only"]
         Some(AbsolutePathBuf::try_from(tmp.path())?),
         &[] as &[(String, TomlValue)],
         loader_overrides,
-        CloudRequirementsLoader::default(),
         &codex_config::NoopThreadConfigLoader,
     )
     .await?;
@@ -207,7 +207,6 @@ allowed_approval_policies = ["never"]
         Some(AbsolutePathBuf::try_from(tmp.path())?),
         &[] as &[(String, TomlValue)],
         loader_overrides,
-        CloudRequirementsLoader::default(),
         &codex_config::NoopThreadConfigLoader,
     )
     .await?;
@@ -247,30 +246,35 @@ allowed_approval_policies = ["on-request"]
         tmp.path(),
         Some(AbsolutePathBuf::try_from(tmp.path())?),
         &[] as &[(String, TomlValue)],
-        loader_overrides,
-        CloudRequirementsLoader::new(async {
-            Ok(Some(ConfigRequirementsToml {
-                allowed_approval_policies: Some(vec![AskForApproval::Never]),
-                allowed_approvals_reviewers: None,
-                allowed_sandbox_modes: None,
-                allowed_permissions: None,
-                remote_sandbox_config: None,
-                allowed_web_search_modes: None,
-                allow_managed_hooks_only: None,
-                allow_appshots: None,
-                computer_use: None,
-                feature_requirements: None,
-                hooks: None,
-                mcp_servers: None,
-                plugins: None,
-                apps: None,
-                rules: None,
-                enforce_residency: None,
-                network: None,
-                permissions: None,
-                guardian_policy_config: None,
-            }))
-        }),
+        ConfigLoadOptions {
+            loader_overrides,
+            strict_config: false,
+            cloud_config_bundle: CloudConfigBundleLoader::from_requirements_loader(
+                CloudRequirementsLoader::new(async {
+                    Ok(Some(ConfigRequirementsToml {
+                        allowed_approval_policies: Some(vec![AskForApproval::Never]),
+                        allowed_approvals_reviewers: None,
+                        allowed_sandbox_modes: None,
+                        allowed_permissions: None,
+                        remote_sandbox_config: None,
+                        allowed_web_search_modes: None,
+                        allow_managed_hooks_only: None,
+                        allow_appshots: None,
+                        computer_use: None,
+                        feature_requirements: None,
+                        hooks: None,
+                        mcp_servers: None,
+                        plugins: None,
+                        apps: None,
+                        rules: None,
+                        enforce_residency: None,
+                        network: None,
+                        permissions: None,
+                        guardian_policy_config: None,
+                    }))
+                }),
+            ),
+        },
         &codex_config::NoopThreadConfigLoader,
     )
     .await?;
@@ -288,7 +292,10 @@ allowed_approval_policies = ["on-request"]
             field_name: "approval_policy",
             candidate: "OnRequest".into(),
             allowed: "[Never]".into(),
-            requirement_source: RequirementSource::CloudRequirements,
+            requirement_source: RequirementSource::EnterpriseManaged {
+                id: "cloud_requirements".to_string(),
+                name: "Cloud requirements".to_string(),
+            },
         })
     );
 

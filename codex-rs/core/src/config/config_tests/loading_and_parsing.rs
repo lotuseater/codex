@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn load_config_normalizes_relative_cwd_override() -> std::io::Result<()> {

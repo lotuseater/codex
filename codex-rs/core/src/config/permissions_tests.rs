@@ -233,7 +233,7 @@ fn network_toml_overlays_unix_socket_permissions_by_path() {
                 ),
                 (
                     "/tmp/override.sock".to_string(),
-                    ProxyNetworkUnixSocketPermission::Deny,
+                    ProxyNetworkUnixSocketPermission::None,
                 ),
             ]),
         })

@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn reconstruct_history_rollback_keeps_history_and_metadata_in_sync_for_completed_turns() {

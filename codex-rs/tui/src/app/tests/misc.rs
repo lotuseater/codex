@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn handle_mcp_inventory_result_clears_committed_loading_cell() {

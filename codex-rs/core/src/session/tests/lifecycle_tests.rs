@@ -1,4 +1,5 @@
 use super::*;
+use crate::input_queue::TurnInput;
 
 #[tokio::test]
 async fn regular_turn_emits_turn_started_without_waiting_for_startup_prewarm() {
@@ -388,7 +389,7 @@ async fn spawn_task_turn_span_inherits_dispatch_trace_context() {
             self: Arc<Self>,
             _session: Arc<SessionTaskContext>,
             _ctx: Arc<TurnContext>,
-            _input: Vec<UserInput>,
+            _input: Vec<TurnInput>,
             _cancellation_token: CancellationToken,
         ) -> Option<String> {
             let mut trace = self

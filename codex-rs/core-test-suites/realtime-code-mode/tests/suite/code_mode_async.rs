@@ -1,6 +1,8 @@
 #![allow(dead_code, unused_imports, clippy::expect_used, clippy::unwrap_used)]
 
 include!("code_mode_shared.rs");
+use pretty_assertions::assert_eq;
+use pretty_assertions::assert_ne;
 
 #[cfg_attr(windows, ignore = "no exec_command on Windows")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

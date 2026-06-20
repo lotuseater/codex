@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn config_loads_mcp_oauth_callback_port_from_toml() -> std::io::Result<()> {
@@ -678,4 +679,3 @@ async fn browser_feature_requirements_are_valid() -> std::io::Result<()> {
 
     Ok(())
 }
-

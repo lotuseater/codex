@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn loads_legacy_split_agent_roles_from_config_toml() -> std::io::Result<()> {
@@ -679,4 +680,3 @@ async fn model_catalog_json_rejects_empty_catalog() -> std::io::Result<()> {
     );
     Ok(())
 }
-

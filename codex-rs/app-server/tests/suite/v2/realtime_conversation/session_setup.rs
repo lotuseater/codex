@@ -1,4 +1,5 @@
 use super::support::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn realtime_text_output_modality_requests_text_output_and_final_transcript() -> Result<()> {

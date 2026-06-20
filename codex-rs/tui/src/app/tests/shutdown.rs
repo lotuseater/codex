@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn active_non_primary_shutdown_target_returns_none_for_non_shutdown_event() -> Result<()> {

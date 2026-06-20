@@ -208,12 +208,15 @@ mod shutdown_lifecycle_tests;
 mod span_trace_tests;
 mod startup_prewarm_tests;
 mod stream_parser_seed_tests;
-// fork-local: support_fixtures/support_rollout/support_session module files were never
-// committed (the test-split was incomplete). Declarations + re-exports are disabled until
-// the test-repair wave recreates these files; re-enable them together with their .rs files.
-// mod support_fixtures;
-// mod support_rollout;
-// mod support_session;
+// fork-local: the support_fixtures/support_rollout/support_session module files DO exist and are
+// fully populated with pub(crate) test helpers; the prior "never committed" claim was incorrect.
+// Re-enabled so sibling test submodules can resolve the shared helpers via the glob re-exports below.
+#[path = "support_fixtures.rs"]
+mod support_fixtures;
+#[path = "support_rollout.rs"]
+mod support_rollout;
+#[path = "support_session.rs"]
+mod support_session;
 mod thread_history_tests;
 mod thread_rollback_tests;
 mod token_usage_tests;
@@ -221,7 +224,12 @@ mod turn_environment_tests;
 mod turn_flow_tests;
 mod workspace_roots_tests;
 mod zsh_fork_tests;
-// fork-local: disabled with their module declarations above (missing files) — re-enable in the test-repair wave.
-// pub(crate) use support_fixtures::*;
-// pub(crate) use support_rollout::*;
-// pub(crate) use support_session::*;
+// fork-local: re-enabled — the support_* files exist and hold the shared pub(crate) test helpers
+// (session/message/rollout builders, NeverEndingTask, InstructionsTestCase). Glob re-exports make
+// the bare helper names resolvable from every sibling test submodule via its `use super::*;`.
+pub(crate) use support_fixtures::*;
+pub(crate) use support_rollout::*;
+pub(crate) use support_session::*;
+// Helpers that live in regular (non-support) test submodules but are shared across siblings.
+pub(crate) use service_tier_tests::make_session_configuration_for_tests;
+pub(crate) use zsh_fork_tests::make_session_and_context;

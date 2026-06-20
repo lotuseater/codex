@@ -1,5 +1,6 @@
-use super::*;
 use super::common::*;
+use super::*;
+use pretty_assertions::assert_eq;
 
 #[cfg(unix)]
 #[tokio::test]
@@ -303,4 +304,3 @@ fn config_toml_deserializes_mcp_oauth_callback_url() {
         Some("https://example.com/callback")
     );
 }
-

@@ -179,12 +179,21 @@ struct ListedAgentResult {
     last_task_message: Option<String>,
 }
 
+#[path = "multi_agents_tests/build_config.rs"]
 mod build_config;
+#[path = "multi_agents_tests/close_agent.rs"]
 mod close_agent;
+#[path = "multi_agents_tests/send_input.rs"]
 mod send_input;
+#[path = "multi_agents_tests/service_tier.rs"]
 mod service_tier;
+#[path = "multi_agents_tests/spawn.rs"]
 mod spawn;
+#[path = "multi_agents_tests/v2_messaging.rs"]
 mod v2_messaging;
+#[path = "multi_agents_tests/v2_spawn.rs"]
 mod v2_spawn;
+#[path = "multi_agents_tests/wait.rs"]
 mod wait;
+#[path = "multi_agents_tests/wait_v2.rs"]
 mod wait_v2;

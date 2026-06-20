@@ -4,7 +4,6 @@ use codex_tool_registry_api::ListAvailablePluginsToInstallResult;
 use codex_tool_registry_api::RequestPluginInstallEntry;
 use codex_tool_registry_api::ToolSpec;
 
-use codex_tool_execution_api::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
@@ -12,6 +11,7 @@ use crate::tools::context::boxed_tool_output;
 use crate::tools::handlers::list_available_plugins_to_install_spec::create_list_available_plugins_to_install_tool;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
+use codex_tool_execution_api::FunctionCallError;
 
 const MAX_LIST_AVAILABLE_PLUGINS_TO_INSTALL_DESCRIPTION_CHARS: usize = 240;
 

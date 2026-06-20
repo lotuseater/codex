@@ -17,7 +17,9 @@ from typing import Any, Iterable
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BENCHMARK_SCRIPT = REPO_ROOT / "scripts" / "benchmark-context-helper-prompt-variants.py"
-DEFAULT_RUN_DIR = REPO_ROOT / "logs" / "context-helper-prompt-benchmarks" / "full-20-30-s6-v4"
+DEFAULT_RUN_DIR = (
+    REPO_ROOT / "logs" / "context-helper-prompt-benchmarks" / "full-20-30-s6-v4"
+)
 VARIANTS = ("no_nudge", "standard_compaction_template", "prune", "delta", "evidence")
 
 
@@ -57,7 +59,9 @@ class QualityRow:
 
 
 def load_benchmark_module() -> Any:
-    spec = importlib.util.spec_from_file_location("context_prompt_benchmark", BENCHMARK_SCRIPT)
+    spec = importlib.util.spec_from_file_location(
+        "context_prompt_benchmark", BENCHMARK_SCRIPT
+    )
     if spec is None or spec.loader is None:
         raise RuntimeError(f"cannot load benchmark script: {BENCHMARK_SCRIPT}")
     module = importlib.util.module_from_spec(spec)
@@ -126,7 +130,9 @@ def quality_cell(
     return num(row.quality_score)
 
 
-def sample_judge_winner(sample_id: str, judge_index: dict[tuple[str, str], dict[str, Any]]) -> str:
+def sample_judge_winner(
+    sample_id: str, judge_index: dict[tuple[str, str], dict[str, Any]]
+) -> str:
     for variant in VARIANTS:
         winner = judge_index.get((sample_id, variant), {}).get("best_variant")
         if winner:
@@ -204,11 +210,35 @@ def has_any(text_lower: str, terms: tuple[str, ...]) -> bool:
 def readiness_score(output: str, evidence: dict[str, list[str]]) -> float:
     output_lower = output.lower()
     checks = [
-        bool(evidence["paths"]) and has_any(output_lower, tuple(item.lower() for item in evidence["paths"][:20])),
-        bool(evidence["commands"]) and has_any(output_lower, tuple(item.lower() for item in evidence["commands"][:20])),
-        has_any(output_lower, ("next", "remaining", "todo", "rerun", "verify", "validation", "action")),
-        has_any(output_lower, ("passed", "failed", "blocked", "fixed", "changed", "implemented", "committed", "status")),
-        has_any(output_lower, ("user asked", "goal", "must", "do not", "constraint", "assumption")),
+        bool(evidence["paths"])
+        and has_any(
+            output_lower, tuple(item.lower() for item in evidence["paths"][:20])
+        ),
+        bool(evidence["commands"])
+        and has_any(
+            output_lower, tuple(item.lower() for item in evidence["commands"][:20])
+        ),
+        has_any(
+            output_lower,
+            ("next", "remaining", "todo", "rerun", "verify", "validation", "action"),
+        ),
+        has_any(
+            output_lower,
+            (
+                "passed",
+                "failed",
+                "blocked",
+                "fixed",
+                "changed",
+                "implemented",
+                "committed",
+                "status",
+            ),
+        ),
+        has_any(
+            output_lower,
+            ("user asked", "goal", "must", "do not", "constraint", "assumption"),
+        ),
         output.count("\n- ") + output.count("\n* ") + output.count("\n#") >= 2,
     ]
     applicable = [check for check in checks if check is not None]
@@ -229,7 +259,9 @@ def resolve_run_path(run_dir: Path, raw: str | None) -> Path | None:
     return run_dir / path
 
 
-def judge_by_sample_variant(judge_rows: list[dict[str, Any]]) -> dict[tuple[str, str], dict[str, Any]]:
+def judge_by_sample_variant(
+    judge_rows: list[dict[str, Any]],
+) -> dict[tuple[str, str], dict[str, Any]]:
     indexed: dict[tuple[str, str], dict[str, Any]] = {}
     for row in judge_rows:
         judge = row.get("judge") or {}
@@ -319,14 +351,17 @@ def mean_present(values: Iterable[float | None]) -> float | None:
 def aggregate_variant(rows: list[QualityRow]) -> dict[str, Any]:
     total_prompt = sum(row.prompt_tokens for row in rows)
     total_output = sum(row.output_tokens for row in rows)
-    weighted_saved = (1.0 - total_output / total_prompt) * 100.0 if total_prompt else 0.0
+    weighted_saved = (
+        (1.0 - total_output / total_prompt) * 100.0 if total_prompt else 0.0
+    )
     return {
         "outputs": len(rows),
         "weighted_saved_percent": weighted_saved,
         "avg_saved_percent": statistics.mean(row.saved_percent for row in rows),
         "avg_output_tokens": statistics.mean(row.output_tokens for row in rows),
         "avg_quality": statistics.mean(row.quality_score for row in rows),
-        "weighted_quality": sum(row.quality_score * row.prompt_tokens for row in rows) / total_prompt,
+        "weighted_quality": sum(row.quality_score * row.prompt_tokens for row in rows)
+        / total_prompt,
         "avg_evidence": statistics.mean(row.evidence_score for row in rows),
         "avg_readiness": statistics.mean(row.readiness_score for row in rows),
         "avg_concision": statistics.mean(row.concision_score for row in rows),
@@ -338,7 +373,9 @@ def aggregate_variant(rows: list[QualityRow]) -> dict[str, Any]:
     }
 
 
-def threshold_aggregate(rows: list[QualityRow]) -> dict[tuple[int, str], dict[str, Any]]:
+def threshold_aggregate(
+    rows: list[QualityRow],
+) -> dict[tuple[int, str], dict[str, Any]]:
     grouped: dict[tuple[int, str], list[QualityRow]] = defaultdict(list)
     for row in rows:
         grouped[(row.threshold_percent, row.variant)].append(row)
@@ -416,7 +453,10 @@ def build_main_report(
     reductions: list[dict[str, Any]],
     judge_index: dict[tuple[str, str], dict[str, Any]],
 ) -> str:
-    by_variant = {variant: aggregate_variant([row for row in rows if row.variant == variant]) for variant in VARIANTS}
+    by_variant = {
+        variant: aggregate_variant([row for row in rows if row.variant == variant])
+        for variant in VARIANTS
+    }
     by_threshold = threshold_aggregate(rows)
     lines: list[str] = []
     lines.append("# Context Helper Prompt Quality Analysis")
@@ -437,11 +477,27 @@ def build_main_report(
         markdown_table(
             ["Component", "Weight", "What it rewards"],
             [
-                ["Evidence retention", "35%", "Retained paths, commands, numbers, and explicit constraints from the reducer input."],
-                ["Continuation readiness", "25%", "Action/status/verification markers, concrete references, and structured handoff shape."],
-                ["Concision", "20%", "Token savings, with full credit near 85% savings and no credit at 50%."],
+                [
+                    "Evidence retention",
+                    "35%",
+                    "Retained paths, commands, numbers, and explicit constraints from the reducer input.",
+                ],
+                [
+                    "Continuation readiness",
+                    "25%",
+                    "Action/status/verification markers, concrete references, and structured handoff shape.",
+                ],
+                [
+                    "Concision",
+                    "20%",
+                    "Token savings, with full credit near 85% savings and no credit at 50%.",
+                ],
                 ["Low noise", "10%", "Few speculative or conversational markers."],
-                ["Judge score", "10%", "The LLM pairwise judge score from the existing benchmark."],
+                [
+                    "Judge score",
+                    "10%",
+                    "The LLM pairwise judge score from the existing benchmark.",
+                ],
             ],
         )
     )
@@ -501,7 +557,15 @@ def build_main_report(
             )
     lines.append(
         markdown_table(
-            ["Threshold", "Variant", "Quality", "Weighted tokens saved", "Avg output tokens", "Evidence", "Readiness"],
+            [
+                "Threshold",
+                "Variant",
+                "Quality",
+                "Weighted tokens saved",
+                "Avg output tokens",
+                "Evidence",
+                "Readiness",
+            ],
             threshold_rows,
         )
     )
@@ -537,14 +601,24 @@ def build_main_report(
                 sample_id,
                 f"{sample['threshold_percent']}%",
                 sample["bucket"],
-                *[quality_cell(rows_by_sample_variant, sample_id, variant) for variant in VARIANTS],
+                *[
+                    quality_cell(rows_by_sample_variant, sample_id, variant)
+                    for variant in VARIANTS
+                ],
                 sample_judge_winner(sample_id, judge_index),
                 f"test-cases/{sample_id}.md",
             ]
         )
     lines.append(
         markdown_table(
-            ["Sample", "Threshold", "Bucket", *quality_headers, "Judge winner", "Readable case"],
+            [
+                "Sample",
+                "Threshold",
+                "Bucket",
+                *quality_headers,
+                "Judge winner",
+                "Readable case",
+            ],
             sample_table,
         )
     )
@@ -554,7 +628,10 @@ def build_main_report(
     file_rows = [
         ["Main quality analysis", abs_path(report_dir / "quality-analysis.md")],
         *[
-            [f"{variant_name(variant)} report", abs_path(report_dir / f"{variant}-quality-and-examples.md")]
+            [
+                f"{variant_name(variant)} report",
+                abs_path(report_dir / f"{variant}-quality-and-examples.md"),
+            ]
             for variant in VARIANTS
         ],
         ["Test case index", abs_path(report_dir / "test-case-index.md")],
@@ -612,11 +689,17 @@ def build_variant_report(
     lines.append(f"- Omitted: {omitted}")
     lines.append(f"- Pros: {fit}")
     if variant == "prune":
-        lines.append("- Cons: it depends heavily on what the model subjectively considers useful, so exact reproducibility details may disappear.")
+        lines.append(
+            "- Cons: it depends heavily on what the model subjectively considers useful, so exact reproducibility details may disappear."
+        )
     elif variant == "delta":
-        lines.append("- Cons: it assumes the prior reduced context is reliable and can under-preserve evidence from the new delta.")
+        lines.append(
+            "- Cons: it assumes the prior reduced context is reliable and can under-preserve evidence from the new delta."
+        )
     else:
-        lines.append("- Cons: it is larger and can keep more raw evidence than a high-frequency reduction loop may need.")
+        lines.append(
+            "- Cons: it is larger and can keep more raw evidence than a high-frequency reduction loop may need."
+        )
     lines.append("")
     lines.append("## Per-Sample Results")
     lines.append("")
@@ -718,7 +801,10 @@ def build_test_case_index(
                 sample["session_label"],
                 sample["trigger_line"],
                 sample["context_tokens_estimate"],
-                *[quality_cell(rows_by_sample_variant, sample_id, variant) for variant in VARIANTS],
+                *[
+                    quality_cell(rows_by_sample_variant, sample_id, variant)
+                    for variant in VARIANTS
+                ],
                 sample_judge_winner(sample_id, judge_index),
                 abs_path(report_dir / "test-cases" / f"{sample_id}.md"),
             ]
@@ -740,7 +826,9 @@ def build_test_case_index(
         )
     )
     lines.append("")
-    lines.append("Each readable file contains the full canonical reducer input, the full source transcript window, the exact saved reducer prompt for each variant, the full reduced output, metrics, judge notes, and raw artifact paths.")
+    lines.append(
+        "Each readable file contains the full canonical reducer input, the full source transcript window, the exact saved reducer prompt for each variant, the full reduced output, metrics, judge notes, and raw artifact paths."
+    )
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -780,13 +868,17 @@ def build_test_case(
     lines.append("")
     lines.append("## Full Canonical Reducer Input")
     lines.append("")
-    lines.append("This is the reducer input reconstructed from `prior_reduced_context` plus `new_context_delta`. For `delta`, the saved prompt passes those two parts in separate tags; for `prune` and `evidence`, the saved prompt wraps this canonical input in one context tag.")
+    lines.append(
+        "This is the reducer input reconstructed from `prior_reduced_context` plus `new_context_delta`. For `delta`, the saved prompt passes those two parts in separate tags; for `prune` and `evidence`, the saved prompt wraps this canonical input in one context tag."
+    )
     lines.append("")
     lines.append(fence(canonical_input, "text"))
     lines.append("")
     lines.append("## Full Source Transcript Window")
     lines.append("")
-    lines.append("This transcript window was used to build the sample. It was not sent directly to every reducer prompt, but it is included here so the test case remains auditable.")
+    lines.append(
+        "This transcript window was used to build the sample. It was not sent directly to every reducer prompt, but it is included here so the test case remains auditable."
+    )
     lines.append("")
     lines.append(fence(sample["transcript"], "text"))
     for variant in VARIANTS:
@@ -828,11 +920,17 @@ def build_test_case(
         lines.append("")
         lines.append("Representative preserved evidence:")
         for category in ("paths", "commands", "constraints", "numbers"):
-            lines.append(f"- {category}: " + (", ".join(f"`{item}`" for item in ex[f"{category}_kept"]) or "none"))
+            lines.append(
+                f"- {category}: "
+                + (", ".join(f"`{item}`" for item in ex[f"{category}_kept"]) or "none")
+            )
         lines.append("")
         lines.append("Representative omitted evidence:")
         for category in ("paths", "commands", "constraints", "numbers"):
-            lines.append(f"- {category}: " + (", ".join(f"`{item}`" for item in ex[f"{category}_lost"]) or "none"))
+            lines.append(
+                f"- {category}: "
+                + (", ".join(f"`{item}`" for item in ex[f"{category}_lost"]) or "none")
+            )
         lines.append("")
         lines.append("### Full Saved Reducer Prompt")
         lines.append("")
@@ -871,9 +969,7 @@ def build_reports(run_dir: Path) -> list[Path]:
         if isinstance(row.get("variant"), str)
     }
     ordered_variants = [
-        variant
-        for variant in module.ALL_VARIANTS
-        if variant in present_variants
+        variant for variant in module.ALL_VARIANTS if variant in present_variants
     ]
     ordered_variants.extend(sorted(present_variants.difference(ordered_variants)))
     VARIANTS = tuple(ordered_variants)
@@ -895,24 +991,26 @@ def build_reports(run_dir: Path) -> list[Path]:
     }
 
     quality_rows = [
-        quality_from_row(run_dir, row, evidence_by_sample[row["sample_id"]], judge_index)
+        quality_from_row(
+            run_dir, row, evidence_by_sample[row["sample_id"]], judge_index
+        )
         for row in reduction_rows
     ]
-    rows_by_sample_variant = {
-        (row.sample_id, row.variant): row
-        for row in quality_rows
-    }
+    rows_by_sample_variant = {(row.sample_id, row.variant): row for row in quality_rows}
     outputs_by_sample_variant = {
-        (row.sample_id, row.variant): row.output
-        for row in quality_rows
+        (row.sample_id, row.variant): row.output for row in quality_rows
     }
-    examples = collect_evidence_examples(sample_inputs, outputs_by_sample_variant, module)
+    examples = collect_evidence_examples(
+        sample_inputs, outputs_by_sample_variant, module
+    )
 
     written: list[Path] = []
     main_report = report_dir / "quality-analysis.md"
     write_text(
         main_report,
-        build_main_report(run_dir, report_dir, quality_rows, sample_rows, reduction_rows, judge_index),
+        build_main_report(
+            run_dir, report_dir, quality_rows, sample_rows, reduction_rows, judge_index
+        ),
     )
     written.append(main_report)
 
@@ -936,7 +1034,9 @@ def build_reports(run_dir: Path) -> list[Path]:
     index_path = report_dir / "test-case-index.md"
     write_text(
         index_path,
-        build_test_case_index(run_dir, report_dir, sample_rows, rows_by_sample_variant, judge_index),
+        build_test_case_index(
+            run_dir, report_dir, sample_rows, rows_by_sample_variant, judge_index
+        ),
     )
     written.append(index_path)
 

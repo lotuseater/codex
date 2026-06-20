@@ -1,4 +1,5 @@
 use super::support::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn realtime_conversation_streams_v2_notifications() -> Result<()> {

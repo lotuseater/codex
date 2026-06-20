@@ -33,8 +33,8 @@ fn config_stack_for_dot_codex_folder_with_requirements(
     dot_codex_folder: &Path,
     requirements: ConfigRequirements,
 ) -> ConfigLayerStack {
-    let dot_codex_folder = AbsolutePathBuf::from_absolute_path(dot_codex_folder)
-        .expect("absolute dot_codex_folder");
+    let dot_codex_folder =
+        AbsolutePathBuf::from_absolute_path(dot_codex_folder).expect("absolute dot_codex_folder");
     let layer = ConfigLayerEntry::new(
         ConfigLayerSource::Project { dot_codex_folder },
         TomlValue::Table(Default::default()),

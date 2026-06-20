@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn replay_thread_snapshot_restores_draft_and_queued_input() {

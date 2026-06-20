@@ -136,7 +136,9 @@ class Sample:
 
 def load_reduction_module() -> Any:
     path = SCRIPT_DIR / "benchmark-context-helper-reduction.py"
-    spec = importlib.util.spec_from_file_location("context_helper_reduction_benchmark", path)
+    spec = importlib.util.spec_from_file_location(
+        "context_helper_reduction_benchmark", path
+    )
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Unable to load {path}")
     module = importlib.util.module_from_spec(spec)
@@ -184,7 +186,9 @@ def parse_variant_list(value: str) -> list[str]:
         if not item:
             continue
         if item not in ALL_VARIANTS:
-            raise argparse.ArgumentTypeError(f"unknown variant {item!r}; choose from {', '.join(ALL_VARIANTS)}")
+            raise argparse.ArgumentTypeError(
+                f"unknown variant {item!r}; choose from {', '.join(ALL_VARIANTS)}"
+            )
         variants.append(item)
     if not variants:
         raise argparse.ArgumentTypeError("expected at least one variant")
@@ -214,21 +218,28 @@ def json_default(value: Any) -> Any:
 
 def write_json(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False, default=json_default) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False, default=json_default) + "\n",
+        encoding="utf-8",
+    )
 
 
 def append_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         for row in rows:
-            handle.write(json.dumps(row, ensure_ascii=False, default=json_default) + "\n")
+            handle.write(
+                json.dumps(row, ensure_ascii=False, default=json_default) + "\n"
+            )
 
 
 def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
         for row in rows:
-            handle.write(json.dumps(row, ensure_ascii=False, default=json_default) + "\n")
+            handle.write(
+                json.dumps(row, ensure_ascii=False, default=json_default) + "\n"
+            )
 
 
 def text_from_content(content: Any) -> str:
@@ -297,7 +308,12 @@ def format_record(line_number: int, record: dict[str, Any]) -> str | None:
                     f"[line {line_number} {timestamp}] token_count "
                     f"input={input_tokens} total_input={total_input_tokens} window={context_window}"
                 )
-        if event_type in {"task_started", "task_complete", "turn_started", "turn_completed"}:
+        if event_type in {
+            "task_started",
+            "task_complete",
+            "turn_started",
+            "turn_completed",
+        }:
             return f"[line {line_number} {timestamp}] event {event_type}"
         return None
 
@@ -308,23 +324,34 @@ def format_record(line_number: int, record: dict[str, Any]) -> str | None:
             text = text_from_content(payload.get("content"))
             if not text:
                 return None
-            return f"[line {line_number} {timestamp}] {role}:\n{truncate_text(text, 8000)}"
+            return (
+                f"[line {line_number} {timestamp}] {role}:\n{truncate_text(text, 8000)}"
+            )
         if payload_type in {"function_call", "custom_tool_call"}:
             name = payload.get("name") or payload.get("call_id") or payload_type
-            args = payload.get("arguments") or payload.get("input") or payload.get("params") or ""
+            args = (
+                payload.get("arguments")
+                or payload.get("input")
+                or payload.get("params")
+                or ""
+            )
             return f"[line {line_number} {timestamp}] tool_call {name}:\n{truncate_text(str(args), 4000)}"
         if payload_type in {"function_call_output", "custom_tool_call_output"}:
             call_id = payload.get("call_id") or payload.get("name") or payload_type
             output = payload.get("output") or payload.get("content") or ""
             return f"[line {line_number} {timestamp}] tool_output {call_id}:\n{truncate_text(str(output), 6000)}"
         if payload_type == "reasoning":
-            summary = text_from_content(payload.get("summary") or payload.get("content"))
+            summary = text_from_content(
+                payload.get("summary") or payload.get("content")
+            )
             if summary:
                 return f"[line {line_number} {timestamp}] reasoning_summary:\n{truncate_text(summary, 4000)}"
             return None
         return f"[line {line_number} {timestamp}] response_item {payload_type}:\n{compact_json(payload, 2400)}"
 
-    return f"[line {line_number} {timestamp}] {record_type}:\n{compact_json(record, 1800)}"
+    return (
+        f"[line {line_number} {timestamp}] {record_type}:\n{compact_json(record, 1800)}"
+    )
 
 
 def read_formatted_records(path: Path, max_line: int) -> list[tuple[int, str]]:
@@ -343,7 +370,9 @@ def read_formatted_records(path: Path, max_line: int) -> list[tuple[int, str]]:
     return records
 
 
-def build_transcript_window(session_path: Path, trigger_line: int, token_budget: int) -> str:
+def build_transcript_window(
+    session_path: Path, trigger_line: int, token_budget: int
+) -> str:
     records = read_formatted_records(session_path, trigger_line)
     selected: list[str] = []
     used = 0
@@ -480,10 +509,18 @@ def choose_samples(
     chosen: list[TriggerCandidate] = []
     thresholds = sorted({candidate.threshold_percent for candidate in candidates})
     for threshold in thresholds:
-        threshold_candidates = [candidate for candidate in candidates if candidate.threshold_percent == threshold]
+        threshold_candidates = [
+            candidate
+            for candidate in candidates
+            if candidate.threshold_percent == threshold
+        ]
         if not threshold_candidates:
             continue
-        by_bucket: dict[str, list[TriggerCandidate]] = {"early": [], "middle": [], "late": []}
+        by_bucket: dict[str, list[TriggerCandidate]] = {
+            "early": [],
+            "middle": [],
+            "late": [],
+        }
         for candidate in threshold_candidates:
             by_bucket[candidate.bucket].append(candidate)
         for bucket_candidates in by_bucket.values():
@@ -512,10 +549,14 @@ def choose_samples(
 
 
 def build_sample(candidate: TriggerCandidate, token_budget: int) -> Sample:
-    transcript = build_transcript_window(candidate.session.path, candidate.trigger_line, token_budget)
+    transcript = build_transcript_window(
+        candidate.session.path, candidate.trigger_line, token_budget
+    )
     prior, delta = split_for_delta(transcript)
     key = f"{candidate.threshold_percent}:{candidate.session.path}:{candidate.trigger_line}:{candidate.trigger_index}"
-    sample_id = f"thr{candidate.threshold_percent}-{candidate.bucket}-{stable_hash(key)}"
+    sample_id = (
+        f"thr{candidate.threshold_percent}-{candidate.bucket}-{stable_hash(key)}"
+    )
     return Sample(
         sample_id=sample_id,
         threshold_percent=candidate.threshold_percent,
@@ -615,14 +656,19 @@ def canonical_reducer_input(sample: Sample) -> str:
     ).strip()
 
 
-def blinded_label_map(sample_id: str, variants: list[str], judge_index: int) -> dict[str, str]:
+def blinded_label_map(
+    sample_id: str, variants: list[str], judge_index: int
+) -> dict[str, str]:
     labels = [chr(ord("A") + index) for index in range(len(variants))]
     if len(variants) == len(ALL_VARIANTS) and set(variants) == set(ALL_VARIANTS):
         permutations = list(itertools.permutations(ALL_VARIANTS))
         shuffled = list(permutations[judge_index % len(permutations)])
     else:
         shuffled = list(variants)
-        seed = int(hashlib.sha1(f"{sample_id}:{judge_index}".encode("utf-8")).hexdigest()[:12], 16)
+        seed = int(
+            hashlib.sha1(f"{sample_id}:{judge_index}".encode("utf-8")).hexdigest()[:12],
+            16,
+        )
         random.Random(seed).shuffle(shuffled)
     return dict(zip(labels, shuffled, strict=True))
 
@@ -640,7 +686,7 @@ def build_judge_prompt(
     scores_shape = ", ".join(f'"{label}": 0-10' for label in labels)
     reasons_shape = ", ".join(f'"{label}": "short reason"' for label in labels)
     output_blocks = "\n\n".join(
-        f"<output label=\"{label}\">\n{truncate_text(outputs[variant], output_char_budget)}\n</output>"
+        f'<output label="{label}">\n{truncate_text(outputs[variant], output_char_budget)}\n</output>'
         for label, variant in label_map.items()
     )
     prompt = textwrap.dedent(
@@ -670,11 +716,16 @@ def build_judge_prompt(
     return prompt, label_map
 
 
-def score_output(sample: Sample, variant: str, prompt: str, output: str) -> dict[str, Any]:
+def score_output(
+    sample: Sample, variant: str, prompt: str, output: str
+) -> dict[str, Any]:
     evidence = extract_evidence_items(canonical_reducer_input(sample))
     output_tokens = estimate_tokens(output)
     input_tokens = estimate_tokens(prompt)
-    noise_count = sum(len(re.findall(pattern, output, flags=re.IGNORECASE)) for pattern in NOISE_PATTERNS)
+    noise_count = sum(
+        len(re.findall(pattern, output, flags=re.IGNORECASE))
+        for pattern in NOISE_PATTERNS
+    )
     return {
         "sample_id": sample.sample_id,
         "threshold_percent": sample.threshold_percent,
@@ -682,7 +733,9 @@ def score_output(sample: Sample, variant: str, prompt: str, output: str) -> dict
         "variant": variant,
         "prompt_tokens_estimate": input_tokens,
         "output_tokens_estimate": output_tokens,
-        "compression_ratio": round(output_tokens / input_tokens, 4) if input_tokens else None,
+        "compression_ratio": round(output_tokens / input_tokens, 4)
+        if input_tokens
+        else None,
         "retained_path_ratio": retain_ratio(evidence["paths"], output),
         "retained_number_ratio": retain_ratio(evidence["numbers"], output),
         "retained_command_ratio": retain_ratio(evidence["commands"], output),
@@ -692,11 +745,15 @@ def score_output(sample: Sample, variant: str, prompt: str, output: str) -> dict
         "input_commands": len(evidence["commands"]),
         "input_constraints": len(evidence["constraints"]),
         "noise_marker_count": noise_count,
-        "output_sha1": hashlib.sha1(output.encode("utf-8", errors="replace")).hexdigest(),
+        "output_sha1": hashlib.sha1(
+            output.encode("utf-8", errors="replace")
+        ).hexdigest(),
     }
 
 
-def run_codex_exec(prompt: str, out_dir: Path, call_id: str, timeout_seconds: int) -> tuple[bool, str, dict[str, Any]]:
+def run_codex_exec(
+    prompt: str, out_dir: Path, call_id: str, timeout_seconds: int
+) -> tuple[bool, str, dict[str, Any]]:
     prompt_path = out_dir / "prompts" / f"{call_id}.prompt.md"
     last_message_path = out_dir / "llm" / f"{call_id}.last.md"
     raw_jsonl_path = out_dir / "llm" / f"{call_id}.events.jsonl"
@@ -727,20 +784,37 @@ def run_codex_exec(prompt: str, out_dir: Path, call_id: str, timeout_seconds: in
             check=False,
         )
     except FileNotFoundError as exc:
-        return False, "", {"error": str(exc), "kind": "file_not_found", "command": command, "started_at": started_at}
+        return (
+            False,
+            "",
+            {
+                "error": str(exc),
+                "kind": "file_not_found",
+                "command": command,
+                "started_at": started_at,
+            },
+        )
     except subprocess.TimeoutExpired as exc:
         raw_jsonl_path.write_text(exc.stdout or "", encoding="utf-8")
         stderr_path.write_text(exc.stderr or "", encoding="utf-8")
-        return False, "", {
-            "error": f"timed out after {timeout_seconds}s",
-            "kind": "timeout",
-            "command": command + ["<stdin prompt omitted>"],
-            "started_at": started_at,
-        }
+        return (
+            False,
+            "",
+            {
+                "error": f"timed out after {timeout_seconds}s",
+                "kind": "timeout",
+                "command": command + ["<stdin prompt omitted>"],
+                "started_at": started_at,
+            },
+        )
 
     raw_jsonl_path.write_text(completed.stdout, encoding="utf-8")
     stderr_path.write_text(completed.stderr, encoding="utf-8")
-    output = last_message_path.read_text(encoding="utf-8", errors="replace") if last_message_path.exists() else ""
+    output = (
+        last_message_path.read_text(encoding="utf-8", errors="replace")
+        if last_message_path.exists()
+        else ""
+    )
     metadata = {
         "returncode": completed.returncode,
         "started_at": started_at,
@@ -770,7 +844,14 @@ def codex_command_prefix() -> list[str]:
         return ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1]
     fallback = Path.home() / "bin" / "codex.ps1"
     if fallback.exists():
-        return ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(fallback)]
+        return [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(fallback),
+        ]
     return ["codex"]
 
 
@@ -856,9 +937,15 @@ def preflight_codex_exec(out_dir: Path, timeout_seconds: int) -> bool:
         timeout_seconds,
     )
     if ok and output.strip() == "OK":
-        write_json(out_dir / "preflight.json", {"ok": True, "output": output, "metadata": metadata})
+        write_json(
+            out_dir / "preflight.json",
+            {"ok": True, "output": output, "metadata": metadata},
+        )
         return True
-    write_json(out_dir / "preflight_failed.json", {"ok": False, "output": output, "metadata": metadata})
+    write_json(
+        out_dir / "preflight_failed.json",
+        {"ok": False, "output": output, "metadata": metadata},
+    )
     return False
 
 
@@ -870,7 +957,9 @@ def build_summary(
     judge_rows: list[dict[str, Any]],
     preflight_status: str,
 ) -> str:
-    by_variant: dict[str, list[dict[str, Any]]] = {variant: [] for variant in ALL_VARIANTS}
+    by_variant: dict[str, list[dict[str, Any]]] = {
+        variant: [] for variant in ALL_VARIANTS
+    }
     for row in reductions:
         if row.get("ok"):
             by_variant.setdefault(row["variant"], []).append(row)
@@ -895,7 +984,9 @@ def build_summary(
         rows = by_variant.get(variant, [])
 
         def avg(key: str) -> str:
-            values = [row.get(key) for row in rows if isinstance(row.get(key), (int, float))]
+            values = [
+                row.get(key) for row in rows if isinstance(row.get(key), (int, float))
+            ]
             if not values:
                 return "n/a"
             return f"{sum(values) / len(values):.3f}"
@@ -987,7 +1078,9 @@ def load_sessions(
     sessions: list[Any] = []
     scanned = 0
     skipped_benchmark = 0
-    for path in reduction.iter_session_files(sessions_root, max(session_limit, session_scan_limit)):
+    for path in reduction.iter_session_files(
+        sessions_root, max(session_limit, session_scan_limit)
+    ):
         scanned += 1
         if not include_benchmark_sessions and looks_like_benchmark_session(path):
             skipped_benchmark += 1
@@ -997,28 +1090,45 @@ def load_sessions(
             sessions.append(session)
         if len(sessions) >= session_limit:
             break
-    return sessions, {"session_files_scanned": scanned, "skipped_benchmark_sessions": skipped_benchmark}
+    return sessions, {
+        "session_files_scanned": scanned,
+        "skipped_benchmark_sessions": skipped_benchmark,
+    }
 
 
 def parse_args() -> argparse.Namespace:
     reduction = load_reduction_module()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--sessions-root", type=Path, default=reduction.default_sessions_root())
+    parser.add_argument(
+        "--sessions-root", type=Path, default=reduction.default_sessions_root()
+    )
     parser.add_argument("--session-limit", type=int, default=80)
     parser.add_argument("--session-scan-limit", type=int, default=240)
     parser.add_argument("--thresholds", type=parse_int_list, default=[20, 30])
     parser.add_argument("--cooldown-turns", type=int, default=24)
     parser.add_argument("--samples-per-threshold", type=int, default=6)
-    parser.add_argument("--context-token-budget", type=int, default=DEFAULT_CONTEXT_TOKEN_BUDGET)
-    parser.add_argument("--judge-output-char-budget", type=int, default=DEFAULT_JUDGE_OUTPUT_CHAR_BUDGET)
-    parser.add_argument("--variants", type=parse_variant_list, default=list(ALL_VARIANTS))
+    parser.add_argument(
+        "--context-token-budget", type=int, default=DEFAULT_CONTEXT_TOKEN_BUDGET
+    )
+    parser.add_argument(
+        "--judge-output-char-budget", type=int, default=DEFAULT_JUDGE_OUTPUT_CHAR_BUDGET
+    )
+    parser.add_argument(
+        "--variants", type=parse_variant_list, default=list(ALL_VARIANTS)
+    )
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--new-input-cooldown", type=int, default=0)
     parser.add_argument("--min-future-turns", type=int, default=6)
-    parser.add_argument("--llm-backend", choices=["codex-exec", "none"], default="codex-exec")
+    parser.add_argument(
+        "--llm-backend", choices=["codex-exec", "none"], default="codex-exec"
+    )
     parser.add_argument("--codex-timeout-seconds", type=int, default=300)
     parser.add_argument("--out-dir", type=Path)
-    parser.add_argument("--dry-run", action="store_true", help="write config/samples/prompts without LLM calls")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="write config/samples/prompts without LLM calls",
+    )
     parser.add_argument("--include-benchmark-sessions", action="store_true")
     return parser.parse_args()
 
@@ -1066,9 +1176,16 @@ def main() -> int:
         args.new_input_cooldown,
         args.min_future_turns,
     )
-    selected_candidates = choose_samples(candidates, args.samples_per_threshold, args.seed)
-    samples = [build_sample(candidate, args.context_token_budget) for candidate in selected_candidates]
-    write_jsonl(out_dir / "samples.jsonl", [sample_to_row(sample) for sample in samples])
+    selected_candidates = choose_samples(
+        candidates, args.samples_per_threshold, args.seed
+    )
+    samples = [
+        build_sample(candidate, args.context_token_budget)
+        for candidate in selected_candidates
+    ]
+    write_jsonl(
+        out_dir / "samples.jsonl", [sample_to_row(sample) for sample in samples]
+    )
 
     metadata = {
         **load_metadata,
@@ -1077,7 +1194,9 @@ def main() -> int:
         "trigger_candidates": len(candidates),
         "selected_samples": len(samples),
         "selected_by_threshold": {
-            str(threshold): sum(1 for sample in samples if sample.threshold_percent == threshold)
+            str(threshold): sum(
+                1 for sample in samples if sample.threshold_percent == threshold
+            )
             for threshold in args.thresholds
         },
     }
@@ -1112,7 +1231,9 @@ def main() -> int:
         for variant in args.variants:
             prompt = build_reducer_prompt(sample, variant)
             call_id = f"{sample.sample_id}-{variant}"
-            ok, output, run_metadata = run_codex_exec(prompt, out_dir, call_id, args.codex_timeout_seconds)
+            ok, output, run_metadata = run_codex_exec(
+                prompt, out_dir, call_id, args.codex_timeout_seconds
+            )
             row = score_output(sample, variant, prompt, output)
             row.update(
                 {
@@ -1136,8 +1257,14 @@ def main() -> int:
                 args.judge_output_char_budget,
             )
             call_id = f"{sample.sample_id}-judge"
-            ok, output, run_metadata = run_codex_exec(prompt, out_dir, call_id, args.codex_timeout_seconds)
-            judge = normalize_judge(parse_judge_json(output), label_map) if ok else {"ok": False, "raw": output, "label_map": label_map}
+            ok, output, run_metadata = run_codex_exec(
+                prompt, out_dir, call_id, args.codex_timeout_seconds
+            )
+            judge = (
+                normalize_judge(parse_judge_json(output), label_map)
+                if ok
+                else {"ok": False, "raw": output, "label_map": label_map}
+            )
             row = {
                 "sample_id": sample.sample_id,
                 "threshold_percent": sample.threshold_percent,
@@ -1151,7 +1278,9 @@ def main() -> int:
             judge_rows.append(row)
             append_jsonl(judge_path, [row])
 
-    summary = build_summary(out_dir, config, samples, reductions, judge_rows, preflight_status)
+    summary = build_summary(
+        out_dir, config, samples, reductions, judge_rows, preflight_status
+    )
     (out_dir / "summary.md").write_text(summary, encoding="utf-8")
     print(f"benchmark complete: {out_dir}")
     print(summary)

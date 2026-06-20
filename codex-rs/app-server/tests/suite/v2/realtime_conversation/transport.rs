@@ -1,4 +1,5 @@
 use super::support::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn realtime_webrtc_start_emits_sdp_notification() -> Result<()> {

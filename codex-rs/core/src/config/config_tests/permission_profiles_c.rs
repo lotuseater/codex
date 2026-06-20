@@ -577,4 +577,3 @@ async fn unknown_builtin_permission_profile_name_is_rejected() -> std::io::Resul
     );
     Ok(())
 }
-

@@ -1,5 +1,6 @@
-use super::*;
 use super::common::make_config_for_test;
+use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn project_layers_disabled_when_untrusted_or_unknown() -> std::io::Result<()> {
@@ -43,7 +44,6 @@ profile = "ignored"
         Some(cwd.clone()),
         &[] as &[(String, TomlValue)],
         LoaderOverrides::default(),
-        CloudRequirementsLoader::default(),
         &codex_config::NoopThreadConfigLoader,
     )
     .await?;
@@ -90,7 +90,6 @@ profile = "ignored"
         Some(cwd),
         &[] as &[(String, TomlValue)],
         LoaderOverrides::default(),
-        CloudRequirementsLoader::default(),
         &codex_config::NoopThreadConfigLoader,
     )
     .await?;
@@ -163,7 +162,6 @@ async fn project_trust_does_not_match_configured_alias_for_canonical_cwd() -> st
         Some(AbsolutePathBuf::from_absolute_path(&project_root)?),
         &[] as &[(String, TomlValue)],
         LoaderOverrides::default(),
-        CloudRequirementsLoader::default(),
         &codex_config::NoopThreadConfigLoader,
     )
     .await?;
@@ -329,7 +327,6 @@ async fn invalid_project_config_ignored_when_untrusted_or_unknown() -> std::io::
             Some(cwd.clone()),
             &[] as &[(String, TomlValue)],
             LoaderOverrides::default(),
-            CloudRequirementsLoader::default(),
             &codex_config::NoopThreadConfigLoader,
         )
         .await?;
@@ -398,7 +395,6 @@ async fn project_layer_without_config_toml_is_disabled_when_untrusted_or_unknown
             Some(cwd.clone()),
             &[] as &[(String, TomlValue)],
             LoaderOverrides::default(),
-            CloudRequirementsLoader::default(),
             &codex_config::NoopThreadConfigLoader,
         )
         .await?;
@@ -459,7 +455,6 @@ async fn cli_overrides_with_relative_paths_do_not_break_trust_check() -> std::io
         Some(cwd),
         &cli_overrides,
         LoaderOverrides::default(),
-        CloudRequirementsLoader::default(),
         &codex_config::NoopThreadConfigLoader,
     )
     .await?;

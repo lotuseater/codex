@@ -102,7 +102,10 @@ def shell_like_strings(event: dict[str, Any]) -> Iterable[str]:
 
 
 def command_tokens(text: str) -> list[str]:
-    return [next(group for group in match.groups() if group is not None) for match in TOKEN_RE.finditer(text)]
+    return [
+        next(group for group in match.groups() if group is not None)
+        for match in TOKEN_RE.finditer(text)
+    ]
 
 
 def normalize_path(path: str, assignments: dict[str, str]) -> str:
@@ -138,7 +141,15 @@ def extract_get_content(text: str, session: str, source_line: int) -> Iterable[A
     if flag_path_matches:
         for match in flag_path_matches:
             raw = next(group for group in match.groups()[1:] if group)
-            yield Access("read", normalize_path(raw, assignments), "", start, end, source_line, session)
+            yield Access(
+                "read",
+                normalize_path(raw, assignments),
+                "",
+                start,
+                end,
+                source_line,
+                session,
+            )
         return
 
     for match in GET_CONTENT_RE.finditer(text):
@@ -150,7 +161,9 @@ def extract_get_content(text: str, session: str, source_line: int) -> Iterable[A
             yield Access("read", target, "", start, end, source_line, session)
 
 
-def extract_select_string(text: str, session: str, source_line: int) -> Iterable[Access]:
+def extract_select_string(
+    text: str, session: str, source_line: int
+) -> Iterable[Access]:
     match = SELECT_STRING_RE.search(text)
     if not match:
         return
@@ -174,7 +187,15 @@ def extract_select_string(text: str, session: str, source_line: int) -> Iterable
         paths = DRIVE_PATH_RE.findall(match.group(1))
 
     for path in paths:
-        yield Access("search", normalize_path(path, {}), pattern, None, None, source_line, session)
+        yield Access(
+            "search",
+            normalize_path(path, {}),
+            pattern,
+            None,
+            None,
+            source_line,
+            session,
+        )
 
 
 def extract_rg(text: str, session: str, source_line: int) -> Iterable[Access]:
@@ -204,13 +225,25 @@ def extract_rg(text: str, session: str, source_line: int) -> Iterable[Access]:
         index += 1
 
     if not paths:
-        paths = [path for path in DRIVE_PATH_RE.findall(match.group(1)) if ".jsonl" not in path.lower()]
+        paths = [
+            path
+            for path in DRIVE_PATH_RE.findall(match.group(1))
+            if ".jsonl" not in path.lower()
+        ]
     if not paths:
         paths = ["(implicit cwd)"]
 
     for path in paths[:8]:
         if path not in {"rg", "rg.exe"} and not path.startswith("*."):
-            yield Access("search", normalize_path(path, {}), pattern, None, None, source_line, session)
+            yield Access(
+                "search",
+                normalize_path(path, {}),
+                pattern,
+                None,
+                None,
+                source_line,
+                session,
+            )
 
 
 def extract_accesses(text: str, session: str, source_line: int) -> Iterable[Access]:
@@ -228,20 +261,40 @@ def extract_accesses(text: str, session: str, source_line: int) -> Iterable[Acce
     yield from extract_rg(text, session, source_line)
 
 
-def extract_workflow_batch_accesses(value: Any, session: str, source_line: int) -> Iterable[Access]:
+def extract_workflow_batch_accesses(
+    value: Any, session: str, source_line: int
+) -> Iterable[Access]:
     if isinstance(value, dict):
         for key, payload in value.items():
             key_lower = key.lower()
             if key_lower in {"read_file", "read_json"}:
                 path = workflow_path(payload)
                 if path:
-                    yield Access("read", normalize_path(path, {}), "", None, None, source_line, session)
+                    yield Access(
+                        "read",
+                        normalize_path(path, {}),
+                        "",
+                        None,
+                        None,
+                        source_line,
+                        session,
+                    )
             elif key_lower in {"search_text", "scoped_search"}:
                 path = workflow_path(payload) or "(implicit cwd)"
                 detail = workflow_pattern(payload)
-                yield Access("search", normalize_path(path, {}), detail, None, None, source_line, session)
+                yield Access(
+                    "search",
+                    normalize_path(path, {}),
+                    detail,
+                    None,
+                    None,
+                    source_line,
+                    session,
+                )
             else:
-                yield from extract_workflow_batch_accesses(payload, session, source_line)
+                yield from extract_workflow_batch_accesses(
+                    payload, session, source_line
+                )
     elif isinstance(value, list):
         for item in value:
             yield from extract_workflow_batch_accesses(item, session, source_line)
@@ -287,7 +340,12 @@ def ranges_overlap(left: Access, right: Access) -> bool:
         return right.start is not None or right.end is not None
     if right.start is None and right.end is None:
         return left.start is not None or left.end is not None
-    if left.start is None or left.end is None or right.start is None or right.end is None:
+    if (
+        left.start is None
+        or left.end is None
+        or right.start is None
+        or right.end is None
+    ):
         return False
     return max(left.start, right.start) <= min(left.end, right.end)
 
@@ -344,7 +402,11 @@ def print_report(report: dict[str, Any], max_examples: int) -> int:
                 f"overlaps {right.range_text()} @line {right.source_line}"
             )
 
-    return 1 if report["exact_repeated_accesses"] or report["overlapping_range_pairs"] else 0
+    return (
+        1
+        if report["exact_repeated_accesses"] or report["overlapping_range_pairs"]
+        else 0
+    )
 
 
 def main(argv: list[str]) -> int:
@@ -362,7 +424,9 @@ def main(argv: list[str]) -> int:
     if args.json_out:
         args.json_out.parent.mkdir(parents=True, exist_ok=True)
         serializable = {
-            key: value for key, value in report.items() if key not in {"exact_repeats", "overlaps", "by_target"}
+            key: value
+            for key, value in report.items()
+            if key not in {"exact_repeats", "overlaps", "by_target"}
         }
         serializable["accesses"] = [access.__dict__ for access in accesses]
         args.json_out.write_text(json.dumps(serializable, indent=2), encoding="utf-8")

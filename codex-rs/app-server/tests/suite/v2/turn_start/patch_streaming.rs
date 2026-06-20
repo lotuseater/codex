@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn turn_start_does_not_stream_apply_patch_change_updates_without_feature_v2() -> Result<()> {

@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn turn_start_updates_sandbox_and_cwd_between_turns_v2() -> Result<()> {

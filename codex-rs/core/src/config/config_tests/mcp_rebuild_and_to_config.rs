@@ -1,5 +1,6 @@
-use super::*;
 use super::common::*;
+use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn rebuild_preserving_session_layers_refreshes_requirements() -> std::io::Result<()> {
@@ -444,7 +445,10 @@ enabled = true
         Some((
             false,
             Some(McpServerDisabledReason::Requirements {
-                source: RequirementSource::CloudRequirements,
+                source: RequirementSource::EnterpriseManaged {
+                    id: "cloud_requirements".to_string(),
+                    name: "Cloud requirements".to_string(),
+                },
             })
         ))
     );
@@ -507,10 +511,12 @@ enabled = true
         Some((
             false,
             Some(McpServerDisabledReason::Requirements {
-                source: RequirementSource::CloudRequirements,
+                source: RequirementSource::EnterpriseManaged {
+                    id: "cloud_requirements".to_string(),
+                    name: "Cloud requirements".to_string(),
+                },
             })
         ))
     );
     Ok(())
 }
-

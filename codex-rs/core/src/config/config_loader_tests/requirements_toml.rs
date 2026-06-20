@@ -1,4 +1,7 @@
 use super::*;
+use codex_config::CloudConfigBundleLoader;
+use codex_config::ConfigLoadOptions;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn top_level_allow_managed_hooks_only_in_user_config_does_not_enable_requirements_policy()
@@ -17,7 +20,6 @@ async fn top_level_allow_managed_hooks_only_in_user_config_does_not_enable_requi
         Some(cwd),
         &[] as &[(String, TomlValue)],
         LoaderOverrides::default(),
-        CloudRequirementsLoader::default(),
         &codex_config::NoopThreadConfigLoader,
     )
     .await?;
@@ -52,14 +54,13 @@ command = "python3 /tmp/user-hook.py"
         Some(cwd),
         &[] as &[(String, TomlValue)],
         LoaderOverrides::default(),
-        CloudRequirementsLoader::default(),
         &codex_config::NoopThreadConfigLoader,
     )
     .await?;
 
     assert!(
         layers
-            .get_active_user_layer()
+            .get_user_layer()
             .and_then(|layer| layer.config.get("hooks"))
             .is_some(),
         "hooks should still deserialize from config.toml"
@@ -88,13 +89,9 @@ personality = true
     .await?;
 
     let requirements_file = AbsolutePathBuf::try_from(requirements_file)?;
-    let mut config_requirements_toml = ConfigRequirementsWithSources::default();
-    load_requirements_toml(
-        LOCAL_FS.as_ref(),
-        &mut config_requirements_toml,
-        &requirements_file,
-    )
-    .await?;
+    let config_requirements_toml =
+        compose_requirements(load_requirements_toml(LOCAL_FS.as_ref(), &requirements_file).await?)?
+            .unwrap_or_default();
 
     assert_eq!(
         config_requirements_toml
@@ -180,37 +177,24 @@ allowed_approval_policies = ["on-request"]
     )
     .await?;
 
-    let mut config_requirements_toml = ConfigRequirementsWithSources::default();
-    config_requirements_toml.merge_unset_fields(
-        RequirementSource::CloudRequirements,
-        ConfigRequirementsToml {
-            allowed_approval_policies: Some(vec![AskForApproval::Never]),
-            allowed_approvals_reviewers: None,
-            allowed_sandbox_modes: None,
-            allowed_permissions: None,
-            remote_sandbox_config: None,
-            allowed_web_search_modes: None,
-            allow_managed_hooks_only: None,
-            allow_appshots: None,
-            computer_use: None,
-            feature_requirements: None,
-            hooks: None,
-            mcp_servers: None,
-            plugins: None,
-            apps: None,
-            rules: None,
-            enforce_residency: None,
-            network: None,
-            permissions: None,
-            guardian_policy_config: None,
+    let cloud_entry = RequirementsLayerEntry::from_toml(
+        RequirementSource::EnterpriseManaged {
+            id: "cloud_requirements".to_string(),
+            name: "Cloud requirements".to_string(),
         },
+        r#"
+allowed_approval_policies = ["never"]
+"#,
     );
-    load_requirements_toml(
+    let system_entry = load_requirements_toml(
         LOCAL_FS.as_ref(),
-        &mut config_requirements_toml,
         &AbsolutePathBuf::try_from(requirements_file)?,
     )
     .await?;
+    // Cloud requirements win over system requirements, so compose them last.
+    let config_requirements_toml =
+        compose_requirements(system_entry.into_iter().chain(std::iter::once(cloud_entry)))?
+            .unwrap_or_default();
 
     assert_eq!(
         config_requirements_toml
@@ -224,7 +208,10 @@ allowed_approval_policies = ["on-request"]
             .allowed_approval_policies
             .as_ref()
             .map(|sourced| sourced.source.clone()),
-        Some(RequirementSource::CloudRequirements)
+        Some(RequirementSource::EnterpriseManaged {
+            id: "cloud_requirements".to_string(),
+            name: "Cloud requirements".to_string(),
+        })
     );
 
     Ok(())
@@ -244,22 +231,25 @@ allowed_sandbox_modes = ["read-only", "workspace-write"]
     )
     .await?;
 
-    let cloud_source = RequirementSource::CloudRequirements;
-    let mut config_requirements_toml = ConfigRequirementsWithSources::default();
-    config_requirements_toml.merge_unset_fields(
+    let cloud_source = RequirementSource::EnterpriseManaged {
+        id: "cloud_requirements".to_string(),
+        name: "Cloud requirements".to_string(),
+    };
+    let cloud_entry = RequirementsLayerEntry::from_toml(
         cloud_source.clone(),
-        toml::from_str(
-            r#"
+        r#"
 allowed_sandbox_modes = ["read-only"]
 "#,
-        )?,
     );
-    load_requirements_toml(
+    let system_entry = load_requirements_toml(
         LOCAL_FS.as_ref(),
-        &mut config_requirements_toml,
         &AbsolutePathBuf::try_from(requirements_file)?,
     )
     .await?;
+    // Cloud requirements win over system requirements, so compose them last.
+    let config_requirements_toml =
+        compose_requirements(system_entry.into_iter().chain(std::iter::once(cloud_entry)))?
+            .unwrap_or_default();
     let config_requirements: ConfigRequirements = config_requirements_toml.try_into()?;
 
     assert_eq!(
@@ -293,13 +283,9 @@ deny_read = ["./sensitive", "../shared/secret.txt"]
     .await?;
 
     let requirements_file = AbsolutePathBuf::try_from(requirements_file)?;
-    let mut config_requirements_toml = ConfigRequirementsWithSources::default();
-    load_requirements_toml(
-        LOCAL_FS.as_ref(),
-        &mut config_requirements_toml,
-        &requirements_file,
-    )
-    .await?;
+    let config_requirements_toml =
+        compose_requirements(load_requirements_toml(LOCAL_FS.as_ref(), &requirements_file).await?)?
+            .unwrap_or_default();
 
     let permissions = config_requirements_toml
         .permissions
@@ -347,13 +333,9 @@ deny_read = ["./sensitive/**/*.txt"]
     .await?;
 
     let requirements_file = AbsolutePathBuf::try_from(requirements_file)?;
-    let mut config_requirements_toml = ConfigRequirementsWithSources::default();
-    load_requirements_toml(
-        LOCAL_FS.as_ref(),
-        &mut config_requirements_toml,
-        &requirements_file,
-    )
-    .await?;
+    let config_requirements_toml =
+        compose_requirements(load_requirements_toml(LOCAL_FS.as_ref(), &requirements_file).await?)?
+            .unwrap_or_default();
 
     let permissions = config_requirements_toml
         .permissions
@@ -481,8 +463,13 @@ async fn load_config_layers_includes_cloud_hook_requirements() -> anyhow::Result
         &codex_home,
         Some(cwd),
         &[] as &[(String, TomlValue)],
-        LoaderOverrides::default(),
-        cloud_requirements,
+        ConfigLoadOptions {
+            loader_overrides: LoaderOverrides::default(),
+            strict_config: false,
+            cloud_config_bundle: CloudConfigBundleLoader::from_requirements_loader(
+                cloud_requirements,
+            ),
+        },
         &codex_config::NoopThreadConfigLoader,
     )
     .await?;
@@ -494,7 +481,10 @@ async fn load_config_layers_includes_cloud_hook_requirements() -> anyhow::Result
             .managed_hooks
             .as_ref()
             .map(|hooks| hooks.source.clone()),
-        Some(Some(RequirementSource::CloudRequirements))
+        Some(Some(RequirementSource::EnterpriseManaged {
+            id: "cloud_requirements".to_string(),
+            name: "Cloud requirements".to_string(),
+        }))
     );
 
     Ok(())
@@ -522,8 +512,13 @@ async fn load_config_layers_applies_matching_remote_sandbox_config() -> anyhow::
         &codex_home,
         Some(cwd),
         &[] as &[(String, TomlValue)],
-        LoaderOverrides::default(),
-        cloud_requirements,
+        ConfigLoadOptions {
+            loader_overrides: LoaderOverrides::default(),
+            strict_config: false,
+            cloud_config_bundle: CloudConfigBundleLoader::from_requirements_loader(
+                cloud_requirements,
+            ),
+        },
         &codex_config::NoopThreadConfigLoader,
     )
     .await?;
@@ -558,14 +553,19 @@ async fn load_config_layers_fails_when_cloud_requirements_loader_fails() -> anyh
         &codex_home,
         Some(cwd),
         &[] as &[(String, TomlValue)],
-        LoaderOverrides::default(),
-        CloudRequirementsLoader::new(async {
-            Err(CloudRequirementsLoadError::new(
-                codex_config::CloudRequirementsLoadErrorCode::RequestFailed,
-                /*status_code*/ None,
-                "cloud requirements failed",
-            ))
-        }),
+        ConfigLoadOptions {
+            loader_overrides: LoaderOverrides::default(),
+            strict_config: false,
+            cloud_config_bundle: CloudConfigBundleLoader::from_requirements_loader(
+                CloudRequirementsLoader::new(async {
+                    Err(CloudRequirementsLoadError::new(
+                        codex_config::CloudRequirementsLoadErrorCode::RequestFailed,
+                        /*status_code*/ None,
+                        "cloud requirements failed",
+                    ))
+                }),
+            ),
+        },
         &codex_config::NoopThreadConfigLoader,
     )
     .await

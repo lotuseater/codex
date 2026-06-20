@@ -1,5 +1,6 @@
-use super::*;
 use super::common::*;
+use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn legacy_profile_selection_is_rejected() -> std::io::Result<()> {
@@ -401,4 +402,3 @@ async fn fast_default_opt_out_notice_config_is_respected() -> std::io::Result<()
     assert_eq!(config.notices.fast_default_opt_out, Some(true));
     Ok(())
 }
-

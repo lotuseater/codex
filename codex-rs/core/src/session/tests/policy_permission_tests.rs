@@ -373,7 +373,10 @@ async fn danger_full_access_tool_attempts_do_not_enforce_managed_network() -> an
                 enabled: Some(true),
                 ..Default::default()
             },
-            RequirementSource::CloudRequirements,
+            RequirementSource::EnterpriseManaged {
+                id: "cloud_requirements".to_string(),
+                name: "Cloud requirements".to_string(),
+            },
         ));
         let mut requirements_toml = config.config_layer_stack.requirements_toml().clone();
         requirements_toml.network = Some(codex_config::NetworkRequirementsToml {
@@ -1059,7 +1062,10 @@ async fn build_settings_update_items_emits_environment_item_for_network_changes(
             }),
             ..Default::default()
         },
-        RequirementSource::CloudRequirements,
+        RequirementSource::EnterpriseManaged {
+            id: "cloud_requirements".to_string(),
+            name: "Cloud requirements".to_string(),
+        },
     ));
     let layers = config
         .config_layer_stack

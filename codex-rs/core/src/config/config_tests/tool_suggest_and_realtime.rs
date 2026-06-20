@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn tool_suggest_discoverables_load_from_config_toml() -> std::io::Result<()> {

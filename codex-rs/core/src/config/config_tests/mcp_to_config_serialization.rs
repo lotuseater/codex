@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[test]
 fn desktop_toml_round_trips_opaque_nested_values() -> anyhow::Result<()> {
@@ -137,4 +138,3 @@ bearer_token = "secret"
 
     Ok(())
 }
-

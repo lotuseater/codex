@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[test]
 fn config_toml_deserializes_permission_profiles() {
@@ -256,4 +257,3 @@ action = ["noop"]
         vec!["/repos/".to_string()]
     );
 }
-

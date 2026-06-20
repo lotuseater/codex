@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn side_thread_snapshot_hides_forked_parent_transcript() {

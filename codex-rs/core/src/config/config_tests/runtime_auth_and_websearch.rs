@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn add_dir_override_extends_workspace_writable_roots() -> std::io::Result<()> {
@@ -359,4 +360,3 @@ fn web_search_mode_for_turn_falls_back_when_live_is_disallowed() -> anyhow::Resu
     assert_eq!(mode, WebSearchMode::Cached);
     Ok(())
 }
-

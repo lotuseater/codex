@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[test]
 fn core_turn_item_into_thread_item_converts_supported_variants() {

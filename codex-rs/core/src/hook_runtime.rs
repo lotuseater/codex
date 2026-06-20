@@ -558,8 +558,7 @@ pub(crate) async fn record_pending_input(
             content,
             client_id: _,
         } => {
-            let response_item =
-                ResponseItem::from(ResponseInputItem::from(content.clone()));
+            let response_item = ResponseItem::from(ResponseInputItem::from(content.clone()));
             sess.record_user_prompt_and_emit_turn_item(
                 turn_context.as_ref(),
                 content.as_slice(),

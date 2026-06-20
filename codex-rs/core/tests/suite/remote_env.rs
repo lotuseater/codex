@@ -1,6 +1,7 @@
 #[path = "remote_env/support.rs"]
 mod support;
 
+use pretty_assertions::assert_eq;
 use support::*;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
