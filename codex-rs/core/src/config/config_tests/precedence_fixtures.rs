@@ -1,5 +1,6 @@
-use super::*;
 use super::common::*;
+use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
@@ -29,10 +30,11 @@ async fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         model_provider: fixture.openai_custom_provider.clone(),
         permissions: Permissions {
             approval_policy: Constrained::allow_any(AskForApproval::UnlessTrusted),
-            permission_profile_state: active_permission_profile_state(
-                PermissionProfile::read_only(),
+            permission_profile: Constrained::allow_any(PermissionProfile::read_only()),
+            active_permission_profile: Some(ActivePermissionProfile::new(
                 BUILT_IN_PERMISSION_PROFILE_READ_ONLY,
-            ),
+            )),
+            profile_workspace_roots: Vec::new(),
             workspace_roots: vec![fixture.cwd()],
             network: None,
             allow_login_shell: true,
@@ -115,6 +117,7 @@ async fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         include_skill_instructions: true,
         include_environment_context: true,
         compact_prompt: None,
+        auto_compact_enabled: true,
         prompt_reduction_mode: Default::default(),
         forced_chatgpt_workspace_id: None,
         forced_login_method: None,
@@ -204,10 +207,11 @@ async fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         model_provider: fixture.openai_provider.clone(),
         permissions: Permissions {
             approval_policy: Constrained::allow_any(AskForApproval::OnFailure),
-            permission_profile_state: active_permission_profile_state(
-                PermissionProfile::read_only(),
+            permission_profile: Constrained::allow_any(PermissionProfile::read_only()),
+            active_permission_profile: Some(ActivePermissionProfile::new(
                 BUILT_IN_PERMISSION_PROFILE_READ_ONLY,
-            ),
+            )),
+            profile_workspace_roots: Vec::new(),
             workspace_roots: vec![fixture.cwd()],
             network: None,
             allow_login_shell: true,
@@ -290,6 +294,7 @@ async fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         include_skill_instructions: true,
         include_environment_context: true,
         compact_prompt: None,
+        auto_compact_enabled: true,
         prompt_reduction_mode: Default::default(),
         forced_chatgpt_workspace_id: None,
         forced_login_method: None,
@@ -364,10 +369,11 @@ async fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         model_provider: fixture.openai_provider.clone(),
         permissions: Permissions {
             approval_policy: Constrained::allow_any(AskForApproval::OnFailure),
-            permission_profile_state: active_permission_profile_state(
-                PermissionProfile::read_only(),
+            permission_profile: Constrained::allow_any(PermissionProfile::read_only()),
+            active_permission_profile: Some(ActivePermissionProfile::new(
                 BUILT_IN_PERMISSION_PROFILE_READ_ONLY,
-            ),
+            )),
+            profile_workspace_roots: Vec::new(),
             workspace_roots: vec![fixture.cwd()],
             network: None,
             allow_login_shell: true,
@@ -450,6 +456,7 @@ async fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         include_skill_instructions: true,
         include_environment_context: true,
         compact_prompt: None,
+        auto_compact_enabled: true,
         prompt_reduction_mode: Default::default(),
         forced_chatgpt_workspace_id: None,
         forced_login_method: None,
@@ -571,4 +578,3 @@ async fn test_requirements_web_search_mode_allowlist_does_not_warn_when_unset() 
 
     Ok(())
 }
-

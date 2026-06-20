@@ -155,7 +155,7 @@ pub struct ConfigToml {
     pub model_auto_compact_token_limit: Option<i64>,
 
     /// Percentage of the auto-compaction token limit that triggers early
-    /// context-pressure compaction. Defaults to 20 when omitted. Set to 0 to
+    /// context-pressure compaction. Defaults to 24 when omitted. Set to 0 to
     /// disable early context-pressure compaction.
     pub model_compact_percentage: Option<i64>,
 
@@ -240,6 +240,11 @@ pub struct ConfigToml {
 
     /// Compact prompt used for history compaction.
     pub compact_prompt: Option<String>,
+
+    /// Whether semantic / early-pressure auto-compaction is active.
+    /// When `false`, only the hard `ContextLimit` safety-net compaction fires.
+    /// Defaults to `true` when omitted.
+    pub auto_compact_enabled: Option<bool>,
 
     /// When set, restricts ChatGPT login to a specific workspace identifier.
     #[serde(default)]

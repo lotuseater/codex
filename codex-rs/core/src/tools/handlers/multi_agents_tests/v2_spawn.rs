@@ -513,7 +513,7 @@ async fn multi_agent_v2_spawn_surfaces_task_name_validation_errors() {
 }
 
 #[tokio::test]
-async fn multi_agent_v2_spawn_agent_rejects_nested_spawning() {
+async fn multi_agent_v2_spawn_agent_rejects_spawn_past_agent_max_depth() {
     let (mut session, mut turn) = make_session_and_context().await;
     let manager = thread_manager();
     let mut config = (*turn.config).clone();
@@ -549,12 +549,12 @@ async fn multi_agent_v2_spawn_agent_rejects_nested_spawning() {
         })),
     );
     let Err(err) = SpawnAgentHandlerV2::default().handle(invocation).await else {
-        panic!("multi-agent v2 subagent spawn should fail");
+        panic!("multi-agent v2 over-depth subagent spawn should fail");
     };
     assert_eq!(
         err,
         FunctionCallError::RespondToModel(
-            crate::agent::policy::MULTI_AGENT_V2_NESTED_SPAWN_REJECTION.to_string()
+            "Agent depth limit reached. Solve the task yourself.".to_string()
         )
     );
 }

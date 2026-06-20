@@ -2202,6 +2202,134 @@ impl App {
                     }
                 }
             }
+            AppEvent::PersistDelegatePromptEnabled { enabled } => {
+                let edit = codex_config::edit::multi_agent_v2_usage_hint_enabled_edit(enabled);
+                match ConfigEditsBuilder::new(&self.config.codex_home)
+                    .with_edits([edit])
+                    .apply()
+                    .await
+                {
+                    Ok(()) => {
+                        self.config.multi_agent_v2.usage_hint_enabled = enabled;
+                    }
+                    Err(err) => {
+                        tracing::error!(error = %err, "failed to persist delegate prompt enabled");
+                        self.chat_widget.add_error_message(format!(
+                            "Failed to save delegate prompt enabled: {err}"
+                        ));
+                    }
+                }
+            }
+            AppEvent::PersistDelegatePromptK { k } => {
+                let edit = codex_config::edit::multi_agent_v2_delegation_k_edit(k);
+                match ConfigEditsBuilder::new(&self.config.codex_home)
+                    .with_edits([edit])
+                    .apply()
+                    .await
+                {
+                    Ok(()) => {
+                        self.config.multi_agent_v2.plan_token_economy_delegation_k = k;
+                    }
+                    Err(err) => {
+                        tracing::error!(error = %err, "failed to persist delegate prompt K");
+                        self.chat_widget
+                            .add_error_message(format!("Failed to save delegate prompt K: {err}"));
+                    }
+                }
+            }
+            AppEvent::PersistDelegatePromptRootText { text } => {
+                let edit =
+                    codex_config::edit::multi_agent_v2_root_usage_hint_text_edit(text.as_deref());
+                match ConfigEditsBuilder::new(&self.config.codex_home)
+                    .with_edits([edit])
+                    .apply()
+                    .await
+                {
+                    Ok(()) => {
+                        self.config.multi_agent_v2.root_agent_usage_hint_text = text.clone();
+                    }
+                    Err(err) => {
+                        tracing::error!(error = %err, "failed to persist delegate prompt root text");
+                        self.chat_widget.add_error_message(format!(
+                            "Failed to save delegate prompt root text: {err}"
+                        ));
+                    }
+                }
+            }
+            AppEvent::PersistDelegatePromptSubText { text } => {
+                let edit = codex_config::edit::multi_agent_v2_subagent_usage_hint_text_edit(
+                    text.as_deref(),
+                );
+                match ConfigEditsBuilder::new(&self.config.codex_home)
+                    .with_edits([edit])
+                    .apply()
+                    .await
+                {
+                    Ok(()) => {
+                        self.config.multi_agent_v2.subagent_usage_hint_text = text.clone();
+                    }
+                    Err(err) => {
+                        tracing::error!(error = %err, "failed to persist delegate prompt sub text");
+                        self.chat_widget.add_error_message(format!(
+                            "Failed to save delegate prompt sub text: {err}"
+                        ));
+                    }
+                }
+            }
+            AppEvent::PersistAutoCompactEnabled { enabled } => {
+                let edit = codex_config::edit::auto_compact_enabled_edit(enabled);
+                match ConfigEditsBuilder::new(&self.config.codex_home)
+                    .with_edits([edit])
+                    .apply()
+                    .await
+                {
+                    Ok(()) => {
+                        self.config.auto_compact_enabled = enabled;
+                    }
+                    Err(err) => {
+                        tracing::error!(error = %err, "failed to persist auto compact enabled");
+                        self.chat_widget.add_error_message(format!(
+                            "Failed to save auto compact enabled: {err}"
+                        ));
+                    }
+                }
+            }
+            AppEvent::PersistAutoCompactPercent { percent } => {
+                let edit = codex_config::edit::model_compact_percentage_edit(percent);
+                match ConfigEditsBuilder::new(&self.config.codex_home)
+                    .with_edits([edit])
+                    .apply()
+                    .await
+                {
+                    Ok(()) => {
+                        self.config.model_compact_percentage = percent;
+                    }
+                    Err(err) => {
+                        tracing::error!(error = %err, "failed to persist auto compact percent");
+                        self.chat_widget.add_error_message(format!(
+                            "Failed to save auto compact percent: {err}"
+                        ));
+                    }
+                }
+            }
+            AppEvent::PersistAutoCompactPrompt { prompt } => {
+                let edit = codex_config::edit::compact_prompt_edit(prompt.as_deref());
+                match ConfigEditsBuilder::new(&self.config.codex_home)
+                    .with_edits([edit])
+                    .apply()
+                    .await
+                {
+                    Ok(()) => {
+                        self.config.compact_prompt = prompt.clone();
+                    }
+                    Err(err) => {
+                        tracing::error!(error = %err, "failed to persist auto compact prompt");
+                        self.chat_widget.add_error_message(format!(
+                            "Failed to save auto compact prompt: {err}"
+                        ));
+                    }
+                }
+            }
             AppEvent::OpenKeymapActionMenu { context, action } => {
                 self.chat_widget
                     .open_keymap_action_menu(context, action, &self.keymap);

@@ -253,6 +253,12 @@ impl ChatWidget {
             SlashCommand::BatchPrompt => {
                 self.show_batch_prompt_status();
             }
+            SlashCommand::DelegatePrompt => {
+                self.show_delegate_prompt_status();
+            }
+            SlashCommand::CompactConfig => {
+                self.show_compact_config_status();
+            }
             SlashCommand::Realtime => {
                 if !self.realtime_conversation_enabled() {
                     return;
@@ -686,6 +692,12 @@ impl ChatWidget {
             SlashCommand::BatchPrompt => {
                 self.handle_batch_prompt_command_args(trimmed);
             }
+            SlashCommand::DelegatePrompt => {
+                self.handle_delegate_prompt_command_args(trimmed);
+            }
+            SlashCommand::CompactConfig => {
+                self.handle_compact_config_command_args(trimmed);
+            }
             SlashCommand::Ide => {
                 self.handle_ide_command_args(trimmed);
             }
@@ -1077,6 +1089,8 @@ impl ChatWidget {
             | SlashCommand::Slow
             | SlashCommand::ActionPrompt
             | SlashCommand::BatchPrompt
+            | SlashCommand::DelegatePrompt
+            | SlashCommand::CompactConfig
             | SlashCommand::Ide
             | SlashCommand::Status
             | SlashCommand::DebugConfig

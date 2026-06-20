@@ -128,6 +128,67 @@ async fn build_initial_context_adds_multi_agent_v2_subagent_usage_hint_as_develo
 }
 
 #[tokio::test]
+async fn build_initial_context_adds_default_multi_agent_v2_root_usage_hint() {
+    let (session, turn_context, _rx_event) = make_session_and_context_with_auth_and_config_and_rx(
+        CodexAuth::from_api_key("Test API Key"),
+        Vec::new(),
+        |config| {
+            let _ = config.features.enable(Feature::MultiAgentV2);
+        },
+    )
+    .await;
+
+    let initial_context = session.build_initial_context(turn_context.as_ref()).await;
+
+    let developer_messages = developer_message_texts(&initial_context);
+    assert!(
+        developer_messages.iter().flatten().any(|text| text
+            .contains(codex_agent_policy::DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K_PROMPT_TEXT)),
+        "expected default root usage hint to include literal {}, got {developer_messages:?}",
+        codex_agent_policy::DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K_PROMPT_TEXT
+    );
+}
+
+#[tokio::test]
+async fn build_initial_context_adds_default_multi_agent_v2_subagent_usage_hint() {
+    let (session, mut turn_context, _rx_event) =
+        make_session_and_context_with_auth_and_config_and_rx(
+            CodexAuth::from_api_key("Test API Key"),
+            Vec::new(),
+            |config| {
+                let _ = config.features.enable(Feature::MultiAgentV2);
+            },
+        )
+        .await;
+    let session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+        parent_thread_id: ThreadId::new(),
+        depth: 1,
+        agent_path: Some(AgentPath::try_from("/root/worker").expect("agent path should parse")),
+        agent_nickname: Some("worker".to_string()),
+        agent_role: None,
+    });
+    session
+        .state
+        .lock()
+        .await
+        .session_configuration
+        .session_source = session_source.clone();
+    Arc::get_mut(&mut turn_context)
+        .expect("turn context should not be shared")
+        .session_source = session_source;
+
+    let initial_context = session.build_initial_context(turn_context.as_ref()).await;
+
+    let developer_messages = developer_message_texts(&initial_context);
+    assert!(
+        developer_messages.iter().flatten().any(|text| text
+            .contains(codex_agent_policy::DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K_PROMPT_TEXT)),
+        "expected default subagent usage hint to include literal {}, got {developer_messages:?}",
+        codex_agent_policy::DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K_PROMPT_TEXT
+    );
+}
+
+#[tokio::test]
 async fn build_initial_context_omits_multi_agent_v2_usage_hints_when_feature_disabled() {
     let (session, turn_context) =
         make_multi_agent_v2_usage_hint_test_session(/*enable_multi_agent_v2*/ false).await;

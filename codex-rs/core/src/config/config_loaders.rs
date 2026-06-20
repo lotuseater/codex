@@ -1117,6 +1117,7 @@ impl Config {
             personality,
             developer_instructions,
             compact_prompt,
+            auto_compact_enabled: cfg.auto_compact_enabled.unwrap_or(true),
             include_permissions_instructions,
             include_apps_instructions,
             include_collaboration_mode_instructions,

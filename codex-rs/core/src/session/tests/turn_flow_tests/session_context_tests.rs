@@ -24,6 +24,12 @@ fn disable_action_optimization(turn_context: &mut TurnContext) {
     turn_context.config = std::sync::Arc::new(config);
 }
 
+fn enable_multi_agent_v2(turn_context: &mut TurnContext) {
+    let mut config = turn_context.config.as_ref().clone();
+    let _ = config.features.enable(crate::config::Feature::MultiAgentV2);
+    turn_context.config = std::sync::Arc::new(config);
+}
+
 fn enable_batch_mini_programming(turn_context: &mut TurnContext) {
     let mut config = turn_context.config.as_ref().clone();
     config.batch_mini_programming_instructions.mode =
@@ -71,6 +77,20 @@ async fn build_initial_context_includes_action_optimization_by_default_on_first_
     assert!(developer_text.contains(ACTION_OPTIMIZATION_OPEN_TAG));
     assert!(developer_text.contains("Keep simple tasks simple"));
     assert!(developer_text.contains("Select the lightest route"));
+}
+
+#[tokio::test]
+async fn build_initial_context_includes_default_multi_agent_v2_plan_token_guidance() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    enable_multi_agent_v2(&mut turn_context);
+
+    let context = session.build_initial_context(&turn_context).await;
+    let developer_text = developer_input_texts(&context).join("\n");
+
+    assert!(
+        developer_text
+            .contains(codex_agent_policy::DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K_PROMPT_TEXT)
+    );
 }
 
 #[tokio::test]
@@ -314,7 +334,7 @@ async fn resumed_subagent_session_keeps_inherited_session_id() {
             rollout_path: None,
         }),
         session_source,
-        AgentControl::default().with_session_id(parent_session_id),
+        AgentControl::default().with_session_id(parent_session_id, usize::MAX),
     )
     .await
     .expect("resume should succeed");

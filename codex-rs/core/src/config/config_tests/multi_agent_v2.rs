@@ -1,22 +1,41 @@
 use super::*;
 
 #[test]
+fn multi_agent_v2_default_hints_include_plan_token_economy_defaults() {
+    let root_hint = codex_agent_policy::default_multi_agent_v2_root_usage_hint_text();
+    let sub_hint = codex_agent_policy::default_multi_agent_v2_subagent_usage_hint_text();
+
+    // Both generated hints embed the Plan-token-economy block and the K marker
+    // ("K = 26000"). Assert against the stable marker const rather than brittle
+    // prose so wording tweaks in the prompt text do not break the test.
+    assert!(root_hint.contains("Plan-token-economy default"));
+    assert!(
+        root_hint.contains(codex_agent_policy::DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K_PROMPT_TEXT)
+    );
+
+    assert!(sub_hint.contains("Plan-token-economy default (recursive_roi_gate)"));
+    assert!(
+        sub_hint.contains(codex_agent_policy::DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K_PROMPT_TEXT)
+    );
+
+    assert_eq!(
+        codex_agent_policy::DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K,
+        26_000
+    );
+}
+
+#[test]
 fn multi_agent_v2_default_hints_gate_exploration_with_first_moves() {
-    let config = MultiAgentV2Config::default();
-    let root_hint = config
-        .root_agent_usage_hint_text
-        .as_deref()
-        .expect("root hint should be configured by default");
-    let subagent_hint = config
-        .subagent_usage_hint_text
-        .as_deref()
-        .expect("subagent hint should be configured by default");
+    let k = codex_agent_policy::DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K;
+    let root_hint = codex_agent_policy::default_multi_agent_v2_root_usage_hint_text_with_k(k);
+    let subagent_hint =
+        codex_agent_policy::default_multi_agent_v2_subagent_usage_hint_text_with_k(k);
 
     assert!(root_hint.contains("first_moves_predict"));
     assert!(root_hint.contains("Agent ROI Estimate"));
     assert!(root_hint.contains("what to delegate to subagents"));
-    assert!(root_hint.contains("up to three persistent high-capability helpers"));
-    assert!(root_hint.contains("Only the main/root agent spawns helpers"));
+    assert!(root_hint.contains("persistent highest-capability worker"));
+    assert!(root_hint.contains("treat the root thread as an overseer"));
     assert!(root_hint.contains("Compact helpers after bulky reads"));
     assert!(root_hint.contains("short summary or short result only when the main agent needs"));
     assert!(root_hint.contains("net >= 2"));
@@ -41,8 +60,16 @@ fn multi_agent_v2_default_hints_gate_exploration_with_first_moves() {
     assert!(subagent_hint.contains("skip first_moves_predict"));
     assert!(subagent_hint.contains("If you are a `helper` agent"));
     assert!(subagent_hint.contains("repo_context_scout"));
-    assert!(subagent_hint.contains("Root owns finalization"));
-    assert!(subagent_hint.contains("Do not spawn more agents"));
+    assert!(subagent_hint.contains("root owns finalization"));
+    assert!(subagent_hint.contains("Plan-token-economy default (recursive_roi_gate)"));
+    assert!(
+        subagent_hint
+            .contains(codex_agent_policy::DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K_PROMPT_TEXT)
+    );
+    assert!(subagent_hint.contains("same model and reasoning effort"));
+    assert!(
+        subagent_hint.contains("Delegate a subtask only when expected cost is at least [K] tokens")
+    );
     assert!(subagent_hint.contains("A short summary or short result is optional"));
     assert!(subagent_hint.contains("configured tools, skills, MCP/app surfaces"));
 }
@@ -62,7 +89,6 @@ usage_hint_enabled = false
 usage_hint_text = "Custom delegation guidance."
 root_agent_usage_hint_text = "Root guidance."
 subagent_usage_hint_text = "Subagent guidance."
-tool_namespace = "agents"
 hide_spawn_agent_metadata = true
 non_code_mode_only = true
 "#,
@@ -96,10 +122,6 @@ non_code_mode_only = true
     assert_eq!(
         config.multi_agent_v2.subagent_usage_hint_text.as_deref(),
         Some("Subagent guidance.")
-    );
-    assert_eq!(
-        config.multi_agent_v2.tool_namespace.as_deref(),
-        Some("agents")
     );
     assert!(config.multi_agent_v2.hide_spawn_agent_metadata);
     assert!(config.multi_agent_v2.non_code_mode_only);

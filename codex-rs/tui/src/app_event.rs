@@ -703,6 +703,41 @@ pub(crate) enum AppEvent {
         custom_text: Option<String>,
     },
 
+    /// Persist the delegate/decompose prompt-injection enabled flag.
+    PersistDelegatePromptEnabled {
+        enabled: bool,
+    },
+
+    /// Persist the delegate/decompose prompt-injection K threshold (min tokens to delegate).
+    PersistDelegatePromptK {
+        k: usize,
+    },
+
+    /// Persist the root-agent delegate prompt hint text (None clears to default).
+    PersistDelegatePromptRootText {
+        text: Option<String>,
+    },
+
+    /// Persist the subagent delegate prompt hint text (None clears to default).
+    PersistDelegatePromptSubText {
+        text: Option<String>,
+    },
+
+    /// Persist whether semantic auto-compaction is enabled.
+    PersistAutoCompactEnabled {
+        enabled: bool,
+    },
+
+    /// Persist the context-percentage threshold at which auto-compaction triggers.
+    PersistAutoCompactPercent {
+        percent: u8,
+    },
+
+    /// Persist the custom compaction prompt text (None clears to default).
+    PersistAutoCompactPrompt {
+        prompt: Option<String>,
+    },
+
     /// Open the device picker for a realtime microphone or speaker.
     OpenRealtimeAudioDeviceSelection {
         kind: RealtimeAudioDeviceKind,

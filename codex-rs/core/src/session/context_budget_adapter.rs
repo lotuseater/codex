@@ -68,17 +68,18 @@ pub(crate) async fn post_sampling_compaction_decision(
     let total_usage_tokens = sess.get_total_token_usage().await;
     let visible_context_percent_used = sess.visible_context_percent_used().await;
     let token_limit_reached = total_usage_tokens >= auto_compact_limit;
-    let semantic_compact_decision = if token_limit_reached {
-        SemanticCompactDecision::Skip
-    } else {
-        sess.semantic_compact_decision(semantic_compact_input(
-            turn_context,
-            total_usage_tokens,
-            auto_compact_limit,
-            visible_context_percent_used,
-        ))
-        .await
-    };
+    let semantic_compact_decision =
+        if token_limit_reached || !turn_context.config.auto_compact_enabled {
+            SemanticCompactDecision::Skip
+        } else {
+            sess.semantic_compact_decision(semantic_compact_input(
+                turn_context,
+                total_usage_tokens,
+                auto_compact_limit,
+                visible_context_percent_used,
+            ))
+            .await
+        };
     let early_context_pressure_reached = matches!(
         semantic_compact_decision,
         SemanticCompactDecision::Compact {
@@ -128,7 +129,7 @@ impl Session {
                 return Ok(());
             }
             Some(CompactionReason::ContextLimit)
-        } else {
+        } else if turn_context.config.auto_compact_enabled {
             match self
                 .semantic_compact_decision(semantic_compact_input(
                     turn_context,
@@ -143,6 +144,8 @@ impl Session {
                 }
                 SemanticCompactDecision::Skip => None,
             }
+        } else {
+            None
         };
 
         let Some(reason) = reason else {

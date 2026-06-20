@@ -106,6 +106,13 @@ pub struct Config {
     /// Compact prompt override.
     pub compact_prompt: Option<String>,
 
+    /// Whether semantic / early-pressure auto-compaction is active.
+    /// When `false`, only the hard `ContextLimit` safety-net compaction fires;
+    /// the semantic and early-pressure paths are suppressed.
+    /// Does NOT affect manual `/compact` invocations.
+    /// Defaults to `true`.
+    pub auto_compact_enabled: bool,
+
     /// Optional external notifier command. When set, Codex will spawn this
     /// program after each completed *turn* (i.e. when the agent finishes
     /// processing a user submission). The value must be the full command

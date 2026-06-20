@@ -37,14 +37,24 @@ pub struct MultiAgentV2Config {
     pub default_wait_timeout_ms: i64,
     pub usage_hint_enabled: bool,
     pub usage_hint_text: Option<String>,
+    /// Root-agent hint text override. When `None`, the hint is generated at
+    /// runtime from [`plan_token_economy_delegation_k`] so that a
+    /// `/delegate-prompt k <n>` change takes effect next turn without
+    /// persisting frozen text.
     pub root_agent_usage_hint_text: Option<String>,
+    /// Subagent hint text override. Same deferred-generation semantics as
+    /// [`root_agent_usage_hint_text`].
     pub subagent_usage_hint_text: Option<String>,
+    /// Minimum estimated token cost for a subtask before delegation is allowed.
+    /// Used by the plan-token-economy prompt injection. Default: 26 000.
+    pub plan_token_economy_delegation_k: usize,
     pub hide_spawn_agent_metadata: bool,
     pub non_code_mode_only: bool,
 }
 
-pub const DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT: &str =
-    crate::agent::policy::DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT;
+pub fn default_multi_agent_v2_root_usage_hint_text() -> String {
+    crate::agent::policy::default_multi_agent_v2_root_usage_hint_text()
+}
 
 // Keep the full multi-agent planning and worker guidance in codex-agent-policy so
 // config stays a thin adapter while the prompt policy remains independently tested.
@@ -53,9 +63,10 @@ pub const DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT: &str =
 // high-capability helpers, first_moves/context-scout routing, bounded context
 // contracts, compact/clear guidance, root-owned finalization, and active helper
 // oversight. The moved subagent prompt keeps worker boundaries, short handoffs,
-// root-only spawning, and no-revert/no-finalization rules.
-pub const DEFAULT_MULTI_AGENT_V2_SUBAGENT_USAGE_HINT_TEXT: &str =
-    crate::agent::policy::DEFAULT_MULTI_AGENT_V2_SUBAGENT_USAGE_HINT_TEXT;
+// threshold-gated recursive delegation, and no-revert/no-finalization rules.
+pub fn default_multi_agent_v2_subagent_usage_hint_text() -> String {
+    crate::agent::policy::default_multi_agent_v2_subagent_usage_hint_text()
+}
 
 impl Default for MultiAgentV2Config {
     fn default() -> Self {
@@ -67,12 +78,13 @@ impl Default for MultiAgentV2Config {
             default_wait_timeout_ms: DEFAULT_MULTI_AGENT_V2_DEFAULT_WAIT_TIMEOUT_MS,
             usage_hint_enabled: true,
             usage_hint_text: None,
-            root_agent_usage_hint_text: Some(
-                DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT.to_string(),
-            ),
-            subagent_usage_hint_text: Some(
-                DEFAULT_MULTI_AGENT_V2_SUBAGENT_USAGE_HINT_TEXT.to_string(),
-            ),
+            // Default to None so the hint is generated at runtime from
+            // plan_token_economy_delegation_k, enabling /delegate-prompt k <n>
+            // to take effect next turn without persisting frozen text.
+            root_agent_usage_hint_text: None,
+            subagent_usage_hint_text: None,
+            plan_token_economy_delegation_k:
+                crate::agent::policy::DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K,
             hide_spawn_agent_metadata: false,
             non_code_mode_only: false,
         }

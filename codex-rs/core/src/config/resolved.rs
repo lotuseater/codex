@@ -171,6 +171,10 @@ pub(crate) fn resolve_multi_agent_v2_config(
         .or_else(|| base.and_then(|config| config.subagent_usage_hint_text.as_ref()))
         .cloned()
         .or(default.subagent_usage_hint_text);
+    let plan_token_economy_delegation_k = profile
+        .and_then(|config| config.plan_token_economy_delegation_k)
+        .or_else(|| base.and_then(|config| config.plan_token_economy_delegation_k))
+        .unwrap_or(default.plan_token_economy_delegation_k);
     let hide_spawn_agent_metadata = profile
         .and_then(|config| config.hide_spawn_agent_metadata)
         .or_else(|| base.and_then(|config| config.hide_spawn_agent_metadata))
@@ -189,6 +193,7 @@ pub(crate) fn resolve_multi_agent_v2_config(
         usage_hint_text,
         root_agent_usage_hint_text,
         subagent_usage_hint_text,
+        plan_token_economy_delegation_k,
         hide_spawn_agent_metadata,
         non_code_mode_only,
     }

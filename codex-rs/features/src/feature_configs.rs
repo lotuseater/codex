@@ -49,6 +49,10 @@ pub struct MultiAgentV2ConfigToml {
     pub root_agent_usage_hint_text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subagent_usage_hint_text: Option<String>,
+    /// Minimum estimated token cost for a subtask before delegation is allowed.
+    /// Used by the plan-token-economy prompt injection. Defaults to 26 000.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_token_economy_delegation_k: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(length(min = 1, max = 64), regex(pattern = r"^[a-zA-Z0-9_-]+$"))]
     pub tool_namespace: Option<String>,

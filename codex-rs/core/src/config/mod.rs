@@ -189,8 +189,6 @@ pub use config_struct::CodeModeConfig;
 pub use config_struct::Config;
 pub use config_types::AgentRoleConfig;
 pub use config_types::ConfigOverrides;
-pub use config_types::DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT;
-pub use config_types::DEFAULT_MULTI_AGENT_V2_SUBAGENT_USAGE_HINT_TEXT;
 pub use config_types::DesktopAutomationConfig;
 pub use config_types::GhostSnapshotConfig;
 pub use config_types::MultiAgentV2Config;

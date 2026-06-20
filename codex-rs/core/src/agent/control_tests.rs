@@ -38,6 +38,36 @@ use tokio::time::sleep;
 use tokio::time::timeout;
 use toml::Value as TomlValue;
 
+#[test]
+fn agent_control_thread_spawn_depth_defaults_to_one_for_cli_sources() {
+    assert_eq!(
+        next_thread_spawn_depth_for_session_source(&SessionSource::Cli),
+        1
+    );
+}
+
+#[test]
+fn agent_control_thread_spawn_depth_increments_thread_spawn_sources() {
+    let session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+        parent_thread_id: ThreadId::new(),
+        depth: 2,
+        agent_path: None,
+        agent_nickname: None,
+        agent_role: None,
+    });
+
+    assert_eq!(
+        next_thread_spawn_depth_for_session_source(&session_source),
+        3
+    );
+}
+
+#[test]
+fn agent_control_depth_limit_allows_equal_depth_and_rejects_greater_depth() {
+    assert!(!exceeds_thread_spawn_depth_limit(2, 2));
+    assert!(exceeds_thread_spawn_depth_limit(3, 2));
+}
+
 async fn test_config_with_cli_overrides(
     cli_overrides: Vec<(String, TomlValue)>,
 ) -> (TempDir, Config) {
@@ -1021,10 +1051,16 @@ async fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items() {
         Op::UserInput {
             environments: None,
 
-            items: vec![UserInput::Text {
-                text: "child task".to_string(),
-                text_elements: Vec::new(),
-            }],
+            items: vec![
+                UserInput::Text {
+                    text: "child task".to_string(),
+                    text_elements: Vec::new(),
+                },
+                UserInput::Text {
+                    text: "Child subagent guidance.".to_string(),
+                    text_elements: Vec::new(),
+                },
+            ],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
             additional_context: Default::default(),
@@ -1037,6 +1073,28 @@ async fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items() {
         .into_iter()
         .find(|entry| *entry == expected);
     assert_eq!(captured, Some(expected));
+
+    let disabled_hint_expected = (
+        disabled_hint_child_thread_id,
+        Op::UserInput {
+            environments: None,
+
+            items: vec![UserInput::Text {
+                text: "child task without hints".to_string(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
+        },
+    );
+    let disabled_hint_captured = harness
+        .manager
+        .captured_ops()
+        .into_iter()
+        .find(|entry| *entry == disabled_hint_expected);
+    assert_eq!(disabled_hint_captured, Some(disabled_hint_expected));
 
     let _ = harness
         .control
@@ -1147,6 +1205,22 @@ async fn spawn_agent_fork_strips_parent_usage_hints_from_compacted_history() {
         .get_thread(child_thread_id)
         .await
         .expect("child thread should be registered");
+    let child_resolved_config = child_thread.codex.session.get_config().await;
+    let child_subagent_hint = child_resolved_config
+        .multi_agent_v2
+        .subagent_usage_hint_text
+        .as_deref()
+        .expect("child subagent usage hint should be configured");
+    assert!(
+        child_subagent_hint
+            .contains(codex_agent_policy::DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K_PROMPT_TEXT,),
+        "child subagent guidance should include plan-token delegation defaults"
+    );
+    assert!(
+        child_subagent_hint
+            .contains(&codex_agent_policy::DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K.to_string(),),
+        "child subagent guidance should include the default delegation K value"
+    );
     let history = child_thread.codex.session.clone_history().await;
     assert!(
         history_contains_text(history.raw_items(), "compacted parent summary"),

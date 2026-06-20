@@ -1105,7 +1105,7 @@ async fn run_pre_sampling_compact(
         pre_sampling_compacted = true;
         token_status = auto_compact_token_status(sess.as_ref(), turn_context.as_ref()).await;
     }
-    if !pre_sampling_compacted {
+    if !pre_sampling_compacted && turn_context.config.auto_compact_enabled {
         let visible_context_percent_used = sess.visible_context_percent_used().await;
         match sess
             .semantic_compact_decision(semantic_compact_input(

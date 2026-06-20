@@ -96,12 +96,19 @@ pub(crate) fn semantic_auto_compact_enabled(turn_context: &TurnContext) -> bool 
         && turn_context.collaboration_mode.mode != ModeKind::Plan
 }
 
-fn domain_context_reduction_policy() -> compaction_domain::ContextReductionPolicy {
-    compaction_domain::ContextReductionPolicy::default()
+fn domain_context_reduction_policy(
+    trigger_percent: u8,
+) -> compaction_domain::ContextReductionPolicy {
+    compaction_domain::ContextReductionPolicy::new(
+        trigger_percent,
+        compaction_domain::DEFAULT_TURN_COOLDOWN,
+    )
 }
 
-pub(crate) fn context_reduction_policy() -> context_reduction::ContextReductionPolicy {
-    context_reduction_policy_from_domain(domain_context_reduction_policy())
+pub(crate) fn context_reduction_policy(
+    trigger_percent: u8,
+) -> context_reduction::ContextReductionPolicy {
+    context_reduction_policy_from_domain(domain_context_reduction_policy(trigger_percent))
 }
 
 pub(crate) fn semantic_compact_input(
@@ -110,9 +117,10 @@ pub(crate) fn semantic_compact_input(
     auto_compact_limit: i64,
     visible_context_percent_used: Option<i64>,
 ) -> context_reduction::SemanticCompactInput {
+    let trigger_percent = turn_context.config.model_compact_percentage;
     let input = compaction_domain::SemanticCompactInput {
         enabled: semantic_auto_compact_enabled(turn_context),
-        policy: domain_context_reduction_policy(),
+        policy: domain_context_reduction_policy(trigger_percent),
         total_usage_tokens,
         auto_compact_limit,
         context_window: turn_context.model_context_window(),
@@ -145,7 +153,7 @@ mod tests {
 
     #[test]
     fn context_reduction_policy_is_fixed_twenty_percent_with_twenty_four_turn_cooldown() {
-        let policy = domain_context_reduction_policy();
+        let policy = domain_context_reduction_policy(DEFAULT_TRIGGER_CONTEXT_PERCENT);
 
         assert_eq!(
             policy.trigger_context_percent(),

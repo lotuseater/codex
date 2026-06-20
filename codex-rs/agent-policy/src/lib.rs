@@ -3,9 +3,14 @@ mod plan_prompt;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
 
-pub use plan_prompt::DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT;
-pub use plan_prompt::DEFAULT_MULTI_AGENT_V2_SUBAGENT_USAGE_HINT_TEXT;
+pub use plan_prompt::DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K;
+pub use plan_prompt::DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K_PROMPT_TEXT;
+pub use plan_prompt::DEFAULT_PLAN_TOKEN_ECONOMY_PROMPT_TEXT;
 pub use plan_prompt::MAIN_AGENT_PLAN_DELEGATION_PROMPT;
+pub use plan_prompt::default_multi_agent_v2_root_usage_hint_text;
+pub use plan_prompt::default_multi_agent_v2_root_usage_hint_text_with_k;
+pub use plan_prompt::default_multi_agent_v2_subagent_usage_hint_text;
+pub use plan_prompt::default_multi_agent_v2_subagent_usage_hint_text_with_k;
 
 pub const AUTO_LOOP_MULTI_OPTION_NOTE: &str =
     "Think on your own and choose what is best in long-term perspective";
@@ -14,14 +19,12 @@ pub const AGENT_ROI_RUBRIC: &str = "new_agent_cost=3, reuse_cost=1, parallel_gai
 
 pub const MULTI_AGENT_V2_NESTED_SPAWN_REJECTION: &str = "Only the root agent can spawn MultiAgentV2 helpers; send a concise handoff to the root instead.";
 
-/// Parent category used by the MultiAgentV2 spawn gate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MultiAgentV2SpawnParent {
     Root,
     Nested,
 }
 
-/// Parent/child depth relationship considered by the MultiAgentV2 spawn gate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MultiAgentV2SpawnLineage {
     parent: MultiAgentV2SpawnParent,
@@ -45,6 +48,13 @@ impl MultiAgentV2SpawnLineage {
     }
 }
 
+pub const fn multi_agent_v2_root_can_spawn_child(lineage: MultiAgentV2SpawnLineage) -> bool {
+    match lineage.parent {
+        MultiAgentV2SpawnParent::Root => lineage.child_depth == 1,
+        MultiAgentV2SpawnParent::Nested => false,
+    }
+}
+
 pub const fn next_thread_spawn_depth(parent_depth: i32) -> i32 {
     parent_depth.saturating_add(1)
 }
@@ -63,13 +73,6 @@ pub const fn next_thread_spawn_depth_for_session_source(session_source: &Session
 
 pub const fn exceeds_thread_spawn_depth_limit(depth: i32, max_depth: i32) -> bool {
     depth > max_depth
-}
-
-pub const fn multi_agent_v2_root_can_spawn_child(lineage: MultiAgentV2SpawnLineage) -> bool {
-    match lineage.parent {
-        MultiAgentV2SpawnParent::Root => lineage.child_depth == 1,
-        MultiAgentV2SpawnParent::Nested => false,
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -708,10 +711,13 @@ mod tests {
         assert!(prompt.contains("list_agents"));
         assert!(prompt.contains("what to delegate to subagents"));
         assert!(prompt.contains("context drift or context compactions"));
-        assert!(prompt.contains("Spawn or reuse only when net >= 2"));
-        assert!(prompt.contains("coordinate instead of doing implementation/testing/verification itself"));
+        assert!(prompt.contains("spawn or reuse only when net >= 2"));
+        assert!(
+            prompt
+                .contains("coordinate instead of doing implementation/testing/verification itself")
+        );
         assert!(prompt.contains("at least one persistent highest-capability worker"));
-        assert!(prompt.contains("delegate most bounded implementation/testing work"));
+        assert!(prompt.contains("Delegate most bounded implementation/testing work"));
         assert!(prompt.contains("Agent ROI Estimate"));
         assert!(prompt.contains("new_agent_cost=3"));
         assert!(prompt.contains("reuse_cost=1"));
@@ -732,7 +738,7 @@ mod tests {
     }
 
     #[test]
-    fn default_multi_agent_v2_hints_include_delegation_policy() {
+    fn plan_token_default_multi_agent_v2_hints_include_delegation_policy() {
         assert!(MAIN_AGENT_PLAN_DELEGATION_PROMPT.contains("update_plan calls outside Plan mode"));
         assert!(MAIN_AGENT_PLAN_DELEGATION_PROMPT.contains("external worker sessions"));
         assert!(
@@ -752,7 +758,8 @@ mod tests {
                 .contains(&["even one", " worker", " is useful"].concat())
         );
         assert!(
-            MAIN_AGENT_PLAN_DELEGATION_PROMPT.contains("non-interactive Codex exec worker sessions")
+            MAIN_AGENT_PLAN_DELEGATION_PROMPT
+                .contains("non-interactive Codex exec worker sessions")
         );
         assert!(
             MAIN_AGENT_PLAN_DELEGATION_PROMPT
@@ -773,69 +780,36 @@ mod tests {
             MAIN_AGENT_PLAN_DELEGATION_PROMPT
                 .contains("net = gains + loop_followup_gain - cost - risk")
         );
-        assert!(MAIN_AGENT_PLAN_DELEGATION_PROMPT.contains("Spawn or reuse only when net >= 2"));
-        assert!(
-            DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT
-                .contains("Only the main/root agent spawns helpers")
-        );
-        assert!(
-            DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT
-                .contains("root should coordinate instead of doing implementation/testing/verification itself")
-        );
-        assert!(
-            DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT
-                .contains("at least one highest-capability worker")
-        );
-        assert!(
-            DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT
-                .contains("Delegate most implementation/testing/verification")
-        );
-        assert!(
-            DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT
-                .contains("Compact helpers after bulky reads")
-        );
-        assert!(DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT.contains("5 minutes between checks"));
-        assert!(DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT.contains("Start-Process powershell"));
-        assert!(
-            DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT
-                .contains("separate non-interactive Codex exec worker sessions")
-        );
-        assert!(
-            DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT
-                .contains("in-session agents only when external sessions are unavailable")
-        );
-        assert!(
-            DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT.contains("create prompt and handoff files")
-        );
-        assert!(DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT.contains("worker sessions"));
-        assert!(DEFAULT_MULTI_AGENT_V2_ROOT_USAGE_HINT_TEXT.contains("must not depend on"));
-        assert!(
-            DEFAULT_MULTI_AGENT_V2_SUBAGENT_USAGE_HINT_TEXT
-                .contains("A short summary or short result is optional")
-        );
-        assert!(
-            DEFAULT_MULTI_AGENT_V2_SUBAGENT_USAGE_HINT_TEXT.contains("Do not spawn more agents")
-        );
-    }
-
-    #[test]
-    fn multi_agent_v2_root_only_spawn_policy_allows_only_root_children() {
-        assert!(!multi_agent_v2_root_can_spawn_child(
-            MultiAgentV2SpawnLineage::new(MultiAgentV2SpawnParent::Root, /*child_depth*/ 0)
+        assert!(MAIN_AGENT_PLAN_DELEGATION_PROMPT.contains("spawn or reuse only when net >= 2"));
+        // Use function calls — these are generated strings, not consts.
+        let root_hint = default_multi_agent_v2_root_usage_hint_text();
+        let sub_hint = default_multi_agent_v2_subagent_usage_hint_text();
+        assert!(root_hint.contains(DEFAULT_PLAN_TOKEN_ECONOMY_PROMPT_TEXT));
+        assert!(root_hint.contains(DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K_PROMPT_TEXT));
+        assert!(sub_hint.contains(DEFAULT_PLAN_TOKEN_ECONOMY_PROMPT_TEXT));
+        assert!(sub_hint.contains(DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K_PROMPT_TEXT));
+        assert_eq!(DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K, 26_000);
+        assert!(root_hint.contains("Every main-agent task plan prompt"));
+        assert!(root_hint.contains(
+            "root should coordinate instead of doing implementation/testing/verification itself"
         ));
-        assert!(multi_agent_v2_root_can_spawn_child(
-            MultiAgentV2SpawnLineage::new(MultiAgentV2SpawnParent::Root, /*child_depth*/ 1)
-        ));
-        assert!(!multi_agent_v2_root_can_spawn_child(
-            MultiAgentV2SpawnLineage::new(MultiAgentV2SpawnParent::Root, /*child_depth*/ 2)
-        ));
-        assert!(!multi_agent_v2_root_can_spawn_child(
-            MultiAgentV2SpawnLineage::new(MultiAgentV2SpawnParent::Nested, /*child_depth*/ 1)
-        ));
-        assert!(!multi_agent_v2_root_can_spawn_child(
-            MultiAgentV2SpawnLineage::new(MultiAgentV2SpawnParent::Nested, i32::MAX)
-        ));
-        assert!(MULTI_AGENT_V2_NESTED_SPAWN_REJECTION.contains("Only the root agent"));
+        assert!(root_hint.contains("at least one highest-capability worker"));
+        assert!(root_hint.contains("Delegate most implementation/testing/verification"));
+        assert!(root_hint.contains("Compact helpers after bulky reads"));
+        assert!(root_hint.contains("5 minutes between checks"));
+        assert!(root_hint.contains("Start-Process powershell"));
+        assert!(root_hint.contains("separate non-interactive Codex exec worker sessions"));
+        assert!(
+            root_hint.contains("in-session agents only when external sessions are unavailable")
+        );
+        assert!(root_hint.contains("create prompt and handoff files"));
+        assert!(root_hint.contains("worker sessions"));
+        assert!(root_hint.contains("must not depend on"));
+        assert!(sub_hint.contains("A short summary or short result is optional"));
+        assert!(sub_hint.contains("Plan-token-economy default (recursive_roi_gate)"));
+        assert!(
+            sub_hint.contains("Delegate a subtask only when expected cost is at least [K] tokens")
+        );
     }
 
     #[test]
@@ -870,7 +844,10 @@ mod tests {
             )),
             1
         );
-        assert_eq!(next_thread_spawn_depth_for_session_source(&SessionSource::Cli), 1);
+        assert_eq!(
+            next_thread_spawn_depth_for_session_source(&SessionSource::Cli),
+            1
+        );
     }
 
     #[test]

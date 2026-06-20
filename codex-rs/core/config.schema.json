@@ -19,6 +19,10 @@
     "ActionOptimizationInstructionsToml": {
       "additionalProperties": false,
       "properties": {
+        "custom_text": {
+          "description": "Optional custom prompt body. When set and non-empty it overrides `variant`, persisting a user-defined variant across sessions.",
+          "type": "string"
+        },
         "max_tokens": {
           "description": "Maximum approximate tokens rendered in the prompt body. Defaults to 120.",
           "format": "uint",
@@ -46,30 +50,11 @@
     },
     "ActionOptimizationInstructionsVariantToml": {
       "enum": [
-        "action_route_selection"
+        "action_route_selection",
+        "routing",
+        "verbose"
       ],
       "type": "string"
-    },
-    "BatchMiniProgrammingInstructionsModeToml": {
-      "enum": [
-        "off",
-        "always"
-      ],
-      "type": "string"
-    },
-    "BatchMiniProgrammingInstructionsToml": {
-      "additionalProperties": false,
-      "properties": {
-        "mode": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/BatchMiniProgrammingInstructionsModeToml"
-            }
-          ],
-          "description": "Run mode: off or always. Defaults to off."
-        }
-      },
-      "type": "object"
     },
     "AgentRoleToml": {
       "additionalProperties": false,
@@ -390,6 +375,47 @@
         }
       },
       "type": "object"
+    },
+    "BatchMiniProgrammingInstructionsModeToml": {
+      "enum": [
+        "off",
+        "always"
+      ],
+      "type": "string"
+    },
+    "BatchMiniProgrammingInstructionsToml": {
+      "additionalProperties": false,
+      "properties": {
+        "custom_text": {
+          "description": "Optional custom prompt body. When set and non-empty it overrides `variant`, persisting a user-defined variant across sessions.",
+          "type": "string"
+        },
+        "mode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/BatchMiniProgrammingInstructionsModeToml"
+            }
+          ],
+          "description": "Run mode: off or always. Defaults to off."
+        },
+        "variant": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/BatchMiniProgrammingInstructionsVariantToml"
+            }
+          ],
+          "description": "Prompt variant. Defaults to current."
+        }
+      },
+      "type": "object"
+    },
+    "BatchMiniProgrammingInstructionsVariantToml": {
+      "enum": [
+        "current",
+        "aggressive",
+        "compact"
+      ],
+      "type": "string"
     },
     "BlackboardToml": {
       "additionalProperties": false,
@@ -1876,6 +1902,12 @@
         },
         "non_code_mode_only": {
           "type": "boolean"
+        },
+        "plan_token_economy_delegation_k": {
+          "description": "Minimum estimated token cost for a subtask before delegation is allowed. Used by the plan-token-economy prompt injection. Defaults to 26 000.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
         },
         "root_agent_usage_hint_text": {
           "type": "string"
@@ -4704,14 +4736,6 @@
       ],
       "description": "Disabled-by-default action-route optimization instructions."
     },
-    "batch_mini_programming_instructions": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/BatchMiniProgrammingInstructionsToml"
-        }
-      ],
-      "description": "Disabled-by-default workflow_batch usage guidance."
-    },
     "agents": {
       "allOf": [
         {
@@ -4771,6 +4795,10 @@
       "default": null,
       "description": "Machine-local realtime audio device preferences used by realtime voice."
     },
+    "auto_compact_enabled": {
+      "description": "Whether semantic / early-pressure auto-compaction is active. When `false`, only the hard `ContextLimit` safety-net compaction fires. Defaults to `true` when omitted.",
+      "type": "boolean"
+    },
     "auto_review": {
       "allOf": [
         {
@@ -4785,6 +4813,14 @@
       "format": "uint64",
       "minimum": 0.0,
       "type": "integer"
+    },
+    "batch_mini_programming_instructions": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/BatchMiniProgrammingInstructionsToml"
+        }
+      ],
+      "description": "Disabled-by-default workflow_batch usage guidance."
     },
     "blackboard": {
       "allOf": [
@@ -5343,7 +5379,7 @@
       "description": "Optional path to a JSON model catalog (applied on startup only). Per-thread `config` overrides are accepted but do not reapply this (no-ops)."
     },
     "model_compact_percentage": {
-      "description": "Percentage of the auto-compaction token limit that triggers early context-pressure compaction. Defaults to 20 when omitted. Set to 0 to disable early context-pressure compaction.",
+      "description": "Percentage of the auto-compaction token limit that triggers early context-pressure compaction. Defaults to 24 when omitted. Set to 0 to disable early context-pressure compaction.",
       "format": "int64",
       "type": "integer"
     },

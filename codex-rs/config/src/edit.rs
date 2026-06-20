@@ -138,6 +138,104 @@ pub fn action_optimization_custom_text_edit(text: Option<&str>) -> ConfigEdit {
     }
 }
 
+// ---- F1: /delegate-prompt helpers ------------------------------------------
+
+/// Produces a config edit that sets
+/// `[multi_agent_v2].plan_token_economy_delegation_k = <k>`.
+pub fn multi_agent_v2_delegation_k_edit(k: usize) -> ConfigEdit {
+    ConfigEdit::SetPath {
+        segments: vec![
+            "multi_agent_v2".to_string(),
+            "plan_token_economy_delegation_k".to_string(),
+        ],
+        value: value(k as i64),
+    }
+}
+
+/// Produces a config edit that sets or clears
+/// `[multi_agent_v2].root_agent_usage_hint_text`.
+///
+/// `None` removes the key so the hint is regenerated at runtime from the
+/// configured `plan_token_economy_delegation_k`.
+pub fn multi_agent_v2_root_usage_hint_text_edit(text: Option<&str>) -> ConfigEdit {
+    let segments = vec![
+        "multi_agent_v2".to_string(),
+        "root_agent_usage_hint_text".to_string(),
+    ];
+    match text {
+        Some(text) => ConfigEdit::SetPath {
+            segments,
+            value: value(text.to_string()),
+        },
+        None => ConfigEdit::ClearPath { segments },
+    }
+}
+
+/// Produces a config edit that sets or clears
+/// `[multi_agent_v2].subagent_usage_hint_text`.
+///
+/// `None` removes the key so the hint is regenerated at runtime from the
+/// configured `plan_token_economy_delegation_k`.
+pub fn multi_agent_v2_subagent_usage_hint_text_edit(text: Option<&str>) -> ConfigEdit {
+    let segments = vec![
+        "multi_agent_v2".to_string(),
+        "subagent_usage_hint_text".to_string(),
+    ];
+    match text {
+        Some(text) => ConfigEdit::SetPath {
+            segments,
+            value: value(text.to_string()),
+        },
+        None => ConfigEdit::ClearPath { segments },
+    }
+}
+
+/// Produces a config edit that enables or disables
+/// `[multi_agent_v2].usage_hint_enabled`.
+pub fn multi_agent_v2_usage_hint_enabled_edit(enabled: bool) -> ConfigEdit {
+    ConfigEdit::SetPath {
+        segments: vec![
+            "multi_agent_v2".to_string(),
+            "usage_hint_enabled".to_string(),
+        ],
+        value: value(enabled),
+    }
+}
+
+// ---- F2: /compact-config helpers --------------------------------------------
+
+/// Produces a config edit that sets or clears `compact_prompt`.
+///
+/// `None` removes the key so the default summarization prompt applies.
+pub fn compact_prompt_edit(prompt: Option<&str>) -> ConfigEdit {
+    let segments = vec!["compact_prompt".to_string()];
+    match prompt {
+        Some(prompt) => ConfigEdit::SetPath {
+            segments,
+            value: value(prompt.to_string()),
+        },
+        None => ConfigEdit::ClearPath { segments },
+    }
+}
+
+/// Produces a config edit that sets `auto_compact_enabled = <enabled>`.
+pub fn auto_compact_enabled_edit(enabled: bool) -> ConfigEdit {
+    ConfigEdit::SetPath {
+        segments: vec!["auto_compact_enabled".to_string()],
+        value: value(enabled),
+    }
+}
+
+/// Produces a config edit that sets `model_compact_percentage = <pct>`.
+pub fn model_compact_percentage_edit(pct: u8) -> ConfigEdit {
+    ConfigEdit::SetPath {
+        segments: vec!["model_compact_percentage".to_string()],
+        value: value(i64::from(pct)),
+    }
+}
+
+// ---- batch / mini-programming helpers ---------------------------------------
+
 /// Produces a config edit that sets
 /// `[batch_mini_programming_instructions].mode = "<mode>"`.
 pub fn batch_mini_programming_mode_edit(mode: &str) -> ConfigEdit {

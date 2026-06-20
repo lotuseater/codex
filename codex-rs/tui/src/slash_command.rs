@@ -17,6 +17,8 @@ pub enum SlashCommand {
     Slow,
     ActionPrompt,
     BatchPrompt,
+    DelegatePrompt,
+    CompactConfig,
     Ide,
     Permissions,
     Keymap,
@@ -126,6 +128,12 @@ impl SlashCommand {
             SlashCommand::BatchPrompt => {
                 "configure the batch mini-programming prompt injection (variant/custom/on/off)"
             }
+            SlashCommand::DelegatePrompt => {
+                "configure the delegate/decompose prompt injection (on/off, k, custom text)"
+            }
+            SlashCommand::CompactConfig => {
+                "configure auto-compaction (on/off, percent, custom prompt)"
+            }
             SlashCommand::Ide => {
                 "include current selection, open files, and other context from your IDE"
             }
@@ -175,6 +183,8 @@ impl SlashCommand {
                 | SlashCommand::Slow
                 | SlashCommand::ActionPrompt
                 | SlashCommand::BatchPrompt
+                | SlashCommand::DelegatePrompt
+                | SlashCommand::CompactConfig
                 | SlashCommand::Ide
                 | SlashCommand::Keymap
                 | SlashCommand::Mcp
@@ -215,6 +225,8 @@ impl SlashCommand {
             | SlashCommand::Slow
             | SlashCommand::ActionPrompt
             | SlashCommand::BatchPrompt
+            | SlashCommand::DelegatePrompt
+            | SlashCommand::CompactConfig
             | SlashCommand::Personality
             | SlashCommand::Permissions
             | SlashCommand::Keymap

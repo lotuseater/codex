@@ -329,6 +329,8 @@ mod connectors;
 mod constructor;
 mod context_budget;
 pub(crate) mod prompt_injection;
+mod delegate_prompt;
+mod compact_config;
 use self::connectors::ConnectorsState;
 mod exec_state;
 use self::exec_state::RunningCommand;
