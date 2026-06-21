@@ -19,6 +19,7 @@ impl ChatWidget {
             initial_user_message,
             enhanced_keys_supported,
             has_chatgpt_account,
+            has_codex_backend_auth,
             model_catalog,
             feedback,
             is_first_run,
@@ -114,6 +115,7 @@ impl ChatWidget {
             current_collaboration_mode,
             active_collaboration_mask,
             has_chatgpt_account,
+            has_codex_backend_auth,
             model_catalog,
             session_telemetry,
             session_header: SessionHeader::new(header_model),
@@ -125,6 +127,14 @@ impl ChatWidget {
             rate_limit_snapshots_by_limit_id: BTreeMap::new(),
             refreshing_status_outputs: Vec::new(),
             next_status_refresh_request_id: 0,
+            refreshing_token_activity_output: None,
+            completed_token_activity_output: None,
+            next_token_activity_request_id: 0,
+            pending_rate_limit_reset_request_id: None,
+            pending_rate_limit_reset_hint_request_id: None,
+            pending_rate_limit_reset_hint: None,
+            available_rate_limit_reset_credits: None,
+            next_rate_limit_reset_request_id: 0,
             plan_type: initial_plan_type,
             codex_rate_limit_reached_type: None,
             rate_limit_warnings: RateLimitWarningState::default(),
@@ -134,6 +144,7 @@ impl ChatWidget {
             adaptive_chunking: AdaptiveChunkingPolicy::default(),
             stream_controller: None,
             plan_stream_controller: None,
+            pending_stream_consolidations: 0,
             clipboard_lease: None,
             copy_last_response_binding,
             running_commands: HashMap::new(),
@@ -158,6 +169,9 @@ impl ChatWidget {
             ide_context: IdeContextState::default(),
             plugins_cache: PluginsCacheState::default(),
             plugins_fetch_state: PluginListFetchState::default(),
+            plugin_remote_sections_loading: false,
+            plugin_remote_sections_loaded: false,
+            plugin_remote_section_errors: Vec::new(),
             plugin_install_apps_needing_auth: Vec::new(),
             plugin_install_auth_flow: None,
             plugins_active_tab_id: None,
@@ -260,18 +274,20 @@ impl ChatWidget {
             .bottom_pane
             .set_queued_message_edit_binding(widget.queued_message_edit_hint_binding);
         #[cfg(target_os = "windows")]
-        widget.bottom_pane.set_windows_degraded_sandbox_active(
-            crate::legacy_core::windows_sandbox::ELEVATED_SANDBOX_NUX_ENABLED
-                && matches!(
-                    WindowsSandboxLevel::from_config(&widget.config),
-                    WindowsSandboxLevel::RestrictedToken
-                ),
-        );
+        widget
+            .bottom_pane
+            .set_windows_degraded_sandbox_active(matches!(
+                crate::windows_sandbox::level_from_config(&widget.config),
+                WindowsSandboxLevel::RestrictedToken
+            ));
         widget.update_collaboration_mode_indicator();
 
         widget
             .bottom_pane
             .set_connectors_enabled(widget.connectors_enabled());
+        widget
+            .bottom_pane
+            .set_token_activity_command_enabled(widget.has_codex_backend_auth);
         widget.refresh_status_surfaces();
 
         widget

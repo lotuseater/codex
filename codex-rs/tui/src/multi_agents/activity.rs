@@ -288,7 +288,9 @@ fn subagent_activity_summary(item: &ThreadItem) -> Option<SubagentActivitySummar
             title: "Context compacted",
             details: Vec::new(),
         }),
-        ThreadItem::UserMessage { .. } | ThreadItem::HookPrompt { .. } => None,
+        ThreadItem::Sleep { .. }
+        | ThreadItem::UserMessage { .. }
+        | ThreadItem::HookPrompt { .. } => None,
     }
 }
 

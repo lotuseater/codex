@@ -1,4 +1,4 @@
-use codex_protocol::config_types::ContextBudgetMode;
+use codex_config_types::ContextBudgetMode;
 use codex_protocol::openai_models::ModelsResponse;
 
 #[derive(Debug, Clone, Default)]

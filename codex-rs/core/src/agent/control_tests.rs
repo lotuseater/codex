@@ -14,6 +14,7 @@ use codex_features::Feature;
 use codex_login::CodexAuth;
 use codex_protocol::AgentPath;
 use codex_protocol::config_types::ModeKind;
+use codex_protocol::config_types::MultiAgentMode;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::MessagePhase;
 use codex_protocol::models::ResponseItem;
@@ -101,6 +102,7 @@ fn assistant_message(text: &str, phase: Option<MessagePhase>) -> ResponseItem {
             text: text.to_string(),
         }],
         phase,
+        metadata: None,
     }
 }
 
@@ -120,6 +122,7 @@ fn spawn_agent_call(call_id: &str) -> ResponseItem {
         namespace: None,
         arguments: "{}".to_string(),
         call_id: call_id.to_string(),
+        metadata: None,
     }
 }
 
@@ -849,6 +852,45 @@ async fn spawn_agent_creates_thread_and_sends_prompt() {
 }
 
 #[tokio::test]
+async fn spawn_thread_subagent_uses_supplied_initial_multi_agent_mode_without_history() {
+    let harness = AgentControlHarness::new().await;
+    let (parent_thread_id, _parent_thread) = harness.start_thread().await;
+
+    let child_thread_id = harness
+        .control
+        .spawn_agent_with_metadata(
+            harness.config.clone(),
+            text_input("child task"),
+            Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                parent_thread_id,
+                depth: 1,
+                agent_path: None,
+                agent_nickname: None,
+                agent_role: None,
+            })),
+            SpawnAgentOptions {
+                initial_multi_agent_mode: Some(MultiAgentMode::Proactive),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("spawn child without parent history")
+        .thread_id;
+    let child_snapshot = harness
+        .manager
+        .get_thread(child_thread_id)
+        .await
+        .expect("child thread should be registered")
+        .config_snapshot()
+        .await;
+
+    assert_eq!(
+        child_snapshot.multi_agent_mode,
+        Some(MultiAgentMode::Proactive)
+    );
+}
+
+#[tokio::test]
 async fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items() {
     let harness = AgentControlHarness::new().await;
     let mut parent_config = harness.config.clone();
@@ -870,6 +912,15 @@ async fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items() {
         .expect("start parent thread");
     let parent_thread_id = new_thread.thread_id;
     let parent_thread = new_thread.thread;
+    parent_thread
+        .codex
+        .session
+        .update_settings(crate::session::SessionSettingsUpdate {
+            multi_agent_mode: Some(MultiAgentMode::Proactive),
+            ..Default::default()
+        })
+        .await
+        .expect("update parent multi-agent mode");
     parent_thread
         .inject_user_message_without_turn("parent seed context".to_string())
         .await;
@@ -895,6 +946,7 @@ async fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items() {
                         text: "Parent root guidance.".to_string(),
                     }],
                     phase: None,
+                    metadata: None,
                 },
                 ResponseItem::Message {
                     id: None,
@@ -903,15 +955,17 @@ async fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items() {
                         text: "Parent subagent guidance.".to_string(),
                     }],
                     phase: None,
+                    metadata: None,
                 },
                 assistant_message("parent commentary", Some(MessagePhase::Commentary)),
                 assistant_message("parent final answer", Some(MessagePhase::FinalAnswer)),
                 assistant_message("parent unknown phase", /*phase*/ None),
                 ResponseItem::Reasoning {
-                    id: "parent-reasoning".to_string(),
+                    id: Some("parent-reasoning".to_string()),
                     summary: Vec::new(),
                     content: None,
                     encrypted_content: None,
+                    metadata: None,
                 },
                 trigger_message.to_response_input_item().into(),
                 spawn_agent_call(&parent_spawn_call_id),
@@ -937,7 +991,6 @@ async fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items() {
         .flush_rollout()
         .await
         .expect("parent rollout should flush");
-
     let child_thread_id = harness
         .control
         .spawn_agent_with_metadata(
@@ -953,6 +1006,7 @@ async fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items() {
             SpawnAgentOptions {
                 fork_parent_spawn_call_id: Some(parent_spawn_call_id.clone()),
                 fork_mode: Some(SpawnAgentForkMode::FullHistory),
+                initial_multi_agent_mode: Some(MultiAgentMode::Proactive),
                 ..Default::default()
             },
         )
@@ -965,6 +1019,10 @@ async fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items() {
         .get_thread(child_thread_id)
         .await
         .expect("child thread should be registered");
+    assert_eq!(
+        child_thread.config_snapshot().await.multi_agent_mode,
+        Some(MultiAgentMode::Proactive)
+    );
     assert_ne!(child_thread_id, parent_thread_id);
     let history = child_thread.codex.session.clone_history().await;
     let expected_history = [
@@ -975,6 +1033,7 @@ async fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items() {
                 text: "parent seed context".to_string(),
             }],
             phase: None,
+            metadata: None,
         },
         assistant_message("parent final answer", Some(MessagePhase::FinalAnswer)),
         ResponseItem::Message {
@@ -984,6 +1043,7 @@ async fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items() {
                 text: "Child subagent guidance.".to_string(),
             }],
             phase: None,
+            metadata: None,
         },
     ];
     assert_eq!(
@@ -1144,6 +1204,7 @@ async fn spawn_agent_fork_strips_parent_usage_hints_from_compacted_history() {
                 text: "compacted parent summary".to_string(),
             }],
             phase: None,
+            metadata: None,
         },
         ResponseItem::Message {
             id: None,
@@ -1152,6 +1213,7 @@ async fn spawn_agent_fork_strips_parent_usage_hints_from_compacted_history() {
                 text: "Parent root guidance.".to_string(),
             }],
             phase: None,
+            metadata: None,
         },
     ];
     parent_thread
@@ -1161,6 +1223,8 @@ async fn spawn_agent_fork_strips_parent_usage_hints_from_compacted_history() {
             RolloutItem::Compacted(CompactedItem {
                 message: String::new(),
                 replacement_history: Some(replacement_history),
+                window_number: None,
+                window_id: None,
             }),
             RolloutItem::TurnContext(turn_context.to_turn_context_item()),
             RolloutItem::ResponseItem(spawn_agent_call(&parent_spawn_call_id)),
@@ -1312,6 +1376,15 @@ async fn spawn_agent_fork_flushes_parent_rollout_before_loading_history() {
 async fn spawn_agent_fork_last_n_turns_keeps_only_recent_turns() {
     let harness = AgentControlHarness::new().await;
     let (parent_thread_id, parent_thread) = harness.start_thread().await;
+    parent_thread
+        .codex
+        .session
+        .update_settings(crate::session::SessionSettingsUpdate {
+            multi_agent_mode: Some(MultiAgentMode::Proactive),
+            ..Default::default()
+        })
+        .await
+        .expect("update parent multi-agent mode");
 
     parent_thread
         .inject_user_message_without_turn("old parent context".to_string())
@@ -1396,6 +1469,7 @@ async fn spawn_agent_fork_last_n_turns_keeps_only_recent_turns() {
             SpawnAgentOptions {
                 fork_parent_spawn_call_id: Some(parent_spawn_call_id.clone()),
                 fork_mode: Some(SpawnAgentForkMode::LastNTurns(2)),
+                initial_multi_agent_mode: Some(MultiAgentMode::Proactive),
                 ..Default::default()
             },
         )
@@ -1408,6 +1482,10 @@ async fn spawn_agent_fork_last_n_turns_keeps_only_recent_turns() {
         .get_thread(child_thread_id)
         .await
         .expect("child thread should be registered");
+    assert_eq!(
+        child_thread.config_snapshot().await.multi_agent_mode,
+        Some(MultiAgentMode::Proactive)
+    );
     let history = child_thread.codex.session.clone_history().await;
 
     assert!(
@@ -1464,6 +1542,7 @@ async fn spawn_agent_fork_last_n_turns_drops_parent_startup_prefix_when_under_li
                     text: "parent startup developer context".to_string(),
                 }],
                 phase: None,
+                metadata: None,
             }],
         )
         .await;
@@ -1585,6 +1664,7 @@ async fn spawn_agent_fork_last_n_turns_strips_parent_usage_hints() {
                         text: "Parent root guidance.".to_string(),
                     }],
                     phase: None,
+                    metadata: None,
                 },
                 spawn_agent_call(&parent_spawn_call_id),
             ],
@@ -2069,10 +2149,12 @@ async fn multi_agent_v2_completion_queues_message_for_direct_parent() {
         )
         .await;
 
-    let expected_message = crate::session_prefix::format_subagent_notification_message(
-        tester_path.as_str(),
+    let expected_message = crate::session_prefix::format_inter_agent_completion_message(
+        worker_path.clone(),
+        tester_path.clone(),
         &AgentStatus::Completed(Some("done".to_string())),
-    );
+    )
+    .expect("completed status should render");
     let expected = (
         worker_thread_id,
         Op::InterAgentCommunication {
@@ -2251,7 +2333,7 @@ async fn spawn_thread_subagent_uses_role_specific_nickname_candidates() {
 }
 
 #[tokio::test]
-async fn resume_thread_subagent_restores_stored_nickname_and_role() {
+async fn resume_thread_subagent_restores_stored_metadata_and_effective_multi_agent_mode() {
     let (home, mut config) = test_config().await;
     config
         .features
@@ -2273,7 +2355,7 @@ async fn resume_thread_subagent_restores_stored_nickname_and_role() {
         manager,
         control,
     };
-    let (parent_thread_id, _parent_thread) = harness.start_thread().await;
+    let (parent_thread_id, parent_thread) = harness.start_thread().await;
     let agent_path = AgentPath::from_string("/root/explorer".to_string())
         .expect("test agent path should be valid");
 
@@ -2298,6 +2380,38 @@ async fn resume_thread_subagent_restores_stored_nickname_and_role() {
         .get_thread(child_thread_id)
         .await
         .expect("child thread should exist");
+    let mut child_turn_context = child_thread
+        .codex
+        .session
+        .new_default_turn()
+        .await
+        .to_turn_context_item();
+    child_turn_context.multi_agent_mode = Some(MultiAgentMode::Proactive);
+    child_thread
+        .codex
+        .session
+        .persist_rollout_items(&[RolloutItem::TurnContext(child_turn_context)])
+        .await;
+    child_thread
+        .codex
+        .session
+        .ensure_rollout_materialized()
+        .await;
+    child_thread
+        .codex
+        .session
+        .flush_rollout()
+        .await
+        .expect("flush child effective multi-agent mode");
+    parent_thread
+        .codex
+        .session
+        .update_settings(crate::session::SessionSettingsUpdate {
+            multi_agent_mode: Some(MultiAgentMode::ExplicitRequestOnly),
+            ..Default::default()
+        })
+        .await
+        .expect("change parent multi-agent mode before child resume");
     let mut status_rx = harness
         .control
         .subscribe_status(child_thread_id)
@@ -2386,6 +2500,10 @@ async fn resume_thread_subagent_restores_stored_nickname_and_role() {
     assert_eq!(resumed_agent_path, Some(agent_path));
     assert_eq!(resumed_nickname, Some(original_nickname));
     assert_eq!(resumed_role, Some("explorer".to_string()));
+    assert_eq!(
+        resumed_snapshot.multi_agent_mode,
+        Some(MultiAgentMode::Proactive)
+    );
 
     let _ = harness
         .control
@@ -2570,7 +2688,7 @@ async fn list_agent_subtree_thread_ids_includes_anonymous_and_closed_descendants
 }
 
 #[tokio::test]
-async fn list_agent_subtree_thread_ids_includes_live_descendants_without_state_db() {
+async fn list_agent_subtree_thread_ids_finds_live_descendants_of_unloaded_root() {
     let (_home, config) = test_config().await;
     let manager = ThreadManager::with_models_provider_home_and_state_for_tests(
         CodexAuth::from_api_key("dummy"),
@@ -2614,6 +2732,8 @@ async fn list_agent_subtree_thread_ids_includes_live_descendants_without_state_d
         )
         .await
         .expect("grandchild spawn should succeed");
+
+    manager.remove_thread(&parent_thread_id).await;
 
     let mut subtree_thread_ids = manager
         .list_agent_subtree_thread_ids(parent_thread_id)

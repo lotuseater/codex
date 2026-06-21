@@ -50,7 +50,7 @@ impl App {
             .permissions
             .active_permission_profile();
         let update_session = |session: &mut ThreadSessionState| {
-            session.approval_policy = approval_policy;
+            session.approval_policy = approval_policy.into();
             session.approvals_reviewer = approvals_reviewer;
             session.permission_profile = permission_profile.clone();
             session.active_permission_profile = active_permission_profile.clone();
@@ -94,7 +94,7 @@ impl App {
                 model: self.chat_widget.current_model().to_string(),
                 model_provider_id: self.config.model_provider_id.clone(),
                 service_tier: self.chat_widget.current_service_tier().map(str::to_string),
-                approval_policy: self.config.permissions.approval_policy.value(),
+                approval_policy: self.config.permissions.approval_policy.value().into(),
                 approvals_reviewer: self.config.approvals_reviewer,
                 permission_profile: permission_profile.clone(),
                 active_permission_profile: active_permission_profile.clone(),
@@ -414,6 +414,7 @@ mod tests {
             model_provider: "read-provider".to_string(),
             created_at: 1,
             updated_at: 2,
+            recency_at: Some(2),
             status: codex_app_server_protocol::ThreadStatus::Idle,
             path: None,
             cwd: test_path_buf("/tmp/read").abs(),

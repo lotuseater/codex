@@ -15,6 +15,8 @@ use codex_protocol::protocol::AdditionalContextEntry;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::MultiAgentVersion;
 use codex_protocol::protocol::Op;
+use codex_protocol::protocol::RolloutItem;
+use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::SessionConfiguredEvent;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::Submission;
@@ -33,6 +35,8 @@ use codex_thread_store_api::ThreadMetadataPatch;
 use codex_thread_store_api::ThreadStoreError;
 use codex_thread_store_api::ThreadStoreResult;
 use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_utils_path_uri::LegacyAppPathString;
+use codex_utils_path_uri::PathUri;
 use rmcp::model::ReadResourceRequestParams;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -89,6 +93,14 @@ pub struct CodexThread {
     session_configured: SessionConfiguredEvent,
     rollout_path: Option<PathBuf>,
     out_of_band_elicitation_count: Mutex<u64>,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct BackgroundTerminalInfo {
+    pub item_id: String,
+    pub process_id: String,
+    pub command: String,
+    pub cwd: PathUri,
 }
 
 /// Conduit for the bidirectional stream of messages that compose a thread
@@ -262,6 +274,13 @@ impl CodexThread {
             .await
     }
 
+    pub async fn set_openai_form_elicitation_support(&self, supported: bool) -> anyhow::Result<()> {
+        self.codex
+            .session
+            .set_openai_form_elicitation_support(supported)
+            .await
+    }
+
     /// Preview persistent thread settings overrides without committing them.
     pub async fn preview_thread_settings_overrides(
         &self,
@@ -308,6 +327,7 @@ impl CodexThread {
             service_tier,
             context_budget_mode,
             collaboration_mode,
+            multi_agent_mode,
             personality,
         } = overrides;
         let collaboration_mode = if let Some(collaboration_mode) = collaboration_mode {
@@ -341,6 +361,7 @@ impl CodexThread {
             active_permission_profile,
             windows_sandbox_level,
             collaboration_mode: Some(collaboration_mode),
+            multi_agent_mode,
             reasoning_summary: summary,
             service_tier,
             context_budget_mode,
@@ -360,6 +381,17 @@ impl CodexThread {
 
     pub async fn agent_status(&self) -> AgentStatus {
         self.codex.agent_status().await
+    }
+
+    pub async fn list_background_terminals(&self) -> Vec<BackgroundTerminalInfo> {
+        self.codex.session.list_background_terminals().await
+    }
+
+    pub async fn terminate_background_terminal(&self, process_id: i32) -> bool {
+        self.codex
+            .session
+            .terminate_background_terminal(process_id)
+            .await
     }
 
     pub(crate) fn subscribe_status(&self) -> watch::Receiver<AgentStatus> {
@@ -384,6 +416,7 @@ impl CodexThread {
             role: "user".to_string(),
             content: vec![ContentItem::InputText { text: message }],
             phase: None,
+            metadata: None,
         };
         self.codex
             .session
@@ -505,6 +538,18 @@ impl CodexThread {
         live_thread.update_metadata(patch, include_archived).await
     }
 
+    /// Appends rollout items through the live thread so derived metadata stays in sync.
+    pub async fn append_rollout_items(&self, items: &[RolloutItem]) -> ThreadStoreResult<()> {
+        let live_thread = self
+            .codex
+            .session
+            .live_thread_for_persistence("append rollout items")
+            .map_err(|err| ThreadStoreError::Internal {
+                message: err.to_string(),
+            })?;
+        live_thread.append_items(items).await
+    }
+
     pub fn state_db(&self) -> Option<StateDbHandle> {
         self.codex.state_db()
     }
@@ -514,12 +559,26 @@ impl CodexThread {
     }
 
     /// Returns the files that supplied the thread's loaded model instructions.
-    pub async fn instruction_sources(&self) -> Vec<AbsolutePathBuf> {
+    pub async fn instruction_sources(&self) -> Vec<PathUri> {
         self.codex.instruction_sources().await
+    }
+
+    /// Returns loaded instruction sources rendered as legacy app-server path strings.
+    pub async fn legacy_instruction_sources(&self) -> Vec<LegacyAppPathString> {
+        self.instruction_sources()
+            .await
+            .into_iter()
+            .map(Into::into)
+            .collect()
     }
 
     pub async fn config(&self) -> Arc<crate::config::Config> {
         self.codex.session.get_config().await
+    }
+
+    /// Resolves the MCP runtime configuration using this thread's extension data.
+    pub async fn runtime_mcp_config(&self, config: &crate::config::Config) -> codex_mcp::McpConfig {
+        self.codex.session.runtime_mcp_config(config).await
     }
 
     pub fn multi_agent_version(&self) -> Option<MultiAgentVersion> {

@@ -24,7 +24,7 @@ pub use codex_core_skills::SkillMetadata;
 pub use codex_core_skills::SkillPolicy;
 pub use codex_core_skills::SkillRenderReport;
 pub use codex_core_skills::SkillsLoadInput;
-pub use codex_core_skills::SkillsManager;
+pub use codex_core_skills::SkillsService;
 pub use codex_core_skills::build_available_skills;
 pub use codex_core_skills::build_skill_name_counts;
 pub use codex_core_skills::collect_env_var_dependencies;
@@ -37,11 +37,11 @@ pub use codex_core_skills::injection::SkillInjections;
 pub use codex_core_skills::injection::build_skill_injections;
 pub use codex_core_skills::injection::collect_explicit_skill_mentions;
 pub use codex_core_skills::loader;
-pub use codex_core_skills::manager;
 pub use codex_core_skills::model;
 pub use codex_core_skills::remote;
 pub use codex_core_skills::render;
 pub use codex_core_skills::render::SkillRenderSideEffects;
+pub use codex_core_skills::service;
 pub use codex_core_skills::system;
 
 pub type SkillDependency = SkillDependencyInfo;
@@ -141,7 +141,10 @@ async fn request_skill_dependencies(
         .request_user_input(
             turn_context,
             format!("skill-deps-{sub_id}"),
-            RequestUserInputArgs { questions },
+            RequestUserInputArgs {
+                questions,
+                auto_resolution_ms: None,
+            },
         )
         .await
         .unwrap_or_else(|| RequestUserInputResponse {
@@ -179,7 +182,7 @@ pub(crate) async fn maybe_emit_implicit_skill_invocation(
     workdir: &AbsolutePathBuf,
 ) {
     let Some(candidate) = detect_implicit_skill_invocation_for_command(
-        turn_context.turn_skills.outcome.as_ref(),
+        turn_context.turn_skills.snapshot.outcome(),
         command,
         workdir,
     ) else {

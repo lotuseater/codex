@@ -177,6 +177,9 @@ pub enum PluginListMarketplaceKind {
     #[serde(rename = "shared-with-me")]
     #[ts(rename = "shared-with-me")]
     SharedWithMe,
+    #[serde(rename = "created-by-me-remote")]
+    #[ts(rename = "created-by-me-remote")]
+    CreatedByMeRemote,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -592,6 +595,7 @@ pub struct PluginDetail {
     pub marketplace_name: String,
     pub marketplace_path: Option<AbsolutePathBuf>,
     pub summary: PluginSummary,
+    pub share_url: Option<String>,
     pub description: Option<String>,
     pub skills: Vec<SkillSummary>,
     pub hooks: Vec<PluginHookSummary>,
@@ -615,6 +619,7 @@ pub struct AppTemplateSummary {
     pub template_id: String,
     pub name: String,
     pub description: Option<String>,
+    pub category: Option<String>,
     pub canonical_connector_id: Option<String>,
     pub logo_url: Option<String>,
     pub logo_url_dark: Option<String>,

@@ -42,6 +42,8 @@ pub struct InProcessClientStartArgs {
     pub client_version: String,
     /// Whether experimental APIs are requested at initialize time.
     pub experimental_api: bool,
+    /// Whether the client advertises MCP server OpenAI form-elicitation support.
+    pub mcp_server_openai_form_elicitation: bool,
     /// Notification methods this client opts out of receiving.
     pub opt_out_notification_methods: Vec<String>,
     /// Queue capacity for command/event channels (clamped to at least 1).
@@ -61,6 +63,7 @@ impl InProcessClientStartArgs {
         let capabilities = InitializeCapabilities {
             experimental_api: self.experimental_api,
             request_attestation: false,
+            mcp_server_openai_form_elicitation: self.mcp_server_openai_form_elicitation,
             opt_out_notification_methods: if self.opt_out_notification_methods.is_empty() {
                 None
             } else {

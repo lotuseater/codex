@@ -11,6 +11,11 @@ use codex_protocol::protocol::SessionSource;
 use codex_utils_cli::CliConfigOverrides;
 use std::path::PathBuf;
 
+// Debug-only test hook: lets integration tests point the server at a temporary
+// managed config file without writing to /etc.
+const MANAGED_CONFIG_PATH_ENV_VAR: &str = "CODEX_APP_SERVER_MANAGED_CONFIG_PATH";
+const DISABLE_MANAGED_CONFIG_ENV_VAR: &str = "CODEX_APP_SERVER_DISABLE_MANAGED_CONFIG";
+
 #[derive(Debug, Parser)]
 #[command(version)]
 struct AppServerArgs {
@@ -42,54 +47,56 @@ struct AppServerArgs {
     #[arg(long = "strict-config", default_value_t = false)]
     strict_config: bool,
 
-    /// Hidden test hook used by integration tests that spawn the production
-    /// app-server binary.
+    /// Hidden debug-only test hook used by integration tests that spawn the
+    /// production app-server binary.
+    #[cfg(debug_assertions)]
     #[arg(long = "disable-plugin-startup-tasks-for-tests", hide = true)]
     disable_plugin_startup_tasks_for_tests: bool,
 
-    /// Hidden test hook used by integration tests that spawn the production
-    /// app-server binary.
-    #[arg(
-        long = "disable-managed-config-for-tests",
-        hide = true,
-        conflicts_with = "managed_config_path_for_tests"
-    )]
-    disable_managed_config_for_tests: bool,
-
-    /// Hidden test hook used by integration tests that spawn the production
-    /// app-server binary.
-    #[arg(
-        long = "managed-config-path-for-tests",
-        value_name = "PATH",
-        hide = true,
-        conflicts_with = "disable_managed_config_for_tests"
-    )]
-    managed_config_path_for_tests: Option<PathBuf>,
-
-    /// Enable remote control for this app-server process.
+    /// Enable remote control for this app-server process without changing persistence.
     #[arg(long = "remote-control", hide = true)]
     remote_control: bool,
 }
 
 fn main() -> anyhow::Result<()> {
-    arg0_dispatch_or_else(|arg0_paths: Arg0DispatchPaths| async move {
-        let args = AppServerArgs::parse();
-        let loader_overrides = loader_overrides_from_args(&args);
-        let config_overrides = args.config_overrides.clone();
-        let transport = args.listen.clone();
-        let session_source = args.session_source.clone();
-        let auth = args.auth.clone().try_into_settings()?;
+    let remote_control_disabled = codex_app_server::take_remote_control_disabled_env();
+    arg0_dispatch_or_else(move |arg0_paths: Arg0DispatchPaths| async move {
+        let AppServerArgs {
+            config_overrides,
+            listen,
+            session_source,
+            auth,
+            strict_config,
+            #[cfg(debug_assertions)]
+            disable_plugin_startup_tasks_for_tests,
+            remote_control,
+        } = AppServerArgs::parse();
+        let loader_overrides = if disable_managed_config_from_debug_env() {
+            LoaderOverrides::without_managed_config_for_tests()
+        } else {
+            managed_config_path_from_debug_env()
+                .map(LoaderOverrides::with_managed_config_path_for_tests)
+                .unwrap_or_default()
+        };
+        let transport = listen;
+        let auth = auth.try_into_settings()?;
         let mut runtime_options = AppServerRuntimeOptions::default();
-        if args.disable_plugin_startup_tasks_for_tests {
+        #[cfg(debug_assertions)]
+        if disable_plugin_startup_tasks_for_tests {
             runtime_options.plugin_startup_tasks = PluginStartupTasks::Skip;
         }
-        runtime_options.remote_control_enabled = args.remote_control;
+        runtime_options.remote_control_startup_mode =
+            match (remote_control, remote_control_disabled) {
+                (true, _) => codex_app_server::RemoteControlStartupMode::EnabledEphemeral,
+                (false, true) => codex_app_server::RemoteControlStartupMode::DisabledEphemeral,
+                (false, false) => codex_app_server::RemoteControlStartupMode::ResolvePersisted,
+            };
 
         run_main_with_transport_options(
             arg0_paths,
             config_overrides,
             loader_overrides,
-            args.strict_config,
+            strict_config,
             /*default_analytics_enabled*/ false,
             transport,
             session_source,
@@ -101,72 +108,30 @@ fn main() -> anyhow::Result<()> {
     })
 }
 
-fn loader_overrides_from_args(args: &AppServerArgs) -> LoaderOverrides {
-    if args.disable_managed_config_for_tests {
-        LoaderOverrides::without_managed_config_for_tests()
-    } else if let Some(path) = args.managed_config_path_for_tests.clone() {
-        LoaderOverrides::with_managed_config_path_for_tests(path)
-    } else {
-        LoaderOverrides::default()
+fn disable_managed_config_from_debug_env() -> bool {
+    #[cfg(debug_assertions)]
+    {
+        if let Ok(value) = std::env::var(DISABLE_MANAGED_CONFIG_ENV_VAR) {
+            return matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES");
+        }
     }
+
+    false
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use pretty_assertions::assert_eq;
-
-    #[test]
-    fn loader_overrides_default_args_use_default_loader_overrides() {
-        let args = AppServerArgs::try_parse_from(["codex-app-server"]).unwrap();
-
-        assert_eq!(
-            loader_overrides_from_args(&args),
-            LoaderOverrides::default()
-        );
+fn managed_config_path_from_debug_env() -> Option<PathBuf> {
+    #[cfg(debug_assertions)]
+    {
+        if let Ok(value) = std::env::var(MANAGED_CONFIG_PATH_ENV_VAR) {
+            return if value.is_empty() {
+                None
+            } else {
+                Some(PathBuf::from(value))
+            };
+        }
     }
 
-    #[test]
-    fn loader_overrides_disable_managed_config_arg_uses_test_overrides() {
-        let args = AppServerArgs::try_parse_from([
-            "codex-app-server",
-            "--disable-managed-config-for-tests",
-        ])
-        .unwrap();
-
-        assert_eq!(
-            loader_overrides_from_args(&args),
-            LoaderOverrides::without_managed_config_for_tests()
-        );
-    }
-
-    #[test]
-    fn loader_overrides_managed_config_path_arg_uses_explicit_path() {
-        let managed_config_path = PathBuf::from("managed_config.toml");
-        let args = AppServerArgs::try_parse_from([
-            "codex-app-server",
-            "--managed-config-path-for-tests",
-            "managed_config.toml",
-        ])
-        .unwrap();
-
-        assert_eq!(
-            loader_overrides_from_args(&args),
-            LoaderOverrides::with_managed_config_path_for_tests(managed_config_path)
-        );
-    }
-
-    #[test]
-    fn loader_overrides_managed_config_test_args_conflict() {
-        let result = AppServerArgs::try_parse_from([
-            "codex-app-server",
-            "--disable-managed-config-for-tests",
-            "--managed-config-path-for-tests",
-            "managed_config.toml",
-        ]);
-
-        assert!(result.is_err());
-    }
+    None
 }
 
 #[cfg(test)]

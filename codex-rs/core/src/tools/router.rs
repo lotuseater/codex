@@ -3,11 +3,11 @@ use crate::session::turn_context::TurnContext;
 use crate::tools::context::SharedTurnDiffTracker;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
+use crate::tools::handlers::ToolSearchHandlerCache;
 use crate::tools::registry::AnyToolResult;
 use crate::tools::registry::ToolArgumentDiffConsumer;
 use crate::tools::registry::ToolRegistry;
-use crate::tools::spec::collect_tool_router_parts;
-use crate::tools::spec_plan::build_tool_registry_builder_from_executors;
+use crate::tools::spec_plan::build_tool_router;
 use codex_extension_api::ExtensionToolExecutor;
 use codex_mcp::ToolInfo;
 use codex_protocol::dynamic_tools::DynamicToolSpec;
@@ -39,28 +39,30 @@ pub struct ToolRouter {
 pub(crate) struct ToolRouterParams<'a> {
     pub(crate) mcp_tools: Option<Vec<ToolInfo>>,
     pub(crate) deferred_mcp_tools: Option<Vec<ToolInfo>>,
-    pub(crate) discoverable_tools: Option<Vec<DiscoverableTool>>,
+    pub(crate) tool_suggest_candidates: Option<ToolSuggestCandidates>,
     pub(crate) extension_tool_executors: Vec<Arc<dyn ExtensionToolExecutor>>,
     pub(crate) dynamic_tools: &'a [DynamicToolSpec],
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ToolSuggestPresentation {
+    ListTool,
+    RecommendationContext,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ToolSuggestCandidates {
+    pub(crate) tools: Vec<DiscoverableTool>,
+    pub(crate) presentation: ToolSuggestPresentation,
+}
+
 impl ToolRouter {
-    pub fn from_turn_context(turn_context: &TurnContext, params: ToolRouterParams<'_>) -> Self {
-        let parts = collect_tool_router_parts(
-            &turn_context.tools_config,
-            params.mcp_tools,
-            params.deferred_mcp_tools,
-            params.discoverable_tools,
-            &params.extension_tool_executors,
-            params.dynamic_tools,
-        );
-        let (model_visible_specs, registry) = build_tool_registry_builder_from_executors(
-            &turn_context.tools_config,
-            parts.executors,
-            parts.hosted_specs,
-        )
-        .build();
-        Self::from_parts(registry, model_visible_specs)
+    pub(crate) fn from_turn_context(
+        turn_context: &TurnContext,
+        params: ToolRouterParams<'_>,
+        tool_search_handler_cache: &ToolSearchHandlerCache,
+    ) -> Self {
+        build_tool_router(turn_context, params, tool_search_handler_cache)
     }
 
     pub(crate) fn from_parts(registry: ToolRegistry, model_visible_specs: Vec<ToolSpec>) -> Self {
@@ -237,6 +239,7 @@ impl ToolRouter {
     }
 }
 
+#[instrument(level = "trace", skip_all)]
 pub(crate) fn extension_tool_executors(session: &Session) -> Vec<Arc<dyn ExtensionToolExecutor>> {
     session
         .services

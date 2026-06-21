@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -15,6 +16,7 @@ use crate::agent::Mailbox;
 use crate::agent::MailboxReceiver;
 use crate::agent::agent_status_from_event;
 use crate::agent::status::is_final;
+use crate::agents_md::LoadedAgentsMd;
 use crate::attestation::AttestationProvider;
 use crate::build_available_skills;
 use crate::compact;
@@ -28,18 +30,23 @@ use crate::context::AvailableSkillsInstructions;
 use crate::context::BatchMiniProgrammingInstructions;
 use crate::context::CollaborationModeInstructions;
 use crate::context::ContextualUserFragment;
+use crate::context::MultiAgentModeInstructions;
 use crate::context::NetworkRuleSaved;
 use crate::context::PermissionsInstructions;
 use crate::context::PersonalitySpecInstructions;
+use crate::context::RecommendedPluginsInstructions;
 use crate::context_reduction_adapter::compaction_reason_to_context_reduction_reason;
 use crate::context_reduction_adapter::semantic_compact_turn_input;
 use crate::context_reduction_adapter::token_context_percent_used;
+use crate::current_time::TimeProvider;
 use crate::default_skill_metadata_budget;
-use crate::environment_selection::ResolvedTurnEnvironments;
+use crate::environment_selection::TurnEnvironmentSnapshot;
 use crate::exec_policy::ExecPolicyManager;
+use crate::image_preparation::prepare_response_items;
 use crate::parse_turn_item;
 use crate::realtime_conversation::RealtimeConversationManager;
-use crate::session_prefix::format_subagent_notification_message;
+use crate::session::turn_context::TurnEnvironment;
+use crate::session_prefix::format_inter_agent_completion_message;
 use crate::skills::SkillRenderSideEffects;
 use crate::skills_load_input_from_config;
 use crate::turn_metadata::TurnMetadataState;
@@ -52,12 +59,15 @@ use codex_analytics::AnalyticsEventsClient;
 use codex_analytics::CompactionReason;
 use codex_analytics::SubAgentThreadStartedInput;
 use codex_analytics::TurnCodexErrorFact;
+use codex_config::types::AuthKeyringBackendKind;
 use codex_config::types::OAuthCredentialsStoreMode;
 use codex_exec_server::Environment;
 use codex_exec_server::EnvironmentManager;
-use codex_exec_server::FileSystemSandboxContext;
 use codex_extension_api::ExtensionDataInit;
+use codex_extension_api::LoadedUserInstructions;
+use codex_extension_api::PromptFragment;
 use codex_extension_api::PromptSlot;
+use codex_extension_api::TurnContextContributionInput;
 use codex_features::FEATURES;
 use codex_features::Feature;
 use codex_features::unstable_features_warning_message;
@@ -68,6 +78,7 @@ use codex_login::CodexAuth;
 use codex_login::auth_env_telemetry::collect_auth_env_telemetry;
 use codex_login::default_client::originator;
 use codex_mcp::McpConnectionManager;
+use codex_mcp::McpResourceClient;
 use codex_mcp::McpRuntimeContext;
 use codex_mcp::codex_apps_tools_cache_key;
 use codex_mcp_elicitation_api::McpServerElicitationRequest;
@@ -89,6 +100,7 @@ use codex_protocol::approvals::NetworkPolicyAmendment;
 use codex_protocol::approvals::NetworkPolicyRuleAction;
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::config_types::ModeKind;
+use codex_protocol::config_types::MultiAgentMode;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
 use codex_protocol::config_types::Settings;
 use codex_protocol::config_types::WebSearchMode;
@@ -185,6 +197,7 @@ use uuid::Uuid;
 
 use crate::client::ModelClient;
 use crate::codex_thread::ThreadConfigSnapshot;
+#[cfg(test)]
 use crate::compact::collect_user_messages;
 use crate::config::Config;
 use crate::config::Constrained;
@@ -197,7 +210,6 @@ use crate::thread_rollout_truncation::initial_history_has_prior_user_turns;
 use codex_config::CONFIG_TOML_FILE;
 use codex_config::types::McpServerConfig;
 use codex_model_provider_info::ModelProviderInfo;
-use codex_protocol::config_types::ShellEnvironmentPolicy;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CodexResult;
 #[cfg(test)]
@@ -219,8 +231,9 @@ mod initial_context;
 mod inject;
 mod input_queue;
 mod mcp;
-mod multi_agents;
+pub(crate) mod multi_agents;
 mod review;
+mod rollout_budget;
 mod rollout_reconstruction;
 #[allow(clippy::module_inception)]
 pub(crate) mod session;
@@ -230,6 +243,8 @@ mod session_lifecycle;
 mod session_mailbox;
 mod session_network_proxy;
 mod session_settings;
+pub(crate) mod time_reminder;
+mod token_budget;
 pub(crate) mod turn;
 pub(crate) mod turn_context;
 use self::config_lock::export_config_lock_if_configured;
@@ -240,6 +255,7 @@ pub(crate) use self::fork_features::ForkFeaturesUpdate;
 use self::handlers::submission_dispatch_span;
 use self::handlers::submission_loop;
 pub(crate) use self::input_queue::InputQueue;
+pub(crate) use self::input_queue::InputQueueActivity;
 pub(crate) use self::input_queue::TurnInput;
 pub(crate) use self::input_queue::TurnInputQueue;
 use self::review::spawn_review_thread;
@@ -272,12 +288,9 @@ use session_lifecycle::*;
 mod rollout_reconstruction_tests;
 
 #[cfg(test)]
-use crate::SkillLoadOutcome;
-#[cfg(test)]
 use crate::SkillMetadata;
-use crate::SkillsManager;
-use crate::agents_md::AgentsMdManager;
-use crate::context::UserInstructions;
+use crate::SkillsService;
+use crate::agents_md::load_project_instructions;
 use crate::exec_policy::ExecPolicyUpdateError;
 use crate::guardian::GuardianReviewSessionManager;
 use crate::mcp::McpManager;
@@ -286,7 +299,10 @@ use crate::rollout::map_session_init_error;
 use crate::session_startup_prewarm::SessionStartupPrewarmHandle;
 use crate::shell;
 use crate::shell_snapshot::ShellSnapshot;
+#[cfg(test)]
+use crate::skills::SkillLoadOutcome;
 use crate::state::ActiveTurn;
+use crate::state::AutoCompactWindowSnapshot;
 use crate::state::PendingRequestPermissions;
 use crate::state::SessionServices;
 use crate::state::SessionState;
@@ -306,7 +322,9 @@ use crate::turn_timing::record_turn_ttfm_metric;
 use crate::unified_exec::UnifiedExecProcessManager;
 use crate::windows_sandbox::WindowsSandboxLevelExt;
 use codex_core_plugins::PluginsManager;
+use codex_core_plugins::RecommendedPluginCandidatesInput;
 use codex_git_utils::get_git_repo_root;
+use codex_mcp::McpConfig;
 use codex_mcp::compute_auth_statuses;
 use codex_mcp::effective_mcp_servers_from_configured;
 use codex_mcp::host_owned_codex_apps_enabled;
@@ -317,6 +335,7 @@ use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use codex_protocol::config_types::WindowsSandboxLevel;
+use codex_protocol::models::LocalImagePreparation;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
@@ -429,6 +448,7 @@ impl Session {
     }
 
     /// Flush rollout writes and return the final durability-barrier result.
+    #[instrument(name = "session.flush_rollout", level = "trace", skip_all)]
     pub(crate) async fn flush_rollout(&self) -> std::io::Result<()> {
         if let Some(live_thread) = self.live_thread() {
             live_thread.flush().await.map_err(std::io::Error::other)
@@ -460,7 +480,7 @@ impl Session {
     pub(crate) async fn route_realtime_text_input(self: &Arc<Self>, text: String) {
         handlers::user_input_or_turn_inner(
             self,
-            self.next_internal_sub_id(),
+            Uuid::now_v7().to_string(),
             Op::UserInput {
                 items: vec![UserInput::Text {
                     text,
@@ -486,6 +506,15 @@ impl Session {
     ) {
         self.send_event(turn_context, EventMsg::TurnModerationMetadata(metadata))
             .await;
+    }
+
+    /// fork-local: upstream relocated `auto_compact_window_snapshot` onto `Session`
+    /// in their monolithic `mod.rs`; the fork's slim `mod.rs` dropped it during the
+    /// impl-split. `session/turn.rs::auto_compact_token_status` still calls it for the
+    /// `BodyAfterPrefix` scope, so keep the thin state wrapper on `Session` here.
+    pub(crate) async fn auto_compact_window_snapshot(&self) -> AutoCompactWindowSnapshot {
+        let state = self.state.lock().await;
+        state.auto_compact_window_snapshot()
     }
 
     pub(crate) fn hooks(&self) -> Arc<Hooks> {

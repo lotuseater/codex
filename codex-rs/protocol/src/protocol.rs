@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 use std::collections::HashMap;
+use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -12,7 +13,8 @@ use crate::AgentPath;
 use crate::ThreadId;
 use crate::config_types::ApprovalsReviewer;
 use crate::config_types::CollaborationMode;
-use crate::config_types::ContextBudgetMode;
+use crate::config_types::ModeKind;
+use crate::config_types::MultiAgentMode;
 use crate::config_types::Personality;
 use crate::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use crate::config_types::WindowsSandboxLevel;
@@ -23,12 +25,19 @@ use crate::models::MessagePhase;
 use crate::models::PermissionProfile;
 use crate::models::ResponseInputItem;
 use crate::models::ResponseItem;
+use crate::models::ResponseItemMetadata;
+use crate::models::SandboxEnforcement;
+use crate::models::WebSearchAction;
+use crate::num_format::format_with_separators;
 use crate::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use crate::user_input::UserInput;
+use codex_config_types::ContextBudgetMode;
 use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_utils_path_uri::PathUri;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
+use strum_macros::Display;
 use ts_rs::TS;
 
 pub use crate::approvals::ApplyPatchApprovalRequestEvent;
@@ -162,6 +171,8 @@ pub const PLUGINS_INSTRUCTIONS_OPEN_TAG: &str = "<plugins_instructions>";
 pub const PLUGINS_INSTRUCTIONS_CLOSE_TAG: &str = "</plugins_instructions>";
 pub const COLLABORATION_MODE_OPEN_TAG: &str = "<collaboration_mode>";
 pub const COLLABORATION_MODE_CLOSE_TAG: &str = "</collaboration_mode>";
+pub const MULTI_AGENT_MODE_OPEN_TAG: &str = "<multi_agent_mode>";
+pub const MULTI_AGENT_MODE_CLOSE_TAG: &str = "</multi_agent_mode>";
 pub const REALTIME_CONVERSATION_OPEN_TAG: &str = "<realtime_conversation>";
 pub const REALTIME_CONVERSATION_CLOSE_TAG: &str = "</realtime_conversation>";
 pub const USER_MESSAGE_BEGIN: &str = "## My request for Codex:";
@@ -187,19 +198,9 @@ impl TurnEnvironmentSelections {
         legacy_fallback_cwd: AbsolutePathBuf,
         environments: Vec<TurnEnvironmentSelection>,
     ) -> Self {
-        let mut settings = Self {
+        Self {
             legacy_fallback_cwd,
             environments,
-        };
-        settings.sync_primary_environment_cwd();
-        settings
-    }
-
-    fn sync_primary_environment_cwd(&mut self) {
-        if let Some(turn_environment) = self.environments.first_mut()
-            && turn_environment.cwd != self.legacy_fallback_cwd
-        {
-            turn_environment.cwd = self.legacy_fallback_cwd.clone();
         }
     }
 }
@@ -215,6 +216,21 @@ pub struct Submission {
     pub client_user_message_id: Option<String>,
     /// Optional W3C trace carrier propagated across async submission handoffs.
     pub trace: Option<W3cTraceContext>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(rename_all = "snake_case")]
+pub enum ConversationTextRole {
+    #[default]
+    User,
+    Developer,
+    Assistant,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+pub struct ConversationSpeechParams {
+    pub text: String,
 }
 
 /// Persistent thread-settings overrides that can be applied before user input or
@@ -255,6 +271,11 @@ pub struct ThreadSettingsOverrides {
     pub service_tier: Option<Option<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub collaboration_mode: Option<CollaborationMode>,
+
+    /// Updated multi-agent mode for this turn and subsequent turns.
+    pub multi_agent_mode: Option<MultiAgentMode>,
+
+    /// Updated personality preference.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub personality: Option<Personality>,
 }
@@ -291,6 +312,9 @@ pub struct InterAgentCommunication {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub encrypted_content: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub metadata: Option<ResponseItemMetadata>,
     pub trigger_turn: bool,
 }
 
@@ -308,6 +332,7 @@ impl InterAgentCommunication {
             other_recipients,
             content,
             encrypted_content: None,
+            metadata: None,
             trigger_turn,
         }
     }
@@ -325,6 +350,7 @@ impl InterAgentCommunication {
             other_recipients,
             content: String::new(),
             encrypted_content: Some(encrypted_content),
+            metadata: None,
             trigger_turn,
         }
     }
@@ -340,15 +366,35 @@ impl InterAgentCommunication {
     }
 
     pub fn to_model_input_item(&self) -> ResponseItem {
-        match &self.encrypted_content {
-            Some(encrypted_content) => ResponseItem::AgentMessage {
-                author: self.author.to_string(),
-                recipient: self.recipient.to_string(),
-                content: vec![AgentMessageInputContent::EncryptedContent {
-                    encrypted_content: encrypted_content.clone(),
-                }],
-            },
-            None => self.to_response_input_item().into(),
+        let content = match &self.encrypted_content {
+            Some(encrypted_content) => {
+                let message_type = if self.trigger_turn {
+                    "NEW_TASK"
+                } else {
+                    "MESSAGE"
+                };
+                vec![
+                    AgentMessageInputContent::InputText {
+                        text: format!(
+                            "Message Type: {message_type}\nTask name: {}\nSender: {}\nPayload:\n",
+                            self.recipient, self.author
+                        ),
+                    },
+                    AgentMessageInputContent::EncryptedContent {
+                        encrypted_content: encrypted_content.clone(),
+                    },
+                ]
+            }
+            None => vec![AgentMessageInputContent::InputText {
+                text: self.content.clone(),
+            }],
+        };
+        ResponseItem::AgentMessage {
+            id: None,
+            author: self.author.to_string(),
+            recipient: self.recipient.to_string(),
+            content,
+            metadata: self.metadata.clone(),
         }
     }
 
@@ -371,6 +417,7 @@ pub use codex_permission_types::GranularApprovalConfig;
 pub use codex_permission_types::NetworkAccess;
 pub use codex_permission_types::SandboxPolicy;
 pub use codex_permission_types::WritableRoot;
+
 /// Event Queue Entry - events from agent
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Event {
@@ -500,6 +547,8 @@ pub struct ThreadSettingsSnapshot {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub personality: Option<Personality>,
     pub collaboration_mode: CollaborationMode,
+    #[serde(default)]
+    pub multi_agent_mode: Option<MultiAgentMode>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
@@ -580,6 +629,41 @@ pub struct SpendControlLimitSnapshot {
     pub resets_at: i64,
 }
 
+// Includes prompts, tools and space to call compact.
+const BASELINE_TOKENS: i64 = 12000;
+
+fn session_cwd_from_items(items: &[RolloutItem]) -> Option<PathBuf> {
+    items.iter().find_map(|item| match item {
+        RolloutItem::SessionMeta(meta_line) => Some(meta_line.meta.cwd.clone()),
+        _ => None,
+    })
+}
+
+fn multi_agent_version_from_items(
+    items: &[RolloutItem],
+    thread_id: Option<ThreadId>,
+) -> Option<MultiAgentVersion> {
+    let session_meta_version = items.iter().rev().find_map(|item| match item {
+        RolloutItem::SessionMeta(meta_line)
+            if thread_id.is_none_or(|thread_id| meta_line.meta.id == thread_id) =>
+        {
+            meta_line.meta.multi_agent_version
+        }
+        _ => None,
+    });
+
+    session_meta_version.or_else(|| {
+        items.iter().rev().find_map(|item| match item {
+            RolloutItem::TurnContext(turn_context) => turn_context.multi_agent_version,
+            RolloutItem::SessionMeta(_)
+            | RolloutItem::ResponseItem(_)
+            | RolloutItem::InterAgentCommunication(_)
+            | RolloutItem::Compacted(_)
+            | RolloutItem::EventMsg(_) => None,
+        })
+    })
+}
+
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(rename_all = "snake_case")]
@@ -589,10 +673,20 @@ pub enum MultiAgentVersion {
     V2,
 }
 
-// fork-local: upstream-introduced sub-agent activity types. The fork's pre-merge protocol
-// split did not relocate these into a submodule, and the `EventMsg::SubAgentActivity` variant
-// (which carries `SubAgentActivityEvent`) plus the fork's many consumers depend on them, so
-// they are kept here so the upstream feature survives the merge.
+pub const MAX_THREAD_GOAL_OBJECTIVE_CHARS: usize = 4_000;
+
+pub fn validate_thread_goal_objective(value: &str) -> Result<(), String> {
+    if value.is_empty() {
+        return Err("goal objective must not be empty".to_string());
+    }
+    if value.chars().count() > MAX_THREAD_GOAL_OBJECTIVE_CHARS {
+        return Err(format!(
+            "goal objective must be at most {MAX_THREAD_GOAL_OBJECTIVE_CHARS} characters"
+        ));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(rename_all = "snake_case")]
@@ -644,6 +738,59 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn session_meta_normalizes_legacy_dynamic_tools() -> Result<()> {
+        let mut value = serde_json::to_value(SessionMeta::default())?;
+        value["dynamic_tools"] = json!([
+            {
+                "namespace": "legacy_app",
+                "name": "lookup_ticket",
+                "description": "Look up a ticket",
+                "inputSchema": {"type": "object", "properties": {}},
+                "exposeToContext": false
+            },
+            {
+                "namespace": "legacy_app",
+                "name": "update_ticket",
+                "description": "Update a ticket",
+                "inputSchema": {"type": "object", "properties": {}},
+                "deferLoading": false,
+                "exposeToContext": false
+            }
+        ]);
+
+        let meta: SessionMeta = serde_json::from_value(value)?;
+
+        assert_eq!(
+            meta.dynamic_tools,
+            Some(vec![DynamicToolSpec::Namespace(
+                crate::dynamic_tools::DynamicToolNamespaceSpec {
+                    name: "legacy_app".to_string(),
+                    description: String::new(),
+                    tools: vec![
+                        crate::dynamic_tools::DynamicToolNamespaceTool::Function(
+                            crate::dynamic_tools::DynamicToolFunctionSpec {
+                                name: "lookup_ticket".to_string(),
+                                description: "Look up a ticket".to_string(),
+                                input_schema: json!({"type": "object", "properties": {}}),
+                                defer_loading: true,
+                            },
+                        ),
+                        crate::dynamic_tools::DynamicToolNamespaceTool::Function(
+                            crate::dynamic_tools::DynamicToolFunctionSpec {
+                                name: "update_ticket".to_string(),
+                                description: "Update a ticket".to_string(),
+                                input_schema: json!({"type": "object", "properties": {}}),
+                                defer_loading: false,
+                            },
+                        ),
+                    ],
+                },
+            )])
+        );
+        Ok(())
+    }
+
     fn sorted_writable_roots(roots: Vec<WritableRoot>) -> Vec<(PathBuf, Vec<PathBuf>)> {
         let mut sorted_roots: Vec<(PathBuf, Vec<PathBuf>)> = roots
             .into_iter()
@@ -684,6 +831,7 @@ mod tests {
             other_recipients: vec![AgentPath::root().join("worker").expect("recipient path")],
             content: "review the diff".to_string(),
             encrypted_content: None,
+            metadata: None,
             trigger_turn: true,
         };
 
@@ -697,6 +845,123 @@ mod tests {
                 phase: Some(MessagePhase::Commentary),
             }
         );
+    }
+
+    #[test]
+    fn queued_encrypted_inter_agent_communication_renders_message_envelope() {
+        let communication = InterAgentCommunication::new_encrypted(
+            AgentPath::root().join("worker").expect("author path"),
+            AgentPath::root(),
+            Vec::new(),
+            "encrypted payload".to_string(),
+            /*trigger_turn*/ false,
+        );
+
+        assert_eq!(
+            communication.to_model_input_item(),
+            ResponseItem::AgentMessage {
+                id: None,
+                author: "/root/worker".to_string(),
+                recipient: "/root".to_string(),
+                content: vec![
+                    AgentMessageInputContent::InputText {
+                        text: "Message Type: MESSAGE\nTask name: /root\nSender: /root/worker\nPayload:\n"
+                            .to_string(),
+                    },
+                    AgentMessageInputContent::EncryptedContent {
+                        encrypted_content: "encrypted payload".to_string(),
+                    },
+                ],
+                metadata: None,
+            }
+        );
+    }
+
+    #[test]
+    fn session_source_from_startup_arg_normalizes_custom_values() {
+        assert_eq!(
+            SessionSource::from_startup_arg("atlas").unwrap(),
+            SessionSource::Custom("atlas".to_string())
+        );
+        assert_eq!(
+            SessionSource::from_startup_arg(" Atlas ").unwrap(),
+            SessionSource::Custom("atlas".to_string())
+        );
+    }
+
+    #[test]
+    fn session_source_restriction_product_defaults_non_subagent_sources_to_codex() {
+        assert_eq!(
+            SessionSource::Cli.restriction_product(),
+            Some(Product::Codex)
+        );
+        assert_eq!(
+            SessionSource::VSCode.restriction_product(),
+            Some(Product::Codex)
+        );
+        assert_eq!(
+            SessionSource::Exec.restriction_product(),
+            Some(Product::Codex)
+        );
+        assert_eq!(
+            SessionSource::Mcp.restriction_product(),
+            Some(Product::Codex)
+        );
+        assert_eq!(
+            SessionSource::Unknown.restriction_product(),
+            Some(Product::Codex)
+        );
+    }
+
+    #[test]
+    fn session_source_restriction_product_does_not_guess_subagent_products() {
+        assert_eq!(
+            SessionSource::SubAgent(SubAgentSource::Review).restriction_product(),
+            None
+        );
+        assert_eq!(
+            SessionSource::Internal(InternalSessionSource::MemoryConsolidation)
+                .restriction_product(),
+            None
+        );
+    }
+
+    #[test]
+    fn session_source_restriction_product_maps_custom_sources_to_products() {
+        assert_eq!(
+            SessionSource::Custom("chatgpt".to_string()).restriction_product(),
+            Some(Product::Chatgpt)
+        );
+        assert_eq!(
+            SessionSource::Custom("ATLAS".to_string()).restriction_product(),
+            Some(Product::Atlas)
+        );
+        assert_eq!(
+            SessionSource::Custom("codex".to_string()).restriction_product(),
+            Some(Product::Codex)
+        );
+        assert_eq!(
+            SessionSource::Custom("atlas-dev".to_string()).restriction_product(),
+            None
+        );
+    }
+
+    #[test]
+    fn session_source_matches_product_restriction() {
+        assert!(
+            SessionSource::Custom("chatgpt".to_string())
+                .matches_product_restriction(&[Product::Chatgpt])
+        );
+        assert!(
+            !SessionSource::Custom("chatgpt".to_string())
+                .matches_product_restriction(&[Product::Codex])
+        );
+        assert!(SessionSource::VSCode.matches_product_restriction(&[Product::Codex]));
+        assert!(
+            !SessionSource::Custom("atlas-dev".to_string())
+                .matches_product_restriction(&[Product::Atlas])
+        );
+        assert!(SessionSource::Custom("atlas-dev".to_string()).matches_product_restriction(&[]));
     }
 
     fn sandbox_policy_probe_paths(policy: &SandboxPolicy, cwd: &Path) -> Vec<PathBuf> {
@@ -1134,6 +1399,292 @@ mod tests {
     }
 
     #[test]
+    fn item_started_event_from_web_search_emits_begin_event() {
+        let event = ItemStartedEvent {
+            thread_id: ThreadId::new(),
+            turn_id: "turn-1".into(),
+            item: TurnItem::WebSearch(WebSearchItem {
+                id: "search-1".into(),
+                query: "find docs".into(),
+                action: WebSearchAction::Search {
+                    query: Some("find docs".into()),
+                    queries: None,
+                },
+            }),
+            started_at_ms: 0,
+        };
+
+        let legacy_events = event.as_legacy_events(/*show_raw_agent_reasoning*/ false);
+        assert_eq!(legacy_events.len(), 1);
+        match &legacy_events[0] {
+            EventMsg::WebSearchBegin(event) => assert_eq!(event.call_id, "search-1"),
+            _ => panic!("expected WebSearchBegin event"),
+        }
+    }
+
+    #[test]
+    fn item_started_event_from_non_web_search_emits_no_legacy_events() {
+        let event = ItemStartedEvent {
+            thread_id: ThreadId::new(),
+            turn_id: "turn-1".into(),
+            item: TurnItem::UserMessage(UserMessageItem::new(&[])),
+            started_at_ms: 0,
+        };
+
+        assert!(
+            event
+                .as_legacy_events(/*show_raw_agent_reasoning*/ false)
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn item_started_event_from_image_generation_emits_begin_event() {
+        let event = ItemStartedEvent {
+            thread_id: ThreadId::new(),
+            turn_id: "turn-1".into(),
+            item: TurnItem::ImageGeneration(ImageGenerationItem {
+                id: "ig-1".into(),
+                status: "in_progress".into(),
+                revised_prompt: None,
+                result: String::new(),
+                saved_path: None,
+            }),
+            started_at_ms: 0,
+        };
+
+        let legacy_events = event.as_legacy_events(/*show_raw_agent_reasoning*/ false);
+        assert_eq!(legacy_events.len(), 1);
+        match &legacy_events[0] {
+            EventMsg::ImageGenerationBegin(event) => assert_eq!(event.call_id, "ig-1"),
+            _ => panic!("expected ImageGenerationBegin event"),
+        }
+    }
+
+    #[test]
+    fn item_started_event_from_file_change_emits_patch_begin_event() {
+        let event = ItemStartedEvent {
+            thread_id: ThreadId::new(),
+            turn_id: "turn-1".into(),
+            started_at_ms: 0,
+            item: TurnItem::FileChange(FileChangeItem {
+                id: "patch-1".into(),
+                changes: [(
+                    PathBuf::from("new.txt"),
+                    FileChange::Add {
+                        content: "hello".into(),
+                    },
+                )]
+                .into_iter()
+                .collect(),
+                status: None,
+                auto_approved: Some(true),
+                stdout: None,
+                stderr: None,
+            }),
+        };
+
+        let legacy_events = event.as_legacy_events(/*show_raw_agent_reasoning*/ false);
+        assert_eq!(legacy_events.len(), 1);
+        match &legacy_events[0] {
+            EventMsg::PatchApplyBegin(event) => {
+                assert_eq!(event.call_id, "patch-1");
+                assert_eq!(event.turn_id, "turn-1");
+                assert!(event.auto_approved);
+                assert!(event.changes.contains_key(&PathBuf::from("new.txt")));
+            }
+            _ => panic!("expected PatchApplyBegin event"),
+        }
+    }
+
+    #[test]
+    fn item_started_event_from_mcp_tool_call_emits_begin_event() {
+        let event = ItemStartedEvent {
+            thread_id: ThreadId::new(),
+            turn_id: "turn-1".into(),
+            started_at_ms: 0,
+            item: TurnItem::McpToolCall(McpToolCallItem {
+                id: "mcp-1".into(),
+                server: "server".into(),
+                tool: "tool".into(),
+                arguments: json!({"arg": "value"}),
+                connector_id: Some("connector".into()),
+                mcp_app_resource_uri: Some("app://connector".into()),
+                link_id: Some("link_123".into()),
+                plugin_id: Some("sample@test".into()),
+                status: McpToolCallStatus::InProgress,
+                result: None,
+                error: None,
+                duration: None,
+            }),
+        };
+
+        let legacy_events = event.as_legacy_events(/*show_raw_agent_reasoning*/ false);
+        assert_eq!(legacy_events.len(), 1);
+        match &legacy_events[0] {
+            EventMsg::McpToolCallBegin(event) => {
+                assert_eq!(event.call_id, "mcp-1");
+                assert_eq!(event.invocation.server, "server");
+                assert_eq!(event.invocation.tool, "tool");
+                assert_eq!(event.connector_id.as_deref(), Some("connector"));
+                assert_eq!(
+                    event.mcp_app_resource_uri.as_deref(),
+                    Some("app://connector")
+                );
+                assert_eq!(event.link_id.as_deref(), Some("link_123"));
+                assert_eq!(event.plugin_id.as_deref(), Some("sample@test"));
+            }
+            _ => panic!("expected McpToolCallBegin event"),
+        }
+    }
+
+    #[test]
+    fn item_completed_event_from_image_generation_emits_end_event() {
+        let event = ItemCompletedEvent {
+            thread_id: ThreadId::new(),
+            turn_id: "turn-1".into(),
+            item: TurnItem::ImageGeneration(ImageGenerationItem {
+                id: "ig-1".into(),
+                status: "completed".into(),
+                revised_prompt: Some("A tiny blue square".into()),
+                result: "Zm9v".into(),
+                saved_path: Some(test_path_buf("/tmp/ig-1.png").abs()),
+            }),
+            completed_at_ms: 0,
+        };
+
+        let legacy_events = event.as_legacy_events(/*show_raw_agent_reasoning*/ false);
+        assert_eq!(legacy_events.len(), 1);
+        match &legacy_events[0] {
+            EventMsg::ImageGenerationEnd(event) => {
+                assert_eq!(event.call_id, "ig-1");
+                assert_eq!(event.status, "completed");
+                assert_eq!(event.revised_prompt.as_deref(), Some("A tiny blue square"));
+                assert_eq!(event.result, "Zm9v");
+                assert_eq!(
+                    event.saved_path.as_ref().map(AbsolutePathBuf::as_path),
+                    Some(test_path_buf("/tmp/ig-1.png").as_path())
+                );
+            }
+            _ => panic!("expected ImageGenerationEnd event"),
+        }
+    }
+
+    #[test]
+    fn item_completed_event_from_file_change_emits_patch_end_event() {
+        let event = ItemCompletedEvent {
+            thread_id: ThreadId::new(),
+            turn_id: "turn-1".into(),
+            completed_at_ms: 0,
+            item: TurnItem::FileChange(FileChangeItem {
+                id: "patch-1".into(),
+                changes: [(
+                    PathBuf::from("new.txt"),
+                    FileChange::Add {
+                        content: "hello".into(),
+                    },
+                )]
+                .into_iter()
+                .collect(),
+                status: Some(PatchApplyStatus::Completed),
+                auto_approved: None,
+                stdout: Some("Done!".into()),
+                stderr: Some(String::new()),
+            }),
+        };
+
+        let legacy_events = event.as_legacy_events(/*show_raw_agent_reasoning*/ false);
+        assert_eq!(legacy_events.len(), 1);
+        match &legacy_events[0] {
+            EventMsg::PatchApplyEnd(event) => {
+                assert_eq!(event.call_id, "patch-1");
+                assert_eq!(event.turn_id, "turn-1");
+                assert_eq!(event.stdout, "Done!");
+                assert!(event.success);
+                assert_eq!(event.status, PatchApplyStatus::Completed);
+                assert!(event.changes.contains_key(&PathBuf::from("new.txt")));
+            }
+            _ => panic!("expected PatchApplyEnd event"),
+        }
+    }
+
+    #[test]
+    fn item_completed_event_from_mcp_tool_call_emits_end_event() {
+        let event = ItemCompletedEvent {
+            thread_id: ThreadId::new(),
+            turn_id: "turn-1".into(),
+            completed_at_ms: 0,
+            item: TurnItem::McpToolCall(McpToolCallItem {
+                id: "mcp-1".into(),
+                server: "server".into(),
+                tool: "tool".into(),
+                arguments: json!({"arg": "value"}),
+                connector_id: Some("connector".into()),
+                mcp_app_resource_uri: Some("app://connector".into()),
+                link_id: Some("link_123".into()),
+                plugin_id: Some("sample@test".into()),
+                status: McpToolCallStatus::Completed,
+                result: Some(CallToolResult {
+                    content: vec![json!({"type": "text", "text": "ok"})],
+                    structured_content: None,
+                    is_error: Some(false),
+                    meta: None,
+                }),
+                error: None,
+                duration: Some(Duration::from_millis(42)),
+            }),
+        };
+
+        let legacy_events = event.as_legacy_events(/*show_raw_agent_reasoning*/ false);
+        assert_eq!(legacy_events.len(), 1);
+        match &legacy_events[0] {
+            EventMsg::McpToolCallEnd(event) => {
+                assert_eq!(event.call_id, "mcp-1");
+                assert_eq!(event.invocation.server, "server");
+                assert_eq!(event.invocation.tool, "tool");
+                assert_eq!(event.connector_id.as_deref(), Some("connector"));
+                assert_eq!(
+                    event.mcp_app_resource_uri.as_deref(),
+                    Some("app://connector")
+                );
+                assert_eq!(event.link_id.as_deref(), Some("link_123"));
+                assert_eq!(event.plugin_id.as_deref(), Some("sample@test"));
+                assert_eq!(event.duration, Duration::from_millis(42));
+                assert!(event.is_success());
+            }
+            _ => panic!("expected McpToolCallEnd event"),
+        }
+    }
+
+    #[test]
+    fn item_started_event_requires_started_at_ms() {
+        let mut value = serde_json::to_value(ItemStartedEvent {
+            thread_id: ThreadId::new(),
+            turn_id: "turn-1".into(),
+            item: TurnItem::UserMessage(UserMessageItem::new(&[])),
+            started_at_ms: 123,
+        })
+        .unwrap();
+        value.as_object_mut().unwrap().remove("started_at_ms");
+
+        assert!(serde_json::from_value::<ItemStartedEvent>(value).is_err());
+    }
+
+    #[test]
+    fn item_completed_event_defaults_missing_completed_at_ms() {
+        let mut value = serde_json::to_value(ItemCompletedEvent {
+            thread_id: ThreadId::new(),
+            turn_id: "turn-1".into(),
+            item: TurnItem::UserMessage(UserMessageItem::new(&[])),
+            completed_at_ms: 123,
+        })
+        .unwrap();
+        value.as_object_mut().unwrap().remove("completed_at_ms");
+
+        let event = serde_json::from_value::<ItemCompletedEvent>(value).unwrap();
+        assert_eq!(event.completed_at_ms, 0);
+    }
+    #[test]
     fn rollback_failed_error_does_not_affect_turn_status() {
         let event = ErrorEvent {
             message: "rollback failed".into(),
@@ -1371,6 +1922,7 @@ mod tests {
     #[test]
     fn user_message_event_serializes_empty_metadata_vectors() -> Result<()> {
         let event = UserMessageEvent {
+            client_id: None,
             message: "hello".to_string(),
             images: None,
             image_details: Vec::new(),
@@ -1484,6 +2036,7 @@ mod tests {
         assert_eq!(item.trace_id, None);
         assert_eq!(item.network, None);
         assert_eq!(item.file_system_sandbox_policy, None);
+        assert_eq!(item.comp_hash, None);
         Ok(())
     }
 
@@ -1521,11 +2074,36 @@ mod tests {
     }
 
     #[test]
+    fn latest_effective_multi_agent_mode_uses_latest_turn_context_even_when_unset() -> Result<()> {
+        let turn_context_item = |multi_agent_mode| -> Result<RolloutItem> {
+            let mut value = json!({
+                "cwd": test_path_buf("/tmp"),
+                "approval_policy": "never",
+                "sandbox_policy": { "type": "danger-full-access" },
+                "model": "gpt-5",
+                "summary": "auto",
+            });
+            value["multi_agent_mode"] = serde_json::to_value(multi_agent_mode)?;
+            Ok(RolloutItem::TurnContext(serde_json::from_value(value)?))
+        };
+
+        assert_eq!(
+            InitialHistory::Forked(vec![
+                turn_context_item(Some(MultiAgentMode::Proactive))?,
+                turn_context_item(/*multi_agent_mode*/ None)?,
+            ])
+            .get_latest_effective_multi_agent_mode(),
+            None
+        );
+        Ok(())
+    }
+
+    #[test]
     fn turn_context_item_serializes_network_when_present() -> Result<()> {
         let item = TurnContextItem {
             turn_id: None,
             trace_id: None,
-            cwd: test_path_buf("/tmp"),
+            cwd: test_path_buf("/tmp").abs(),
             workspace_roots: None,
             current_date: None,
             timezone: None,
@@ -1545,9 +2123,11 @@ mod tests {
                 },
             ])),
             model: "gpt-5".to_string(),
+            comp_hash: None,
             personality: None,
             collaboration_mode: None,
             multi_agent_version: None,
+            multi_agent_mode: None,
             realtime_active: None,
             effort: None,
             summary: ReasoningSummaryConfig::Auto,

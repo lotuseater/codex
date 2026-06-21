@@ -178,6 +178,7 @@ pub struct DiscoverablePluginInfo {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
+    pub remote_plugin_id: Option<String>,
     pub has_skills: bool,
     pub mcp_server_names: Vec<String>,
     pub app_connector_ids: Vec<String>,
@@ -229,6 +230,9 @@ pub enum ToolExposure {
     /// In code-mode-only sessions, this keeps the tool callable as a normal
     /// model tool while excluding it from the nested code-mode tool surface.
     DirectModelOnly,
+
+    /// Keep this tool registered for dispatch without exposing it to the model.
+    Hidden,
 }
 
 impl ToolExposure {
@@ -341,6 +345,8 @@ pub enum ToolSpec {
     WebSearch {
         #[serde(skip_serializing_if = "Option::is_none")]
         external_web_access: Option<bool>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        index_gated_web_access: Option<bool>,
         #[serde(skip_serializing_if = "Option::is_none")]
         filters: Option<ResponsesApiWebSearchFilters>,
         #[serde(skip_serializing_if = "Option::is_none")]

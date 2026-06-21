@@ -378,7 +378,9 @@ fn short_tool_output_bundle(
                     })
                     .count();
             }
-            ResponseItem::FunctionCallOutput { call_id, output }
+            ResponseItem::FunctionCallOutput {
+                call_id, output, ..
+            }
             | ResponseItem::CustomToolCallOutput {
                 call_id, output, ..
             } => {
@@ -1371,7 +1373,9 @@ fn text_function_outputs(items: &[ResponseItem]) -> Vec<(usize, &str, &str)> {
                     })
                     .count();
             }
-            ResponseItem::FunctionCallOutput { call_id, output }
+            ResponseItem::FunctionCallOutput {
+                call_id, output, ..
+            }
             | ResponseItem::CustomToolCallOutput {
                 call_id, output, ..
             } => {

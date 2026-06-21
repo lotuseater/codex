@@ -95,20 +95,27 @@ pub struct AgentMessageEvent {
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, TS)]
 pub struct UserMessageEvent {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
     pub message: String,
     /// Image URLs sourced from `UserInput::Image`. These are safe
     /// to replay in legacy UI history events and correspond to images sent to
     /// the model.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub images: Option<Vec<String>>,
-    #[serde(default)]
+    /// Detail hints for `images`, indexed in parallel. Missing entries imply
+    /// default image detail behavior.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub image_details: Vec<Option<ImageDetail>>,
     /// Local file paths sourced from `UserInput::LocalImage`. These are kept so
-    /// the UI can reattach images when editing history, and should not be sent
-    /// to the model or treated as API-ready URLs.
+    /// the UI can reattach images when editing history. Local image prompts may
+    /// include a display form of the path, but these should not be treated as
+    /// API-ready URLs.
     #[serde(default)]
     pub local_images: Vec<std::path::PathBuf>,
-    #[serde(default)]
+    /// Detail hints for `local_images`, indexed in parallel. Missing entries
+    /// imply default image detail behavior.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub local_image_details: Vec<Option<ImageDetail>>,
     /// UI-defined spans within `message` used to render or persist special elements.
     #[serde(default)]

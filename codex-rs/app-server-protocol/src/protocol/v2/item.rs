@@ -32,12 +32,14 @@ use codex_protocol::protocol::PatchApplyStatus as CorePatchApplyStatus;
 use codex_protocol::protocol::ReviewDecision as CoreReviewDecision;
 use codex_protocol::protocol::SubAgentActivityKind as CoreSubAgentActivityKind;
 use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_utils_path_uri::LegacyAppPathString;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use serde_with::serde_as;
 use std::collections::HashMap;
+use std::io;
 use std::path::PathBuf;
 use ts_rs::TS;
 
@@ -256,7 +258,7 @@ pub enum ThreadItem {
         /// The command to be executed.
         command: String,
         /// The command's working directory.
-        cwd: AbsolutePathBuf,
+        cwd: LegacyAppPathString,
         /// Identifier for the underlying PTY process (when available).
         process_id: Option<String>,
         #[serde(default)]
@@ -289,8 +291,10 @@ pub enum ThreadItem {
         tool: String,
         status: McpToolCallStatus,
         arguments: JsonValue,
+        app_context: Option<McpToolCallAppContext>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
+        /// Deprecated: use `appContext.resourceUri` instead.
         mcp_app_resource_uri: Option<String>,
         plugin_id: Option<String>,
         result: Option<Box<McpToolCallResult>>,
@@ -356,6 +360,13 @@ pub enum ThreadItem {
     ImageView { id: String, path: AbsolutePathBuf },
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
+    Sleep {
+        id: String,
+        #[ts(type = "number")]
+        duration_ms: u64,
+    },
+    #[serde(rename_all = "camelCase")]
+    #[ts(rename_all = "camelCase")]
     ImageGeneration {
         id: String,
         status: String,
@@ -385,6 +396,15 @@ pub enum ThreadItem {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename_all = "camelCase", export_to = "v2/")]
+pub struct McpToolCallAppContext {
+    pub connector_id: String,
+    pub link_id: Option<String>,
+    pub resource_uri: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "v2/")]
 pub struct HookPromptFragment {
     pub text: String,
     pub hook_run_id: String,
@@ -406,6 +426,7 @@ impl ThreadItem {
             | ThreadItem::SubAgentActivity { id, .. }
             | ThreadItem::WebSearch { id, .. }
             | ThreadItem::ImageView { id, .. }
+            | ThreadItem::Sleep { id, .. }
             | ThreadItem::ImageGeneration { id, .. }
             | ThreadItem::EnteredReviewMode { id, .. }
             | ThreadItem::ExitedReviewMode { id, .. }
@@ -694,9 +715,11 @@ impl From<CoreGuardianAssessmentAction> for GuardianApprovalReviewAction {
     }
 }
 
-impl From<GuardianApprovalReviewAction> for CoreGuardianAssessmentAction {
-    fn from(value: GuardianApprovalReviewAction) -> Self {
-        match value {
+impl TryFrom<GuardianApprovalReviewAction> for CoreGuardianAssessmentAction {
+    type Error = io::Error;
+
+    fn try_from(value: GuardianApprovalReviewAction) -> Result<Self, Self::Error> {
+        Ok(match value {
             GuardianApprovalReviewAction::Command {
                 source,
                 command,
@@ -751,7 +774,7 @@ impl From<GuardianApprovalReviewAction> for CoreGuardianAssessmentAction {
                 reason,
                 permissions: permissions.into(),
             },
-        }
+        })
     }
 }
 
@@ -841,6 +864,10 @@ impl From<CoreTurnItem> for ThreadItem {
                 id: image.id,
                 path: image.path,
             },
+            CoreTurnItem::Sleep(sleep) => ThreadItem::Sleep {
+                id: sleep.id,
+                duration_ms: sleep.duration_ms,
+            },
             CoreTurnItem::ImageGeneration(image) => ThreadItem::ImageGeneration {
                 id: image.id,
                 status: image.status,
@@ -868,6 +895,11 @@ impl From<CoreTurnItem> for ThreadItem {
                     tool: mcp.tool,
                     status: McpToolCallStatus::from(mcp.status),
                     arguments: mcp.arguments,
+                    app_context: mcp.connector_id.map(|connector_id| McpToolCallAppContext {
+                        connector_id,
+                        link_id: mcp.link_id,
+                        resource_uri: mcp.mcp_app_resource_uri.clone(),
+                    }),
                     mcp_app_resource_uri: mcp.mcp_app_resource_uri,
                     plugin_id: mcp.plugin_id,
                     result: mcp.result.map(McpToolCallResult::from).map(Box::new),
@@ -1315,6 +1347,9 @@ pub struct CommandExecutionRequestApprovalParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional = nullable)]
     pub approval_id: Option<String>,
+    /// Environment in which the command will run.
+    #[serde(default)]
+    pub environment_id: Option<String>,
     /// Optional explanatory reason (e.g. request for network access).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional = nullable)]
@@ -1330,7 +1365,7 @@ pub struct CommandExecutionRequestApprovalParams {
     /// The command's working directory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional = nullable)]
-    pub cwd: Option<AbsolutePathBuf>,
+    pub cwd: Option<LegacyAppPathString>,
     /// Best-effort parsed command actions for friendly display.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional = nullable)]
@@ -1473,6 +1508,9 @@ pub struct ToolRequestUserInputParams {
     pub turn_id: String,
     pub item_id: String,
     pub questions: Vec<ToolRequestUserInputQuestion>,
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub auto_resolution_ms: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]

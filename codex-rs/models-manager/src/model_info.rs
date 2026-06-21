@@ -1,4 +1,4 @@
-use codex_protocol::config_types::ContextBudgetMode;
+use codex_config_types::ContextBudgetMode;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::openai_models::ConfigShellToolType;
 use codex_protocol::openai_models::ModelInfo;
@@ -142,6 +142,7 @@ pub fn model_info_from_slug(slug: &str) -> ModelInfo {
         context_window: Some(272_000),
         max_context_window: Some(272_000),
         auto_compact_token_limit: None,
+        comp_hash: None,
         effective_context_window_percent: 95,
         experimental_supported_tools: Vec::new(),
         input_modalities: default_input_modalities(),

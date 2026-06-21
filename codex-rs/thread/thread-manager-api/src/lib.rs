@@ -6,10 +6,11 @@
 use std::future::Future;
 use std::pin::Pin;
 
+use codex_config_types::ContextBudgetMode;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::config_types::CollaborationMode;
-use codex_protocol::config_types::ContextBudgetMode;
+use codex_protocol::config_types::MultiAgentMode;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::config_types::WindowsSandboxLevel;
@@ -47,6 +48,7 @@ pub struct ThreadConfigSnapshot {
     pub reasoning_summary: Option<ReasoningSummary>,
     pub personality: Option<Personality>,
     pub collaboration_mode: CollaborationMode,
+    pub multi_agent_mode: Option<MultiAgentMode>,
     pub session_source: SessionSource,
     pub thread_source: Option<ThreadSource>,
 }
@@ -78,6 +80,7 @@ pub struct CodexThreadSettingsOverrides {
     pub service_tier: Option<Option<String>>,
     pub context_budget_mode: Option<ContextBudgetMode>,
     pub collaboration_mode: Option<CollaborationMode>,
+    pub multi_agent_mode: Option<MultiAgentMode>,
     pub personality: Option<Personality>,
 }
 

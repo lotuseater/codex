@@ -7,11 +7,11 @@ use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
 
+use codex_config_types::ContextBudgetMode;
 use codex_utils_absolute_path::AbsolutePathBuf;
 
 use crate::config_types::ApprovalsReviewer;
 use crate::config_types::CollaborationMode;
-use crate::config_types::ContextBudgetMode;
 use crate::config_types::Personality;
 use crate::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use crate::config_types::WindowsSandboxLevel;
@@ -48,6 +48,9 @@ pub enum Op {
 
     /// Send text input to the running realtime conversation stream.
     RealtimeConversationText(ConversationTextParams),
+
+    /// Append speakable text to the running realtime conversation stream.
+    RealtimeConversationSpeech(ConversationSpeechParams),
 
     /// Close the running realtime conversation stream.
     RealtimeConversationClose,
@@ -451,6 +454,7 @@ impl Op {
             Self::RealtimeConversationStart(_) => "realtime_conversation_start",
             Self::RealtimeConversationAudio(_) => "realtime_conversation_audio",
             Self::RealtimeConversationText(_) => "realtime_conversation_text",
+            Self::RealtimeConversationSpeech(_) => "realtime_conversation_speech",
             Self::RealtimeConversationClose => "realtime_conversation_close",
             Self::RealtimeConversationListVoices => "realtime_conversation_list_voices",
             Self::UserInput { .. } => "user_input",

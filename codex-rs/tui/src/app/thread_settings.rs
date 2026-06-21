@@ -177,7 +177,7 @@ fn apply_thread_settings_to_session(session: &mut ThreadSessionState, settings: 
     }
     session.model_provider_id = settings.model_provider.clone();
     session.service_tier = settings.service_tier.clone();
-    session.approval_policy = settings.approval_policy.to_core();
+    session.approval_policy = settings.approval_policy;
     session.approvals_reviewer = settings.approvals_reviewer.to_core();
     session.permission_profile = PermissionProfile::from_legacy_sandbox_policy_for_cwd(
         &settings.sandbox_policy.to_core(),

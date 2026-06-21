@@ -130,6 +130,7 @@ async fn handle_spawn_agent(
             fork_mode: args.fork_context.then_some(SpawnAgentForkMode::FullHistory),
             parent_thread_id: Some(session.thread_id),
             environments: Some(turn.environments.to_selections()),
+            initial_multi_agent_mode: None,
         },
     ))
     .await
@@ -198,7 +199,7 @@ async fn handle_spawn_agent(
     turn.session_telemetry.counter(
         "codex.multi_agent.spawn",
         /*inc*/ 1,
-        &[("role", role_tag)],
+        &[("role", role_tag), ("version", "v1")],
     );
 
     Ok(SpawnAgentResult {

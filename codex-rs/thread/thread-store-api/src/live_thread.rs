@@ -16,7 +16,7 @@ use crate::ThreadStoreError;
 use crate::ThreadStoreResult;
 
 /// Boxed future returned by object-safe thread-store API traits.
-pub type ThreadStoreFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+pub(crate) type ThreadStoreFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Persistence services required by thread manager implementations.
 ///

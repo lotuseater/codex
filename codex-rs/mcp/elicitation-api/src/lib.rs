@@ -31,6 +31,13 @@ pub enum McpServerElicitationRequest {
         message: String,
         requested_schema: McpElicitationSchema,
     },
+    #[serde(rename = "openai/form", rename_all = "camelCase")]
+    OpenAiForm {
+        #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
+        meta: Option<JsonValue>,
+        message: String,
+        requested_schema: JsonValue,
+    },
     #[serde(rename_all = "camelCase")]
     Url {
         #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]

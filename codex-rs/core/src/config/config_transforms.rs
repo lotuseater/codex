@@ -24,18 +24,62 @@ impl Config {
         )
     }
 
+    /// Applies managed MCP requirements to servers supplied by one plugin.
+    ///
+    /// Mirrors the per-plugin filtering performed inline in [`Self::to_mcp_config`]
+    /// so external contributors (e.g. the MCP executor-plugin extension) can apply
+    /// the same requirement gating to plugin-contributed servers.
+    pub fn apply_plugin_mcp_server_requirements(
+        &self,
+        plugin_id: &str,
+        mcp_servers: &mut HashMap<String, McpServerConfig>,
+    ) {
+        filter_plugin_mcp_servers_by_requirements(
+            plugin_id,
+            mcp_servers,
+            self.config_layer_stack.requirements().plugins.as_ref(),
+        );
+        // A present empty allowlist bans configurable MCPs, including
+        // plugin-contributed servers.
+        let empty_mcp_allowlist = self
+            .config_layer_stack
+            .requirements()
+            .mcp_servers
+            .as_ref()
+            .filter(|requirements| requirements.value.is_empty());
+        filter_mcp_servers_by_requirements(mcp_servers, empty_mcp_allowlist);
+    }
+
     pub async fn to_mcp_config(
         &self,
         plugins_manager: &codex_core_plugins::PluginsManager,
     ) -> McpConfig {
         let plugins_input = self.plugins_config_input();
         let loaded_plugins = plugins_manager.plugins_for_config(&plugins_input).await;
+
+        // A present empty allowlist bans configurable MCPs, including config-file
+        // and plugin-contributed servers. Apply it to both sets before they are
+        // registered into the resolved catalog so the ban is preserved.
+        let empty_mcp_allowlist = self
+            .config_layer_stack
+            .requirements()
+            .mcp_servers
+            .as_ref()
+            .filter(|requirements| requirements.value.is_empty());
+
+        let mut catalog = ResolvedMcpCatalog::builder();
+
         let mut configured_mcp_servers = self.mcp_servers.get().clone();
-        let mut plugin_ids_by_mcp_server_name = HashMap::new();
-        for plugin in loaded_plugins
+        filter_mcp_servers_by_requirements(&mut configured_mcp_servers, empty_mcp_allowlist);
+        for (name, server) in configured_mcp_servers {
+            catalog.register(McpServerRegistration::from_config(name, server));
+        }
+
+        for (plugin_order, plugin) in loaded_plugins
             .plugins()
             .iter()
             .filter(|plugin| plugin.is_active())
+            .enumerate()
         {
             let mut plugin_mcp_servers = plugin.mcp_servers.clone();
             filter_plugin_mcp_servers_by_requirements(
@@ -43,29 +87,27 @@ impl Config {
                 &mut plugin_mcp_servers,
                 self.config_layer_stack.requirements().plugins.as_ref(),
             );
+            filter_mcp_servers_by_requirements(&mut plugin_mcp_servers, empty_mcp_allowlist);
+            let attribution = McpPluginAttribution::new(
+                plugin.config_name.clone(),
+                plugin.display_name().to_string(),
+            );
             for (name, plugin_server) in plugin_mcp_servers {
-                if let std::collections::hash_map::Entry::Vacant(entry) =
-                    configured_mcp_servers.entry(name.clone())
-                {
-                    entry.insert(plugin_server);
-                    plugin_ids_by_mcp_server_name.insert(name, plugin.config_name.clone());
-                }
+                catalog.register(McpServerRegistration::from_plugin(
+                    name,
+                    attribution.clone(),
+                    plugin_order,
+                    plugin_server,
+                ));
             }
-        }
-        if let Some(mcp_requirements) = self.config_layer_stack.requirements().mcp_servers.as_ref()
-            && mcp_requirements.value.is_empty()
-        {
-            // A present empty allowlist bans configurable MCPs, including plugin MCPs merged
-            // above.
-            filter_mcp_servers_by_requirements(&mut configured_mcp_servers, Some(mcp_requirements));
         }
 
         McpConfig {
             chatgpt_base_url: self.chatgpt_base_url.clone(),
-            apps_mcp_path_override: self.apps_mcp_path_override.clone(),
             apps_mcp_product_sku: self.apps_mcp_product_sku.clone(),
             codex_home: self.codex_home.to_path_buf(),
             mcp_oauth_credentials_store_mode: self.mcp_oauth_credentials_store_mode,
+            auth_keyring_backend_kind: self.auth_keyring_backend_kind(),
             mcp_oauth_callback_port: self.mcp_oauth_callback_port,
             mcp_oauth_callback_url: self.mcp_oauth_callback_url.clone(),
             skill_mcp_dependency_install_enabled: self
@@ -75,9 +117,6 @@ impl Config {
             codex_linux_sandbox_exe: self.codex_linux_sandbox_exe.clone(),
             use_legacy_landlock: self.features.use_legacy_landlock(),
             apps_enabled: self.features.enabled(Feature::Apps),
-            // Legacy host-owned Apps MCP loader defaults on; the runtime overlay
-            // disables it when a host extension contributes the server instead.
-            legacy_apps_mcp_loader_enabled: true,
             prefix_mcp_tool_names: self.prefix_mcp_tool_names(),
             client_elicitation_capability: if self.features.enabled(Feature::AuthElicitation) {
                 ElicitationCapability {
@@ -89,8 +128,7 @@ impl Config {
                 // indicates this should be an empty object.
                 ElicitationCapability::default()
             },
-            configured_mcp_servers,
-            plugin_ids_by_mcp_server_name,
+            mcp_server_catalog: catalog.build(),
             plugin_capability_summaries: loaded_plugins.capability_summaries().to_vec(),
         }
     }

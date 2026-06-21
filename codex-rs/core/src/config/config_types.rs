@@ -50,6 +50,9 @@ pub struct MultiAgentV2Config {
     pub plan_token_economy_delegation_k: usize,
     pub hide_spawn_agent_metadata: bool,
     pub non_code_mode_only: bool,
+    /// Optional namespace under which multi-agent v2 spawn tools are exposed
+    /// when namespace tools are enabled. `None` exposes them un-namespaced.
+    pub tool_namespace: Option<String>,
 }
 
 pub fn default_multi_agent_v2_root_usage_hint_text() -> String {
@@ -87,6 +90,40 @@ impl Default for MultiAgentV2Config {
                 crate::agent::policy::DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K,
             hide_spawn_agent_metadata: false,
             non_code_mode_only: false,
+            tool_namespace: None,
+        }
+    }
+}
+
+/// Resolved shared rollout token-budget configuration.
+///
+/// This is the resolved counterpart of [`codex_features::RolloutBudgetConfigToml`]:
+/// the fork keeps resolved config types (`crate::config::*`) separate from the raw
+/// TOML feature types (`codex_features::*Toml`). Resolution lives in
+/// [`super::resolved::resolve_rollout_budget_config`].
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct RolloutBudgetConfig {
+    pub limit_tokens: i64,
+    pub reminder_interval_tokens: i64,
+    pub sampling_token_weight: f64,
+    pub prefill_token_weight: f64,
+}
+
+/// Resolved current-time reminder configuration.
+///
+/// Resolved counterpart of [`codex_features::CurrentTimeReminderConfigToml`].
+/// Resolution lives in [`super::resolved::resolve_current_time_reminder_config`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct CurrentTimeReminderConfig {
+    pub reminder_interval_model_requests: u64,
+    pub clock_source: CurrentTimeSource,
+}
+
+impl Default for CurrentTimeReminderConfig {
+    fn default() -> Self {
+        Self {
+            reminder_interval_model_requests: 1,
+            clock_source: CurrentTimeSource::System,
         }
     }
 }

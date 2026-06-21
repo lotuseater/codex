@@ -32,11 +32,13 @@ pub enum SlashCommand {
     AutoReview,
     Memories,
     Skills,
+    Import,
     Hooks,
     Review,
     Rename,
     New,
     Archive,
+    Delete,
     Resume,
     Fork,
     App,
@@ -53,6 +55,7 @@ pub enum SlashCommand {
     Diff,
     Mention,
     Status,
+    Usage,
     DebugConfig,
     Title,
     Statusline,
@@ -97,6 +100,7 @@ impl SlashCommand {
             SlashCommand::Resume => "resume a saved chat",
             SlashCommand::Archive => "archive this session and exit",
             SlashCommand::Loop => "configure automatic idle continuation",
+            SlashCommand::Delete => "permanently delete this session and exit",
             SlashCommand::Clear => "clear the terminal and start a new chat",
             SlashCommand::Fork => "fork the current chat",
             SlashCommand::App => "continue this session in Codex Desktop",
@@ -106,8 +110,10 @@ impl SlashCommand {
             SlashCommand::Diff => "show git diff (including untracked files)",
             SlashCommand::Mention => "mention a file",
             SlashCommand::Skills => "use skills to improve how Codex performs specific tasks",
+            SlashCommand::Import => "import setup, this project, and recent chats from Claude Code",
             SlashCommand::Hooks => "view and manage lifecycle hooks",
             SlashCommand::Status => "show current session configuration and token usage",
+            SlashCommand::Usage => "view account usage or use a rate-limit reset",
             SlashCommand::DebugConfig => "show config layers and requirement sources for debugging",
             SlashCommand::Title => "configure which items appear in the terminal title",
             SlashCommand::Statusline => "configure which items appear in the status line",
@@ -189,6 +195,7 @@ impl SlashCommand {
                 | SlashCommand::Keymap
                 | SlashCommand::Mcp
                 | SlashCommand::Raw
+                | SlashCommand::Usage
                 | SlashCommand::Pets
                 | SlashCommand::Side
                 | SlashCommand::Loop
@@ -207,6 +214,7 @@ impl SlashCommand {
                 | SlashCommand::Diff
                 | SlashCommand::Mention
                 | SlashCommand::Status
+                | SlashCommand::Usage
                 | SlashCommand::Ide
         )
     }
@@ -216,6 +224,7 @@ impl SlashCommand {
         match self {
             SlashCommand::New
             | SlashCommand::Archive
+            | SlashCommand::Delete
             | SlashCommand::Resume
             | SlashCommand::Fork
             | SlashCommand::Init
@@ -235,6 +244,7 @@ impl SlashCommand {
             | SlashCommand::SandboxReadRoot
             | SlashCommand::Experimental
             | SlashCommand::Memories
+            | SlashCommand::Import
             | SlashCommand::Review
             | SlashCommand::Plan
             | SlashCommand::Clear
@@ -249,6 +259,7 @@ impl SlashCommand {
             | SlashCommand::Skills
             | SlashCommand::Hooks
             | SlashCommand::Status
+            | SlashCommand::Usage
             | SlashCommand::DebugConfig
             | SlashCommand::Ps
             | SlashCommand::Stop

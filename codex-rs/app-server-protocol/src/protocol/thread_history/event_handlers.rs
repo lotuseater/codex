@@ -90,7 +90,10 @@ impl ThreadHistoryBuilder {
         });
     }
 
-    pub(crate) fn handle_agent_reasoning_raw_content(&mut self, payload: &AgentReasoningRawContentEvent) {
+    pub(crate) fn handle_agent_reasoning_raw_content(
+        &mut self,
+        payload: &AgentReasoningRawContentEvent,
+    ) {
         if payload.text.is_empty() {
             return;
         }
@@ -130,7 +133,8 @@ impl ThreadHistoryBuilder {
             | codex_protocol::items::TurnItem::ImageGeneration(_)
             | codex_protocol::items::TurnItem::FileChange(_)
             | codex_protocol::items::TurnItem::McpToolCall(_)
-            | codex_protocol::items::TurnItem::ContextCompaction(_) => {}
+            | codex_protocol::items::TurnItem::ContextCompaction(_)
+            | codex_protocol::items::TurnItem::Sleep(_) => {}
         }
     }
 
@@ -154,7 +158,8 @@ impl ThreadHistoryBuilder {
             | codex_protocol::items::TurnItem::ImageGeneration(_)
             | codex_protocol::items::TurnItem::FileChange(_)
             | codex_protocol::items::TurnItem::McpToolCall(_)
-            | codex_protocol::items::TurnItem::ContextCompaction(_) => {}
+            | codex_protocol::items::TurnItem::ContextCompaction(_)
+            | codex_protocol::items::TurnItem::Sleep(_) => {}
         }
     }
 
@@ -210,7 +215,10 @@ impl ThreadHistoryBuilder {
         }
     }
 
-    pub(crate) fn handle_apply_patch_approval_request(&mut self, payload: &ApplyPatchApprovalRequestEvent) {
+    pub(crate) fn handle_apply_patch_approval_request(
+        &mut self,
+        payload: &ApplyPatchApprovalRequestEvent,
+    ) {
         let item = build_file_change_approval_request_item(payload);
         if payload.turn_id.is_empty() {
             self.upsert_item_in_current_turn(item);
@@ -258,7 +266,10 @@ impl ThreadHistoryBuilder {
         }
     }
 
-    pub(crate) fn handle_dynamic_tool_call_response(&mut self, payload: &DynamicToolCallResponseEvent) {
+    pub(crate) fn handle_dynamic_tool_call_response(
+        &mut self,
+        payload: &DynamicToolCallResponseEvent,
+    ) {
         let status = if payload.success {
             DynamicToolCallStatus::Completed
         } else {
@@ -293,6 +304,14 @@ impl ThreadHistoryBuilder {
                 .arguments
                 .clone()
                 .unwrap_or(serde_json::Value::Null),
+            app_context: payload
+                .connector_id
+                .clone()
+                .map(|connector_id| McpToolCallAppContext {
+                    connector_id,
+                    link_id: payload.link_id.clone(),
+                    resource_uri: payload.mcp_app_resource_uri.clone(),
+                }),
             mcp_app_resource_uri: payload.mcp_app_resource_uri.clone(),
             plugin_id: payload.plugin_id.clone(),
             result: None,
@@ -335,6 +354,14 @@ impl ThreadHistoryBuilder {
                 .arguments
                 .clone()
                 .unwrap_or(serde_json::Value::Null),
+            app_context: payload
+                .connector_id
+                .clone()
+                .map(|connector_id| McpToolCallAppContext {
+                    connector_id,
+                    link_id: payload.link_id.clone(),
+                    resource_uri: payload.mcp_app_resource_uri.clone(),
+                }),
             mcp_app_resource_uri: payload.mcp_app_resource_uri.clone(),
             plugin_id: payload.plugin_id.clone(),
             result,
@@ -541,7 +568,10 @@ impl ThreadHistoryBuilder {
         self.upsert_item_in_current_turn(item);
     }
 
-    pub(crate) fn handle_collab_close_end(&mut self, payload: &codex_protocol::protocol::CollabCloseEndEvent) {
+    pub(crate) fn handle_collab_close_end(
+        &mut self,
+        payload: &codex_protocol::protocol::CollabCloseEndEvent,
+    ) {
         let status = match &payload.status {
             AgentStatus::Errored(_) | AgentStatus::NotFound => CollabAgentToolCallStatus::Failed,
             _ => CollabAgentToolCallStatus::Completed,
@@ -711,7 +741,10 @@ impl ThreadHistoryBuilder {
             .push(ThreadItem::ContextCompaction { id });
     }
 
-    pub(crate) fn handle_entered_review_mode(&mut self, payload: &codex_protocol::protocol::ReviewRequest) {
+    pub(crate) fn handle_entered_review_mode(
+        &mut self,
+        payload: &codex_protocol::protocol::ReviewRequest,
+    ) {
         let review = payload
             .user_facing_hint
             .clone()

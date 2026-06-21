@@ -55,6 +55,8 @@ pub fn create_spawn_agent_tool_v1(options: SpawnAgentToolOptions) -> ToolSpec {
 }
 
 pub fn create_spawn_agent_tool_v2(options: SpawnAgentToolOptions) -> ToolSpec {
+    // fork-local: the v2 spawn-agent spec body lives in `codex_tool_registry_api`
+    // (agent_tool.rs); the helpers upstream inlines here were moved there.
     codex_tool_registry_api::create_spawn_agent_tool_v2(options.as_tool_options())
 }
 

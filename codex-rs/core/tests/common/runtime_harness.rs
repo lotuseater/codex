@@ -170,6 +170,7 @@ pub async fn submit_thread_settings(
         summary,
         service_tier,
         collaboration_mode,
+        multi_agent_mode,
         personality,
     } = thread_settings;
 
@@ -194,6 +195,7 @@ pub async fn submit_thread_settings(
             service_tier,
             context_budget_mode: None,
             collaboration_mode,
+            multi_agent_mode,
             personality,
         })
         .await?;

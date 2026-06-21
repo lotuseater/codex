@@ -1,6 +1,6 @@
 use crate::ModelsManagerConfig;
 use crate::manager::ModelsManager;
-use codex_protocol::config_types::ContextBudgetMode;
+use codex_config_types::ContextBudgetMode;
 use codex_protocol::openai_models::TruncationPolicyConfig;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;

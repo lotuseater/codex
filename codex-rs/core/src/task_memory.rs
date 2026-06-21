@@ -23,6 +23,7 @@ impl BuiltTaskMemory {
                 text: self.0.render(),
             }],
             phase: None,
+            metadata: None,
         }
     }
 }

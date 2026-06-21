@@ -23,16 +23,14 @@ pub(crate) fn app_info_to_v2(value: catalog::AppInfo) -> protocol::AppInfo {
     }
 }
 
-pub(crate) fn app_summary_from_catalog(
-    value: catalog::AppInfo,
-    needs_auth: bool,
-) -> protocol::AppSummary {
+pub(crate) fn app_summary_from_catalog(value: catalog::AppInfo) -> protocol::AppSummary {
+    let category = value.category();
     protocol::AppSummary {
         id: value.id,
         name: value.name,
         description: value.description,
         install_url: value.install_url,
-        needs_auth,
+        category,
     }
 }
 

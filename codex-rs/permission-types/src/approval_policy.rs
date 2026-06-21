@@ -133,12 +133,12 @@ mod tests {
     #[test]
     fn never_rejects_all_gates() {
         for gate in [
-                ApprovalGate::Sandbox,
-                ApprovalGate::PolicyRule,
-                ApprovalGate::SkillApproval,
-                ApprovalGate::RequestPermissions,
-                ApprovalGate::McpElicitation,
-            ] {
+            ApprovalGate::Sandbox,
+            ApprovalGate::PolicyRule,
+            ApprovalGate::SkillApproval,
+            ApprovalGate::RequestPermissions,
+            ApprovalGate::McpElicitation,
+        ] {
             assert_eq!(
                 AskForApproval::Never.rejection_for_gate(gate),
                 Some(ApprovalPolicyRejection::ApprovalPolicyNever)
@@ -223,9 +223,7 @@ mod tests {
         );
         assert_eq!(
             rules_disabled.exec_prompt_rejection_reason(ApprovalGate::PolicyRule),
-            Some(
-                "approval required by policy rule, but AskForApproval::Granular.rules is false"
-            )
+            Some("approval required by policy rule, but AskForApproval::Granular.rules is false")
         );
         assert_eq!(
             rules_disabled.exec_prompt_rejection_reason(ApprovalGate::RequestPermissions),

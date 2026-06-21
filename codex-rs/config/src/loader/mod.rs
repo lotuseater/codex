@@ -40,6 +40,7 @@ use codex_file_system::ExecutorFileSystem;
 use codex_permission_types::AskForApproval;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::AbsolutePathBufGuard;
+use codex_utils_path_uri::PathUri;
 use dunce::canonicalize as normalize_path;
 use serde::Deserialize;
 use std::ffi::OsStr;
@@ -68,6 +69,7 @@ const PROJECT_LOCAL_CONFIG_DENYLIST: &[&str] = &[
     "notify",
     "profile",
     "profiles",
+    "experimental_realtime_webrtc_call_base_url",
     "experimental_realtime_ws_base_url",
     "otel",
 ];
@@ -464,7 +466,8 @@ async fn load_config_toml_for_required_layer(
     strict_config: bool,
     create_entry: impl FnOnce(TomlValue) -> ConfigLayerEntry,
 ) -> io::Result<ConfigLayerEntry> {
-    let toml_value = match fs.read_file_text(toml_file, /*sandbox*/ None).await {
+    let toml_file_uri = PathUri::from_abs_path(toml_file);
+    let toml_value = match fs.read_file_text(&toml_file_uri, /*sandbox*/ None).await {
         Ok(contents) => {
             let config_parent = toml_file.as_path().parent().ok_or_else(|| {
                 io::Error::new(
@@ -559,8 +562,9 @@ pub async fn load_requirements_toml(
     fs: &dyn ExecutorFileSystem,
     requirements_toml_file: &AbsolutePathBuf,
 ) -> io::Result<Option<RequirementsLayerEntry>> {
+    let requirements_toml_file_uri = PathUri::from_abs_path(requirements_toml_file);
     match fs
-        .read_file_text(requirements_toml_file, /*sandbox*/ None)
+        .read_file_text(&requirements_toml_file_uri, /*sandbox*/ None)
         .await
     {
         Ok(contents) => {
@@ -939,6 +943,11 @@ fn sanitize_project_config(config: &mut TomlValue) -> Vec<String> {
             ignored_keys.push((*key).to_string());
         }
     }
+    if let Some(features) = table.get_mut("features").and_then(TomlValue::as_table_mut)
+        && features.remove("respect_system_proxy").is_some()
+    {
+        ignored_keys.push("features.respect_system_proxy".to_string());
+    }
 
     ignored_keys
 }
@@ -1133,8 +1142,9 @@ async fn find_project_root(
     for ancestor in cwd.ancestors() {
         for marker in project_root_markers {
             let marker_path = ancestor.join(marker);
+            let marker_path_uri = PathUri::from_abs_path(&marker_path);
             if fs
-                .get_metadata(&marker_path, /*sandbox*/ None)
+                .get_metadata(&marker_path_uri, /*sandbox*/ None)
                 .await
                 .is_ok()
             {
@@ -1149,14 +1159,20 @@ async fn find_git_checkout_root(
     fs: &dyn ExecutorFileSystem,
     cwd: &AbsolutePathBuf,
 ) -> Option<AbsolutePathBuf> {
-    let base = match fs.get_metadata(cwd, /*sandbox*/ None).await {
+    let cwd_uri = PathUri::from_abs_path(cwd);
+    let base = match fs.get_metadata(&cwd_uri, /*sandbox*/ None).await {
         Ok(metadata) if metadata.is_directory => cwd.clone(),
         _ => cwd.parent()?,
     };
 
     for dir in base.ancestors() {
         let dot_git = dir.join(".git");
-        if fs.get_metadata(&dot_git, /*sandbox*/ None).await.is_ok() {
+        let dot_git_uri = PathUri::from_abs_path(&dot_git);
+        if fs
+            .get_metadata(&dot_git_uri, /*sandbox*/ None)
+            .await
+            .is_ok()
+        {
             return Some(dir);
         }
     }
@@ -1167,13 +1183,15 @@ async fn resolve_root_git_project_for_trust(
     fs: &dyn ExecutorFileSystem,
     cwd: &AbsolutePathBuf,
 ) -> Option<AbsolutePathBuf> {
-    let base = match fs.get_metadata(cwd, /*sandbox*/ None).await {
+    let cwd_uri = PathUri::from_abs_path(cwd);
+    let base = match fs.get_metadata(&cwd_uri, /*sandbox*/ None).await {
         Ok(metadata) if metadata.is_directory => cwd.clone(),
         _ => cwd.parent()?,
     };
     let (repo_root, dot_git) = find_ancestor_git_entry_with_fs(fs, &base).await?;
+    let dot_git_uri = PathUri::from_abs_path(&dot_git);
     if fs
-        .get_metadata(&dot_git, /*sandbox*/ None)
+        .get_metadata(&dot_git_uri, /*sandbox*/ None)
         .await
         .ok()?
         .is_directory
@@ -1181,7 +1199,10 @@ async fn resolve_root_git_project_for_trust(
         return Some(repo_root);
     }
 
-    let git_dir_s = fs.read_file_text(&dot_git, /*sandbox*/ None).await.ok()?;
+    let git_dir_s = fs
+        .read_file_text(&dot_git_uri, /*sandbox*/ None)
+        .await
+        .ok()?;
     let git_dir_rel = git_dir_s.trim().strip_prefix("gitdir:")?.trim();
     if git_dir_rel.is_empty() {
         return None;
@@ -1203,7 +1224,12 @@ async fn find_ancestor_git_entry_with_fs(
 ) -> Option<(AbsolutePathBuf, AbsolutePathBuf)> {
     for dir in base_dir.ancestors() {
         let dot_git = dir.join(".git");
-        if fs.get_metadata(&dot_git, /*sandbox*/ None).await.is_ok() {
+        let dot_git_uri = PathUri::from_abs_path(&dot_git);
+        if fs
+            .get_metadata(&dot_git_uri, /*sandbox*/ None)
+            .await
+            .is_ok()
+        {
             return Some((dir, dot_git));
         }
     }
@@ -1251,8 +1277,9 @@ async fn load_project_layers(
     let mut startup_warnings = Vec::new();
     for dir in dirs {
         let dot_codex_abs = dir.join(".codex");
+        let dot_codex_uri = PathUri::from_abs_path(&dot_codex_abs);
         if !fs
-            .get_metadata(&dot_codex_abs, /*sandbox*/ None)
+            .get_metadata(&dot_codex_uri, /*sandbox*/ None)
             .await
             .map(|metadata| metadata.is_directory)
             .unwrap_or(false)
@@ -1269,7 +1296,8 @@ async fn load_project_layers(
             continue;
         }
         let config_file = dot_codex_abs.join(CONFIG_TOML_FILE);
-        match fs.read_file_text(&config_file, /*sandbox*/ None).await {
+        let config_file_uri = PathUri::from_abs_path(&config_file);
+        match fs.read_file_text(&config_file_uri, /*sandbox*/ None).await {
             Ok(contents) => {
                 let config: TomlValue = match toml::from_str(&contents) {
                     Ok(config) => config,
@@ -1372,8 +1400,9 @@ async fn merge_root_checkout_project_hooks(
         return Ok(config);
     };
     let hooks_config_file = hooks_config_folder.join(CONFIG_TOML_FILE);
+    let hooks_config_file_uri = PathUri::from_abs_path(&hooks_config_file);
     let root_config = match fs
-        .read_file_text(&hooks_config_file, /*sandbox*/ None)
+        .read_file_text(&hooks_config_file_uri, /*sandbox*/ None)
         .await
     {
         Ok(contents) => {

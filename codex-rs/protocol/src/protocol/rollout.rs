@@ -9,6 +9,7 @@ use ts_rs::TS;
 
 use crate::ThreadId;
 use crate::config_types::CollaborationMode;
+use crate::config_types::MultiAgentMode;
 use crate::config_types::Personality;
 use crate::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use crate::dynamic_tools::DynamicToolSpec;
@@ -19,6 +20,7 @@ use crate::models::ResponseItem;
 use crate::models::SandboxEnforcement;
 use crate::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use codex_git_types::GitSha;
+use codex_utils_absolute_path::AbsolutePathBuf;
 
 use super::*;
 
@@ -160,6 +162,22 @@ impl InitialHistory {
         }
     }
 
+    /// Returns the `multi_agent_mode` carried by the most recent `TurnContext`
+    /// item in this history. Mirrors `get_multi_agent_version` but reads the
+    /// per-turn multi-agent mode: the latest turn context wins, even when it
+    /// explicitly unsets the mode (in which case `None` is returned).
+    pub fn get_latest_effective_multi_agent_mode(&self) -> Option<MultiAgentMode> {
+        let items: &[RolloutItem] = match self {
+            InitialHistory::New | InitialHistory::Cleared => return None,
+            InitialHistory::Resumed(resumed) => &resumed.history,
+            InitialHistory::Forked(items) => items,
+        };
+        items.iter().rev().find_map(|item| match item {
+            RolloutItem::TurnContext(turn_context) => Some(turn_context.multi_agent_mode),
+            _ => None,
+        })?
+    }
+
     pub fn get_resumed_parent_thread_id(&self) -> Option<ThreadId> {
         self.get_resumed_session_meta()
             .and_then(|meta| meta.parent_thread_id)
@@ -196,6 +214,7 @@ fn multi_agent_version_from_items(
             RolloutItem::TurnContext(turn_context) => turn_context.multi_agent_version,
             RolloutItem::SessionMeta(_)
             | RolloutItem::ResponseItem(_)
+            | RolloutItem::InterAgentCommunication(_)
             | RolloutItem::Compacted(_)
             | RolloutItem::EventMsg(_) => None,
         })
@@ -244,7 +263,11 @@ pub struct SessionMeta {
     /// but may be missing for older sessions. If not present, fall back to rendering the base_instructions
     /// from ModelsManager.
     pub base_instructions: Option<BaseInstructions>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "crate::dynamic_tools::deserialize_dynamic_tool_specs",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub dynamic_tools: Option<Vec<DynamicToolSpec>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub memory_mode: Option<String>,
@@ -289,16 +312,26 @@ pub struct SessionMetaLine {
 pub enum RolloutItem {
     SessionMeta(SessionMetaLine),
     ResponseItem(ResponseItem),
+    /// Durable delivery metadata reconstructed as a model-visible `agent_message`.
+    InterAgentCommunication(InterAgentCommunication),
     Compacted(CompactedItem),
     TurnContext(TurnContextItem),
     EventMsg(EventMsg),
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, TS)]
+// `Deserialize` is implemented manually in `crate::compacted_item` to migrate the legacy
+// shape where the window number was serialized as `window_id`; do not add it to this derive.
+#[derive(Serialize, Clone, Debug, PartialEq, JsonSchema, TS)]
 pub struct CompactedItem {
     pub message: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replacement_history: Option<Vec<ResponseItem>>,
+    /// Monotonic position of this context window within the thread.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_number: Option<u64>,
+    /// UUIDv7 identity of this context window.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_id: Option<String>,
 }
 
 impl From<CompactedItem> for ResponseItem {
@@ -310,6 +343,7 @@ impl From<CompactedItem> for ResponseItem {
                 text: value.message,
             }],
             phase: None,
+            metadata: None,
         }
     }
 }
@@ -328,9 +362,14 @@ pub struct TurnContextNetworkItem {
 pub struct TurnContextItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn_id: Option<String>,
+    // fork-local: per-turn trace identifier for distributed tracing
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trace_id: Option<String>,
-    pub cwd: PathBuf,
+    pub cwd: AbsolutePathBuf,
+    /// Effective workspace roots used to materialize symbolic
+    /// `:workspace_roots` filesystem permissions in `permission_profile`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_roots: Option<Vec<AbsolutePathBuf>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_date: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -344,10 +383,14 @@ pub struct TurnContextItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file_system_sandbox_policy: Option<FileSystemSandboxPolicy>,
     pub model: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comp_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub personality: Option<Personality>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub collaboration_mode: Option<CollaborationMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub multi_agent_mode: Option<MultiAgentMode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub realtime_active: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]

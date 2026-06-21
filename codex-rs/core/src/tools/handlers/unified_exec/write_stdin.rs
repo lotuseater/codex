@@ -46,6 +46,15 @@ impl ToolExecutor<ToolInvocation> for WriteStdinHandler {
         &self,
         invocation: ToolInvocation,
     ) -> Result<Box<dyn crate::tools::context::ToolOutput>, FunctionCallError> {
+        self.handle_call(invocation).await
+    }
+}
+
+impl WriteStdinHandler {
+    async fn handle_call(
+        &self,
+        invocation: ToolInvocation,
+    ) -> Result<Box<dyn crate::tools::context::ToolOutput>, FunctionCallError> {
         let ToolInvocation {
             session,
             turn,
@@ -71,7 +80,7 @@ impl ToolExecutor<ToolInvocation> for WriteStdinHandler {
                 input: &args.chars,
                 yield_time_ms: args.yield_time_ms,
                 max_output_tokens: args.max_output_tokens,
-                truncation_policy: turn.truncation_policy,
+                truncation_policy: turn.model_info.truncation_policy.into(),
             })
             .await
             .map_err(|err| {

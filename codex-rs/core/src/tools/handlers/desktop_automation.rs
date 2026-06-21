@@ -50,7 +50,7 @@ impl ToolExecutor<ToolInvocation> for DesktopAutomationHandler {
             }
         };
         let input: Value = parse_arguments(arguments)?;
-        let cwd = invocation
+        let cwd_buf = invocation
             .turn
             .environments
             .primary()
@@ -59,9 +59,9 @@ impl ToolExecutor<ToolInvocation> for DesktopAutomationHandler {
                     "desktop automation requires a selected turn environment".to_string(),
                 )
             })?
-            .cwd
-            .as_path();
-        let result = execute_tool(invocation.tool_name.name.as_str(), input, cwd)
+            .cwd()
+            .to_path_buf();
+        let result = execute_tool(invocation.tool_name.name.as_str(), input, cwd_buf.as_path())
             .await
             .map_err(|err| FunctionCallError::RespondToModel(err.to_string()))?;
 

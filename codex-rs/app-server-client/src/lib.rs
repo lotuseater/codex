@@ -19,6 +19,7 @@ mod bootstrap;
 mod errors;
 pub mod legacy_core;
 mod notifications;
+mod path;
 mod remote;
 mod request_method;
 
@@ -27,6 +28,7 @@ use std::fmt;
 use std::io::Error as IoError;
 use std::io::ErrorKind;
 use std::io::Result as IoResult;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -53,11 +55,16 @@ use codex_config::CloudConfigBundleLoader;
 use codex_config::LoaderOverrides;
 use codex_config::NoopThreadConfigLoader;
 use codex_config::ThreadConfigLoader;
+use codex_config::config_toml::ConfigToml;
 use codex_core::config::Config;
+pub use codex_core::otel_init::build_provider as build_otel_provider;
+use codex_core::personality_migration::PersonalityMigrationStatus;
+use codex_core::personality_migration::maybe_migrate_personality;
 pub use codex_exec_server::EnvironmentManager;
 pub use codex_exec_server::ExecServerRuntimePaths;
 use codex_feedback::CodexFeedback;
 use codex_thread_config_remote::RemoteThreadConfigLoader;
+use codex_utils_absolute_path::AbsolutePathBuf;
 use serde::de::DeserializeOwned;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
@@ -69,6 +76,7 @@ pub use crate::bootstrap::InProcessClientStartArgs;
 pub use crate::errors::RequestResult;
 pub use crate::errors::TypedRequestError;
 pub use crate::notifications::AppServerEvent;
+pub use crate::path::AppServerPath;
 pub use crate::remote::RemoteAppServerClient;
 pub use crate::remote::RemoteAppServerConnectArgs;
 pub use crate::remote::RemoteAppServerEndpoint;
@@ -78,6 +86,22 @@ pub(crate) use request_method::request_method_name;
 
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Runs the embedded app-server personality migration.
+///
+/// Returns `true` when the migration changed config and the caller should reload it.
+pub async fn migrate_personality_if_needed(
+    codex_home: &Path,
+    config_toml: &ConfigToml,
+    thread_store: std::sync::Arc<dyn codex_thread_store_api::ThreadStore>,
+) -> IoResult<bool> {
+    let status = maybe_migrate_personality(codex_home, config_toml, thread_store).await?;
+    match status {
+        PersonalityMigrationStatus::Applied => Ok(true),
+        PersonalityMigrationStatus::SkippedMarker
+        | PersonalityMigrationStatus::SkippedExplicitPersonality
+        | PersonalityMigrationStatus::SkippedNoSessions => Ok(false),
+    }
+}
 /// Internal command sent from public facade methods to the worker task.
 ///
 /// Each variant carries a oneshot sender so the caller can `await` the
@@ -392,6 +416,15 @@ impl AppServerRequestHandle {
 }
 
 impl AppServerClient {
+    pub fn codex_home(&self, local_codex_home: &AbsolutePathBuf) -> Option<AppServerPath> {
+        match self {
+            Self::InProcess(_) => Some(AppServerPath::from_app_server(
+                local_codex_home.display().to_string(),
+            )),
+            Self::Remote(client) => client.codex_home().map(AppServerPath::from_app_server),
+        }
+    }
+
     pub async fn request(&self, request: ClientRequest) -> IoResult<RequestResult> {
         match self {
             Self::InProcess(client) => client.request(request).await,
@@ -556,6 +589,7 @@ mod tests {
             client_name: "codex-app-server-client-test".to_string(),
             client_version: "0.0.0-test".to_string(),
             experimental_api: true,
+            mcp_server_openai_form_elicitation: false,
             opt_out_notification_methods: Vec::new(),
             channel_capacity,
         })
@@ -634,6 +668,7 @@ mod tests {
                 id: request.id,
                 result: serde_json::json!({
                     "userAgent": "codex_cli_rs/9.8.7-test (Test OS; x86_64) rust",
+                    "codexHome": "/server/.codex",
                 }),
             }),
         )
@@ -701,9 +736,23 @@ mod tests {
             client_name: "codex-app-server-client-test".to_string(),
             client_version: "0.0.0-test".to_string(),
             experimental_api: true,
+            mcp_server_openai_form_elicitation: false,
             opt_out_notification_methods: Vec::new(),
             channel_capacity: 8,
         }
+    }
+
+    #[test]
+    fn remote_initialize_params_forward_openai_form_capability() {
+        let mut args = test_remote_connect_args("ws://localhost/rpc".to_string());
+        args.mcp_server_openai_form_elicitation = true;
+
+        assert!(
+            args.initialize_params()
+                .capabilities
+                .expect("initialize capabilities")
+                .mcp_server_openai_form_elicitation
+        );
     }
 
     #[tokio::test]
@@ -835,6 +884,7 @@ mod tests {
             .expect("remote client should connect");
 
         assert_eq!(client.server_version(), Some("9.8.7-test"));
+        assert_eq!(client.codex_home(), Some("/server/.codex"));
         let response: GetAccountResponse = client
             .request_typed(ClientRequest::GetAccount {
                 request_id: RequestId::Integer(1),
@@ -887,6 +937,7 @@ mod tests {
             client_name: "codex-app-server-client-test".to_string(),
             client_version: "0.0.0-test".to_string(),
             experimental_api: true,
+            mcp_server_openai_form_elicitation: false,
             opt_out_notification_methods: Vec::new(),
             channel_capacity: 8,
         })
@@ -975,6 +1026,7 @@ mod tests {
             client_name: "codex-app-server-client-test".to_string(),
             client_version: "0.0.0-test".to_string(),
             experimental_api: true,
+            mcp_server_openai_form_elicitation: false,
             opt_out_notification_methods: Vec::new(),
             channel_capacity: 8,
         })
@@ -994,6 +1046,7 @@ mod tests {
             client_name: "codex-app-server-client-test".to_string(),
             client_version: "0.0.0-test".to_string(),
             experimental_api: true,
+            mcp_server_openai_form_elicitation: false,
             opt_out_notification_methods: Vec::new(),
             channel_capacity: 8,
         })
@@ -1263,6 +1316,7 @@ mod tests {
                             is_secret: false,
                             options: Some(vec![]),
                         }],
+                        auto_resolution_ms: None,
                     })
                     .expect("params should serialize"),
                 ),
@@ -1324,6 +1378,7 @@ mod tests {
                                 is_secret: false,
                                 options: Some(vec![]),
                             }],
+                            auto_resolution_ms: None,
                         })
                         .expect("params should serialize"),
                     ),

@@ -2,6 +2,8 @@ use crate::ToolDefinition;
 use crate::ToolName;
 use crate::parse_dynamic_tool;
 use crate::parse_mcp_tool;
+use codex_protocol::dynamic_tools::DynamicToolFunctionSpec;
+use codex_protocol::dynamic_tools::DynamicToolNamespaceTool;
 use codex_protocol::dynamic_tools::DynamicToolSpec;
 use codex_tool_registry_api::LoadableToolSpec;
 use codex_tool_registry_api::ResponsesApiNamespace;
@@ -13,7 +15,7 @@ pub fn default_namespace_description(namespace_name: &str) -> String {
 }
 
 pub fn dynamic_tool_to_responses_api_tool(
-    tool: &DynamicToolSpec,
+    tool: &DynamicToolFunctionSpec,
 ) -> Result<ResponsesApiTool, serde_json::Error> {
     Ok(tool_definition_to_responses_api_tool(parse_dynamic_tool(
         tool,
@@ -23,14 +25,29 @@ pub fn dynamic_tool_to_responses_api_tool(
 pub fn dynamic_tool_to_loadable_tool_spec(
     tool: &DynamicToolSpec,
 ) -> Result<LoadableToolSpec, serde_json::Error> {
-    let responses_tool = dynamic_tool_to_responses_api_tool(tool)?;
-    Ok(match &tool.namespace {
-        Some(namespace) => LoadableToolSpec::Namespace(ResponsesApiNamespace {
-            name: namespace.clone(),
-            description: default_namespace_description(namespace),
-            tools: vec![ResponsesApiNamespaceTool::Function(responses_tool)],
-        }),
-        None => LoadableToolSpec::Function(responses_tool),
+    Ok(match tool {
+        DynamicToolSpec::Function(function) => {
+            LoadableToolSpec::Function(dynamic_tool_to_responses_api_tool(function)?)
+        }
+        DynamicToolSpec::Namespace(namespace) => {
+            let description = if namespace.description.trim().is_empty() {
+                default_namespace_description(&namespace.name)
+            } else {
+                namespace.description.clone()
+            };
+            let mut tools = Vec::with_capacity(namespace.tools.len());
+            for tool in &namespace.tools {
+                let DynamicToolNamespaceTool::Function(function) = tool;
+                tools.push(ResponsesApiNamespaceTool::Function(
+                    dynamic_tool_to_responses_api_tool(function)?,
+                ));
+            }
+            LoadableToolSpec::Namespace(ResponsesApiNamespace {
+                name: namespace.name.clone(),
+                description,
+                tools,
+            })
+        }
     })
 }
 

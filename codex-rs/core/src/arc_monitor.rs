@@ -384,7 +384,7 @@ fn build_arc_monitor_message_item(
         | ResponseItem::CustomToolCallOutput { .. }
         | ResponseItem::ToolSearchOutput { .. }
         | ResponseItem::ImageGenerationCall { .. }
-        | ResponseItem::CompactionTrigger
+        | ResponseItem::CompactionTrigger { .. }
         | ResponseItem::Compaction { .. }
         | ResponseItem::ContextCompaction { .. }
         | ResponseItem::Other => None,

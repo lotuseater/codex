@@ -71,3 +71,32 @@ pub struct AppInfo {
 fn default_enabled() -> bool {
     true
 }
+
+impl AppInfo {
+    /// Returns the app's category, first from branding.category,
+    /// then from the first entry in app_metadata.categories.
+    pub fn category(&self) -> Option<String> {
+        self.branding
+            .as_ref()
+            .and_then(|branding| non_empty_str(branding.category.as_deref()))
+            .or_else(|| {
+                self.app_metadata
+                    .as_ref()
+                    .and_then(|metadata| metadata.categories.as_ref())
+                    .and_then(|categories| {
+                        categories
+                            .iter()
+                            .find_map(|category| non_empty_str(Some(category.as_str())))
+                    })
+            })
+    }
+}
+
+fn non_empty_str(s: Option<&str>) -> Option<String> {
+    let s = s?.trim();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s.to_string())
+    }
+}

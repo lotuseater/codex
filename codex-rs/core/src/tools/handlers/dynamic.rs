@@ -10,8 +10,9 @@ use crate::tools::registry::ToolExecutor;
 use crate::tools::registry::ToolExposure;
 use crate::turn_timing::now_unix_timestamp_ms;
 use codex_protocol::dynamic_tools::DynamicToolCallRequest;
+use codex_protocol::dynamic_tools::DynamicToolFunctionSpec;
+use codex_protocol::dynamic_tools::DynamicToolNamespaceSpec;
 use codex_protocol::dynamic_tools::DynamicToolResponse;
-use codex_protocol::dynamic_tools::DynamicToolSpec;
 use codex_protocol::models::FunctionCallOutputContentItem;
 use codex_protocol::protocol::DynamicToolCallResponseEvent;
 use codex_protocol::protocol::EventMsg;
@@ -34,7 +35,7 @@ fn default_namespace_description(namespace_name: &str) -> String {
 }
 
 fn dynamic_tool_to_responses_api_tool(
-    tool: &DynamicToolSpec,
+    tool: &DynamicToolFunctionSpec,
 ) -> Result<ResponsesApiTool, serde_json::Error> {
     Ok(ResponsesApiTool {
         name: tool.name.clone(),
@@ -54,13 +55,36 @@ pub struct DynamicToolHandler {
 }
 
 impl DynamicToolHandler {
-    pub fn new(tool: &DynamicToolSpec) -> Option<Self> {
-        let tool_name = ToolName::new(tool.namespace.clone(), tool.name.clone());
-        let output_tool = dynamic_tool_to_responses_api_tool(tool).ok()?;
-        let spec = match tool.namespace.as_ref() {
+    pub fn new(tool: &DynamicToolFunctionSpec) -> Option<Self> {
+        Self::from_parts(tool, /*namespace*/ None)
+    }
+
+    pub fn new_in_namespace(
+        namespace: &DynamicToolNamespaceSpec,
+        tool: &DynamicToolFunctionSpec,
+    ) -> Option<Self> {
+        Self::from_parts(tool, Some(namespace))
+    }
+
+    fn from_parts(
+        tool: &DynamicToolFunctionSpec,
+        namespace: Option<&DynamicToolNamespaceSpec>,
+    ) -> Option<Self> {
+        let tool_name = ToolName::new(
+            namespace.map(|namespace| namespace.name.clone()),
+            tool.name.clone(),
+        );
+        let mut output_tool = dynamic_tool_to_responses_api_tool(tool).ok()?;
+        // Exposure controls deferral; tool search restores this marker for deferred results.
+        output_tool.defer_loading = None;
+        let spec = match namespace {
             Some(namespace) => ToolSpec::Namespace(ResponsesApiNamespace {
-                name: namespace.clone(),
-                description: default_namespace_description(namespace),
+                name: namespace.name.clone(),
+                description: if namespace.description.trim().is_empty() {
+                    default_namespace_description(&namespace.name)
+                } else {
+                    namespace.description.clone()
+                },
                 tools: vec![ResponsesApiNamespaceTool::Function(output_tool)],
             }),
             None => ToolSpec::Function(output_tool),
@@ -73,7 +97,7 @@ impl DynamicToolHandler {
             } else {
                 ToolExposure::Direct
             },
-            search_text: build_dynamic_search_text(tool),
+            search_text: build_dynamic_search_text(tool, namespace.map(|ns| ns.name.as_str())),
         })
     }
 }
@@ -231,7 +255,7 @@ async fn request_dynamic_tool(
     response
 }
 
-fn build_dynamic_search_text(tool: &DynamicToolSpec) -> String {
+fn build_dynamic_search_text(tool: &DynamicToolFunctionSpec, namespace: Option<&str>) -> String {
     let mut schema_properties = tool
         .input_schema
         .get("properties")
@@ -244,13 +268,9 @@ fn build_dynamic_search_text(tool: &DynamicToolSpec) -> String {
         tool.name.replace('_', " "),
         tool.description.clone(),
     ];
-    if let Some(namespace) = &tool.namespace {
-        parts.push(namespace.clone());
+    if let Some(ns) = namespace {
+        parts.push(ns.to_string());
     }
     parts.extend(schema_properties);
     parts.join(" ")
 }
-
-#[cfg(test)]
-#[path = "dynamic_tests.rs"]
-mod tests;

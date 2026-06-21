@@ -39,7 +39,6 @@ pub(crate) struct WebSearchTool {
     pub(crate) settings: SearchSettings,
 }
 
-#[async_trait::async_trait]
 impl ToolExecutor<ToolCall> for WebSearchTool {
     type Output = Box<dyn ToolOutput>;
 
@@ -76,53 +75,53 @@ impl ToolExecutor<ToolCall> for WebSearchTool {
         true
     }
 
-    fn handle(
-        &self,
-        call: ToolCall,
-    ) -> impl std::future::Future<Output = Result<Self::Output, FunctionCallError>> + Send {
-        let session_id = self.session_id.clone();
-        let provider = self.provider.clone();
-        let settings = self.settings.clone();
-        async move {
-            let commands = parse_commands(&call)?;
-            let command_action = command_action(&commands);
-            let api_provider = provider
-                .api_provider()
-                .await
-                .map_err(|err| FunctionCallError::Fatal(err.to_string()))?;
-            let auth = provider
-                .api_auth()
-                .await
-                .map_err(|err| FunctionCallError::Fatal(err.to_string()))?;
-            let client = SearchClient::new(
-                ReqwestTransport::new(build_reqwest_client()),
-                api_provider,
-                auth,
-            );
-            let request = SearchRequest {
-                id: session_id,
-                model: call.model.clone(),
-                reasoning: None,
-                input: recent_input(call.conversation_history.items()),
-                commands: Some(commands),
-                settings: Some(settings),
-                max_output_tokens: Some(
-                    u64::try_from(call.truncation_policy.token_budget()).unwrap_or(u64::MAX),
-                ),
-            };
-            call.turn_item_emitter
-                .emit_started(web_search_item(&call.call_id, WebSearchAction::Other))
-                .await;
-            let response = client
-                .search(&request, HeaderMap::new())
-                .await
-                .map_err(|err| FunctionCallError::Fatal(err.to_string()))?;
-            call.turn_item_emitter
-                .emit_completed(web_search_item(&call.call_id, command_action))
-                .await;
+    async fn handle(&self, call: ToolCall) -> Result<Box<dyn ToolOutput>, FunctionCallError> {
+        self.handle_call(call).await
+    }
+}
 
-            Ok(Box::new(SearchOutput::new(response.output)) as Box<dyn ToolOutput>)
-        }
+impl WebSearchTool {
+    async fn handle_call(&self, call: ToolCall) -> Result<Box<dyn ToolOutput>, FunctionCallError> {
+        let commands = parse_commands(&call)?;
+        let command_action = command_action(&commands);
+        let provider = self
+            .provider
+            .api_provider()
+            .await
+            .map_err(|err| FunctionCallError::Fatal(err.to_string()))?;
+        let auth = self
+            .provider
+            .api_auth()
+            .await
+            .map_err(|err| FunctionCallError::Fatal(err.to_string()))?;
+        let client = SearchClient::new(
+            ReqwestTransport::new(build_reqwest_client()),
+            provider,
+            auth,
+        );
+        let request = SearchRequest {
+            id: self.session_id.clone(),
+            model: call.model.clone(),
+            reasoning: None,
+            input: recent_input(call.conversation_history.items()),
+            commands: Some(commands),
+            settings: Some(self.settings.clone()),
+            max_output_tokens: Some(
+                u64::try_from(call.truncation_policy.token_budget()).unwrap_or(u64::MAX),
+            ),
+        };
+        call.turn_item_emitter
+            .emit_started(web_search_item(&call.call_id, WebSearchAction::Other))
+            .await;
+        let response = client
+            .search(&request, HeaderMap::new())
+            .await
+            .map_err(|err| FunctionCallError::Fatal(err.to_string()))?;
+        call.turn_item_emitter
+            .emit_completed(web_search_item(&call.call_id, command_action))
+            .await;
+
+        Ok(Box::new(SearchOutput::new(response.output)))
     }
 }
 

@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used)]
 
 use codex_core::NewThread;
 use codex_core_test_runtime::load_default_config_for_test;
@@ -38,9 +38,11 @@ fn resume_history(
         network: None,
         file_system_sandbox_policy: None,
         model: previous_model.to_string(),
+        comp_hash: None,
         personality: None,
         collaboration_mode: None,
         multi_agent_version: None,
+        multi_agent_mode: None,
         realtime_active: None,
         effort: config.model_reasoning_effort.clone(),
         summary: config
@@ -113,6 +115,7 @@ async fn emits_warning_when_resumed_model_differs() {
             initial_history,
             auth_manager,
             /*parent_trace*/ None,
+            /*supports_openai_form_elicitation*/ false,
         )
         .await
         .expect("resume conversation");

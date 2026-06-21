@@ -1,5 +1,5 @@
 #![cfg(not(target_os = "windows"))]
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used)]
 
 use anyhow::Result;
 use codex_core_test_runtime::responses::ev_assistant_message;
@@ -9,6 +9,7 @@ use codex_core_test_runtime::responses::mount_sse_once;
 use codex_core_test_runtime::responses::sse;
 use codex_core_test_runtime::responses::start_mock_server;
 use codex_core_test_runtime::skip_if_no_network;
+use codex_core_test_runtime::skip_if_wine_exec;
 use codex_core_test_runtime::test_codex::test_codex;
 use codex_core_test_runtime::test_codex::turn_permission_fields;
 use codex_exec_server::CreateDirectoryOptions;
@@ -18,6 +19,7 @@ use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::Op;
 use codex_protocol::user_input::UserInput;
 use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_utils_path_uri::PathUri;
 use std::sync::Arc;
 
 async fn write_repo_skill(
@@ -28,21 +30,25 @@ async fn write_repo_skill(
     body: &str,
 ) -> Result<()> {
     let skill_dir = cwd.join(".agents").join("skills").join(name);
+    let skill_dir_uri = PathUri::from_path(&skill_dir)?;
     fs.create_directory(
-        &skill_dir,
+        &skill_dir_uri,
         CreateDirectoryOptions { recursive: true },
         /*sandbox*/ None,
     )
     .await?;
     let contents = format!("---\nname: {name}\ndescription: {description}\n---\n\n{body}\n");
     let path = skill_dir.join("SKILL.md");
-    fs.write_file(&path, contents.into_bytes(), /*sandbox*/ None)
+    let path_uri = PathUri::from_path(&path)?;
+    fs.write_file(&path_uri, contents.into_bytes(), /*sandbox*/ None)
         .await?;
     Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn user_turn_includes_skill_instructions() -> Result<()> {
+    // TODO(anp): Remove after skill-path helpers use target-native paths.
+    skip_if_wine_exec!(Ok(()), "requires native cross-OS skill paths");
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;

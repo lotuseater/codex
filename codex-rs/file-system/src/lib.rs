@@ -1,22 +1,26 @@
-use async_trait::async_trait;
-use codex_config_types::WindowsSandboxLevel;
-use codex_permission_types::FileSystemPath;
-use codex_permission_types::FileSystemSandboxKind;
-use codex_permission_types::FileSystemSandboxPolicy;
-use codex_permission_types::FileSystemSpecialPath;
-use codex_permission_types::NetworkSandboxPolicy;
-use codex_permission_types::PermissionProfile;
-use codex_permission_types::SandboxEnforcement;
-use codex_permission_types::SandboxPolicy;
+use bytes::Bytes;
+use codex_protocol::config_types::WindowsSandboxLevel;
+use codex_protocol::models::ManagedFileSystemPermissions;
+use codex_protocol::models::PermissionProfile;
+use codex_protocol::models::SandboxEnforcement;
+use codex_protocol::permissions::FileSystemPath;
+use codex_protocol::permissions::FileSystemSandboxKind;
+use codex_protocol::permissions::FileSystemSandboxPolicy;
+use codex_protocol::permissions::FileSystemSpecialPath;
+use codex_protocol::permissions::NetworkSandboxPolicy;
+use codex_protocol::protocol::SandboxPolicy;
 use codex_utils_absolute_path::AbsolutePathBuf;
-use std::fs;
+use codex_utils_path_uri::PathUri;
+use futures::Stream;
+use std::future::Future;
 use std::io;
 use std::path::Path;
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::LazyLock;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
+use std::pin::Pin;
+use std::task::Context;
+use std::task::Poll;
+
+/// Maximum chunk size returned by [`ExecutorFileSystem::read_file_stream`].
+pub const FILE_READ_CHUNK_SIZE: usize = 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CreateDirectoryOptions {
@@ -39,6 +43,8 @@ pub struct FileMetadata {
     pub is_directory: bool,
     pub is_file: bool,
     pub is_symlink: bool,
+    /// Size in bytes.
+    pub size: u64,
     pub created_at_ms: i64,
     pub modified_at_ms: i64,
 }
@@ -55,7 +61,9 @@ pub struct ReadDirectoryEntry {
 pub struct FileSystemSandboxContext {
     pub permissions: PermissionProfile,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cwd: Option<AbsolutePathBuf>,
+    pub cwd: Option<PathUri>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub workspace_roots: Vec<PathUri>,
     pub windows_sandbox_level: WindowsSandboxLevel,
     #[serde(default)]
     pub windows_sandbox_private_desktop: bool,
@@ -64,35 +72,39 @@ pub struct FileSystemSandboxContext {
 }
 
 impl FileSystemSandboxContext {
-    pub fn from_legacy_sandbox_policy(sandbox_policy: SandboxPolicy, cwd: AbsolutePathBuf) -> Self {
+    pub fn from_legacy_sandbox_policy(
+        sandbox_policy: SandboxPolicy,
+        cwd: PathUri,
+    ) -> io::Result<Self> {
+        // Legacy policy projection materializes native roots, so convert at the receiving-host
+        // boundary while retaining the URI in the resulting sandbox context.
+        let native_cwd = cwd.to_abs_path()?;
         let file_system_sandbox_policy =
-            FileSystemSandboxPolicy::from_legacy_sandbox_policy_for_cwd(&sandbox_policy, &cwd);
+            FileSystemSandboxPolicy::from_legacy_sandbox_policy_for_cwd(
+                &sandbox_policy,
+                &native_cwd,
+            );
         let permissions = PermissionProfile::from_runtime_permissions_with_enforcement(
             SandboxEnforcement::from_legacy_sandbox_policy(&sandbox_policy),
             &file_system_sandbox_policy,
             NetworkSandboxPolicy::from(&sandbox_policy),
         );
-        Self::from_permission_profile_with_cwd(permissions, cwd)
+        Ok(Self::from_permission_profile_with_cwd(permissions, cwd))
     }
 
     pub fn from_permission_profile(permissions: PermissionProfile) -> Self {
         Self::from_permissions_and_cwd(permissions, /*cwd*/ None)
     }
 
-    pub fn from_permission_profile_with_cwd(
-        permissions: PermissionProfile,
-        cwd: AbsolutePathBuf,
-    ) -> Self {
+    pub fn from_permission_profile_with_cwd(permissions: PermissionProfile, cwd: PathUri) -> Self {
         Self::from_permissions_and_cwd(permissions, Some(cwd))
     }
 
-    fn from_permissions_and_cwd(
-        permissions: PermissionProfile,
-        cwd: Option<AbsolutePathBuf>,
-    ) -> Self {
+    fn from_permissions_and_cwd(permissions: PermissionProfile, cwd: Option<PathUri>) -> Self {
         Self {
             permissions,
             cwd,
+            workspace_roots: Vec::new(),
             windows_sandbox_level: WindowsSandboxLevel::Disabled,
             windows_sandbox_private_desktop: false,
             use_legacy_landlock: false,
@@ -106,394 +118,136 @@ impl FileSystemSandboxContext {
     }
 
     pub fn has_cwd_dependent_permissions(&self) -> bool {
-        let file_system_policy = self.permissions.file_system_sandbox_policy();
-        file_system_policy_has_cwd_dependent_entries(&file_system_policy)
+        match &self.permissions {
+            PermissionProfile::Managed {
+                file_system: ManagedFileSystemPermissions::Restricted { entries, .. },
+                ..
+            } => entries.iter().any(|entry| match &entry.path {
+                FileSystemPath::GlobPattern { pattern } => !Path::new(pattern).is_absolute(),
+                FileSystemPath::Special {
+                    value: FileSystemSpecialPath::ProjectRoots { .. },
+                } => true,
+                FileSystemPath::Path { .. } | FileSystemPath::Special { .. } => false,
+            }),
+            PermissionProfile::Managed {
+                file_system: ManagedFileSystemPermissions::Unrestricted,
+                ..
+            }
+            | PermissionProfile::Disabled
+            | PermissionProfile::External { .. } => false,
+        }
     }
 
     pub fn drop_cwd_if_unused(mut self) -> Self {
         if !self.has_cwd_dependent_permissions() {
             self.cwd = None;
+            self.workspace_roots.clear();
         }
         self
     }
 }
 
-fn file_system_policy_has_cwd_dependent_entries(
-    file_system_policy: &FileSystemSandboxPolicy,
-) -> bool {
-    file_system_policy
-        .entries
-        .iter()
-        .any(|entry| match &entry.path {
-            FileSystemPath::GlobPattern { pattern } => !Path::new(pattern).is_absolute(),
-            FileSystemPath::Special {
-                value: FileSystemSpecialPath::ProjectRoots { .. },
-            } => true,
-            FileSystemPath::Path { .. } | FileSystemPath::Special { .. } => false,
-        })
+pub type FileSystemResult<T> = io::Result<T>;
+
+/// Future returned by [`ExecutorFileSystem`] operations.
+pub type ExecutorFileSystemFuture<'a, T> =
+    Pin<Box<dyn Future<Output = FileSystemResult<T>> + Send + 'a>>;
+
+/// Stream of immutable chunks read from an [`ExecutorFileSystem`].
+pub struct FileSystemReadStream {
+    inner: Pin<Box<dyn Stream<Item = FileSystemResult<Bytes>> + Send + 'static>>,
 }
 
-pub type FileSystemResult<T> = io::Result<T>;
+impl FileSystemReadStream {
+    /// Wraps a filesystem byte stream.
+    pub fn new(stream: impl Stream<Item = FileSystemResult<Bytes>> + Send + 'static) -> Self {
+        Self {
+            inner: Box::pin(stream),
+        }
+    }
+}
+
+impl Stream for FileSystemReadStream {
+    type Item = FileSystemResult<Bytes>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.inner.as_mut().poll_next(cx)
+    }
+}
 
 /// Abstract filesystem access used by components that may operate locally or via
 /// a remote environment.
-#[async_trait]
 pub trait ExecutorFileSystem: Send + Sync {
     /// Resolves a path within this filesystem.
-    async fn canonicalize(
-        &self,
-        path: &AbsolutePathBuf,
-        sandbox: Option<&FileSystemSandboxContext>,
-    ) -> FileSystemResult<AbsolutePathBuf>;
+    fn canonicalize<'a>(
+        &'a self,
+        path: &'a PathUri,
+        sandbox: Option<&'a FileSystemSandboxContext>,
+    ) -> ExecutorFileSystemFuture<'a, PathUri>;
 
-    /// Lexically joins a path onto an existing bound path.
-    async fn join(
-        &self,
-        base_path: &AbsolutePathBuf,
-        path: &Path,
-    ) -> FileSystemResult<AbsolutePathBuf>;
+    fn read_file<'a>(
+        &'a self,
+        path: &'a PathUri,
+        sandbox: Option<&'a FileSystemSandboxContext>,
+    ) -> ExecutorFileSystemFuture<'a, Vec<u8>>;
 
-    /// Returns the parent directory of a bound path.
-    async fn parent(&self, path: &AbsolutePathBuf) -> FileSystemResult<Option<AbsolutePathBuf>>;
-
-    async fn read_file(
-        &self,
-        path: &AbsolutePathBuf,
-        sandbox: Option<&FileSystemSandboxContext>,
-    ) -> FileSystemResult<Vec<u8>>;
+    /// Reads a file as a stream of chunks no larger than [`FILE_READ_CHUNK_SIZE`].
+    fn read_file_stream<'a>(
+        &'a self,
+        path: &'a PathUri,
+        sandbox: Option<&'a FileSystemSandboxContext>,
+    ) -> ExecutorFileSystemFuture<'a, FileSystemReadStream>;
 
     /// Reads a file and decodes it as UTF-8 text.
-    async fn read_file_text(
-        &self,
-        path: &AbsolutePathBuf,
-        sandbox: Option<&FileSystemSandboxContext>,
-    ) -> FileSystemResult<String> {
-        let bytes = self.read_file(path, sandbox).await?;
-        String::from_utf8(bytes).map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
-    }
-
-    async fn write_file(
-        &self,
-        path: &AbsolutePathBuf,
-        contents: Vec<u8>,
-        sandbox: Option<&FileSystemSandboxContext>,
-    ) -> FileSystemResult<()>;
-
-    async fn create_directory(
-        &self,
-        path: &AbsolutePathBuf,
-        create_directory_options: CreateDirectoryOptions,
-        sandbox: Option<&FileSystemSandboxContext>,
-    ) -> FileSystemResult<()>;
-
-    async fn get_metadata(
-        &self,
-        path: &AbsolutePathBuf,
-        sandbox: Option<&FileSystemSandboxContext>,
-    ) -> FileSystemResult<FileMetadata>;
-
-    async fn read_directory(
-        &self,
-        path: &AbsolutePathBuf,
-        sandbox: Option<&FileSystemSandboxContext>,
-    ) -> FileSystemResult<Vec<ReadDirectoryEntry>>;
-
-    async fn remove(
-        &self,
-        path: &AbsolutePathBuf,
-        remove_options: RemoveOptions,
-        sandbox: Option<&FileSystemSandboxContext>,
-    ) -> FileSystemResult<()>;
-
-    async fn copy(
-        &self,
-        source_path: &AbsolutePathBuf,
-        destination_path: &AbsolutePathBuf,
-        copy_options: CopyOptions,
-        sandbox: Option<&FileSystemSandboxContext>,
-    ) -> FileSystemResult<()>;
-}
-
-const MAX_READ_FILE_BYTES: u64 = 512 * 1024 * 1024;
-
-/// Shared local filesystem handle for callers that need host file access
-/// without depending on the concrete exec-server runtime.
-pub static LOCAL_FS: LazyLock<Arc<dyn ExecutorFileSystem>> =
-    LazyLock::new(|| -> Arc<dyn ExecutorFileSystem> { Arc::new(LocalFileSystem) });
-
-#[derive(Clone, Default)]
-pub struct LocalFileSystem;
-
-#[async_trait]
-impl ExecutorFileSystem for LocalFileSystem {
-    async fn canonicalize(
-        &self,
-        path: &AbsolutePathBuf,
-        sandbox: Option<&FileSystemSandboxContext>,
-    ) -> FileSystemResult<AbsolutePathBuf> {
-        reject_sandbox_context(sandbox)?;
-        path.canonicalize()
-    }
-
-    async fn join(
-        &self,
-        base_path: &AbsolutePathBuf,
-        path: &Path,
-    ) -> FileSystemResult<AbsolutePathBuf> {
-        Ok(base_path.join(path))
-    }
-
-    async fn parent(&self, path: &AbsolutePathBuf) -> FileSystemResult<Option<AbsolutePathBuf>> {
-        Ok(path.parent())
-    }
-
-    async fn read_file(
-        &self,
-        path: &AbsolutePathBuf,
-        sandbox: Option<&FileSystemSandboxContext>,
-    ) -> FileSystemResult<Vec<u8>> {
-        reject_sandbox_context(sandbox)?;
-        let metadata = fs::metadata(path.as_path())?;
-        if metadata.len() > MAX_READ_FILE_BYTES {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                format!("file is too large to read: limit is {MAX_READ_FILE_BYTES} bytes"),
-            ));
-        }
-        fs::read(path.as_path())
-    }
-
-    async fn write_file(
-        &self,
-        path: &AbsolutePathBuf,
-        contents: Vec<u8>,
-        sandbox: Option<&FileSystemSandboxContext>,
-    ) -> FileSystemResult<()> {
-        reject_sandbox_context(sandbox)?;
-        fs::write(path.as_path(), contents)
-    }
-
-    async fn create_directory(
-        &self,
-        path: &AbsolutePathBuf,
-        options: CreateDirectoryOptions,
-        sandbox: Option<&FileSystemSandboxContext>,
-    ) -> FileSystemResult<()> {
-        reject_sandbox_context(sandbox)?;
-        if options.recursive {
-            fs::create_dir_all(path.as_path())?;
-        } else {
-            fs::create_dir(path.as_path())?;
-        }
-        Ok(())
-    }
-
-    async fn get_metadata(
-        &self,
-        path: &AbsolutePathBuf,
-        sandbox: Option<&FileSystemSandboxContext>,
-    ) -> FileSystemResult<FileMetadata> {
-        reject_sandbox_context(sandbox)?;
-        let metadata = fs::metadata(path.as_path())?;
-        let symlink_metadata = fs::symlink_metadata(path.as_path())?;
-        Ok(FileMetadata {
-            is_directory: metadata.is_dir(),
-            is_file: metadata.is_file(),
-            is_symlink: symlink_metadata.file_type().is_symlink(),
-            created_at_ms: metadata.created().ok().map_or(0, system_time_to_unix_ms),
-            modified_at_ms: metadata.modified().ok().map_or(0, system_time_to_unix_ms),
+    fn read_file_text<'a>(
+        &'a self,
+        path: &'a PathUri,
+        sandbox: Option<&'a FileSystemSandboxContext>,
+    ) -> ExecutorFileSystemFuture<'a, String> {
+        Box::pin(async move {
+            let bytes = self.read_file(path, sandbox).await?;
+            String::from_utf8(bytes).map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
         })
     }
 
-    async fn read_directory(
-        &self,
-        path: &AbsolutePathBuf,
-        sandbox: Option<&FileSystemSandboxContext>,
-    ) -> FileSystemResult<Vec<ReadDirectoryEntry>> {
-        reject_sandbox_context(sandbox)?;
-        let mut entries = Vec::new();
-        for entry in fs::read_dir(path.as_path())? {
-            let entry = entry?;
-            let Ok(metadata) = fs::metadata(entry.path()) else {
-                continue;
-            };
-            entries.push(ReadDirectoryEntry {
-                file_name: entry.file_name().to_string_lossy().into_owned(),
-                is_directory: metadata.is_dir(),
-                is_file: metadata.is_file(),
-            });
-        }
-        Ok(entries)
-    }
+    fn write_file<'a>(
+        &'a self,
+        path: &'a PathUri,
+        contents: Vec<u8>,
+        sandbox: Option<&'a FileSystemSandboxContext>,
+    ) -> ExecutorFileSystemFuture<'a, ()>;
 
-    async fn remove(
-        &self,
-        path: &AbsolutePathBuf,
-        options: RemoveOptions,
-        sandbox: Option<&FileSystemSandboxContext>,
-    ) -> FileSystemResult<()> {
-        reject_sandbox_context(sandbox)?;
-        match fs::symlink_metadata(path.as_path()) {
-            Ok(metadata) => {
-                let file_type = metadata.file_type();
-                if file_type.is_dir() {
-                    if options.recursive {
-                        fs::remove_dir_all(path.as_path())?;
-                    } else {
-                        fs::remove_dir(path.as_path())?;
-                    }
-                } else {
-                    fs::remove_file(path.as_path())?;
-                }
-                Ok(())
-            }
-            Err(err) if err.kind() == io::ErrorKind::NotFound && options.force => Ok(()),
-            Err(err) => Err(err),
-        }
-    }
+    fn create_directory<'a>(
+        &'a self,
+        path: &'a PathUri,
+        create_directory_options: CreateDirectoryOptions,
+        sandbox: Option<&'a FileSystemSandboxContext>,
+    ) -> ExecutorFileSystemFuture<'a, ()>;
 
-    async fn copy(
-        &self,
-        source_path: &AbsolutePathBuf,
-        destination_path: &AbsolutePathBuf,
-        options: CopyOptions,
-        sandbox: Option<&FileSystemSandboxContext>,
-    ) -> FileSystemResult<()> {
-        reject_sandbox_context(sandbox)?;
-        let metadata = fs::symlink_metadata(source_path.as_path())?;
-        let file_type = metadata.file_type();
+    fn get_metadata<'a>(
+        &'a self,
+        path: &'a PathUri,
+        sandbox: Option<&'a FileSystemSandboxContext>,
+    ) -> ExecutorFileSystemFuture<'a, FileMetadata>;
 
-        if file_type.is_dir() {
-            if !options.recursive {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "fs/copy requires recursive: true when sourcePath is a directory",
-                ));
-            }
-            if destination_is_same_or_descendant_of_source(
-                source_path.as_path(),
-                destination_path.as_path(),
-            )? {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "fs/copy cannot copy a directory to itself or one of its descendants",
-                ));
-            }
-            copy_dir_recursive(source_path.as_path(), destination_path.as_path())?;
-            return Ok(());
-        }
+    fn read_directory<'a>(
+        &'a self,
+        path: &'a PathUri,
+        sandbox: Option<&'a FileSystemSandboxContext>,
+    ) -> ExecutorFileSystemFuture<'a, Vec<ReadDirectoryEntry>>;
 
-        if file_type.is_symlink() {
-            copy_symlink(source_path.as_path(), destination_path.as_path())?;
-            return Ok(());
-        }
+    fn remove<'a>(
+        &'a self,
+        path: &'a PathUri,
+        remove_options: RemoveOptions,
+        sandbox: Option<&'a FileSystemSandboxContext>,
+    ) -> ExecutorFileSystemFuture<'a, ()>;
 
-        if file_type.is_file() {
-            fs::copy(source_path.as_path(), destination_path.as_path())?;
-            return Ok(());
-        }
-
-        Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "fs/copy only supports regular files, directories, and symlinks",
-        ))
-    }
-}
-
-fn reject_sandbox_context(sandbox: Option<&FileSystemSandboxContext>) -> io::Result<()> {
-    if sandbox.is_some() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "direct filesystem operations do not accept sandbox context",
-        ));
-    }
-    Ok(())
-}
-
-fn copy_dir_recursive(source: &Path, target: &Path) -> io::Result<()> {
-    fs::create_dir_all(target)?;
-    for entry in fs::read_dir(source)? {
-        let entry = entry?;
-        let source_path = entry.path();
-        let target_path = target.join(entry.file_name());
-        let file_type = entry.file_type()?;
-
-        if file_type.is_dir() {
-            copy_dir_recursive(&source_path, &target_path)?;
-        } else if file_type.is_file() {
-            fs::copy(&source_path, &target_path)?;
-        } else if file_type.is_symlink() {
-            copy_symlink(&source_path, &target_path)?;
-        }
-    }
-    Ok(())
-}
-
-fn destination_is_same_or_descendant_of_source(
-    source: &Path,
-    destination: &Path,
-) -> io::Result<bool> {
-    let source = fs::canonicalize(source)?;
-    let destination = resolve_existing_path(destination)?;
-    Ok(destination.starts_with(&source))
-}
-
-fn resolve_existing_path(path: &Path) -> io::Result<PathBuf> {
-    let mut unresolved_suffix = Vec::new();
-    let mut existing_path = path;
-    while !existing_path.exists() {
-        let Some(file_name) = existing_path.file_name() else {
-            break;
-        };
-        unresolved_suffix.push(file_name.to_os_string());
-        let Some(parent) = existing_path.parent() else {
-            break;
-        };
-        existing_path = parent;
-    }
-
-    let mut resolved = fs::canonicalize(existing_path)?;
-    for file_name in unresolved_suffix.iter().rev() {
-        resolved.push(file_name);
-    }
-    Ok(resolved)
-}
-
-fn copy_symlink(source: &Path, target: &Path) -> io::Result<()> {
-    let link_target = fs::read_link(source)?;
-    #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink(&link_target, target)
-    }
-    #[cfg(windows)]
-    {
-        if symlink_points_to_directory(source)? {
-            std::os::windows::fs::symlink_dir(&link_target, target)
-        } else {
-            std::os::windows::fs::symlink_file(&link_target, target)
-        }
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        let _ = link_target;
-        let _ = target;
-        Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "copying symlinks is unsupported on this platform",
-        ))
-    }
-}
-
-#[cfg(windows)]
-fn symlink_points_to_directory(source: &Path) -> io::Result<bool> {
-    use std::os::windows::fs::FileTypeExt;
-
-    Ok(fs::symlink_metadata(source)?.file_type().is_symlink_dir())
-}
-
-fn system_time_to_unix_ms(time: SystemTime) -> i64 {
-    time.duration_since(UNIX_EPOCH)
-        .ok()
-        .and_then(|duration| i64::try_from(duration.as_millis()).ok())
-        .unwrap_or(0)
+    fn copy<'a>(
+        &'a self,
+        source_path: &'a PathUri,
+        destination_path: &'a PathUri,
+        copy_options: CopyOptions,
+        sandbox: Option<&'a FileSystemSandboxContext>,
+    ) -> ExecutorFileSystemFuture<'a, ()>;
 }

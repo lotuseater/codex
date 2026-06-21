@@ -87,6 +87,11 @@ impl Config {
 
         validate_model_providers(&cfg.model_providers)
             .map_err(|message| std::io::Error::new(std::io::ErrorKind::InvalidInput, message))?;
+        let orchestrator = cfg.orchestrator.as_ref();
+        let orchestrator_skills_enabled =
+            resolve_orchestrator_feature_enabled(orchestrator.and_then(|o| o.skills.as_ref()));
+        let orchestrator_mcp_enabled =
+            resolve_orchestrator_feature_enabled(orchestrator.and_then(|o| o.mcp.as_ref()));
         // Ensure that every field of ConfigRequirements is applied to the final
         // Config.
         let ConfigRequirements {
@@ -97,6 +102,8 @@ impl Config {
             allow_managed_hooks_only: _,
             allow_appshots: _,
             windows_sandbox_mode: _,
+            allow_remote_control: _,
+            computer_use: _,
             feature_requirements,
             managed_hooks: _,
             mcp_servers,
@@ -616,10 +623,10 @@ impl Config {
         let experimental_request_user_input_enabled = true;
         let code_mode = resolve_code_mode_config(&cfg);
         let multi_agent_v2 = resolve_multi_agent_v2_config(&cfg, &config_profile);
+        let rollout_budget = resolve_rollout_budget_config(&cfg, &features)?;
+        let current_time_reminder = resolve_current_time_reminder_config(&cfg, &features)?;
         let apps_mcp_path_override = if features.enabled(Feature::AppsMcpPathOverride) {
-            let base = apps_mcp_path_override_toml_config(cfg.features.as_ref());
-            base.and_then(|config| config.path.as_ref())
-                .cloned()
+            apps_mcp_path_override_toml_config(cfg.features.as_ref())
                 .or_else(|| Some("/ps/mcp".to_string()))
         } else {
             None
@@ -1087,6 +1094,7 @@ impl Config {
             review_model,
             model_context_window: cfg.model_context_window,
             model_auto_compact_token_limit: cfg.model_auto_compact_token_limit,
+            model_auto_compact_token_limit_scope: AutoCompactTokenLimitScope::default(),
             model_compact_percentage: resolve_model_compact_percentage(
                 cfg.model_compact_percentage,
                 &mut startup_warnings,
@@ -1124,6 +1132,8 @@ impl Config {
             action_optimization_instructions,
             batch_mini_programming_instructions,
             include_skill_instructions,
+            orchestrator_skills_enabled,
+            orchestrator_mcp_enabled,
             include_environment_context,
             // The config.toml omits "_mode" because it's a config file. However, "_mode"
             // is important in code to differentiate the mode from the store implementation.
@@ -1221,6 +1231,7 @@ impl Config {
                     speaker: audio.speaker,
                 }),
             experimental_realtime_ws_base_url: cfg.experimental_realtime_ws_base_url,
+            experimental_realtime_webrtc_call_base_url: cfg.experimental_realtime_webrtc_call_base_url,
             experimental_realtime_ws_model: cfg.experimental_realtime_ws_model,
             realtime: cfg
                 .realtime
@@ -1249,6 +1260,8 @@ impl Config {
             background_terminal_max_timeout,
             ghost_snapshot,
             multi_agent_v2,
+            rollout_budget,
+            current_time_reminder,
             desktop_automation,
             first_moves,
             repo_context_scout,
@@ -1339,8 +1352,9 @@ impl Config {
             return Ok(None);
         };
 
+        let path_uri = codex_utils_path_uri::PathUri::from(path.clone());
         let contents = fs
-            .read_file_text(path, /*sandbox*/ None)
+            .read_file_text(&path_uri, /*sandbox*/ None)
             .await
             .map_err(|e| {
                 std::io::Error::new(
@@ -1361,12 +1375,22 @@ impl Config {
     }
 }
 
+fn resolve_orchestrator_feature_enabled(
+    feature: Option<&codex_config::config_toml::OrchestratorFeatureToml>,
+) -> bool {
+    feature.and_then(|feature| feature.enabled).unwrap_or(true)
+}
+
 fn resolve_code_mode_config(config_toml: &ConfigToml) -> CodeModeConfig {
     let base = code_mode_toml_config(config_toml.features.as_ref());
 
     CodeModeConfig {
         excluded_tool_namespaces: base
             .and_then(|config| config.excluded_tool_namespaces.as_ref())
+            .cloned()
+            .unwrap_or_default(),
+        direct_only_tool_namespaces: base
+            .and_then(|config| config.direct_only_tool_namespaces.as_ref())
             .cloned()
             .unwrap_or_default(),
     }

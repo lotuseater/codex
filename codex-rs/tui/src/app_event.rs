@@ -14,6 +14,9 @@ use std::time::Duration;
 use codex_app_server_protocol::AddCreditsNudgeCreditType;
 use codex_app_server_protocol::AddCreditsNudgeEmailStatus;
 use codex_app_server_protocol::AppInfo;
+use codex_app_server_protocol::ConsumeAccountRateLimitResetCreditResponse;
+use codex_app_server_protocol::GetAccountRateLimitsResponse;
+use codex_app_server_protocol::GetAccountTokenUsageResponse;
 use codex_app_server_protocol::MarketplaceAddResponse;
 use codex_app_server_protocol::MarketplaceRemoveResponse;
 use codex_app_server_protocol::MarketplaceUpgradeResponse;
@@ -21,10 +24,11 @@ use codex_app_server_protocol::McpServerStatus;
 use codex_app_server_protocol::McpServerStatusDetail;
 use codex_app_server_protocol::PluginInstallResponse;
 use codex_app_server_protocol::PluginListResponse;
+use codex_app_server_protocol::PluginMarketplaceEntry;
 use codex_app_server_protocol::PluginReadParams;
 use codex_app_server_protocol::PluginReadResponse;
 use codex_app_server_protocol::PluginUninstallResponse;
-use codex_app_server_protocol::RateLimitSnapshot;
+use codex_app_server_protocol::RateLimitResetCreditsSummary;
 use codex_app_server_protocol::SkillsListResponse;
 use codex_app_server_protocol::ThreadGoalStatus;
 use codex_file_search::FileMatch;
@@ -39,6 +43,7 @@ use crate::bottom_pane::ApprovalRequest;
 use crate::bottom_pane::StatusLineItem;
 use crate::bottom_pane::TerminalTitleItem;
 use crate::chatwidget::UserMessage;
+use crate::goal_files::GoalDraft;
 use codex_app_server_protocol::AskForApproval;
 use codex_config::types::ApprovalsReviewer;
 use codex_features::Feature;
@@ -120,21 +125,45 @@ pub(crate) struct ConnectorsSnapshot {
     pub(crate) connectors: Vec<AppInfo>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum PluginLocation {
+    Local { marketplace_path: AbsolutePathBuf },
+    Remote { marketplace_name: String },
+}
+
+impl PluginLocation {
+    pub(crate) fn into_request_params(self) -> (Option<AbsolutePathBuf>, Option<String>) {
+        match self {
+            PluginLocation::Local { marketplace_path } => (Some(marketplace_path), None),
+            PluginLocation::Remote { marketplace_name } => (None, Some(marketplace_name)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PluginRemoteSectionError {
+    pub(crate) section_id: String,
+    pub(crate) label: String,
+    pub(crate) message: String,
+}
+
 /// Distinguishes why a rate-limit refresh was requested so the completion
 /// handler can route the result correctly.
 ///
 /// A `StartupPrefetch` fires once, concurrently with the rest of TUI init, and
-/// only updates the cached snapshots (no status card to finalize). A
-/// `StatusCommand` is tied to a specific `/status` invocation and must call
-/// `finish_status_rate_limit_refresh` when done so the card stops showing a
-/// "refreshing" state.
+/// updates the cached snapshots and any available reset-credit notice (no
+/// status card to finalize). A `StatusCommand` is tied to a specific `/status`
+/// invocation and must call `finish_status_rate_limit_refresh` when done so the
+/// card stops showing a "refreshing" state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RateLimitRefreshOrigin {
-    /// Eagerly fetched after bootstrap so the first `/status` already has data.
-    StartupPrefetch,
+    /// Eagerly fetched after bootstrap for `/status` data and reset availability.
+    StartupPrefetch { reset_hint_request_id: u64 },
     /// User-initiated via `/status`; the `request_id` correlates with the
     /// status card that should be updated when the fetch completes.
     StatusCommand { request_id: u64 },
+    /// Refresh requested after a reset credit was successfully consumed.
+    ResetConsume { request_id: u64 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -223,11 +252,17 @@ pub(crate) enum AppEvent {
     /// Automatic self-review completed; resume the configured loop message immediately if safe.
     SubmitAutoLoopAfterSelfReview,
 
+    /// Open the Claude Code migration picker inside the running TUI session.
+    OpenExternalAgentConfigMigration,
+
     /// Resume a thread by UUID or thread name inside the running TUI session.
     ResumeSessionByIdOrName(String),
 
     /// Archive the current active main thread and exit after it succeeds.
     ArchiveCurrentThread,
+
+    /// Permanently delete the current active main thread and exit after it succeeds.
+    DeleteCurrentThread,
 
     /// Fork the current session into a new thread.
     ForkCurrentSession,
@@ -288,10 +323,10 @@ pub(crate) enum AppEvent {
         thread_id: Option<ThreadId>,
     },
 
-    /// Set or replace the current thread goal objective.
-    SetThreadGoalObjective {
+    /// Materialize and set or replace the current thread goal objective.
+    SetThreadGoalDraft {
         thread_id: ThreadId,
-        objective: String,
+        draft: GoalDraft,
         mode: ThreadGoalSetMode,
     },
 
@@ -309,8 +344,49 @@ pub(crate) enum AppEvent {
     /// Result of refreshing rate limits.
     RateLimitsLoaded {
         origin: RateLimitRefreshOrigin,
-        result: Result<Vec<RateLimitSnapshot>, String>,
+        result: Result<GetAccountRateLimitsResponse, String>,
     },
+
+    /// Open the default token-activity view selected from the `/usage` menu.
+    OpenTokenActivity,
+
+    /// Open the reset-credit flow selected from the `/usage` menu.
+    OpenRateLimitResetCredits,
+
+    /// Result of reading the current reset-credit balance.
+    RateLimitResetCreditsLoaded {
+        request_id: u64,
+        result: Result<RateLimitResetCreditsSummary, String>,
+    },
+
+    /// Consume one reset credit using a stable idempotency key.
+    ConsumeRateLimitResetCredit {
+        idempotency_key: String,
+    },
+
+    /// Result of consuming one reset credit.
+    RateLimitResetCreditConsumed {
+        request_id: u64,
+        idempotency_key: String,
+        result: Result<ConsumeAccountRateLimitResetCreditResponse, String>,
+    },
+
+    /// Fetch account-wide token activity for a `/usage` history card.
+    RefreshTokenActivity {
+        request_id: u64,
+    },
+
+    /// Result of fetching account-wide token activity.
+    TokenActivityLoaded {
+        request_id: u64,
+        result: Result<GetAccountTokenUsageResponse, String>,
+    },
+
+    /// Commit settled asynchronous usage output after active-output barriers clear.
+    CommitPendingUsageOutput,
+
+    /// Commit settled asynchronous usage output after stream shutdown.
+    CommitPendingUsageOutputAfterStreamShutdown,
 
     /// Send a user-confirmed request to notify the workspace owner.
     SendAddCreditsNudgeEmail {
@@ -408,6 +484,13 @@ pub(crate) enum AppEvent {
     PluginsLoaded {
         cwd: PathBuf,
         result: Result<PluginListResponse, String>,
+    },
+
+    /// Result of explicitly fetching remote-backed plugin sections.
+    PluginRemoteSectionsLoaded {
+        cwd: PathBuf,
+        marketplaces: Vec<PluginMarketplaceEntry>,
+        section_errors: Vec<PluginRemoteSectionError>,
     },
 
     /// Result of fetching lifecycle hook inventory.
@@ -510,7 +593,7 @@ pub(crate) enum AppEvent {
     /// Install a specific plugin from a marketplace.
     FetchPluginInstall {
         cwd: PathBuf,
-        marketplace_path: AbsolutePathBuf,
+        location: PluginLocation,
         plugin_name: String,
         plugin_display_name: String,
     },
@@ -518,7 +601,7 @@ pub(crate) enum AppEvent {
     /// Result of installing a plugin.
     PluginInstallLoaded {
         cwd: PathBuf,
-        marketplace_path: AbsolutePathBuf,
+        location: PluginLocation,
         plugin_name: String,
         plugin_display_name: String,
         result: Result<PluginInstallResponse, String>,

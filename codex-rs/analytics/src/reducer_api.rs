@@ -127,6 +127,16 @@ impl AnalyticsReducer for CustomFactReducer {
             | CustomAnalyticsFact::TurnTokenUsage(_)
             | CustomAnalyticsFact::TurnProfile(_)
             | CustomAnalyticsFact::TurnCodexError(_) => {}
+            // Goal events are connection-gated (require app-server thread context);
+            // the app-server reducer handles them. No-op here exactly like the
+            // other connection-gated variants above.
+            CustomAnalyticsFact::Goal(_) => {}
+            // Plugin install failure and external-agent config import events are
+            // not yet consumed by the protocol-free reducer; drop as no-ops
+            // consistent with the connection-gated variants above.
+            CustomAnalyticsFact::PluginInstallFailed(_)
+            | CustomAnalyticsFact::ExternalAgentConfigImportCompleted(_)
+            | CustomAnalyticsFact::ExternalAgentConfigImportFailure(_) => {}
         }
     }
 }

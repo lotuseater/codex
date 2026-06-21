@@ -21,7 +21,10 @@ pub(crate) mod tool_dispatch_trace;
 
 use std::borrow::Cow;
 
+use crate::session::turn_context::TurnContext;
+use codex_features::Feature;
 use codex_protocol::exec_output::ExecToolCallOutput;
+use codex_protocol::openai_models::ToolMode;
 use codex_tool_execution_api::ToolName;
 use codex_tool_execution_api::ToolUserShellType;
 use codex_utils_output_truncation::TruncationPolicy;
@@ -53,6 +56,18 @@ pub(crate) fn tool_user_shell_type(user_shell: &crate::shell::Shell) -> ToolUser
         crate::shell::ShellType::Sh => ToolUserShellType::Sh,
         crate::shell::ShellType::Cmd => ToolUserShellType::Cmd,
     }
+}
+
+fn effective_tool_mode(turn_context: &TurnContext) -> ToolMode {
+    turn_context.model_info.tool_mode.unwrap_or_else(|| {
+        if turn_context.config.features.enabled(Feature::CodeModeOnly) {
+            ToolMode::CodeModeOnly
+        } else if turn_context.config.features.enabled(Feature::CodeMode) {
+            ToolMode::CodeMode
+        } else {
+            ToolMode::Direct
+        }
+    })
 }
 
 /// Format the combined exec output for sending back to the model.

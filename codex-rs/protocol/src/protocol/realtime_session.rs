@@ -4,14 +4,14 @@ use serde::Serialize;
 use serde_json::Value;
 use ts_rs::TS;
 
-use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_utils_path_uri::PathUri;
 
 use super::*;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 pub struct TurnEnvironmentSelection {
     pub environment_id: String,
-    pub cwd: AbsolutePathBuf,
+    pub cwd: PathUri,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
@@ -27,14 +27,31 @@ pub struct W3cTraceContext {
 /// Config payload for refreshing MCP servers.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 pub struct McpServerRefreshConfig {
+    /// Complete runtime server map after source and thread-scoped resolution.
     pub mcp_servers: Value,
+    /// OAuth credential store mode to use with this server snapshot.
     pub mcp_oauth_credentials_store_mode: Value,
+    pub auth_keyring_backend_kind: Value,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
 pub struct ConversationStartParams {
+    /// Whether Codex response handoffs are managed through explicit client append calls.
+    pub client_managed_handoffs: bool,
+    /// Sends automatic Codex responses as realtime conversation items instead of handoff appends.
+    pub codex_responses_as_items: bool,
+    /// Optional prefix added to automatic Codex response items when `codex_responses_as_items` is set.
+    pub codex_response_item_prefix: Option<String>,
+    /// Optional prefix added to automatic V1 Codex commentary sent with
+    /// `conversation.handoff.append` when `codex_responses_as_items` is not set. Final answers are
+    /// sent without the prefix.
+    pub codex_response_handoff_prefix: Option<String>,
+    /// Overrides the configured realtime model for this session only.
+    pub model: Option<String>,
     /// Selects whether the realtime session should produce text or audio output.
     pub output_modality: RealtimeOutputModality,
+    /// Whether to append Codex's startup context to the realtime backend prompt.
+    pub include_startup_context: bool,
     #[serde(
         default,
         deserialize_with = "conversation_start_prompt_serde::deserialize",
@@ -46,6 +63,9 @@ pub struct ConversationStartParams {
     pub realtime_session_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transport: Option<ConversationStartTransport>,
+    /// Overrides the configured realtime protocol version for this session only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<RealtimeConversationVersion>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub voice: Option<RealtimeVoice>,
 }
@@ -180,4 +200,5 @@ pub struct ConversationAudioParams {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
 pub struct ConversationTextParams {
     pub text: String,
+    pub role: ConversationTextRole,
 }

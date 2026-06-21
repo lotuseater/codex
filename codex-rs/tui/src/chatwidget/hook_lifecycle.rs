@@ -6,6 +6,14 @@
 use super::*;
 
 impl ChatWidget {
+    /// Drop transient live hook status without flushing it into history.
+    pub(super) fn clear_active_hook_cell(&mut self) {
+        if self.active_hook_cell.take().is_some() {
+            self.bump_active_cell_revision();
+            self.request_pending_usage_output_insertion();
+        }
+    }
+
     pub(super) fn on_hook_started(&mut self, run: codex_app_server_protocol::HookRunSummary) {
         let run = history_cell::hook_run_summary_from_app_server(run);
         self.record_visible_turn_activity();
@@ -79,6 +87,7 @@ impl ChatWidget {
         self.transcript.needs_final_message_separator = true;
         self.app_event_tx
             .send(AppEvent::InsertHistoryCell(Box::new(completed_cell)));
+        self.request_pending_usage_output_insertion();
     }
 
     pub(super) fn finish_active_hook_cell_if_idle(&mut self) {
@@ -88,6 +97,7 @@ impl ChatWidget {
         if cell.is_empty() {
             self.active_hook_cell = None;
             self.bump_active_cell_revision();
+            self.request_pending_usage_output_insertion();
             return;
         }
         if cell.should_flush()
@@ -97,6 +107,7 @@ impl ChatWidget {
             self.transcript.needs_final_message_separator = true;
             self.app_event_tx
                 .send(AppEvent::InsertHistoryCell(Box::new(cell)));
+            self.request_pending_usage_output_insertion();
         }
     }
 

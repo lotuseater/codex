@@ -11,6 +11,10 @@ use crate::events::CodexDynamicToolCallEventParams;
 use crate::events::CodexDynamicToolCallEventRequest;
 use crate::events::CodexFileChangeEventParams;
 use crate::events::CodexFileChangeEventRequest;
+// fork-local: the connection-gated `ingest_goal` (Goal is an upstream-new
+// custom fact) is handled by this app-server reducer; its request/params types
+// must be provided by this crate's `events` module.
+use crate::events::CodexGoalEventRequest;
 use crate::events::CodexImageGenerationEventParams;
 use crate::events::CodexImageGenerationEventRequest;
 use crate::events::CodexMcpToolCallEventParams;
@@ -41,6 +45,10 @@ use crate::events::TrackEventRequest;
 use crate::events::WebSearchActionKind;
 use crate::events::accepted_line_fingerprint_event_requests;
 use crate::events::codex_compaction_event_params;
+// fork-local: `codex_goal_event_params` builds the app-server-shaped goal event
+// params for the connection-gated `ingest_goal`; provided by this crate's
+// `events` module (port from upstream `codex-analytics`'s events).
+use crate::events::codex_goal_event_params;
 use crate::events::current_runtime_metadata;
 use crate::now_unix_seconds;
 use crate::option_i64_to_u64;
@@ -50,6 +58,7 @@ use crate::usize_to_u64;
 use codex_analytics::AnalyticsFact;
 use codex_analytics::AnalyticsJsonRpcError;
 use codex_analytics::CodexCompactionEvent;
+use codex_analytics::CodexGoalEvent;
 use codex_analytics::CustomAnalyticsFact;
 use codex_analytics::GuardianReviewEventParams;
 use codex_analytics::ThreadInitializationMode;
@@ -172,7 +181,12 @@ impl codex_analytics::AnalyticsReducer for AppServerReducer {
             AnalyticsFact::Custom(CustomAnalyticsFact::TurnCodexError(input)) => {
                 self.ingest_turn_codex_error(*input);
             }
-            // The 7 unconditional custom facts were already delegated above.
+            // fork-local: Goal is connection-gated and reduced here using this
+            // reducer's connection/thread state.
+            AnalyticsFact::Custom(CustomAnalyticsFact::Goal(input)) => {
+                self.ingest_goal(*input, &mut reqs);
+            }
+            // The unconditional custom facts were already delegated above.
             AnalyticsFact::Custom(_) => {}
         }
 
@@ -204,7 +218,12 @@ fn is_unconditional_custom(custom: &CustomAnalyticsFact) -> bool {
         | CustomAnalyticsFact::AppUsed(_)
         | CustomAnalyticsFact::HookRun(_)
         | CustomAnalyticsFact::PluginUsed(_)
-        | CustomAnalyticsFact::PluginStateChanged(_) => true,
+        | CustomAnalyticsFact::PluginStateChanged(_)
+        // fork-local: upstream-new stateless custom facts; delegated verbatim to
+        // `codex_analytics::CustomFactReducer` like the other unconditional ones.
+        | CustomAnalyticsFact::PluginInstallFailed(_)
+        | CustomAnalyticsFact::ExternalAgentConfigImportCompleted(_)
+        | CustomAnalyticsFact::ExternalAgentConfigImportFailure(_) => true,
         // Connection-gated: these need this reducer's connection/thread/turn
         // state and are handled by `AppServerReducer::ingest`, not delegated.
         CustomAnalyticsFact::Compaction(_)
@@ -212,7 +231,10 @@ fn is_unconditional_custom(custom: &CustomAnalyticsFact) -> bool {
         | CustomAnalyticsFact::TurnResolvedConfig(_)
         | CustomAnalyticsFact::TurnTokenUsage(_)
         | CustomAnalyticsFact::TurnProfile(_)
-        | CustomAnalyticsFact::TurnCodexError(_) => false,
+        | CustomAnalyticsFact::TurnCodexError(_)
+        // fork-local: Goal is an upstream-new connection-gated custom fact
+        // reduced by `AppServerReducer::ingest_goal` using this reducer's state.
+        | CustomAnalyticsFact::Goal(_) => false,
     }
 }
 
@@ -262,6 +284,16 @@ impl<'a> AnalyticsDropSite<'a> {
             event_name: "compaction",
             thread_id: &input.thread_id,
             turn_id: Some(&input.turn_id),
+            review_id: None,
+            item_id: None,
+        }
+    }
+
+    fn goal(input: &'a CodexGoalEvent) -> Self {
+        Self {
+            event_name: "goal",
+            thread_id: &input.thread_id,
+            turn_id: input.turn_id.as_deref(),
             review_id: None,
             item_id: None,
         }
@@ -446,6 +478,7 @@ impl TurnToolCounts {
             | ThreadItem::Plan { .. }
             | ThreadItem::Reasoning { .. }
             | ThreadItem::ImageView { .. }
+            | ThreadItem::Sleep { .. }
             | ThreadItem::EnteredReviewMode { .. }
             | ThreadItem::ExitedReviewMode { .. }
             | ThreadItem::ContextCompaction { .. } => return,
@@ -1179,6 +1212,26 @@ impl AppServerReducer {
         )));
     }
 
+    fn ingest_goal(&mut self, input: CodexGoalEvent, out: &mut Vec<TrackEventRequest>) {
+        let Some((connection_state, thread_metadata)) =
+            self.thread_context_or_warn(AnalyticsDropSite::goal(&input))
+        else {
+            return;
+        };
+        out.push(TrackEventRequest::Goal(Box::new(CodexGoalEventRequest {
+            event_type: "codex_goal_event",
+            event_params: codex_goal_event_params(
+                input,
+                thread_metadata.session_id.clone(),
+                connection_state.app_server_client.clone(),
+                connection_state.runtime.clone(),
+                thread_metadata.thread_source.clone(),
+                thread_metadata.subagent_source.clone(),
+                thread_metadata.parent_thread_id.clone(),
+            ),
+        })));
+    }
+
     fn ingest_guardian_review_completed(
         &mut self,
         notification: codex_app_server_protocol::ItemGuardianApprovalReviewCompletedNotification,
@@ -1369,17 +1422,23 @@ impl AppServerReducer {
         let Some(thread_id) = turn_state.thread_id.as_ref() else {
             return;
         };
-        let Some(connection_id) = turn_state.connection_id else {
+        let drop_site = AnalyticsDropSite::turn(thread_id, turn_id);
+        let connection_id = turn_state.connection_id.or_else(|| {
+            self.threads
+                .get(drop_site.thread_id)
+                .and_then(|thread| thread.connection_id)
+        });
+        let Some(connection_id) = connection_id else {
+            warn_missing_analytics_context(&drop_site, MissingAnalyticsContext::ThreadConnection);
             return;
         };
         let Some(connection_state) = self.connections.get(&connection_id) else {
             warn_missing_analytics_context(
-                &AnalyticsDropSite::turn(thread_id, turn_id),
+                &drop_site,
                 MissingAnalyticsContext::Connection { connection_id },
             );
             return;
         };
-        let drop_site = AnalyticsDropSite::turn(thread_id, turn_id);
         let Some(thread_metadata) = self
             .threads
             .get(drop_site.thread_id)
@@ -1486,6 +1545,7 @@ fn tracked_tool_item_id(item: &ThreadItem) -> Option<&str> {
         | ThreadItem::Reasoning { .. }
         | ThreadItem::SubAgentActivity { .. }
         | ThreadItem::ImageView { .. }
+        | ThreadItem::Sleep { .. }
         | ThreadItem::EnteredReviewMode { .. }
         | ThreadItem::ExitedReviewMode { .. }
         | ThreadItem::ContextCompaction { .. } => None,
@@ -1617,6 +1677,7 @@ fn tool_item_event(input: ToolItemEventInput<'_>) -> Option<TrackEventRequest> {
             status,
             error,
             duration_ms,
+            plugin_id,
             ..
         } => {
             let (terminal_status, failure_kind) = mcp_tool_call_outcome(status)?;
@@ -1646,6 +1707,7 @@ fn tool_item_event(input: ToolItemEventInput<'_>) -> Option<TrackEventRequest> {
                         mcp_server_name: server.clone(),
                         mcp_tool_name: tool.clone(),
                         mcp_error_present: error.is_some(),
+                        plugin_id: plugin_id.clone(),
                     },
                 },
             ))

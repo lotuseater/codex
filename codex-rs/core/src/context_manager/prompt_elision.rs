@@ -19,7 +19,9 @@ pub(super) fn elide_repeated_large_tool_outputs(items: &mut [ResponseItem]) {
 
     for item in items {
         match item {
-            ResponseItem::FunctionCallOutput { call_id, output }
+            ResponseItem::FunctionCallOutput {
+                call_id, output, ..
+            }
             | ResponseItem::CustomToolCallOutput {
                 call_id, output, ..
             } => maybe_elide_tool_output(call_id, output, &mut seen),
@@ -33,7 +35,7 @@ pub(super) fn elide_repeated_large_tool_outputs(items: &mut [ResponseItem]) {
             | ResponseItem::ToolSearchOutput { .. }
             | ResponseItem::WebSearchCall { .. }
             | ResponseItem::ImageGenerationCall { .. }
-            | ResponseItem::CompactionTrigger
+            | ResponseItem::CompactionTrigger { .. }
             | ResponseItem::Compaction { .. }
             | ResponseItem::ContextCompaction { .. }
             | ResponseItem::Other => {}

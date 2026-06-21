@@ -116,6 +116,14 @@ impl TurnDiffTracker {
         self.baseline_file_info.clear();
     }
 
+    /// Returns `true` when at least one file baseline is currently tracked, i.e.
+    /// a unified diff could be produced for this turn. This crate computes the
+    /// aggregated diff lazily in [`Self::get_unified_diff`] (which requires
+    /// `&mut self`); this `&self` probe reports whether any tracking has begun.
+    pub fn has_unified_diff(&self) -> bool {
+        !self.baseline_file_info.is_empty()
+    }
+
     /// Front-run apply patch calls to track the starting contents of any modified files.
     /// - Creates an in-memory baseline snapshot for files that already exist on disk when first seen.
     /// - For additions, we intentionally do not create a baseline snapshot so that diffs are proper additions.

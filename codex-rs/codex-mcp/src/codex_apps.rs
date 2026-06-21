@@ -313,7 +313,7 @@ pub(crate) fn load_cached_codex_apps_tools(
     if cache.schema_version != CODEX_APPS_TOOLS_CACHE_SCHEMA_VERSION {
         return CachedCodexAppsToolsLoad::Invalid;
     }
-    CachedCodexAppsToolsLoad::Hit(filter_disallowed_codex_apps_tools(cache.tools))
+    CachedCodexAppsToolsLoad::Hit(cache.tools)
 }
 
 pub(crate) fn write_cached_codex_apps_tools(
@@ -326,10 +326,9 @@ pub(crate) fn write_cached_codex_apps_tools(
     {
         return;
     }
-    let tools = filter_disallowed_codex_apps_tools(tools.to_vec());
     let Ok(bytes) = serde_json::to_vec_pretty(&CodexAppsToolsDiskCache {
         schema_version: CODEX_APPS_TOOLS_CACHE_SCHEMA_VERSION,
-        tools,
+        tools: tools.to_vec(),
     }) else {
         return;
     };
@@ -396,7 +395,7 @@ struct CodexAppsServerInfoDiskCache {
 }
 
 const CODEX_APPS_TOOLS_CACHE_DIR: &str = "cache/codex_apps_tools";
-pub(crate) const CODEX_APPS_TOOLS_CACHE_SCHEMA_VERSION: u8 = 3;
+pub(crate) const CODEX_APPS_TOOLS_CACHE_SCHEMA_VERSION: u8 = 4;
 
 const CODEX_APPS_SERVER_INFO_CACHE_DIR: &str = "cache/codex_apps_server_info";
 const CODEX_APPS_SERVER_INFO_CACHE_SCHEMA_VERSION: u8 = 1;

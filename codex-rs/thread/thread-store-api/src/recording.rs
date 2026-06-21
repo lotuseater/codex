@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use async_trait::async_trait;
 use chrono::Utc;
 use codex_protocol::ThreadId;
 use codex_protocol::dynamic_tools::DynamicToolSpec;
@@ -15,6 +14,7 @@ use codex_protocol::protocol::SessionSource;
 use crate::AppendThreadItemsParams;
 use crate::ArchiveThreadParams;
 use crate::CreateThreadParams;
+use crate::DeleteThreadParams;
 use crate::ItemPage;
 use crate::ListItemsParams;
 use crate::ListThreadsParams;
@@ -33,10 +33,15 @@ use crate::ThreadPersistenceMetadata;
 use crate::ThreadPersistenceServices;
 use crate::ThreadStore;
 use crate::ThreadStoreError;
-use crate::ThreadStoreFuture;
+// fork-local: `ThreadStore` (upstream-style) uses the Result-wrapping future alias from
+// `store`, while the fork-only `LiveThreadHandle`/`LiveThreadFactory` traits use the bare-`T`
+// alias from `live_thread`. Import both explicitly so this file is correct regardless of which
+// alias `lib.rs` re-exports as the crate-public `ThreadStoreFuture`.
 use crate::ThreadStoreResult;
 use crate::TurnPage;
 use crate::UpdateThreadMetadataParams;
+use crate::live_thread::ThreadStoreFuture as LiveThreadFuture;
+use crate::store::ThreadStoreFuture;
 
 /// Operation counters captured by [`RecordingThreadStore`].
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -58,6 +63,7 @@ pub struct RecordingThreadStoreCalls {
     pub update_thread_metadata: usize,
     pub archive_thread: usize,
     pub unarchive_thread: usize,
+    pub delete_thread: usize,
 }
 
 /// Storage-neutral recording store for tests that need persistence behavior.
@@ -184,6 +190,11 @@ impl RecordingThread {
             reasoning_effort: self.patch.reasoning_effort.clone(),
             created_at: self.patch.created_at.unwrap_or(self.created_at),
             updated_at: self.patch.updated_at.unwrap_or(self.updated_at),
+            recency_at: self
+                .patch
+                .advance_recency_at
+                .or(self.patch.updated_at)
+                .unwrap_or(self.updated_at),
             archived_at: self.archived_at,
             cwd: self.metadata.cwd.clone().unwrap_or_default(),
             cli_version: self.patch.cli_version.clone().unwrap_or_default(),
@@ -218,215 +229,257 @@ impl RecordingThread {
     }
 }
 
-#[async_trait]
 impl ThreadStore for RecordingThreadStore {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
 
-    async fn create_thread(&self, params: CreateThreadParams) -> ThreadStoreResult<()> {
-        let mut state = self.lock();
-        state.calls.create_thread += 1;
-        state
-            .threads
-            .insert(params.thread_id, RecordingThread::from_create(params));
-        Ok(())
-    }
-
-    async fn resume_thread(&self, params: ResumeThreadParams) -> ThreadStoreResult<()> {
-        let mut state = self.lock();
-        state.calls.resume_thread += 1;
-        let thread_id = params.thread_id;
-        if let Some(thread) = state.threads.get_mut(&thread_id) {
-            if params.rollout_path.is_some() {
-                thread.rollout_path = params.rollout_path;
-            }
-            if let Some(history) = params.history {
-                thread.history = history;
-            }
-            thread.metadata = params.metadata;
-            thread.updated_at = Utc::now();
-        } else {
+    fn create_thread(&self, params: CreateThreadParams) -> ThreadStoreFuture<'_, ()> {
+        Box::pin(async move {
+            let mut state = self.lock();
+            state.calls.create_thread += 1;
             state
                 .threads
-                .insert(thread_id, RecordingThread::from_resume(params));
-        }
-        let rollout_path = state
-            .threads
-            .get(&thread_id)
-            .and_then(|thread| thread.rollout_path.as_ref().map(std::clone::Clone::clone));
-        state.store_rollout_path(thread_id, &rollout_path);
-        Ok(())
+                .insert(params.thread_id, RecordingThread::from_create(params));
+            Ok(())
+        })
     }
 
-    async fn append_items(&self, params: AppendThreadItemsParams) -> ThreadStoreResult<()> {
-        let mut state = self.lock();
-        state.calls.append_items += 1;
-        let thread = state.thread_mut(params.thread_id)?;
-        thread.history.extend(params.items);
-        thread.updated_at = Utc::now();
-        Ok(())
+    fn resume_thread(&self, params: ResumeThreadParams) -> ThreadStoreFuture<'_, ()> {
+        Box::pin(async move {
+            let mut state = self.lock();
+            state.calls.resume_thread += 1;
+            let thread_id = params.thread_id;
+            if let Some(thread) = state.threads.get_mut(&thread_id) {
+                if params.rollout_path.is_some() {
+                    thread.rollout_path = params.rollout_path;
+                }
+                if let Some(history) = params.history {
+                    thread.history = history;
+                }
+                thread.metadata = params.metadata;
+                thread.updated_at = Utc::now();
+            } else {
+                state
+                    .threads
+                    .insert(thread_id, RecordingThread::from_resume(params));
+            }
+            let rollout_path = state
+                .threads
+                .get(&thread_id)
+                .and_then(|thread| thread.rollout_path.as_ref().map(std::clone::Clone::clone));
+            state.store_rollout_path(thread_id, &rollout_path);
+            Ok(())
+        })
     }
 
-    async fn persist_thread(&self, thread_id: ThreadId) -> ThreadStoreResult<()> {
-        let mut state = self.lock();
-        state.calls.persist_thread += 1;
-        state.thread(thread_id)?;
-        Ok(())
+    fn append_items(&self, params: AppendThreadItemsParams) -> ThreadStoreFuture<'_, ()> {
+        Box::pin(async move {
+            let mut state = self.lock();
+            state.calls.append_items += 1;
+            let thread = state.thread_mut(params.thread_id)?;
+            thread.history.extend(params.items);
+            thread.updated_at = Utc::now();
+            Ok(())
+        })
     }
 
-    async fn flush_thread(&self, thread_id: ThreadId) -> ThreadStoreResult<()> {
-        let mut state = self.lock();
-        state.calls.flush_thread += 1;
-        state.thread(thread_id)?;
-        Ok(())
+    fn persist_thread(&self, thread_id: ThreadId) -> ThreadStoreFuture<'_, ()> {
+        Box::pin(async move {
+            let mut state = self.lock();
+            state.calls.persist_thread += 1;
+            state.thread(thread_id)?;
+            Ok(())
+        })
     }
 
-    async fn shutdown_thread(&self, thread_id: ThreadId) -> ThreadStoreResult<()> {
-        let mut state = self.lock();
-        state.calls.shutdown_thread += 1;
-        let thread = state.thread_mut(thread_id)?;
-        thread.updated_at = Utc::now();
-        Ok(())
+    fn flush_thread(&self, thread_id: ThreadId) -> ThreadStoreFuture<'_, ()> {
+        Box::pin(async move {
+            let mut state = self.lock();
+            state.calls.flush_thread += 1;
+            state.thread(thread_id)?;
+            Ok(())
+        })
     }
 
-    async fn discard_thread(&self, thread_id: ThreadId) -> ThreadStoreResult<()> {
-        let mut state = self.lock();
-        state.calls.discard_thread += 1;
-        state.threads.remove(&thread_id);
-        state
-            .rollout_paths
-            .retain(|_, mapped_thread_id| *mapped_thread_id != thread_id);
-        Ok(())
+    fn shutdown_thread(&self, thread_id: ThreadId) -> ThreadStoreFuture<'_, ()> {
+        Box::pin(async move {
+            let mut state = self.lock();
+            state.calls.shutdown_thread += 1;
+            let thread = state.thread_mut(thread_id)?;
+            thread.updated_at = Utc::now();
+            Ok(())
+        })
     }
 
-    async fn load_history(
+    fn discard_thread(&self, thread_id: ThreadId) -> ThreadStoreFuture<'_, ()> {
+        Box::pin(async move {
+            let mut state = self.lock();
+            state.calls.discard_thread += 1;
+            state.threads.remove(&thread_id);
+            state
+                .rollout_paths
+                .retain(|_, mapped_thread_id| *mapped_thread_id != thread_id);
+            Ok(())
+        })
+    }
+
+    fn load_history(
         &self,
         params: crate::LoadThreadHistoryParams,
-    ) -> ThreadStoreResult<StoredThreadHistory> {
-        let mut state = self.lock();
-        state.calls.load_history += 1;
-        let thread = state.thread(params.thread_id)?;
-        if thread.archived_at.is_some() && !params.include_archived {
-            return Err(ThreadStoreError::ThreadNotFound {
+    ) -> ThreadStoreFuture<'_, StoredThreadHistory> {
+        Box::pin(async move {
+            let mut state = self.lock();
+            state.calls.load_history += 1;
+            let thread = state.thread(params.thread_id)?;
+            if thread.archived_at.is_some() && !params.include_archived {
+                return Err(ThreadStoreError::ThreadNotFound {
+                    thread_id: params.thread_id,
+                });
+            }
+            Ok(StoredThreadHistory {
                 thread_id: params.thread_id,
-            });
-        }
-        Ok(StoredThreadHistory {
-            thread_id: params.thread_id,
-            items: thread.history.clone(),
+                items: thread.history.clone(),
+            })
         })
     }
 
-    async fn read_thread(&self, params: ReadThreadParams) -> ThreadStoreResult<StoredThread> {
-        let mut state = self.lock();
-        state.calls.read_thread += 1;
-        let thread = state.thread(params.thread_id)?;
-        if thread.archived_at.is_some() && !params.include_archived {
-            return Err(ThreadStoreError::ThreadNotFound {
-                thread_id: params.thread_id,
-            });
-        }
-        Ok(thread.stored_thread(params.include_history))
+    fn read_thread(&self, params: ReadThreadParams) -> ThreadStoreFuture<'_, StoredThread> {
+        Box::pin(async move {
+            let mut state = self.lock();
+            state.calls.read_thread += 1;
+            let thread = state.thread(params.thread_id)?;
+            if thread.archived_at.is_some() && !params.include_archived {
+                return Err(ThreadStoreError::ThreadNotFound {
+                    thread_id: params.thread_id,
+                });
+            }
+            Ok(thread.stored_thread(params.include_history))
+        })
     }
 
-    async fn read_thread_dynamic_tools(
+    fn read_thread_dynamic_tools(
         &self,
         params: ReadThreadDynamicToolsParams,
-    ) -> ThreadStoreResult<Option<Vec<DynamicToolSpec>>> {
-        let mut state = self.lock();
-        state.calls.read_thread_dynamic_tools += 1;
-        let thread = state.thread(params.thread_id)?;
-        Ok(Some(thread.dynamic_tools.clone()))
+    ) -> ThreadStoreFuture<'_, Option<Vec<DynamicToolSpec>>> {
+        Box::pin(async move {
+            let mut state = self.lock();
+            state.calls.read_thread_dynamic_tools += 1;
+            let thread = state.thread(params.thread_id)?;
+            Ok(Some(thread.dynamic_tools.clone()))
+        })
     }
 
-    async fn read_thread_by_rollout_path(
+    fn read_thread_by_rollout_path(
         &self,
         params: ReadThreadByRolloutPathParams,
-    ) -> ThreadStoreResult<StoredThread> {
-        let mut state = self.lock();
-        state.calls.read_thread_by_rollout_path += 1;
-        let Some(thread_id) = state.rollout_paths.get(&params.rollout_path).copied() else {
-            return Err(ThreadStoreError::InvalidRequest {
-                message: format!(
-                    "recording thread store does not know rollout path {}",
-                    params.rollout_path.display()
-                ),
-            });
-        };
-        let thread = state.thread(thread_id)?;
-        if thread.archived_at.is_some() && !params.include_archived {
-            return Err(ThreadStoreError::ThreadNotFound { thread_id });
-        }
-        Ok(thread.stored_thread(params.include_history))
-    }
-
-    async fn list_threads(&self, params: ListThreadsParams) -> ThreadStoreResult<ThreadPage> {
-        let mut state = self.lock();
-        state.calls.list_threads += 1;
-        let items = state
-            .threads
-            .values()
-            .filter(|thread| params.archived || thread.archived_at.is_none())
-            .map(|thread| thread.stored_thread(/*include_history*/ false))
-            .collect();
-        Ok(ThreadPage {
-            items,
-            next_cursor: None,
+    ) -> ThreadStoreFuture<'_, StoredThread> {
+        Box::pin(async move {
+            let mut state = self.lock();
+            state.calls.read_thread_by_rollout_path += 1;
+            let Some(thread_id) = state.rollout_paths.get(&params.rollout_path).copied() else {
+                return Err(ThreadStoreError::InvalidRequest {
+                    message: format!(
+                        "recording thread store does not know rollout path {}",
+                        params.rollout_path.display()
+                    ),
+                });
+            };
+            let thread = state.thread(thread_id)?;
+            if thread.archived_at.is_some() && !params.include_archived {
+                return Err(ThreadStoreError::ThreadNotFound { thread_id });
+            }
+            Ok(thread.stored_thread(params.include_history))
         })
     }
 
-    async fn list_turns(&self, _params: ListTurnsParams) -> ThreadStoreResult<TurnPage> {
-        let mut state = self.lock();
-        state.calls.list_turns += 1;
-        Ok(TurnPage {
-            turns: Vec::new(),
-            next_cursor: None,
-            backwards_cursor: None,
+    fn list_threads(&self, params: ListThreadsParams) -> ThreadStoreFuture<'_, ThreadPage> {
+        Box::pin(async move {
+            let mut state = self.lock();
+            state.calls.list_threads += 1;
+            let items = state
+                .threads
+                .values()
+                .filter(|thread| params.archived || thread.archived_at.is_none())
+                .map(|thread| thread.stored_thread(/*include_history*/ false))
+                .collect();
+            Ok(ThreadPage {
+                items,
+                next_cursor: None,
+            })
         })
     }
 
-    async fn list_items(&self, _params: ListItemsParams) -> ThreadStoreResult<ItemPage> {
-        let mut state = self.lock();
-        state.calls.list_items += 1;
-        Ok(ItemPage {
-            items: Vec::new(),
-            next_cursor: None,
-            backwards_cursor: None,
+    fn list_turns(&self, _params: ListTurnsParams) -> ThreadStoreFuture<'_, TurnPage> {
+        Box::pin(async move {
+            let mut state = self.lock();
+            state.calls.list_turns += 1;
+            Ok(TurnPage {
+                turns: Vec::new(),
+                next_cursor: None,
+                backwards_cursor: None,
+            })
         })
     }
 
-    async fn update_thread_metadata(
+    fn list_items(&self, _params: ListItemsParams) -> ThreadStoreFuture<'_, ItemPage> {
+        Box::pin(async move {
+            let mut state = self.lock();
+            state.calls.list_items += 1;
+            Ok(ItemPage {
+                items: Vec::new(),
+                next_cursor: None,
+                backwards_cursor: None,
+            })
+        })
+    }
+
+    fn update_thread_metadata(
         &self,
         params: UpdateThreadMetadataParams,
-    ) -> ThreadStoreResult<StoredThread> {
-        let mut state = self.lock();
-        state.calls.update_thread_metadata += 1;
-        let thread = state.thread_mut(params.thread_id)?;
-        thread.patch.merge(params.patch);
-        thread.updated_at = Utc::now();
-        Ok(thread.stored_thread(/*include_history*/ false))
+    ) -> ThreadStoreFuture<'_, StoredThread> {
+        Box::pin(async move {
+            let mut state = self.lock();
+            state.calls.update_thread_metadata += 1;
+            let thread = state.thread_mut(params.thread_id)?;
+            thread.patch.merge(params.patch);
+            thread.updated_at = Utc::now();
+            Ok(thread.stored_thread(/*include_history*/ false))
+        })
     }
 
-    async fn archive_thread(&self, params: ArchiveThreadParams) -> ThreadStoreResult<()> {
-        let mut state = self.lock();
-        state.calls.archive_thread += 1;
-        let thread = state.thread_mut(params.thread_id)?;
-        thread.archived_at = Some(Utc::now());
-        thread.updated_at = Utc::now();
-        Ok(())
+    fn archive_thread(&self, params: ArchiveThreadParams) -> ThreadStoreFuture<'_, ()> {
+        Box::pin(async move {
+            let mut state = self.lock();
+            state.calls.archive_thread += 1;
+            let thread = state.thread_mut(params.thread_id)?;
+            thread.archived_at = Some(Utc::now());
+            thread.updated_at = Utc::now();
+            Ok(())
+        })
     }
 
-    async fn unarchive_thread(
-        &self,
-        params: ArchiveThreadParams,
-    ) -> ThreadStoreResult<StoredThread> {
-        let mut state = self.lock();
-        state.calls.unarchive_thread += 1;
-        let thread = state.thread_mut(params.thread_id)?;
-        thread.archived_at = None;
-        thread.updated_at = Utc::now();
-        Ok(thread.stored_thread(/*include_history*/ false))
+    fn unarchive_thread(&self, params: ArchiveThreadParams) -> ThreadStoreFuture<'_, StoredThread> {
+        Box::pin(async move {
+            let mut state = self.lock();
+            state.calls.unarchive_thread += 1;
+            let thread = state.thread_mut(params.thread_id)?;
+            thread.archived_at = None;
+            thread.updated_at = Utc::now();
+            Ok(thread.stored_thread(/*include_history*/ false))
+        })
+    }
+
+    fn delete_thread(&self, params: DeleteThreadParams) -> ThreadStoreFuture<'_, ()> {
+        Box::pin(async move {
+            let mut state = self.lock();
+            state.calls.delete_thread += 1;
+            state.threads.remove(&params.thread_id);
+            state
+                .rollout_paths
+                .retain(|_, mapped_thread_id| *mapped_thread_id != params.thread_id);
+            Ok(())
+        })
     }
 }
 
@@ -455,7 +508,7 @@ impl LiveThreadFactory for RecordingLiveThreadFactory {
         &'a self,
         thread_store: Arc<dyn ThreadStore>,
         params: CreateThreadParams,
-    ) -> ThreadStoreFuture<'a, ThreadStoreResult<Arc<dyn LiveThreadHandle>>> {
+    ) -> LiveThreadFuture<'a, ThreadStoreResult<Arc<dyn LiveThreadHandle>>> {
         Box::pin(async move {
             let thread_id = params.thread_id;
             thread_store.create_thread(params).await?;
@@ -472,7 +525,7 @@ impl LiveThreadFactory for RecordingLiveThreadFactory {
         &'a self,
         thread_store: Arc<dyn ThreadStore>,
         params: ResumeThreadParams,
-    ) -> ThreadStoreFuture<'a, ThreadStoreResult<Arc<dyn LiveThreadHandle>>> {
+    ) -> LiveThreadFuture<'a, ThreadStoreResult<Arc<dyn LiveThreadHandle>>> {
         Box::pin(async move {
             let thread_id = params.thread_id;
             let rollout_path = params.rollout_path.clone();
@@ -497,7 +550,7 @@ impl LiveThreadHandle for RecordingLiveThread {
     fn append_items<'a>(
         &'a self,
         items: &'a [RolloutItem],
-    ) -> ThreadStoreFuture<'a, ThreadStoreResult<()>> {
+    ) -> LiveThreadFuture<'a, ThreadStoreResult<()>> {
         let thread_store = Arc::clone(&self.thread_store);
         let params = AppendThreadItemsParams {
             thread_id: self.thread_id,
@@ -506,23 +559,23 @@ impl LiveThreadHandle for RecordingLiveThread {
         Box::pin(async move { thread_store.append_items(params).await })
     }
 
-    fn persist(&self) -> ThreadStoreFuture<'_, ThreadStoreResult<()>> {
+    fn persist(&self) -> LiveThreadFuture<'_, ThreadStoreResult<()>> {
         let thread_store = Arc::clone(&self.thread_store);
         let thread_id = self.thread_id;
         Box::pin(async move { thread_store.persist_thread(thread_id).await })
     }
 
-    fn flush(&self) -> ThreadStoreFuture<'_, ThreadStoreResult<()>> {
+    fn flush(&self) -> LiveThreadFuture<'_, ThreadStoreResult<()>> {
         let thread_store = Arc::clone(&self.thread_store);
         let thread_id = self.thread_id;
         Box::pin(async move { thread_store.flush_thread(thread_id).await })
     }
 
-    fn shutdown(&self) -> ThreadStoreFuture<'_, ThreadStoreResult<()>> {
+    fn shutdown(&self) -> LiveThreadFuture<'_, ThreadStoreResult<()>> {
         Box::pin(async move { self.thread_store.shutdown_thread(self.thread_id).await })
     }
 
-    fn discard(&self) -> ThreadStoreFuture<'_, ThreadStoreResult<()>> {
+    fn discard(&self) -> LiveThreadFuture<'_, ThreadStoreResult<()>> {
         Box::pin(async move { self.thread_store.discard_thread(self.thread_id).await })
     }
 
@@ -530,7 +583,7 @@ impl LiveThreadHandle for RecordingLiveThread {
         &self,
         patch: ThreadMetadataPatch,
         include_archived: bool,
-    ) -> ThreadStoreFuture<'_, ThreadStoreResult<StoredThread>> {
+    ) -> LiveThreadFuture<'_, ThreadStoreResult<StoredThread>> {
         let params = UpdateThreadMetadataParams {
             thread_id: self.thread_id,
             patch,
@@ -542,7 +595,7 @@ impl LiveThreadHandle for RecordingLiveThread {
     fn load_history(
         &self,
         include_archived: bool,
-    ) -> ThreadStoreFuture<'_, ThreadStoreResult<StoredThreadHistory>> {
+    ) -> LiveThreadFuture<'_, ThreadStoreResult<StoredThreadHistory>> {
         let params = crate::LoadThreadHistoryParams {
             thread_id: self.thread_id,
             include_archived,
@@ -554,7 +607,7 @@ impl LiveThreadHandle for RecordingLiveThread {
         &self,
         include_archived: bool,
         include_history: bool,
-    ) -> ThreadStoreFuture<'_, ThreadStoreResult<StoredThread>> {
+    ) -> LiveThreadFuture<'_, ThreadStoreResult<StoredThread>> {
         let params = ReadThreadParams {
             thread_id: self.thread_id,
             include_archived,
@@ -563,7 +616,7 @@ impl LiveThreadHandle for RecordingLiveThread {
         Box::pin(async move { self.thread_store.read_thread(params).await })
     }
 
-    fn local_rollout_path(&self) -> ThreadStoreFuture<'_, ThreadStoreResult<Option<PathBuf>>> {
+    fn local_rollout_path(&self) -> LiveThreadFuture<'_, ThreadStoreResult<Option<PathBuf>>> {
         Box::pin(async { Ok(self.rollout_path.clone()) })
     }
 }

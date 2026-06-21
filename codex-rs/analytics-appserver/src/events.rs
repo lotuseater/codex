@@ -12,12 +12,14 @@ use codex_analytics::AcceptedLineFingerprint;
 use codex_analytics::AppServerRpcTransport;
 use codex_analytics::CodexCompactionEvent;
 use codex_analytics::CodexErrKind;
+use codex_analytics::CodexGoalEvent;
 use codex_analytics::CompactionImplementation;
 use codex_analytics::CompactionPhase;
 use codex_analytics::CompactionReason;
 use codex_analytics::CompactionStatus;
 use codex_analytics::CompactionStrategy;
 use codex_analytics::CompactionTrigger;
+use codex_analytics::GoalEventKind;
 use codex_analytics::GuardianReviewEventParams;
 use codex_analytics::ThreadInitializationMode;
 use codex_analytics::TurnStatus;
@@ -44,6 +46,8 @@ pub(crate) enum TrackEventRequest {
     AppUsed(CodexAppUsedEventRequest),
     HookRun(CodexHookRunEventRequest),
     Compaction(Box<CodexCompactionEventRequest>),
+    // fork-local: Goal is connection-gated; handled by the app-server reducer.
+    Goal(Box<CodexGoalEventRequest>),
     TurnEvent(Box<CodexTurnEventRequest>),
     TurnSteer(CodexTurnSteerEventRequest),
     CommandExecution(CodexCommandExecutionEventRequest),
@@ -403,6 +407,9 @@ pub(crate) struct CodexMcpToolCallEventParams {
     pub(crate) mcp_server_name: String,
     pub(crate) mcp_tool_name: String,
     pub(crate) mcp_error_present: bool,
+    // fork-local: MCP plugin telemetry — identifies the plugin that registered
+    // the MCP server/tool. Sourced from `ThreadItem::McpToolCall.plugin_id`.
+    pub(crate) plugin_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -902,11 +909,78 @@ pub(crate) fn codex_compaction_event_params(
         phase: input.phase,
         strategy: input.strategy,
         status: input.status,
-        error: input.error,
+        // fork-local: upstream restructured `CodexCompactionEvent.error: Option<String>`
+        // into `codex_error_kind` / `codex_error_http_status_code`. Preserve this crate's
+        // `error: Option<String>` wire field by serializing the error kind to its
+        // snake_case token (same idiom as `goal_status` below).
+        error: input.codex_error_kind.and_then(|kind| {
+            serde_json::to_value(kind)
+                .ok()
+                .and_then(|value| value.as_str().map(str::to_owned))
+        }),
         active_context_tokens_before: input.active_context_tokens_before,
         active_context_tokens_after: input.active_context_tokens_after,
         started_at: input.started_at,
         completed_at: input.completed_at,
         duration_ms: input.duration_ms,
+    }
+}
+
+// fork-local: Goal-event types ported from `codex-analytics`'s `events.rs` so
+// that the app-server reducer (which owns the connection-gated ingest_goal path)
+// can build and emit goal events without pulling `codex-state` into this crate.
+// `goal_status` is serialized eagerly to a JSON `Value` because
+// `codex_state::ThreadGoalStatus` is not a direct dependency of this crate.
+
+#[derive(Serialize)]
+pub(crate) struct CodexGoalEventParams {
+    pub(crate) thread_id: String,
+    pub(crate) session_id: String,
+    pub(crate) turn_id: Option<String>,
+    pub(crate) app_server_client: CodexAppServerClientMetadata,
+    pub(crate) runtime: CodexRuntimeMetadata,
+    pub(crate) thread_source: Option<ThreadSource>,
+    pub(crate) subagent_source: Option<String>,
+    pub(crate) parent_thread_id: Option<String>,
+    pub(crate) goal_id: String,
+    pub(crate) event_kind: GoalEventKind,
+    // fork-local: stored as Value because `codex_state::ThreadGoalStatus` is not
+    // a direct dep of this crate; serialized from the input in codex_goal_event_params.
+    pub(crate) goal_status: serde_json::Value,
+    pub(crate) has_token_budget: bool,
+    pub(crate) cumulative_tokens_accounted: Option<i64>,
+    pub(crate) cumulative_time_accounted_seconds: Option<i64>,
+}
+
+#[derive(Serialize)]
+pub(crate) struct CodexGoalEventRequest {
+    pub(crate) event_type: &'static str,
+    pub(crate) event_params: CodexGoalEventParams,
+}
+
+pub(crate) fn codex_goal_event_params(
+    input: CodexGoalEvent,
+    session_id: String,
+    app_server_client: CodexAppServerClientMetadata,
+    runtime: CodexRuntimeMetadata,
+    thread_source: Option<ThreadSource>,
+    subagent_source: Option<String>,
+    parent_thread_id: Option<String>,
+) -> CodexGoalEventParams {
+    CodexGoalEventParams {
+        thread_id: input.thread_id,
+        session_id,
+        turn_id: input.turn_id,
+        app_server_client,
+        runtime,
+        thread_source,
+        subagent_source,
+        parent_thread_id,
+        goal_id: input.goal_id,
+        event_kind: input.event_kind,
+        goal_status: serde_json::to_value(input.goal_status).unwrap_or(serde_json::Value::Null),
+        has_token_budget: input.has_token_budget,
+        cumulative_tokens_accounted: input.cumulative_tokens_accounted,
+        cumulative_time_accounted_seconds: input.cumulative_time_accounted_seconds,
     }
 }

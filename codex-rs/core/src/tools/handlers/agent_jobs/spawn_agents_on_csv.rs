@@ -29,6 +29,15 @@ impl ToolExecutor<ToolInvocation> for SpawnAgentsOnCsvHandler {
         &self,
         invocation: ToolInvocation,
     ) -> Result<Box<dyn crate::tools::context::ToolOutput>, FunctionCallError> {
+        self.handle_call(invocation).await
+    }
+}
+
+impl SpawnAgentsOnCsvHandler {
+    async fn handle_call(
+        &self,
+        invocation: ToolInvocation,
+    ) -> Result<Box<dyn crate::tools::context::ToolOutput>, FunctionCallError> {
         let ToolInvocation {
             session,
             turn,
@@ -295,7 +304,7 @@ pub async fn handle(
     Ok(FunctionToolOutput::from_text(content, Some(true)))
 }
 
-fn single_local_environment_cwd(turn: &TurnContext) -> Result<&AbsolutePathBuf, FunctionCallError> {
+fn single_local_environment_cwd(turn: &TurnContext) -> Result<AbsolutePathBuf, FunctionCallError> {
     let [turn_environment] = turn.environments.turn_environments.as_slice() else {
         return Err(FunctionCallError::RespondToModel(
             "spawn_agents_on_csv requires exactly one local environment".to_string(),
@@ -308,5 +317,12 @@ fn single_local_environment_cwd(turn: &TurnContext) -> Result<&AbsolutePathBuf, 
         ));
     }
 
-    Ok(&turn_environment.cwd)
+    // TODO(anp): Migrate spawn_agents_on_csv filesystem access to PathUri before enabling it for
+    // remote environments.
+    turn_environment.cwd().to_abs_path().map_err(|err| {
+        FunctionCallError::RespondToModel(format!(
+            "spawn_agents_on_csv cwd `{}` is not native to the Codex host: {err}",
+            turn_environment.cwd()
+        ))
+    })
 }

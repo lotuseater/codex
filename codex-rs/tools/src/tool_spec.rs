@@ -24,6 +24,11 @@ pub struct WebSearchToolOptions<'a> {
 pub fn create_web_search_tool(options: WebSearchToolOptions<'_>) -> Option<ToolSpec> {
     let external_web_access = match options.web_search_mode {
         Some(WebSearchMode::Cached) => Some(false),
+        // Index-backed search reaches live external content gated by the index,
+        // so from this tool spec's (index-unaware) perspective it behaves like
+        // `Live` w.r.t. external web access. The dedicated `index_gated_web_access`
+        // signal is plumbed separately in core's hosted_spec.
+        Some(WebSearchMode::Indexed) => Some(true),
         Some(WebSearchMode::Live) => Some(true),
         Some(WebSearchMode::Disabled) | None => None,
     }?;
@@ -40,6 +45,7 @@ pub fn create_web_search_tool(options: WebSearchToolOptions<'_>) -> Option<ToolS
 
     Some(ToolSpec::WebSearch {
         external_web_access: Some(external_web_access),
+        index_gated_web_access: None,
         filters: options
             .web_search_config
             .and_then(|config| config.filters.clone().map(Into::into)),

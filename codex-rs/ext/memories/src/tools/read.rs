@@ -1,7 +1,9 @@
+use codex_extension_api::FunctionCallError;
 use codex_extension_api::JsonToolOutput;
 use codex_extension_api::ToolCall;
 use codex_extension_api::ToolExecutor;
 use codex_extension_api::ToolName;
+use codex_extension_api::ToolOutput;
 use codex_extension_api::ToolSpec;
 use codex_otel::MetricsClient;
 use schemars::JsonSchema;
@@ -38,12 +40,11 @@ pub(super) struct ReadTool<B> {
     pub(super) metrics_client: Option<MetricsClient>,
 }
 
-#[async_trait::async_trait]
 impl<B> ToolExecutor<ToolCall> for ReadTool<B>
 where
     B: MemoriesBackend,
 {
-    type Output = Box<dyn codex_extension_api::ToolOutput>;
+    type Output = Box<dyn ToolOutput>;
 
     fn tool_name(&self) -> ToolName {
         memory_tool_name(READ_TOOL_NAME)
@@ -56,37 +57,27 @@ where
         ))
     }
 
-    fn handle(
-        &self,
-        call: ToolCall,
-    ) -> impl std::future::Future<
-        Output = Result<Self::Output, codex_extension_api::FunctionCallError>,
-    > + Send {
+    async fn handle(&self, call: ToolCall) -> Result<Box<dyn ToolOutput>, FunctionCallError> {
         let backend = self.backend.clone();
-        let metrics_client = self.metrics_client.clone();
-        async move {
-            let args: ReadArgs = parse_args(&call)?;
-            let path = args.path;
-            let scope = scope_from_path(path.as_str());
-            let response = backend
-                .read(ReadMemoryRequest {
-                    path: path.clone(),
-                    line_offset: args.line_offset.unwrap_or(1),
-                    max_lines: args.max_lines,
-                    max_tokens: DEFAULT_READ_MAX_TOKENS,
-                })
-                .await;
-            record_tool_call(
-                metrics_client.as_ref(),
-                READ_TOOL_NAME,
-                scope,
-                response.is_ok(),
-                truncated_tag(response.as_ref().ok().map(|response| response.truncated)),
-            );
-            let response = response.map_err(backend_error_to_function_call)?;
-            let output: Box<dyn codex_extension_api::ToolOutput> =
-                Box::new(JsonToolOutput::new(json!(response)));
-            Ok(output)
-        }
+        let args: ReadArgs = parse_args(&call)?;
+        let path = args.path;
+        let scope = scope_from_path(path.as_str());
+        let response = backend
+            .read(ReadMemoryRequest {
+                path: path.clone(),
+                line_offset: args.line_offset.unwrap_or(1),
+                max_lines: args.max_lines,
+                max_tokens: DEFAULT_READ_MAX_TOKENS,
+            })
+            .await;
+        record_tool_call(
+            self.metrics_client.as_ref(),
+            READ_TOOL_NAME,
+            scope,
+            response.is_ok(),
+            truncated_tag(response.as_ref().ok().map(|response| response.truncated)),
+        );
+        let response = response.map_err(backend_error_to_function_call)?;
+        Ok(Box::new(JsonToolOutput::new(json!(response))))
     }
 }

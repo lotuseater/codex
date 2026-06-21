@@ -40,6 +40,7 @@ use codex_tool_registry_api::default_namespace_description;
 use codex_tools::ToolSearchInfo;
 use futures::future::BoxFuture;
 use serde_json::Value;
+use tracing::instrument;
 use tracing::warn;
 
 pub(crate) type ToolTelemetryTags = Vec<(&'static str, String)>;
@@ -427,11 +428,8 @@ impl ToolExecutor<ToolInvocation> for ExposureOverride {
         self.exposure == ToolExposure::Direct && self.handler.supports_parallel_tool_calls()
     }
 
-    async fn handle(
-        &self,
-        invocation: ToolInvocation,
-    ) -> Result<Box<dyn ToolOutput>, FunctionCallError> {
-        self.handler.handle(invocation).await
+    fn handle(&self, invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'_> {
+        self.handler.handle(invocation)
     }
 }
 
@@ -665,6 +663,7 @@ impl ToolRegistry {
         Self { tools }
     }
 
+    #[instrument(level = "trace", skip_all)]
     pub(crate) fn from_tools(tools: impl IntoIterator<Item = Arc<dyn RegisteredTool>>) -> Self {
         let mut tools_by_name = HashMap::new();
         for tool in tools {
@@ -943,7 +942,7 @@ impl ToolRegistry {
             Ok((_, success)) => *success,
             Err(_) => false,
         };
-        emit_metric_for_tool_read(&invocation, success).await;
+        emit_metric_for_tool_read(&invocation, success);
         maybe_spawn_first_moves_hit(&invocation, pre_tool_use_payload.as_ref(), success);
         let post_tool_use_payload = if success {
             let guard = response_cell.lock().await;
@@ -979,7 +978,7 @@ impl ToolRegistry {
                 outcome.additional_contexts.clone(),
             )
             .await;
-            let replacement_text = if outcome.should_stop {
+            let replacement_text = if outcome.should_block {
                 Some(
                     outcome
                         .feedback_message
@@ -1006,6 +1005,8 @@ impl ToolRegistry {
             }
         }
 
+        // fork-local: skip operation-cache store when served from cache or replaced by a
+        // PostToolUse hook; a PostToolUse block rejects the result, not the execution.
         if !served_from_operation_cache
             && !replaced_by_post_tool_use
             && let Some(cache_store_payload) = &cache_store_payload
@@ -1057,9 +1058,28 @@ impl ToolRegistry {
         match result {
             Ok(_) => {
                 let mut guard = response_cell.lock().await;
-                let result = guard.take().ok_or_else(|| {
+                let mut result = guard.take().ok_or_else(|| {
                     FunctionCallError::Fatal("tool produced no output".to_string())
                 })?;
+                if let Some(outcome) = post_tool_use_outcome {
+                    if outcome.should_block {
+                        let message = outcome.feedback_message.unwrap_or_else(|| {
+                            "PostToolUse hook blocked the tool result".to_string()
+                        });
+                        let err = FunctionCallError::RespondToModel(message);
+                        dispatch_trace.record_failed(&err);
+                        return Err(err);
+                    }
+                    if let Some(feedback_message) = outcome.feedback_message {
+                        result.result = Box::new(PostToolUseFeedbackOutput {
+                            original: result.result,
+                            model_visible: FunctionToolOutput::from_text(
+                                feedback_message,
+                                /*success*/ None,
+                            ),
+                        });
+                    }
+                }
                 dispatch_trace.record_completed(
                     &invocation,
                     &result.call_id,

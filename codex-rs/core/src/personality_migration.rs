@@ -69,6 +69,7 @@ async fn has_threads(store: &dyn ThreadStore, archived: bool) -> io::Result<bool
             allowed_sources: Vec::new(),
             model_providers: None,
             cwd_filters: None,
+            parent_thread_id: None,
             archived,
             search_term: None,
             use_state_db_only: false,

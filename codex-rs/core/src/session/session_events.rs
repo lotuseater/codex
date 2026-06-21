@@ -1,4 +1,5 @@
 use super::*;
+use crate::session_prefix::format_subagent_notification_message;
 
 const CYBER_VERIFY_URL: &str = "https://chatgpt.com/cyber";
 const CYBER_SAFETY_URL: &str = "https://developers.openai.com/codex/concepts/cyber-safety";
@@ -133,12 +134,10 @@ impl Session {
         let Some(text) = realtime_text_for_event(msg) else {
             return;
         };
-        if self.conversation.running_state().await.is_none()
-            || self.conversation.active_handoff_id().await.is_none()
-        {
+        if self.conversation.running_state().await.is_none() {
             return;
         }
-        if let Err(err) = self.conversation.handoff_out(text).await {
+        if let Err(err) = self.conversation.handoff_out(text, None).await {
             debug!("failed to mirror event text to realtime conversation: {err}");
         }
     }

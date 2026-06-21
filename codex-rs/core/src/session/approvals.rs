@@ -198,6 +198,7 @@ impl Session {
         turn_context: &TurnContext,
         call_id: String,
         approval_id: Option<String>,
+        environment_id: Option<String>,
         command: Vec<String>,
         cwd: AbsolutePathBuf,
         reason: Option<String>,
@@ -250,6 +251,9 @@ impl Session {
             call_id,
             approval_id,
             turn_id: turn_context.sub_id.clone(),
+            // Upstream multi-environment feature: callers thread through the selected
+            // environment id (None implies the primary/local environment).
+            environment_id,
             started_at_ms: now_unix_timestamp_ms(),
             command,
             cwd,
@@ -319,8 +323,9 @@ impl Session {
             .map(|environment| environment.selection())
             .unwrap_or_else(|| TurnEnvironmentSelection {
                 environment_id: codex_exec_server::LOCAL_ENVIRONMENT_ID.to_string(),
+                // upstream retyped TurnEnvironmentSelection.cwd to PathUri.
                 #[allow(deprecated)]
-                cwd: turn_context.cwd.clone(),
+                cwd: turn_context.cwd.clone().into(),
             });
         self.request_permissions_for_environment(
             turn_context,
@@ -348,7 +353,8 @@ impl Session {
                 .environment_id
                 .clone()
                 .unwrap_or_else(|| codex_exec_server::LOCAL_ENVIRONMENT_ID.to_string()),
-            cwd,
+            // upstream retyped TurnEnvironmentSelection.cwd to PathUri.
+            cwd: cwd.into(),
         };
         self.request_permissions_for_environment(
             turn_context,
@@ -463,7 +469,8 @@ impl Session {
             let response = Self::normalize_request_permissions_response(
                 requested_permissions,
                 response,
-                environment.cwd.as_path(),
+                // upstream retyped cwd to PathUri; render to a host path for normalization.
+                &environment.cwd.to_path_buf(),
             );
             self.record_granted_request_permissions_for_turn(
                 &environment.environment_id,
@@ -503,7 +510,9 @@ impl Session {
             started_at_ms: now_unix_timestamp_ms(),
             reason: args.reason,
             permissions: requested_permissions,
-            cwd: Some(environment.cwd.clone()),
+            // RequestPermissionsEvent.cwd is Option<AbsolutePathBuf>; environment.cwd is
+            // now a PathUri (upstream). Convert back, dropping non-native URIs.
+            cwd: environment.cwd.to_abs_path().ok(),
         });
         self.send_event(turn_context.as_ref(), event).await;
         tokio::select! {
@@ -551,6 +560,7 @@ impl Session {
             call_id,
             turn_id: turn_context.sub_id.clone(),
             questions: args.questions,
+            auto_resolution_ms: args.auto_resolution_ms,
         });
         self.send_event(turn_context, event).await;
         rx_response.await.ok()
@@ -611,7 +621,8 @@ impl Session {
                 let response = Self::normalize_request_permissions_response(
                     entry.requested_permissions,
                     response,
-                    entry.environment.cwd.as_path(),
+                    // upstream retyped cwd to PathUri; render to a host path.
+                    &entry.environment.cwd.to_path_buf(),
                 );
                 self.record_granted_request_permissions_for_turn(
                     &entry.environment.environment_id,

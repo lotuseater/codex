@@ -47,9 +47,10 @@ impl ChatWidget {
                 text,
                 text_elements,
                 action,
+                pending_pastes,
             } => {
                 let user_message = self.user_message_from_submission(text, text_elements);
-                self.queue_user_message_with_options(user_message, action);
+                self.queue_user_message_with_options(user_message, action, pending_pastes);
             }
             InputResult::Command(cmd) => {
                 self.handle_slash_command_dispatch(cmd);
@@ -69,7 +70,7 @@ impl ChatWidget {
     }
 
     pub(super) fn queue_user_message(&mut self, user_message: UserMessage) {
-        self.queue_user_message_with_options(user_message, QueuedInputAction::Plain);
+        self.queue_user_message_with_options(user_message, QueuedInputAction::Plain, Vec::new());
     }
 
     pub(super) fn queue_automatic_self_review_prompt(&mut self, prompt: String) {
@@ -94,11 +95,19 @@ impl ChatWidget {
         &mut self,
         user_message: UserMessage,
         action: QueuedInputAction,
+        pending_pastes: Vec<(String, String)>,
     ) {
         if !self.is_session_configured() || self.is_user_turn_pending_or_running() {
             self.input_queue
                 .queued_user_messages
-                .push_back(QueuedUserMessage::new(user_message, action));
+                .push_back_with_history(
+                    QueuedUserMessage {
+                        user_message,
+                        action,
+                        pending_pastes,
+                    },
+                    UserMessageHistoryRecord::UserMessageText,
+                );
             self.refresh_pending_input_preview();
         } else {
             self.submit_user_message(user_message);
@@ -132,7 +141,7 @@ impl ChatWidget {
                     break;
                 }
                 QueuedInputAction::ParseSlash => {
-                    let drain = self.submit_queued_slash_prompt(queued_message.into_user_message());
+                    let drain = self.submit_queued_slash_prompt(queued_message);
                     if drain == QueueDrain::Stop {
                         submitted_follow_up = self.is_user_turn_pending_or_running();
                         break;

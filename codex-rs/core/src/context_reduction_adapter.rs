@@ -46,7 +46,8 @@ pub(crate) fn compaction_reason_to_context_reduction_reason(
         }
         CompactionReason::UserRequested
         | CompactionReason::ModelDownshift
-        | CompactionReason::RestoredSession => return None,
+        | CompactionReason::RestoredSession
+        | CompactionReason::CompHashChanged => return None,
     };
     Some(match reason {
         compaction_domain::ContextReductionReason::ContextLimit => {

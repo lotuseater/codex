@@ -29,6 +29,10 @@ pub struct Config {
     /// Token usage threshold triggering auto-compaction of conversation history.
     pub model_auto_compact_token_limit: Option<i64>,
 
+    /// Controls whether `model_auto_compact_token_limit` applies to the full
+    /// active context or only tokens after the carried compaction-window prefix.
+    pub model_auto_compact_token_limit_scope: AutoCompactTokenLimitScope,
+
     /// Percentage of the auto-compaction token limit that triggers early
     /// context-pressure compaction.
     pub model_compact_percentage: u8,
@@ -99,6 +103,12 @@ pub struct Config {
 
     /// Whether to inject the `<skills_instructions>` developer block.
     pub include_skill_instructions: bool,
+
+    /// Whether orchestrator-owned skills are exposed to the model.
+    pub orchestrator_skills_enabled: bool,
+
+    /// Whether orchestrator-owned MCP tools are exposed to the model.
+    pub orchestrator_mcp_enabled: bool,
 
     /// Whether to inject the `<environment_context>` user block.
     pub include_environment_context: bool,
@@ -377,6 +387,9 @@ pub struct Config {
     /// `/v1/realtime`
     /// connection) without changing normal provider HTTP requests.
     pub experimental_realtime_ws_base_url: Option<String>,
+    /// Experimental / do not use. Overrides only the WebRTC realtime call
+    /// creation base URL.
+    pub experimental_realtime_webrtc_call_base_url: Option<String>,
     /// Experimental / do not use. Selects the realtime websocket model/snapshot
     /// used for the `Op::RealtimeConversation` connection.
     pub experimental_realtime_ws_model: Option<String>,
@@ -439,6 +452,14 @@ pub struct Config {
     /// Settings specific to the task-path-based multi-agent tool surface.
     pub multi_agent_v2: MultiAgentV2Config,
 
+    /// Resolved shared rollout token-budget configuration, when the
+    /// `rollout_budget` feature is enabled.
+    pub rollout_budget: Option<RolloutBudgetConfig>,
+
+    /// Resolved current-time reminder configuration, when the
+    /// `current_time_reminder` feature is enabled.
+    pub current_time_reminder: Option<CurrentTimeReminderConfig>,
+
     /// Built-in Windows desktop automation and harness detection settings.
     pub desktop_automation: DesktopAutomationConfig,
 
@@ -493,6 +514,7 @@ pub struct Config {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct CodeModeConfig {
     pub excluded_tool_namespaces: Vec<String>,
+    pub direct_only_tool_namespaces: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -571,6 +593,10 @@ impl AuthManagerConfig for Config {
 
     fn cli_auth_credentials_store_mode(&self) -> AuthCredentialsStoreMode {
         self.cli_auth_credentials_store_mode
+    }
+
+    fn auth_keyring_backend_kind(&self) -> AuthKeyringBackendKind {
+        Config::auth_keyring_backend_kind(self)
     }
 
     fn forced_chatgpt_workspace_id(&self) -> Option<Vec<String>> {

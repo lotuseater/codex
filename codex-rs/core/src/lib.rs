@@ -4,6 +4,11 @@
 // user-visible output must go through the appropriate abstraction (e.g.,
 // the TUI or the tracing stack).
 #![deny(clippy::print_stdout, clippy::print_stderr)]
+// The 2026-06 upstream merge unions fork + upstream async logic into the
+// task-run future spawned in `tasks/mod.rs`, deepening that (non-recursive)
+// async state machine's layout past the default 128 query-depth limit. The
+// compiler-recommended fix for a large async future is to raise the limit.
+#![recursion_limit = "256"]
 
 mod apply_patch;
 mod apps;
@@ -14,13 +19,17 @@ mod client_common;
 mod realtime_context;
 mod realtime_conversation;
 mod realtime_prompt;
+mod responses_metadata;
 mod responses_retry;
 pub(crate) mod session;
+pub use responses_metadata::CodexResponsesMetadata;
 pub use session::SteerInputError;
+pub use turn_metadata::detached_memory_responses_metadata;
 mod codex_thread;
 mod compact_remote;
 mod compact_remote_v2;
 mod config_lock;
+pub use codex_thread::BackgroundTerminalInfo;
 pub use codex_thread::CodexThread;
 pub use codex_thread::CodexThreadSettingsOverrides;
 pub use codex_thread::CodexThreadTurnContextOverrides;
@@ -35,6 +44,7 @@ pub mod config;
 pub mod connectors;
 pub mod context;
 mod context_manager;
+mod current_time;
 mod environment_selection;
 pub mod exec;
 pub mod exec_env;
@@ -46,6 +56,7 @@ pub use goals::ExternalGoalPreviousStatus;
 pub use goals::ExternalGoalSet;
 mod guardian;
 mod hook_runtime;
+mod image_preparation;
 mod installation_id;
 pub(crate) mod landlock;
 pub use landlock::spawn_command_under_linux_sandbox;
@@ -87,9 +98,8 @@ mod session_prefix;
 mod session_startup_prewarm;
 pub mod skills;
 pub(crate) use skills::SkillInjections;
-pub(crate) use skills::SkillLoadOutcome;
 pub(crate) use skills::SkillMetadata;
-pub(crate) use skills::SkillsManager;
+pub(crate) use skills::SkillsService;
 pub(crate) use skills::build_available_skills;
 pub(crate) use skills::build_skill_injections;
 pub(crate) use skills::build_skill_name_counts;
@@ -97,7 +107,6 @@ pub(crate) use skills::collect_env_var_dependencies;
 pub(crate) use skills::collect_explicit_skill_mentions;
 pub(crate) use skills::default_skill_metadata_budget;
 pub(crate) use skills::injection;
-pub(crate) use skills::manager;
 pub(crate) use skills::maybe_emit_implicit_skill_invocation;
 pub(crate) use skills::resolve_skill_dependencies_for_turn;
 pub(crate) use skills::skills_load_input_from_config;
@@ -131,11 +140,11 @@ pub type NewConversation = NewThread;
 #[deprecated(note = "use CodexThread")]
 pub type CodexConversation = CodexThread;
 pub(crate) mod agents_md;
-pub use agents_md::AgentsMdManager;
 pub use agents_md::DEFAULT_AGENTS_MD_FILENAME;
 pub use agents_md::LOCAL_AGENTS_MD_FILENAME;
 pub use agents_md::LoadedAgentsMd;
 mod rollout;
+mod rollout_budget;
 pub(crate) mod safety;
 mod session_rollout_init_error;
 pub mod shell;
@@ -189,13 +198,14 @@ pub use client_common::ResponseEvent;
 pub use client_common::ResponseStream;
 pub use codex_prompts::REVIEW_PROMPT;
 pub use compact::content_items_to_text;
+pub use current_time::TimeFuture;
+pub use current_time::TimeProvider;
 pub use event_mapping::parse_turn_item;
 pub use exec_policy::ExecPolicyError;
 pub use exec_policy::check_execpolicy_for_warnings;
 pub use exec_policy::format_exec_policy_error_with_source;
 pub use exec_policy::load_exec_policy;
 pub use installation_id::resolve_installation_id;
-pub use turn_metadata::build_turn_metadata_header;
 pub mod compact;
 mod context_reduction_adapter;
 mod memory_usage;

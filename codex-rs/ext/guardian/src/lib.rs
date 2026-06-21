@@ -2,10 +2,11 @@ use std::sync::Arc;
 
 use codex_extension_api::AgentSpawnFuture;
 use codex_extension_api::AgentSpawner;
+use codex_extension_api::ExtensionFuture;
 use codex_extension_api::ExtensionRegistryBuilder;
+use codex_extension_api::ThreadId;
 use codex_extension_api::ThreadLifecycleContributor;
 use codex_extension_api::ThreadStartInput;
-use codex_extension_api::ThreadId;
 
 /// Guardian extension dependencies supplied by the host at construction time.
 #[derive(Clone, Debug)]
@@ -46,17 +47,18 @@ impl GuardianThreadContext {
     }
 }
 
-#[async_trait::async_trait]
 impl<S, C> ThreadLifecycleContributor<C> for GuardianExtension<S>
 where
     S: Send + Sync,
     C: Sync,
 {
-    async fn on_thread_start(&self, input: ThreadStartInput<'_, C>) {
-        let forked_from_thread_id = ThreadId::new(input.thread_store.level_id());
-        input.thread_store.insert(GuardianThreadContext {
-            forked_from_thread_id,
-        });
+    fn on_thread_start<'a>(&'a self, input: ThreadStartInput<'a, C>) -> ExtensionFuture<'a, ()> {
+        Box::pin(async move {
+            let forked_from_thread_id = ThreadId::new(input.thread_store.level_id());
+            input.thread_store.insert(GuardianThreadContext {
+                forked_from_thread_id,
+            });
+        })
     }
 }
 

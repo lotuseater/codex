@@ -1,8 +1,10 @@
 pub use codex_api::ResponseEvent;
-use codex_config::types::Personality;
+use codex_protocol::config_types::Personality;
 use codex_protocol::error::Result;
 use codex_protocol::models::BaseInstructions;
+use codex_protocol::models::ContentItem;
 use codex_protocol::models::FunctionCallOutputBody;
+use codex_protocol::models::FunctionCallOutputContentItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::InterAgentCommunication;
 use codex_tool_registry_api::ToolSpec;
@@ -31,7 +33,9 @@ pub struct Prompt {
 
     pub base_instructions: BaseInstructions,
 
-    /// Optionally specify the personality of the model.
+    /// fork-local: optionally specify the personality of the model. Restored after
+    /// the upstream merge dropped this field; consumed by the request builder and set
+    /// from `turn_context.personality` in compact_remote.rs and turn/prompt_reduction.rs.
     pub personality: Option<Personality>,
 
     /// Optional the output schema for the model's response.
@@ -90,6 +94,59 @@ impl Prompt {
 
         input
     }
+
+    pub(crate) fn get_formatted_input_for_request(
+        &self,
+        use_responses_lite: bool,
+    ) -> Vec<ResponseItem> {
+        // fork-local: keep the fork's input transforms (inter-agent communication,
+        // tool-search sanitization, freeform apply_patch reserialization) on the
+        // request path, then apply upstream's responses-lite image stripping.
+        let mut input = self.get_formatted_input();
+        if use_responses_lite {
+            strip_image_details(&mut input);
+        }
+        input
+    }
+}
+
+fn strip_image_details(items: &mut [ResponseItem]) {
+    for item in items {
+        match item {
+            ResponseItem::Message { content, .. } => {
+                for content_item in content {
+                    if let ContentItem::InputImage { detail, .. } = content_item {
+                        *detail = None;
+                    }
+                }
+            }
+            ResponseItem::FunctionCallOutput { output, .. }
+            | ResponseItem::CustomToolCallOutput { output, .. } => {
+                if let Some(content) = output.content_items_mut() {
+                    for content_item in content {
+                        if let FunctionCallOutputContentItem::InputImage { detail, .. } =
+                            content_item
+                        {
+                            *detail = None;
+                        }
+                    }
+                }
+            }
+            ResponseItem::Reasoning { .. }
+            | ResponseItem::AgentMessage { .. }
+            | ResponseItem::LocalShellCall { .. }
+            | ResponseItem::FunctionCall { .. }
+            | ResponseItem::ToolSearchCall { .. }
+            | ResponseItem::CustomToolCall { .. }
+            | ResponseItem::ToolSearchOutput { .. }
+            | ResponseItem::WebSearchCall { .. }
+            | ResponseItem::ImageGenerationCall { .. }
+            | ResponseItem::Compaction { .. }
+            | ResponseItem::CompactionTrigger { .. }
+            | ResponseItem::ContextCompaction { .. }
+            | ResponseItem::Other => {}
+        }
+    }
 }
 
 fn sanitize_tool_search_outputs(items: &mut Vec<ResponseItem>) {
@@ -138,6 +195,7 @@ fn reserialize_shell_outputs(items: &mut [ResponseItem]) {
             call_id,
             name,
             input: _,
+            metadata: _,
         } => {
             if name == "apply_patch" {
                 shell_call_ids.insert(call_id.clone());

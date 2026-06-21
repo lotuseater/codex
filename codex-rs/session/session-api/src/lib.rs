@@ -15,6 +15,7 @@ use serde::Serialize;
 pub struct PreviousTurnSettings {
     pub model: String,
     pub realtime_active: Option<bool>,
+    pub comp_hash: Option<String>,
 }
 
 impl PreviousTurnSettings {
@@ -22,6 +23,7 @@ impl PreviousTurnSettings {
         Self {
             model,
             realtime_active,
+            comp_hash: None,
         }
     }
 }

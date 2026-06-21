@@ -4,8 +4,8 @@ use crate::ResponsesApiNamespaceTool;
 use crate::ResponsesApiTool;
 use crate::ToolName;
 use crate::ToolSpec;
-use codex_code_mode_spec::CodeModeToolKind;
-use codex_code_mode_spec::ToolDefinition as CodeModeToolDefinition;
+use codex_code_mode::CodeModeToolKind;
+use codex_code_mode::ToolDefinition as CodeModeToolDefinition;
 use codex_tool_schema::JsonSchema;
 use std::collections::BTreeMap;
 
@@ -45,7 +45,7 @@ pub fn augment_tool_spec_for_code_mode(spec: ToolSpec) -> ToolSpec {
                             output_schema: tool.output_schema.clone(),
                         };
                         tool.description =
-                            codex_code_mode_spec::augment_tool_definition(definition).description;
+                            codex_code_mode::augment_tool_definition(definition).description;
                     }
                 }
             }
@@ -59,8 +59,8 @@ pub fn augment_tool_spec_for_code_mode(spec: ToolSpec) -> ToolSpec {
 /// including the code-mode-specific description sample.
 pub fn tool_spec_to_code_mode_tool_definition(spec: &ToolSpec) -> Option<CodeModeToolDefinition> {
     let definition = code_mode_tool_definition_for_spec(spec)?;
-    codex_code_mode_spec::is_code_mode_nested_tool(&definition.name)
-        .then(|| codex_code_mode_spec::augment_tool_definition(definition))
+    codex_code_mode::is_code_mode_nested_tool(&definition.name)
+        .then(|| codex_code_mode::augment_tool_definition(definition))
 }
 
 pub fn collect_code_mode_tool_definitions<'a>(
@@ -68,9 +68,21 @@ pub fn collect_code_mode_tool_definitions<'a>(
 ) -> Vec<CodeModeToolDefinition> {
     let mut tool_definitions = specs
         .into_iter()
-        .flat_map(code_mode_tool_definitions_for_spec)
-        .filter(|definition| codex_code_mode_spec::is_code_mode_nested_tool(&definition.name))
-        .map(codex_code_mode_spec::augment_tool_definition)
+        .flat_map(|spec| {
+            let mut definitions = code_mode_tool_definitions_for_spec(spec);
+            if let ToolSpec::Namespace(namespace) = spec {
+                let namespace_description = namespace.description.trim();
+                if !namespace_description.is_empty() {
+                    for definition in &mut definitions {
+                        definition.description =
+                            format!("{namespace_description}\n\n{}", definition.description);
+                    }
+                }
+            }
+            definitions
+        })
+        .filter(|definition| codex_code_mode::is_code_mode_nested_tool(&definition.name))
+        .map(codex_code_mode::augment_tool_definition)
         .collect::<Vec<_>>();
     tool_definitions.sort_by(|left, right| left.name.cmp(&right.name));
     tool_definitions.dedup_by(|left, right| left.name == right.name);
@@ -83,7 +95,7 @@ pub fn collect_code_mode_exec_prompt_tool_definitions<'a>(
     let mut tool_definitions = specs
         .into_iter()
         .flat_map(code_mode_tool_definitions_for_spec)
-        .filter(|definition| codex_code_mode_spec::is_code_mode_nested_tool(&definition.name))
+        .filter(|definition| codex_code_mode::is_code_mode_nested_tool(&definition.name))
         .collect::<Vec<_>>();
     tool_definitions.sort_by(|left, right| left.name.cmp(&right.name));
     tool_definitions.dedup_by(|left, right| left.name == right.name);
@@ -118,11 +130,11 @@ pub fn create_wait_tool() -> ToolSpec {
     ]);
 
     ToolSpec::Function(ResponsesApiTool {
-        name: codex_code_mode_spec::WAIT_TOOL_NAME.to_string(),
+        name: codex_code_mode::WAIT_TOOL_NAME.to_string(),
         description: format!(
             "Waits on a yielded `{}` cell and returns new output or completion.\n{}",
-            codex_code_mode_spec::PUBLIC_TOOL_NAME,
-            codex_code_mode_spec::build_wait_tool_description().trim()
+            codex_code_mode::PUBLIC_TOOL_NAME,
+            codex_code_mode::build_wait_tool_description().trim()
         ),
         strict: false,
         parameters: JsonSchema::object(
@@ -137,7 +149,7 @@ pub fn create_wait_tool() -> ToolSpec {
 
 pub fn create_code_mode_tool(
     enabled_tools: &[CodeModeToolDefinition],
-    namespace_descriptions: &BTreeMap<String, codex_code_mode_spec::ToolNamespaceDescription>,
+    namespace_descriptions: &BTreeMap<String, codex_code_mode::ToolNamespaceDescription>,
     code_mode_only: bool,
     deferred_tools_available: bool,
 ) -> ToolSpec {
@@ -152,8 +164,8 @@ SOURCE: /[\s\S]+/
 "#;
 
     ToolSpec::Freeform(FreeformTool {
-        name: codex_code_mode_spec::PUBLIC_TOOL_NAME.to_string(),
-        description: codex_code_mode_spec::build_exec_tool_description(
+        name: codex_code_mode::PUBLIC_TOOL_NAME.to_string(),
+        description: codex_code_mode::build_exec_tool_description(
             enabled_tools,
             namespace_descriptions,
             code_mode_only,
@@ -169,7 +181,7 @@ SOURCE: /[\s\S]+/
 
 fn augmented_description_for_spec(spec: &ToolSpec) -> Option<String> {
     code_mode_tool_definition_for_spec(spec)
-        .map(codex_code_mode_spec::augment_tool_definition)
+        .map(codex_code_mode::augment_tool_definition)
         .map(|definition| definition.description)
 }
 

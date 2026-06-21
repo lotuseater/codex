@@ -4,6 +4,11 @@ use crate::ToolOutput;
 use crate::ToolSearchInfo;
 use crate::ToolSpec;
 use std::future::Future;
+use std::pin::Pin;
+
+/// The boxed future returned by [`ToolExecutor::handle`].
+pub type ToolExecutorFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Box<dyn ToolOutput>, FunctionCallError>> + Send + 'a>>;
 
 /// Controls where a tool is exposed to the model.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -42,8 +47,6 @@ impl ToolExposure {
 /// Host crates can layer routing, hooks, telemetry, or other orchestration on
 /// top without reopening the spec/runtime split.
 pub trait ToolExecutor<Invocation>: Send + Sync {
-    type Output: ToolOutput + 'static;
-
     /// The concrete tool name handled by this runtime instance.
     fn tool_name(&self) -> ToolName;
 
@@ -55,15 +58,12 @@ pub trait ToolExecutor<Invocation>: Send + Sync {
 
     fn search_info(&self) -> Option<ToolSearchInfo> {
         let spec = self.spec();
-        ToolSearchInfo::from_tool_spec(&self.tool_name(), spec, /*source_info*/ None)
+        ToolSearchInfo::from_tool_spec(spec, /*source_info*/ None)
     }
 
     fn supports_parallel_tool_calls(&self) -> bool {
         false
     }
 
-    fn handle(
-        &self,
-        invocation: Invocation,
-    ) -> impl Future<Output = Result<Self::Output, FunctionCallError>> + Send;
+    fn handle(&self, invocation: Invocation) -> ToolExecutorFuture<'_>;
 }

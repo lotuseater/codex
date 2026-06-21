@@ -7,6 +7,9 @@
 use std::path::PathBuf;
 
 use codex_exec_server::EnvironmentManager;
+use codex_extension_api::LoadUserInstructionsFuture;
+use codex_extension_api::LoadedUserInstructions;
+use codex_extension_api::UserInstructionsProvider;
 use codex_features::Feature;
 use codex_features::Features;
 use codex_login::AuthManager;
@@ -18,9 +21,13 @@ use codex_models_manager::collaboration_mode_presets;
 use codex_models_manager::manager::SharedModelsManager;
 use codex_models_manager::test_support::construct_model_info_offline_for_tests;
 use codex_models_manager::test_support::get_model_offline_for_tests;
+use codex_protocol::ThreadId;
 use codex_protocol::config_types::CollaborationModeMask;
 use codex_protocol::config_types::WebSearchMode;
 use codex_protocol::config_types::WindowsSandboxLevel;
+use codex_protocol::dynamic_tools::DynamicToolFunctionSpec;
+use codex_protocol::dynamic_tools::DynamicToolNamespaceSpec;
+use codex_protocol::dynamic_tools::DynamicToolNamespaceTool;
 use codex_protocol::dynamic_tools::DynamicToolSpec;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::openai_models::ModelInfo;
@@ -37,6 +44,10 @@ use std::sync::Arc;
 
 use crate::ThreadManager;
 use crate::config::Config;
+use crate::responses_metadata::CodexResponsesMetadata;
+use crate::responses_metadata::CodexResponsesRequestKind;
+use crate::responses_metadata::subagent_header_value;
+use crate::responses_metadata::subagent_metadata_kind;
 use crate::thread_manager;
 use crate::tools::handlers::multi_agents_spec::WaitAgentTimeoutOptions;
 use crate::tools::spec_plan::alias_hosted_reserved_namespace_executors;
@@ -54,6 +65,16 @@ static TEST_MODEL_PRESETS: Lazy<Vec<ModelPreset>> = Lazy::new(|| {
     ModelPreset::mark_default_by_picker_visibility(&mut presets);
     presets
 });
+
+/// Test-only provider that supplies no user instructions.
+#[derive(Debug, Default)]
+pub struct EmptyUserInstructionsProvider;
+
+impl UserInstructionsProvider for EmptyUserInstructionsProvider {
+    fn load_user_instructions(&self) -> LoadUserInstructionsFuture<'_> {
+        Box::pin(async { LoadedUserInstructions::default() })
+    }
+}
 
 pub fn set_thread_manager_test_mode(enabled: bool) {
     thread_manager::set_thread_manager_test_mode_for_tests(enabled);
@@ -112,9 +133,14 @@ pub async fn start_thread_with_user_shell_override(
     thread_manager: &ThreadManager,
     config: Config,
     user_shell_override: crate::shell::Shell,
+    supports_openai_form_elicitation: bool,
 ) -> codex_protocol::error::Result<crate::NewThread> {
     thread_manager
-        .start_thread_with_user_shell_override_for_tests(config, user_shell_override)
+        .start_thread_with_user_shell_override_for_tests(
+            config,
+            user_shell_override,
+            supports_openai_form_elicitation,
+        )
         .await
 }
 
@@ -124,6 +150,7 @@ pub async fn resume_thread_from_rollout_with_user_shell_override(
     rollout_path: PathBuf,
     auth_manager: Arc<AuthManager>,
     user_shell_override: crate::shell::Shell,
+    supports_openai_form_elicitation: bool,
 ) -> codex_protocol::error::Result<crate::NewThread> {
     thread_manager
         .resume_thread_from_rollout_with_user_shell_override_for_tests(
@@ -131,6 +158,7 @@ pub async fn resume_thread_from_rollout_with_user_shell_override(
             rollout_path,
             auth_manager,
             user_shell_override,
+            supports_openai_form_elicitation,
         )
         .await
 }
@@ -150,6 +178,44 @@ pub fn get_model_offline(model: Option<&str>) -> String {
 
 pub fn construct_model_info_offline(model: &str, config: &Config) -> ModelInfo {
     construct_model_info_offline_for_tests(model, &config.to_models_manager_config())
+}
+
+#[derive(Clone, Copy)]
+pub enum TestCodexResponsesRequestKind {
+    Turn,
+    Prewarm,
+    WebsocketConnection,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn responses_metadata(
+    installation_id: &str,
+    session_id: &str,
+    thread_id: &str,
+    turn_id: Option<&str>,
+    window_id: String,
+    session_source: &SessionSource,
+    parent_thread_id: Option<ThreadId>,
+    request_kind: TestCodexResponsesRequestKind,
+) -> CodexResponsesMetadata {
+    let request_kind = match request_kind {
+        TestCodexResponsesRequestKind::Turn => Some(CodexResponsesRequestKind::Turn),
+        TestCodexResponsesRequestKind::Prewarm => Some(CodexResponsesRequestKind::Prewarm),
+        TestCodexResponsesRequestKind::WebsocketConnection => None,
+    };
+    CodexResponsesMetadata {
+        turn_id: request_kind.and(turn_id.map(ToString::to_string)),
+        request_kind,
+        parent_thread_id,
+        subagent_header: subagent_header_value(session_source),
+        subagent_kind: request_kind.and_then(|_| subagent_metadata_kind(session_source)),
+        ..CodexResponsesMetadata::new(
+            installation_id.to_string(),
+            session_id.to_string(),
+            thread_id.to_string(),
+            window_id,
+        )
+    }
 }
 
 pub fn all_model_presets() -> &'static Vec<ModelPreset> {
@@ -177,20 +243,28 @@ pub fn hosted_web_namespace_alias_probe(
     const SOURCE_WEB_NAMESPACE: &str = "web";
     const WEB_TOOL_NAME: &str = "open";
 
-    let dynamic_tools = vec![DynamicToolSpec {
-        namespace: Some(SOURCE_WEB_NAMESPACE.to_string()),
-        name: WEB_TOOL_NAME.to_string(),
-        description: "Open a page.".to_string(),
-        input_schema: json!({
-            "type": "object",
-            "properties": {
-                "url": { "type": "string" }
+    // `DynamicToolSpec` is now an enum (Function | Namespace); a namespaced tool is
+    // modeled as a `Namespace` variant holding `Function` tools (mirrors
+    // `group_dynamic_tools_by_namespace` and router_tests.rs).
+    let dynamic_tools = vec![DynamicToolSpec::Namespace(DynamicToolNamespaceSpec {
+        name: SOURCE_WEB_NAMESPACE.to_string(),
+        description: String::new(),
+        tools: vec![DynamicToolNamespaceTool::Function(
+            DynamicToolFunctionSpec {
+                name: WEB_TOOL_NAME.to_string(),
+                description: "Open a page.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "url": { "type": "string" }
+                    },
+                    "required": ["url"],
+                    "additionalProperties": false
+                }),
+                defer_loading,
             },
-            "required": ["url"],
-            "additionalProperties": false
-        }),
-        defer_loading,
-    }];
+        )],
+    })];
 
     let mut features = Features::with_defaults();
     if tool_search {

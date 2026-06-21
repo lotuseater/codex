@@ -1,5 +1,4 @@
 #![cfg(not(target_os = "windows"))]
-#![allow(clippy::expect_used)]
 
 use anyhow::Result;
 use codex_core_test_runtime::assert_regex_match;
@@ -250,6 +249,8 @@ M {file_name}
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn apply_patch_custom_tool_call_reports_failure_output() -> Result<()> {
+    // TODO(anp): Remove after apply-patch assertions use target-native paths.
+    skip_if_wine_exec!(Ok(()), "asserts POSIX apply_patch failure text");
     skip_if_no_network!(Ok(()));
 
     let harness = apply_patch_harness().await?;

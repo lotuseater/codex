@@ -102,18 +102,18 @@ impl ChatComposer {
     /// from replacing an empty composer with the latest prompt before the user has searched for
     /// anything.
     pub(super) fn begin_history_search(&mut self) -> (InputResult, bool) {
-        if let Some(pasted) = self.paste_burst.flush_before_modified_input() {
+        if let Some(pasted) = self.draft.paste_burst.flush_before_modified_input() {
             self.handle_paste(pasted);
         }
-        self.paste_burst.clear_window_after_non_char();
+        self.draft.paste_burst.clear_window_after_non_char();
 
-        if self.current_file_query.is_some() {
+        if self.popups.current_file_query.is_some() {
             self.app_event_tx
                 .send(AppEvent::StartFileSearch(String::new()));
-            self.current_file_query = None;
+            self.popups.current_file_query = None;
         }
-        self.active_popup = ActivePopup::None;
-        self.clear_remote_image_selection();
+        self.popups.active = ActivePopup::None;
+        self.attachments.clear_remote_image_selection();
         self.history_search = Some(HistorySearchSession {
             original_draft: self.snapshot_draft(),
             query: String::new(),
@@ -185,7 +185,7 @@ impl ChatComposer {
                 {
                     self.history_search = None;
                     self.history.reset_search();
-                    self.footer_mode = reset_mode_after_activity(self.footer_mode);
+                    self.footer.mode = reset_mode_after_activity(self.footer.mode);
                     self.move_cursor_to_end();
                 }
                 (InputResult::None, true)
@@ -296,7 +296,7 @@ impl ChatComposer {
             return false;
         };
         self.history.reset_navigation();
-        self.footer_mode = reset_mode_after_activity(self.footer_mode);
+        self.footer.mode = reset_mode_after_activity(self.footer.mode);
         self.restore_draft(search.original_draft);
         true
     }
@@ -385,7 +385,7 @@ impl ChatComposer {
         if !matches!(search.status, HistorySearchStatus::Match) || search.query.is_empty() {
             return Vec::new();
         }
-        Self::case_insensitive_match_ranges(self.textarea.text(), &search.query)
+        Self::case_insensitive_match_ranges(self.draft.textarea.text(), &search.query)
     }
 
     fn case_insensitive_match_ranges(text: &str, query: &str) -> Vec<Range<usize>> {

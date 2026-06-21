@@ -1,4 +1,4 @@
-#![expect(clippy::expect_used)]
+#![allow(clippy::expect_used)]
 
 use codex_core::CodexThread;
 
@@ -25,15 +25,20 @@ pub mod responses {
 }
 mod runtime_harness;
 pub mod test_codex;
+pub mod test_codex_exec;
+pub mod test_environment;
 pub mod tracing;
 pub mod zsh_fork;
 
 pub use protocol_fixtures::RemoteEnvConfig;
 pub use protocol_fixtures::assert_regex_match;
 pub use protocol_fixtures::fetch_dotslash_file;
-pub use protocol_fixtures::get_remote_test_env;
 pub use protocol_fixtures::load_sse_fixture_with_id_from_str;
 pub use protocol_fixtures::stdio_server_bin;
+pub use test_environment::TestEnvironment;
+pub use test_environment::get_remote_test_env;
+pub use test_environment::test_environment;
+
 #[cfg(target_os = "linux")]
 pub use runtime_harness::find_codex_linux_sandbox_exe;
 pub use runtime_harness::format_with_current_shell;
@@ -122,6 +127,8 @@ macro_rules! skip_if_no_network {
     }};
 }
 
+// Exported so the public skip macros can expand in downstream test crates.
+// Call `skip_if_remote!` or `skip_if_wine_exec!` instead.
 #[macro_export]
 macro_rules! codex_linux_sandbox_exe_or_skip {
     () => {{

@@ -8,63 +8,66 @@ use std::sync::Arc;
 use anyhow::Context;
 use anyhow::bail;
 use clap::Parser;
-use codex_app_server_protocol::item_event_to_server_notification;
-use codex_arg0::Arg0DispatchPaths;
-use codex_arg0::arg0_dispatch_or_else;
-use codex_config::ConfigLayerStack;
-use codex_config::config_toml::ProjectConfig;
-use codex_config::config_toml::RealtimeAudioConfig;
-use codex_config::config_toml::RealtimeConfig;
-use codex_config::types::AuthCredentialsStoreMode;
-use codex_config::types::History;
-use codex_config::types::MemoriesConfig;
-use codex_config::types::ModelAvailabilityNuxConfig;
-use codex_config::types::Notice;
-use codex_config::types::OAuthCredentialsStoreMode;
-use codex_config::types::OtelConfig;
-use codex_config::types::SessionPickerViewMode;
-use codex_config::types::ToolSuggestConfig;
-use codex_config::types::TuiKeymap;
-use codex_config::types::TuiNotificationSettings;
-use codex_config::types::TuiPetAnchor;
-use codex_config::types::UriBasedFileOpener;
-use codex_config_types::AltScreenMode;
-use codex_config_types::ApprovalsReviewer;
+use codex_core_api::AbsolutePathBuf;
+use codex_core_api::AltScreenMode;
+use codex_core_api::ApprovalsReviewer;
+use codex_core_api::Arg0DispatchPaths;
+use codex_core_api::AskForApproval;
+use codex_core_api::AuthCredentialsStoreMode;
+use codex_core_api::AuthManager;
+use codex_core_api::AutoCompactTokenLimitScope;
+use codex_core_api::CodexHomeUserInstructionsProvider;
+use codex_core_api::CodexThread;
+use codex_core_api::Config;
+use codex_core_api::ConfigLayerStack;
+use codex_core_api::Constrained;
+use codex_core_api::EnvironmentManager;
+use codex_core_api::EventMsg;
+use codex_core_api::ExecServerRuntimePaths;
+use codex_core_api::Feature;
+use codex_core_api::Features;
+use codex_core_api::GhostSnapshotConfig;
+use codex_core_api::History;
+use codex_core_api::MemoriesConfig;
+use codex_core_api::ModelAvailabilityNuxConfig;
+use codex_core_api::MultiAgentV2Config;
+use codex_core_api::NewThread;
+use codex_core_api::Notice;
+use codex_core_api::OAuthCredentialsStoreMode;
+use codex_core_api::OPENAI_PROVIDER_ID;
+use codex_core_api::Op;
+use codex_core_api::OtelConfig;
+use codex_core_api::PermissionProfile;
+use codex_core_api::Permissions;
+use codex_core_api::ProjectConfig;
+use codex_core_api::RealtimeAudioConfig;
+use codex_core_api::RealtimeConfig;
+use codex_core_api::SessionPickerViewMode;
+use codex_core_api::SessionSource;
+use codex_core_api::TerminalResizeReflowConfig;
+use codex_core_api::ThreadManager;
+use codex_core_api::ThreadStoreConfig;
+use codex_core_api::ToolSuggestConfig;
+use codex_core_api::TuiKeymap;
+use codex_core_api::TuiNotificationSettings;
+use codex_core_api::TuiPetAnchor;
+use codex_core_api::UriBasedFileOpener;
+use codex_core_api::UserInput;
+use codex_core_api::WebSearchMode;
+use codex_core_api::arg0_dispatch_or_else;
+use codex_core_api::built_in_model_providers;
+use codex_core_api::empty_extension_registry;
+use codex_core_api::find_codex_home;
+use codex_core_api::init_state_db;
+use codex_core_api::item_event_to_server_notification;
+use codex_core_api::resolve_installation_id;
+use codex_core_api::set_default_originator;
+// fork-local: thread store helpers and types not yet exposed through codex_core_api
 use codex_config_types::ContextBudgetMode;
-use codex_config_types::WebSearchMode;
-use codex_core::CodexThread;
-use codex_core::NewThread;
-use codex_core::ThreadManager;
-use codex_core::config::Config;
-use codex_core::config::Constrained;
-use codex_core::config::GhostSnapshotConfig;
-use codex_core::config::MultiAgentV2Config;
-use codex_core::config::Permissions;
-use codex_core::config::TerminalResizeReflowConfig;
-use codex_core::config::ThreadStoreConfig;
-use codex_core::config::find_codex_home;
-use codex_core::init_state_db;
-use codex_core::resolve_installation_id;
-use codex_exec_server::EnvironmentManager;
-use codex_exec_server::ExecServerRuntimePaths;
-use codex_extension_api::empty_extension_registry;
-use codex_features::Feature;
-use codex_features::Features;
-use codex_login::AuthManager;
-use codex_login::default_client::set_default_originator;
-use codex_model_provider_info::OPENAI_PROVIDER_ID;
-use codex_model_provider_info::built_in_model_providers;
-use codex_protocol::models::PermissionProfile;
-use codex_protocol::protocol::AskForApproval;
-use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::Op;
-use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::ThreadSettingsOverrides;
-use codex_protocol::user_input::UserInput;
 use codex_thread_store::StoreLiveThreadFactory;
 use codex_thread_store::ThreadStoreSelection;
 use codex_thread_store::thread_store_from_config;
-use codex_utils_absolute_path::AbsolutePathBuf;
 
 // The sample constructs Config directly, so keep its unset-config defaults explicit.
 const DEFAULT_MODEL_COMPACT_PERCENTAGE: u8 = 20;
@@ -129,18 +132,23 @@ async fn run_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             .await?,
     );
     let installation_id = resolve_installation_id(&config.codex_home).await?;
+    let user_instructions_provider = Arc::new(CodexHomeUserInstructionsProvider::new(
+        config.codex_home.clone(),
+    ));
     let thread_manager = ThreadManager::new(
         &config,
         auth_manager,
         SessionSource::Exec,
         environment_manager,
         empty_extension_registry(),
+        user_instructions_provider,
         /*analytics_events_client*/ None,
         Arc::clone(&thread_store),
         live_thread_factory,
         state_db,
         installation_id,
         /*attestation_provider*/ None,
+        /*external_time_provider*/ None,
     );
 
     let NewThread {
@@ -202,7 +210,6 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         enforce_residency: Constrained::allow_any(/*initial_value*/ None),
         hide_agent_reasoning: false,
         show_raw_agent_reasoning: false,
-        user_instructions: None,
         base_instructions: None,
         developer_instructions: None,
         guardian_policy_config: None,
@@ -210,6 +217,8 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         include_apps_instructions: false,
         include_collaboration_mode_instructions: false,
         include_skill_instructions: false,
+        orchestrator_skills_enabled: false,
+        orchestrator_mcp_enabled: false,
         include_environment_context: false,
         compact_prompt: None,
         notify: None,
@@ -269,10 +278,11 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         model_catalog: None,
         model_verbosity: None,
         chatgpt_base_url: "https://chatgpt.com/backend-api/".to_string(),
-        apps_mcp_path_override: None,
+        respect_system_proxy: false,
         apps_mcp_product_sku: None,
         realtime_audio: RealtimeAudioConfig::default(),
         experimental_realtime_ws_base_url: None,
+        experimental_realtime_webrtc_call_base_url: None,
         experimental_realtime_ws_model: None,
         realtime: RealtimeConfig::default(),
         experimental_realtime_ws_backend_prompt: None,
@@ -294,6 +304,8 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         background_terminal_max_timeout: 300_000,
         ghost_snapshot: GhostSnapshotConfig::default(),
         multi_agent_v2: MultiAgentV2Config::default(),
+        rollout_budget: None,
+        current_time_reminder: None,
         features: Default::default(),
         suppress_unstable_features_warning: false,
         active_project: ProjectConfig { trust_level: None },

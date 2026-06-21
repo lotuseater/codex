@@ -15,6 +15,7 @@ pub use codex_thread_store_api::SortDirection;
 pub use codex_thread_store_api::StoredThreadSearchResult;
 pub use codex_thread_store_api::ThreadSearchPage;
 pub use codex_thread_store_api::ThreadSortKey;
+pub use codex_thread_store_api::ThreadStore;
 pub use codex_thread_store_api::ThreadStoreError;
 pub use codex_thread_store_api::ThreadStoreResult;
 pub use codex_thread_store_api::ThreadStoreSelection;

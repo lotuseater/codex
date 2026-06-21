@@ -10,6 +10,7 @@ use codex_exec_server::ExecParams as ExecServerParams;
 use codex_exec_server::ProcessId;
 use codex_protocol::config_types::ShellEnvironmentPolicy;
 use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_utils_path_uri::PathUri;
 
 use crate::exec::ExecCapturePolicy;
 use crate::exec::ExecExpiration;
@@ -51,14 +52,31 @@ pub(super) fn primary_environment(
     })
 }
 
+/// Resolve the turn environment's working directory as an absolute native path.
+///
+/// `TurnEnvironment::cwd()` now returns a `PathUri`; context ops operate on
+/// local/native paths, so convert it back to an `AbsolutePathBuf` here. The
+/// environment cwd is always a native absolute path, so the conversion is an
+/// invariant.
+fn environment_cwd(turn_environment: &TurnEnvironment) -> AbsolutePathBuf {
+    turn_environment
+        .cwd()
+        .to_abs_path()
+        .or_else(|_| AbsolutePathBuf::try_from(turn_environment.cwd().to_path_buf()))
+        .unwrap_or_else(|_| {
+            AbsolutePathBuf::from_absolute_path(turn_environment.cwd().to_path_buf())
+                .expect("turn environment cwd must be a native absolute path")
+        })
+}
+
 pub(super) fn resolve_workdir(
     turn_environment: &TurnEnvironment,
     workdir: Option<&str>,
 ) -> AbsolutePathBuf {
-    workdir.filter(|workdir| !workdir.is_empty()).map_or_else(
-        || turn_environment.cwd.clone(),
-        |workdir| turn_environment.cwd.join(workdir),
-    )
+    let cwd = environment_cwd(turn_environment);
+    workdir
+        .filter(|workdir| !workdir.is_empty())
+        .map_or_else(|| cwd.clone(), |workdir| cwd.join(workdir))
 }
 
 pub(super) async fn read_file(
@@ -68,12 +86,13 @@ pub(super) async fn read_file(
 ) -> Result<Vec<u8>, FunctionCallError> {
     let mut sandbox = invocation
         .turn
-        .file_system_sandbox_context(/*additional_permissions*/ None, &turn_environment.cwd);
-    sandbox.cwd = Some(turn_environment.cwd.clone());
+        .file_system_sandbox_context(/*additional_permissions*/ None, turn_environment.cwd());
+    sandbox.cwd = Some(turn_environment.cwd().clone());
+    let path_uri = PathUri::from_abs_path(path);
     turn_environment
         .environment
         .get_filesystem()
-        .read_file(path, Some(&sandbox))
+        .read_file(&path_uri, Some(&sandbox))
         .await
         .map_err(|err| FunctionCallError::RespondToModel(format!("failed to read file: {err}")))
 }
@@ -108,6 +127,11 @@ async fn run_local_sandboxed_command(
                 Some(invocation.session.thread_id),
             ),
             network: invocation.turn.network.clone(),
+            network_environment_id: invocation
+                .turn
+                .environments
+                .primary()
+                .map(|environment| environment.environment_id.clone()),
             sandbox_permissions: Default::default(),
             windows_sandbox_level: invocation.turn.windows_sandbox_level,
             windows_sandbox_private_desktop: invocation
@@ -119,10 +143,10 @@ async fn run_local_sandboxed_command(
             arg0: None,
         },
         &invocation.turn.permission_profile(),
-        &turn_environment.cwd,
+        cwd,
         /*windows_sandbox_workspace_roots*/ &[],
-        &invocation.turn.codex_linux_sandbox_exe,
-        invocation.turn.features.use_legacy_landlock(),
+        &invocation.turn.config.codex_linux_sandbox_exe,
+        invocation.turn.config.features.use_legacy_landlock(),
         /*stdout_stream*/ None,
     )
     .await
@@ -157,7 +181,7 @@ async fn run_remote_command(
         .start(ExecServerParams {
             process_id,
             argv: command,
-            cwd: cwd.to_path_buf(),
+            cwd: PathUri::from_abs_path(cwd),
             env_policy: Some(exec_env_policy_from_shell_policy(
                 &invocation.turn.shell_environment_policy,
             )),

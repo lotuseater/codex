@@ -73,6 +73,7 @@ pub(crate) enum ApprovalRequest {
         thread_id: ThreadId,
         thread_label: Option<String>,
         id: String,
+        environment_id: Option<String>,
         command: Vec<String>,
         reason: Option<String>,
         available_decisions: Vec<CommandExecutionApprovalDecision>,
@@ -628,6 +629,7 @@ fn build_header(request: &ApprovalRequest) -> Box<dyn Renderable> {
     match request {
         ApprovalRequest::Exec {
             thread_label,
+            environment_id,
             reason,
             command,
             network_approval_context,
@@ -639,6 +641,13 @@ fn build_header(request: &ApprovalRequest) -> Box<dyn Renderable> {
                 header.push(Line::from(vec![
                     "Thread: ".into(),
                     thread_label.clone().bold(),
+                ]));
+                header.push(Line::from(""));
+            }
+            if let Some(environment_id) = environment_id {
+                header.push(Line::from(vec![
+                    "Environment: ".into(),
+                    environment_id.clone().bold(),
                 ]));
                 header.push(Line::from(""));
             }
@@ -1158,6 +1167,7 @@ mod tests {
             thread_id: ThreadId::new(),
             thread_label: None,
             id: "test".to_string(),
+            environment_id: None,
             command: vec!["echo".to_string(), "hi".to_string()],
             reason: Some("reason".to_string()),
             available_decisions: vec![
@@ -1298,6 +1308,7 @@ mod tests {
                 thread_id: ThreadId::new(),
                 thread_label: None,
                 id: "test".to_string(),
+                environment_id: None,
                 command: vec!["echo".to_string(), "hi".to_string()],
                 reason: None,
                 available_decisions: vec![
@@ -1341,6 +1352,7 @@ mod tests {
                 thread_id: ThreadId::new(),
                 thread_label: None,
                 id: "test".to_string(),
+                environment_id: None,
                 command: vec!["curl".to_string(), "https://example.com".to_string()],
                 reason: None,
                 available_decisions: vec![
@@ -1415,6 +1427,7 @@ mod tests {
                 thread_id,
                 thread_label: Some("Robie [explorer]".to_string()),
                 id: "test".to_string(),
+                environment_id: None,
                 command: vec!["echo".to_string(), "hi".to_string()],
                 reason: None,
                 available_decisions: vec![
@@ -1449,6 +1462,7 @@ mod tests {
                 thread_id,
                 thread_label: Some("Robie [explorer]".to_string()),
                 id: "test".to_string(),
+                environment_id: None,
                 command: vec!["echo".to_string(), "hi".to_string()],
                 reason: None,
                 available_decisions: vec![
@@ -1487,6 +1501,7 @@ mod tests {
                 thread_id: ThreadId::new(),
                 thread_label: Some("Robie [explorer]".to_string()),
                 id: "test".to_string(),
+                environment_id: None,
                 command: vec!["echo".to_string(), "hi".to_string()],
                 reason: None,
                 available_decisions: vec![
@@ -1515,6 +1530,7 @@ mod tests {
                 thread_id: ThreadId::new(),
                 thread_label: None,
                 id: "test".to_string(),
+                environment_id: None,
                 command: vec!["echo".to_string()],
                 reason: None,
                 available_decisions: vec![
@@ -1567,6 +1583,7 @@ mod tests {
                 thread_id: ThreadId::new(),
                 thread_label: None,
                 id: "test".to_string(),
+                environment_id: None,
                 command: vec!["curl".to_string(), "https://example.com".to_string()],
                 reason: None,
                 available_decisions: vec![
@@ -1606,6 +1623,7 @@ mod tests {
             thread_id: ThreadId::new(),
             thread_label: None,
             id: "test".into(),
+            environment_id: None,
             command,
             reason: None,
             available_decisions: vec![
@@ -1879,6 +1897,7 @@ mod tests {
             thread_id: ThreadId::new(),
             thread_label: None,
             id: "test".into(),
+            environment_id: None,
             command: vec!["cat".into(), "/tmp/readme.txt".into()],
             reason: None,
             available_decisions: vec![
@@ -1935,6 +1954,7 @@ mod tests {
             thread_id: ThreadId::new(),
             thread_label: None,
             id: "test".into(),
+            environment_id: None,
             command: vec!["cat".into(), "/tmp/readme.txt".into()],
             reason: Some("need filesystem access".into()),
             available_decisions: vec![
@@ -2015,6 +2035,7 @@ mod tests {
             thread_id: ThreadId::new(),
             thread_label: None,
             id: "test".into(),
+            environment_id: None,
             command: vec!["curl".into(), "https://example.com".into()],
             reason: Some("network request blocked".into()),
             available_decisions: vec![
@@ -2117,6 +2138,74 @@ mod tests {
             "  renderable.rs this time".to_string(),
         ];
         assert_eq!(rendered, expected);
+    }
+
+    #[test]
+    fn exec_history_cell_does_not_render_blank_action_for_empty_command() {
+        let approved = history_cell::new_approval_decision_cell(
+            history_cell::ApprovalDecisionSubject::Command(Vec::new()),
+            ReviewDecision::Approved,
+            history_cell::ApprovalDecisionActor::User,
+        );
+        assert_eq!(
+            render_history_cell_lines(approved.as_ref(), /*width*/ 80),
+            vec!["✔ You approved this request this time".to_string()]
+        );
+
+        let approved_for_session = history_cell::new_approval_decision_cell(
+            history_cell::ApprovalDecisionSubject::Command(Vec::new()),
+            ReviewDecision::ApprovedForSession,
+            history_cell::ApprovalDecisionActor::User,
+        );
+        assert_eq!(
+            render_history_cell_lines(approved_for_session.as_ref(), /*width*/ 80),
+            vec!["✔ You approved this request every time this session".to_string()]
+        );
+    }
+
+    #[test]
+    fn network_access_command_history_uses_target_without_structured_context() {
+        let (tx_raw, mut rx) = unbounded_channel::<AppEvent>();
+        let tx = AppEventSender::new(tx_raw);
+        let mut view = make_overlay(
+            ApprovalRequest::Exec {
+                thread_id: ThreadId::new(),
+                thread_label: None,
+                id: "test".into(),
+                environment_id: None,
+                command: vec![
+                    "network-access".to_string(),
+                    "https://example.com:8443".to_string(),
+                ],
+                reason: None,
+                available_decisions: vec![
+                    CommandExecutionApprovalDecision::Accept,
+                    CommandExecutionApprovalDecision::Cancel,
+                ],
+                network_approval_context: None,
+                additional_permissions: None,
+            },
+            tx,
+            Features::with_defaults(),
+        );
+
+        view.handle_key_event(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE));
+
+        let mut decision = None;
+        while let Ok(event) = rx.try_recv() {
+            if let AppEvent::InsertHistoryCell(cell) = event {
+                decision = Some(cell);
+                break;
+            }
+        }
+        let decision = decision.expect("expected decision cell in history");
+        assert_eq!(
+            render_history_cell_lines(decision.as_ref(), /*width*/ 80),
+            vec![
+                "✔ You approved codex network access to https://example.com:8443 this time"
+                    .to_string(),
+            ]
+        );
     }
 
     #[test]

@@ -456,6 +456,22 @@ pub fn forbidden_agent_metadata_write(
     None
 }
 
+// fork-local: unioned in from upstream `codex-protocol`'s monolithic
+// `permissions.rs`. Upstream encodes project-root-relative glob entries as a
+// `FileSystemPath::GlobPattern { pattern: "codex-project-roots://<subpath>" }`
+// string; the fork's canonical representation is the structured
+// `FileSystemSpecialPath::ProjectRoots { subpath }`. This helper is preserved so
+// upstream-side callers in other crates (e.g. core/windows-sandbox tests that do
+// `pub use codex_protocol::permissions::project_roots_glob_pattern`) keep
+// compiling against the established public API.
+const PROJECT_ROOTS_GLOB_PATTERN_PREFIX: &str = "codex-project-roots://";
+
+/// Builds the upstream string-encoded project-root-relative glob pattern for a
+/// `FileSystemPath::GlobPattern` entry.
+pub fn project_roots_glob_pattern(subpath: &Path) -> String {
+    format!("{PROJECT_ROOTS_GLOB_PATTERN_PREFIX}{}", subpath.display())
+}
+
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Display, Default, JsonSchema, TS,
 )]
@@ -1861,7 +1877,13 @@ fn normalize_effective_absolute_path(path: AbsolutePathBuf) -> AbsolutePathBuf {
     path
 }
 
-pub(crate) fn default_read_only_subpaths_for_writable_root(
+// fork-local: promoted from `pub(crate)` to `pub` so the protocol crate's
+// thin re-export shim (`codex_protocol::permissions`) can surface it. Upstream
+// keeps the legacy `SandboxPolicy`/`WritableRoot` writable-root expansion in
+// `codex-protocol`'s monolithic `permissions.rs`; the fork hosts those types in
+// this crate, so the merged `protocol.rs` (which still calls this helper) needs
+// it visible across the crate boundary.
+pub fn default_read_only_subpaths_for_writable_root(
     writable_root: &AbsolutePathBuf,
     protect_missing_dot_codex: bool,
 ) -> Vec<AbsolutePathBuf> {

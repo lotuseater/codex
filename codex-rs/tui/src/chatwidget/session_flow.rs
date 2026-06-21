@@ -41,11 +41,11 @@ impl ChatWidget {
             .config
             .permissions
             .approval_policy
-            .set(session.approval_policy)
+            .set(session.approval_policy.to_core())
         {
             tracing::warn!(%err, "failed to sync approval_policy from SessionConfigured");
             self.config.permissions.approval_policy =
-                Constrained::allow_only(session.approval_policy);
+                Constrained::allow_only(session.approval_policy.to_core());
         }
         let permission_sync = self
             .config
@@ -106,7 +106,7 @@ impl ChatWidget {
                 &self.config.cwd,
                 self.config.show_tooltips,
                 &model_for_header,
-                &session,
+                &session.to_render(),
                 self.show_welcome_banner,
                 tooltip_override,
                 show_fast_status,

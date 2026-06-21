@@ -1,6 +1,6 @@
 use super::*;
 use codex_protocol::protocol::MultiAgentVersion;
-use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_utils_path_uri::PathUri;
 
 #[derive(Debug, PartialEq)]
 pub enum SteerInputError {
@@ -65,11 +65,12 @@ pub struct CodexSpawnOk {
 
 pub(crate) struct CodexSpawnArgs {
     pub(crate) config: Config,
+    pub(crate) user_instructions: LoadedUserInstructions,
     pub(crate) installation_id: String,
     pub(crate) auth_manager: Arc<AuthManager>,
     pub(crate) models_manager: SharedModelsManager,
     pub(crate) environment_manager: Arc<EnvironmentManager>,
-    pub(crate) skills_manager: Arc<SkillsManager>,
+    pub(crate) skills_service: Arc<SkillsService>,
     pub(crate) plugins_manager: Arc<PluginsManager>,
     pub(crate) mcp_manager: Arc<McpManager>,
     pub(crate) extensions: Arc<codex_extension_api::ExtensionRegistry<crate::config::Config>>,
@@ -81,10 +82,11 @@ pub(crate) struct CodexSpawnArgs {
     pub(crate) dynamic_tools: Vec<DynamicToolSpec>,
     pub(crate) parent_thread_id: Option<ThreadId>,
     pub(crate) inherited_multi_agent_version: Option<MultiAgentVersion>,
+    pub(crate) initial_multi_agent_mode: Option<MultiAgentMode>,
     pub(crate) persist_extended_history: bool,
     pub(crate) metrics_service_name: Option<String>,
-    pub(crate) inherited_shell_snapshot: Option<Arc<ShellSnapshot>>,
     pub(crate) inherited_exec_policy: Option<Arc<ExecPolicyManager>>,
+    pub(crate) inherited_environments: Option<TurnEnvironmentSnapshot>,
     /// Parent rollout trace used only to derive fresh spawned child traces.
     ///
     /// Root sessions and non-thread-spawn subagents pass a disabled context;
@@ -92,12 +94,15 @@ pub(crate) struct CodexSpawnArgs {
     pub(crate) parent_rollout_thread_trace: ThreadTraceContext,
     pub(crate) user_shell_override: Option<shell::Shell>,
     pub(crate) parent_trace: Option<W3cTraceContext>,
-    pub(crate) environment_selections: ResolvedTurnEnvironments,
+    pub(crate) environment_selections: Vec<TurnEnvironmentSelection>,
+    pub(crate) thread_extension_init: ExtensionDataInit,
+    pub(crate) supports_openai_form_elicitation: bool,
     pub(crate) analytics_events_client: Option<AnalyticsEventsClient>,
     pub(crate) thread_store: Arc<dyn ThreadStore>,
     pub(crate) live_thread_factory: Arc<dyn LiveThreadFactory>,
     pub(crate) state_db: Option<state_db::StateDbHandle>,
     pub(crate) attestation_provider: Option<Arc<dyn AttestationProvider>>,
+    pub(crate) external_time_provider: Option<Arc<dyn TimeProvider>>,
 }
 
 pub(crate) const INITIAL_SUBMIT_ID: &str = "";
@@ -132,11 +137,12 @@ impl Codex {
     async fn spawn_internal(args: CodexSpawnArgs) -> CodexResult<CodexSpawnOk> {
         let CodexSpawnArgs {
             mut config,
+            user_instructions,
             installation_id,
             auth_manager,
             models_manager,
             environment_manager,
-            skills_manager,
+            skills_service,
             plugins_manager,
             mcp_manager,
             extensions,
@@ -148,36 +154,43 @@ impl Codex {
             dynamic_tools,
             parent_thread_id,
             inherited_multi_agent_version,
+            initial_multi_agent_mode,
             persist_extended_history: _,
             metrics_service_name,
-            inherited_shell_snapshot,
             user_shell_override,
             inherited_exec_policy,
+            inherited_environments,
             parent_rollout_thread_trace,
             parent_trace: _,
             environment_selections,
+            thread_extension_init,
+            supports_openai_form_elicitation,
             analytics_events_client,
             thread_store,
             live_thread_factory,
             state_db,
             attestation_provider,
+            external_time_provider,
         } = args;
         let (tx_sub, rx_sub) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);
         let (tx_event, rx_event) = async_channel::unbounded();
-        let fs = environment_selections.primary_filesystem();
-        let plugins_input = config.plugins_config_input();
-        let plugin_outcome = plugins_manager.plugins_for_config(&plugins_input).await;
-        let effective_skill_roots = plugin_outcome.effective_plugin_skill_roots();
-        let skills_input = skills_load_input_from_config(&config, effective_skill_roots);
-        let loaded_skills = skills_manager.skills_for_config(&skills_input, fs).await;
 
-        for err in &loaded_skills.errors {
-            error!(
-                "failed to load skill {}: {}",
-                err.path.display(),
-                err.message
-            );
-        }
+        let LoadedUserInstructions {
+            instructions: user_instructions,
+            // Recoverable user-instruction warnings are surfaced by the loader; the
+            // merged `Config` has no `startup_warnings` field, so drop them here
+            // (matching the fork's prior behavior).
+            warnings: _user_instruction_provider_warnings,
+        } = user_instructions;
+
+        // The fork's `SessionConfiguration.user_instructions` field (restored by
+        // A1) is `Option<LoadedAgentsMd>`. Build it from the loaded
+        // `UserInstructions` via the public constructor so downstream readers
+        // (e.g. `Codex::instruction_sources`) keep working, while the raw
+        // `Option<UserInstructions>` is still handed to `Session::new`.
+        let loaded_user_instructions = user_instructions
+            .as_ref()
+            .map(|ui| LoadedAgentsMd::new_user(ui.text.clone(), ui.source.clone()));
 
         if let SessionSource::SubAgent(SubAgentSource::ThreadSpawn { depth, .. }) = session_source
             && depth >= config.agent_max_depth
@@ -186,17 +199,6 @@ impl Codex {
             let _ = config.features.disable(Feature::SpawnCsv);
             let _ = config.features.disable(Feature::Collab);
         }
-
-        let primary_environment = environment_selections.primary_environment();
-        let mut startup_warnings = Vec::new();
-        let user_instructions = match primary_environment.as_deref() {
-            Some(environment) => {
-                AgentsMdManager::new(&config)
-                    .user_instructions(environment, &mut startup_warnings)
-                    .await
-            }
-            None => None,
-        };
 
         let exec_policy = if crate::guardian::is_guardian_reviewer_source(&session_source) {
             // Guardian review should rely on the built-in shell safety checks,
@@ -285,14 +287,22 @@ impl Codex {
             config.features.enabled(Feature::FastMode),
             &model_info,
         );
+        let multi_agent_version = crate::session::resolve_multi_agent_version(
+            &conversation_history,
+            inherited_multi_agent_version,
+        );
+        let multi_agent_mode = initial_multi_agent_mode;
+
         let session_configuration = SessionConfiguration {
             provider: config.model_provider.clone(),
             collaboration_mode: collaboration_mode.clone(),
+            multi_agent_mode,
             model_reasoning_summary: config.model_reasoning_summary,
             service_tier,
             context_budget_mode: config.context_budget_mode,
             developer_instructions: config.developer_instructions.clone(),
-            user_instructions,
+            loaded_agents_md: None,
+            user_instructions: loaded_user_instructions,
             personality: config.personality,
             fork_features: ForkFeaturesState::new(
                 collaboration_mode,
@@ -314,7 +324,7 @@ impl Codex {
             // `legacy_fallback_cwd` inside the environments wrapper.
             environments: TurnEnvironmentSelections::new(
                 config.cwd.clone(),
-                environment_selections.to_selections(),
+                environment_selections,
             ),
             original_config_do_not_use: Arc::clone(&config),
             metrics_service_name,
@@ -325,7 +335,6 @@ impl Codex {
             parent_thread_id,
             thread_source,
             dynamic_tools,
-            inherited_shell_snapshot,
             user_shell_override,
         };
 
@@ -333,14 +342,10 @@ impl Codex {
         let session_source_clone = session_configuration.session_source.clone();
         let (agent_status_tx, agent_status_rx) = watch::channel(AgentStatus::PendingInit);
 
-        let multi_agent_version = crate::session::resolve_multi_agent_version(
-            &conversation_history,
-            inherited_multi_agent_version,
-        );
-
         let session = Session::new(
             session_configuration,
             config.clone(),
+            user_instructions,
             installation_id,
             auth_manager.clone(),
             models_manager.clone(),
@@ -349,21 +354,22 @@ impl Codex {
             agent_status_tx.clone(),
             conversation_history,
             session_source_clone,
-            skills_manager,
+            skills_service,
             plugins_manager,
             mcp_manager.clone(),
             extensions,
-            // `thread_extension_init` is no longer carried on `CodexSpawnArgs`;
-            // root/spawn paths seed an empty init (matching `thread_manager.rs`).
-            codex_extension_api::ExtensionDataInit::default(),
+            thread_extension_init,
+            supports_openai_form_elicitation,
             agent_control,
             environment_manager,
+            inherited_environments,
             analytics_events_client,
             thread_store,
             live_thread_factory,
             state_db,
             parent_rollout_thread_trace,
             attestation_provider,
+            external_time_provider,
             multi_agent_version,
         )
         .await
@@ -480,7 +486,7 @@ impl Codex {
                 ..Default::default()
             })
             .await?;
-        let mcp_connection_manager = self.session.services.mcp_connection_manager.read().await;
+        let mcp_connection_manager = self.session.services.mcp_connection_manager.load();
         mcp_connection_manager.set_elicitations_auto_deny(mcp_elicitations_auto_deny);
         Ok(())
     }
@@ -494,15 +500,13 @@ impl Codex {
         state.session_configuration.thread_config_snapshot()
     }
 
-    pub(crate) async fn instruction_sources(&self) -> Vec<AbsolutePathBuf> {
+    pub(crate) async fn instruction_sources(&self) -> Vec<PathUri> {
         let state = self.session.state.lock().await;
         state
             .session_configuration
             .user_instructions
             .as_ref()
-            .map_or_else(Vec::new, |instructions| {
-                instructions.sources().cloned().collect()
-            })
+            .map_or_else(Vec::new, |instructions| instructions.sources().collect())
     }
 
     pub(crate) async fn thread_environment_selections(&self) -> Vec<TurnEnvironmentSelection> {

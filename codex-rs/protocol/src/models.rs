@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use codex_utils_image::PromptImageMode;
+use codex_utils_image::data_url_from_bytes;
 use codex_utils_image::load_for_prompt_bytes;
 use serde::Deserialize;
 use serde::Deserializer;
@@ -14,6 +15,15 @@ use schemars::JsonSchema;
 
 use crate::mcp::CallToolResult;
 
+// fork-local: PermissionProfile and related runtime-permission types live in
+// the extracted `codex_permission_types` crate and are re-exported here via the
+// `pub use codex_permission_types::...` block below. Upstream defines these
+// types inline in this module; the fork intentionally drops the inline copy to
+// avoid duplicate definitions while preserving identical behavior through the
+// crate (including the richer fork shape: `ActivePermissionProfile` carries the
+// `modifications` field, `ActivePermissionProfileModification` adds the
+// `AdditionalWritableRoot` variant, and `FileSystemAccessMode` adds the `None`
+// access mode).
 pub use codex_permission_types::ActivePermissionProfile;
 pub use codex_permission_types::ActivePermissionProfileModification;
 pub use codex_permission_types::AdditionalPermissionProfile;
@@ -41,11 +51,6 @@ pub const BUILT_IN_PERMISSION_PROFILE_WORKSPACE: &str = ":workspace";
 /// Reserved identifier for the built-in full-access permission profile.
 pub const BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS: &str = ":danger-full-access";
 
-// fork-local: PermissionProfile and related runtime-permission types live in
-// the extracted `codex_permission_types` crate and are re-exported above via
-// the `pub use codex_permission_types::...` block. Upstream defines these
-// inline here; we intentionally drop the inline copy to avoid duplicate
-// definitions while preserving identical behavior through the crate.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ResponseInputItem {
@@ -104,7 +109,22 @@ pub enum ContentItem {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AgentMessageInputContent {
+    InputText { text: String },
     EncryptedContent { encrypted_content: String },
+}
+
+/// Returns the locally readable text when an agent message is entirely plaintext.
+pub fn plaintext_agent_message_content(content: &[AgentMessageInputContent]) -> Option<String> {
+    let mut text_parts = Vec::with_capacity(content.len());
+    for part in content {
+        match part {
+            AgentMessageInputContent::InputText { text } => text_parts.push(text.as_str()),
+            AgentMessageInputContent::EncryptedContent { .. } => return None,
+        }
+    }
+
+    let text = text_parts.join("\n");
+    (!text.trim().is_empty()).then_some(text)
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, JsonSchema, TS)]
@@ -134,12 +154,22 @@ pub enum MessagePhase {
     FinalAnswer,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, JsonSchema, TS)]
+pub struct ResponseItemMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub turn_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub source_call_id: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ResponseItem {
     Message {
-        #[serde(default, skip_serializing)]
-        #[ts(skip)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         id: Option<String>,
         role: String,
         content: Vec<ContentItem>,
@@ -149,36 +179,50 @@ pub enum ResponseItem {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         phase: Option<MessagePhase>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        metadata: Option<ResponseItemMetadata>,
     },
     AgentMessage {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        id: Option<String>,
         author: String,
         recipient: String,
         content: Vec<AgentMessageInputContent>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        metadata: Option<ResponseItemMetadata>,
     },
     Reasoning {
-        #[serde(default, skip_serializing)]
-        #[ts(skip)]
-        #[schemars(skip)]
-        id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        id: Option<String>,
         summary: Vec<ReasoningItemReasoningSummary>,
         #[serde(default, skip_serializing_if = "should_serialize_reasoning_content")]
         #[ts(optional)]
         content: Option<Vec<ReasoningItemContent>>,
         encrypted_content: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        metadata: Option<ResponseItemMetadata>,
     },
     LocalShellCall {
         /// Legacy id field retained for compatibility with older payloads.
-        #[serde(default, skip_serializing)]
-        #[ts(skip)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         id: Option<String>,
         /// Set when using the Responses API.
         call_id: Option<String>,
         status: LocalShellStatus,
         action: LocalShellAction,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        metadata: Option<ResponseItemMetadata>,
     },
     FunctionCall {
-        #[serde(default, skip_serializing)]
-        #[ts(skip)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         id: Option<String>,
         name: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -189,10 +233,13 @@ pub enum ResponseItem {
         // Session::handle_function_call parse it into a Value.
         arguments: String,
         call_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        metadata: Option<ResponseItemMetadata>,
     },
     ToolSearchCall {
-        #[serde(default, skip_serializing)]
-        #[ts(skip)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         id: Option<String>,
         call_id: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -201,6 +248,9 @@ pub enum ResponseItem {
         execution: String,
         #[ts(type = "unknown")]
         arguments: serde_json::Value,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        metadata: Option<ResponseItemMetadata>,
     },
     // NOTE: The `output` field for `function_call_output` uses a dedicated payload type with
     // custom serialization. On the wire it is either:
@@ -208,14 +258,20 @@ pub enum ResponseItem {
     //   - an array of structured content items (`content_items`)
     // We keep this behavior centralized in `FunctionCallOutputPayload`.
     FunctionCallOutput {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        id: Option<String>,
         call_id: String,
         #[ts(as = "FunctionCallOutputBody")]
         #[schemars(with = "FunctionCallOutputBody")]
         output: FunctionCallOutputPayload,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        metadata: Option<ResponseItemMetadata>,
     },
     CustomToolCall {
-        #[serde(default, skip_serializing)]
-        #[ts(skip)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         id: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
@@ -224,11 +280,17 @@ pub enum ResponseItem {
         call_id: String,
         name: String,
         input: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        metadata: Option<ResponseItemMetadata>,
     },
     // `custom_tool_call_output.output` uses the same wire encoding as
     // `function_call_output.output` so freeform tools can return either plain
     // text or structured content items.
     CustomToolCallOutput {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        id: Option<String>,
         call_id: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
@@ -236,13 +298,22 @@ pub enum ResponseItem {
         #[ts(as = "FunctionCallOutputBody")]
         #[schemars(with = "FunctionCallOutputBody")]
         output: FunctionCallOutputPayload,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        metadata: Option<ResponseItemMetadata>,
     },
     ToolSearchOutput {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        id: Option<String>,
         call_id: Option<String>,
         status: String,
         execution: String,
         #[ts(type = "unknown[]")]
         tools: Vec<serde_json::Value>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        metadata: Option<ResponseItemMetadata>,
     },
     // Emitted by the Responses API when the agent triggers a web search.
     // Example payload (from SSE `response.output_item.done`):
@@ -253,8 +324,8 @@ pub enum ResponseItem {
     //   "action": {"type":"search","query":"weather: San Francisco, CA"}
     // }
     WebSearchCall {
-        #[serde(default, skip_serializing)]
-        #[ts(skip)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         id: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
@@ -262,6 +333,9 @@ pub enum ResponseItem {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         action: Option<WebSearchAction>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        metadata: Option<ResponseItemMetadata>,
     },
     // Emitted by the Responses API when the agent triggers image generation.
     // Example payload:
@@ -273,21 +347,45 @@ pub enum ResponseItem {
     //   "result":"..."
     // }
     ImageGenerationCall {
-        id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        id: Option<String>,
         status: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         revised_prompt: Option<String>,
         result: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        metadata: Option<ResponseItemMetadata>,
     },
-    #[serde(rename = "compaction_trigger")]
-    CompactionTrigger,
     #[serde(alias = "compaction_summary")]
-    Compaction { encrypted_content: String },
+    Compaction {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        id: Option<String>,
+        encrypted_content: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        metadata: Option<ResponseItemMetadata>,
+    },
+    // Compaction triggers are request controls, and the Responses API does not
+    // accept an `id` field for them.
+    CompactionTrigger {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        metadata: Option<ResponseItemMetadata>,
+    },
     ContextCompaction {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
+        id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         encrypted_content: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        metadata: Option<ResponseItemMetadata>,
     },
     #[serde(other)]
     Other,
@@ -297,6 +395,117 @@ impl ResponseItem {
     /// Returns whether this item is an ordinary user-role message.
     pub fn is_user_message(&self) -> bool {
         matches!(self, Self::Message { role, .. } if role == "user")
+    }
+
+    /// Returns the non-empty Responses API item ID, if present.
+    pub fn id(&self) -> Option<&str> {
+        match self {
+            Self::Message { id, .. }
+            | Self::AgentMessage { id, .. }
+            | Self::LocalShellCall { id, .. }
+            | Self::FunctionCall { id, .. }
+            | Self::ToolSearchCall { id, .. }
+            | Self::FunctionCallOutput { id, .. }
+            | Self::CustomToolCall { id, .. }
+            | Self::CustomToolCallOutput { id, .. }
+            | Self::ToolSearchOutput { id, .. }
+            | Self::WebSearchCall { id, .. }
+            | Self::Reasoning { id, .. }
+            | Self::ImageGenerationCall { id, .. }
+            | Self::Compaction { id, .. }
+            | Self::ContextCompaction { id, .. } => id.as_deref().filter(|id| !id.is_empty()),
+            Self::CompactionTrigger { .. } | Self::Other => None,
+        }
+    }
+
+    /// Sets or clears the Responses API item ID for variants that carry one.
+    pub fn set_id(&mut self, new_id: Option<String>) {
+        match self {
+            Self::Message { id, .. }
+            | Self::AgentMessage { id, .. }
+            | Self::LocalShellCall { id, .. }
+            | Self::FunctionCall { id, .. }
+            | Self::ToolSearchCall { id, .. }
+            | Self::FunctionCallOutput { id, .. }
+            | Self::CustomToolCall { id, .. }
+            | Self::CustomToolCallOutput { id, .. }
+            | Self::ToolSearchOutput { id, .. }
+            | Self::WebSearchCall { id, .. }
+            | Self::Reasoning { id, .. }
+            | Self::ImageGenerationCall { id, .. }
+            | Self::Compaction { id, .. }
+            | Self::ContextCompaction { id, .. } => *id = new_id,
+            Self::CompactionTrigger { .. } | Self::Other => {}
+        }
+    }
+
+    /// Returns the non-empty turn ID stamped onto this item, if present.
+    pub fn turn_id(&self) -> Option<&str> {
+        self.metadata()
+            .and_then(|metadata| metadata.turn_id.as_deref())
+            .filter(|turn_id| !turn_id.is_empty())
+    }
+
+    /// Stamps the item with `turn_id` unless it already has a non-empty turn ID.
+    pub fn stamp_turn_id_if_missing(&mut self, turn_id: &str) {
+        if turn_id.is_empty() || self.turn_id().is_some() {
+            return;
+        }
+        let Some(metadata) = self.metadata_mut() else {
+            return;
+        };
+        metadata
+            .get_or_insert_with(ResponseItemMetadata::default)
+            .turn_id = Some(turn_id.to_string());
+    }
+
+    /// Removes Responses API item metadata before sending to a provider that does not accept it.
+    pub fn clear_metadata(&mut self) {
+        if let Some(metadata) = self.metadata_mut() {
+            *metadata = None;
+        }
+    }
+
+    fn metadata(&self) -> Option<&ResponseItemMetadata> {
+        match self {
+            Self::Message { metadata, .. }
+            | Self::AgentMessage { metadata, .. }
+            | Self::Reasoning { metadata, .. }
+            | Self::LocalShellCall { metadata, .. }
+            | Self::FunctionCall { metadata, .. }
+            | Self::ToolSearchCall { metadata, .. }
+            | Self::FunctionCallOutput { metadata, .. }
+            | Self::CustomToolCall { metadata, .. }
+            | Self::CustomToolCallOutput { metadata, .. }
+            | Self::ToolSearchOutput { metadata, .. }
+            | Self::WebSearchCall { metadata, .. }
+            | Self::ImageGenerationCall { metadata, .. }
+            | Self::Compaction { metadata, .. }
+            | Self::CompactionTrigger { metadata, .. }
+            | Self::ContextCompaction { metadata, .. } => metadata.as_ref(),
+            Self::Other => None,
+        }
+    }
+
+    fn metadata_mut(&mut self) -> Option<&mut Option<ResponseItemMetadata>> {
+        match self {
+            Self::Message { metadata, .. }
+            | Self::AgentMessage { metadata, .. }
+            | Self::Reasoning { metadata, .. }
+            | Self::LocalShellCall { metadata, .. }
+            | Self::FunctionCall { metadata, .. }
+            | Self::ToolSearchCall { metadata, .. }
+            | Self::FunctionCallOutput { metadata, .. }
+            | Self::CustomToolCall { metadata, .. }
+            | Self::CustomToolCallOutput { metadata, .. }
+            | Self::ToolSearchOutput { metadata, .. }
+            | Self::WebSearchCall { metadata, .. }
+            | Self::ImageGenerationCall { metadata, .. }
+            | Self::Compaction { metadata, .. }
+            | Self::CompactionTrigger { metadata, .. }
+            | Self::ContextCompaction { metadata, .. } => Some(metadata),
+            Self::Other => None,
+        }
     }
 }
 
@@ -466,29 +675,18 @@ pub fn local_image_content_items_with_label_number(
     file_bytes: Vec<u8>,
     label_number: Option<usize>,
     detail: ImageDetail,
-    mode: PromptImageMode,
 ) -> Vec<ContentItem> {
+    let mode = match detail {
+        ImageDetail::Original => PromptImageMode::Original,
+        ImageDetail::Auto | ImageDetail::Low | ImageDetail::High => PromptImageMode::ResizeToFit,
+    };
     match load_for_prompt_bytes(path, file_bytes, mode) {
-        Ok(image) => {
-            let mut items = Vec::with_capacity(3);
-            if let Some(label_number) = label_number {
-                items.push(ContentItem::InputText {
-                    text: local_image_open_tag_text_with_path(label_number, path),
-                });
-            }
-            items.push(ContentItem::InputImage {
-                image_url: image.into_data_url(),
-                detail: Some(detail),
-            });
-            if label_number.is_some() {
-                items.push(ContentItem::InputText {
-                    text: LOCAL_IMAGE_CLOSE_TAG.to_string(),
-                });
-            }
-            items
-        }
+        Ok(image) => local_image_content_items(path, image.into_data_url(), label_number, detail),
         Err(err) => match &err {
-            ImageProcessingError::Read { .. } | ImageProcessingError::Encode { .. } => {
+            ImageProcessingError::Read { .. }
+            | ImageProcessingError::Encode { .. }
+            | ImageProcessingError::InvalidDataUrl { .. }
+            | ImageProcessingError::ImageTooLarge { .. } => {
                 vec![local_image_error_placeholder(path, &err)]
             }
             ImageProcessingError::Decode { .. } if err.is_invalid_image() => {
@@ -504,6 +702,36 @@ pub fn local_image_content_items_with_label_number(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LocalImagePreparation {
+    Process,
+    Defer,
+}
+
+fn local_image_content_items(
+    path: &std::path::Path,
+    image_url: String,
+    label_number: Option<usize>,
+    detail: ImageDetail,
+) -> Vec<ContentItem> {
+    let mut items = Vec::with_capacity(3);
+    if let Some(label_number) = label_number {
+        items.push(ContentItem::InputText {
+            text: local_image_open_tag_text_with_path(label_number, path),
+        });
+    }
+    items.push(ContentItem::InputImage {
+        image_url,
+        detail: Some(detail),
+    });
+    if label_number.is_some() {
+        items.push(ContentItem::InputText {
+            text: LOCAL_IMAGE_CLOSE_TAG.to_string(),
+        });
+    }
+    items
+}
+
 impl From<ResponseInputItem> for ResponseItem {
     fn from(item: ResponseInputItem) -> Self {
         match item {
@@ -516,22 +744,33 @@ impl From<ResponseInputItem> for ResponseItem {
                 content,
                 id: None,
                 phase,
+                metadata: None,
             },
-            ResponseInputItem::FunctionCallOutput { call_id, output } => {
-                Self::FunctionCallOutput { call_id, output }
-            }
+            ResponseInputItem::FunctionCallOutput { call_id, output } => Self::FunctionCallOutput {
+                id: None,
+                call_id,
+                output,
+                metadata: None,
+            },
             ResponseInputItem::McpToolCallOutput { call_id, output } => {
                 let output = output.into_function_call_output_payload();
-                Self::FunctionCallOutput { call_id, output }
+                Self::FunctionCallOutput {
+                    id: None,
+                    call_id,
+                    output,
+                    metadata: None,
+                }
             }
             ResponseInputItem::CustomToolCallOutput {
                 call_id,
                 name,
                 output,
             } => Self::CustomToolCallOutput {
+                id: None,
                 call_id,
                 name,
                 output,
+                metadata: None,
             },
             ResponseInputItem::ToolSearchOutput {
                 call_id,
@@ -543,6 +782,8 @@ impl From<ResponseInputItem> for ResponseItem {
                 status,
                 execution,
                 tools,
+                id: None,
+                metadata: None,
             },
         }
     }
@@ -616,6 +857,15 @@ pub enum ReasoningItemContent {
 
 impl From<Vec<UserInput>> for ResponseInputItem {
     fn from(items: Vec<UserInput>) -> Self {
+        Self::from_user_input(items, LocalImagePreparation::Process)
+    }
+}
+
+impl ResponseInputItem {
+    pub fn from_user_input(
+        items: Vec<UserInput>,
+        local_image_preparation: LocalImagePreparation,
+    ) -> Self {
         let mut image_index = 0;
         Self::Message {
             role: "user".to_string(),
@@ -643,13 +893,22 @@ impl From<Vec<UserInput>> for ResponseInputItem {
                     UserInput::LocalImage { path, detail, .. } => {
                         image_index += 1;
                         match std::fs::read(&path) {
-                            Ok(file_bytes) => local_image_content_items_with_label_number(
-                                &path,
-                                file_bytes,
-                                Some(image_index),
-                                detail.unwrap_or(DEFAULT_IMAGE_DETAIL),
-                                PromptImageMode::ResizeToFit,
-                            ),
+                            Ok(file_bytes) => match local_image_preparation {
+                                LocalImagePreparation::Process => {
+                                    local_image_content_items_with_label_number(
+                                        &path,
+                                        file_bytes,
+                                        Some(image_index),
+                                        detail.unwrap_or(DEFAULT_IMAGE_DETAIL),
+                                    )
+                                }
+                                LocalImagePreparation::Defer => local_image_content_items(
+                                    &path,
+                                    data_url_from_bytes("application/octet-stream", &file_bytes),
+                                    Some(image_index),
+                                    detail.unwrap_or(DEFAULT_IMAGE_DETAIL),
+                                ),
+                            },
                             Err(err) => vec![local_image_error_placeholder(&path, err)],
                         }
                     }
@@ -1052,6 +1311,20 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
+    fn plaintext_agent_message_content_rejects_mixed_encrypted_content() {
+        let content = vec![
+            AgentMessageInputContent::InputText {
+                text: "Message Type: MESSAGE\nPayload:\n".to_string(),
+            },
+            AgentMessageInputContent::EncryptedContent {
+                encrypted_content: "encrypted-payload".to_string(),
+            },
+        ];
+
+        assert_eq!(plaintext_agent_message_content(&content), None);
+    }
+
+    #[test]
     fn response_input_message_conversion_preserves_phase() {
         let item = ResponseItem::from(ResponseInputItem::Message {
             role: "assistant".to_string(),
@@ -1070,8 +1343,77 @@ mod tests {
                     text: "still working".to_string(),
                 }],
                 phase: Some(MessagePhase::Commentary),
+                metadata: None,
             }
         );
+    }
+
+    #[test]
+    fn response_item_metadata_round_trips_and_stamps_turn_ids() -> Result<()> {
+        let mut item = response_item_with_metadata(Some(response_item_metadata("turn-1")));
+        let round_trip: ResponseItem = serde_json::from_value(serde_json::to_value(&item)?)?;
+        assert_eq!(round_trip, item);
+
+        let unknown_metadata: ResponseItem = serde_json::from_value(serde_json::json!({
+            "type": "message",
+            "role": "user",
+            "content": [{"type": "input_text", "text": "hello"}],
+            "metadata": {
+                "turn_id": "turn-1",
+                "other": "ignored",
+            },
+        }))?;
+        assert_eq!(unknown_metadata, item);
+
+        item.stamp_turn_id_if_missing("turn-2");
+        assert_eq!(item.turn_id(), Some("turn-1"));
+
+        let mut empty_turn_id = response_item_with_metadata(Some(response_item_metadata("")));
+        empty_turn_id.stamp_turn_id_if_missing("turn-1");
+        assert_eq!(empty_turn_id.turn_id(), Some("turn-1"));
+
+        let mut missing_turn_id = response_item_with_metadata(/*metadata*/ None);
+        missing_turn_id.stamp_turn_id_if_missing("");
+        missing_turn_id.stamp_turn_id_if_missing("turn-1");
+        assert_eq!(missing_turn_id.turn_id(), Some("turn-1"));
+
+        let mut other = ResponseItem::Other;
+        other.stamp_turn_id_if_missing("turn-1");
+        assert_eq!(other.turn_id(), None);
+        Ok(())
+    }
+
+    #[test]
+    fn response_item_id_getter_and_setter() {
+        let mut item = response_item_with_metadata(/*metadata*/ None);
+        assert_eq!(item.id(), None);
+
+        item.set_id(Some("msg_test".to_string()));
+
+        assert_eq!(item.id(), Some("msg_test"));
+
+        item.set_id(/*new_id*/ None);
+
+        assert_eq!(item.id(), None);
+    }
+
+    fn response_item_with_metadata(metadata: Option<ResponseItemMetadata>) -> ResponseItem {
+        ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: "hello".to_string(),
+            }],
+            phase: None,
+            metadata,
+        }
+    }
+
+    fn response_item_metadata(turn_id: &str) -> ResponseItemMetadata {
+        ResponseItemMetadata {
+            turn_id: Some(turn_id.to_string()),
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -1171,10 +1513,11 @@ mod tests {
         assert_eq!(
             item,
             ResponseItem::ImageGenerationCall {
-                id: "ig_123".to_string(),
+                id: Some("ig_123".to_string()),
                 status: "completed".to_string(),
                 revised_prompt: Some("A small blue square".to_string()),
                 result: "Zm9v".to_string(),
+                metadata: None,
             }
         );
     }
@@ -1192,10 +1535,11 @@ mod tests {
         assert_eq!(
             item,
             ResponseItem::ImageGenerationCall {
-                id: "ig_123".to_string(),
+                id: Some("ig_123".to_string()),
                 status: "completed".to_string(),
                 revised_prompt: None,
                 result: "Zm9v".to_string(),
+                metadata: None,
             }
         );
     }
@@ -1547,6 +1891,7 @@ mod tests {
                 namespace: Some("mcp__codex_apps__gmail".to_string()),
                 arguments: "{\"top_k\":5}".to_string(),
                 call_id: "call-1".to_string(),
+                metadata: None,
             }
         );
     }
@@ -1892,7 +2237,9 @@ mod tests {
         assert_eq!(
             item,
             ResponseItem::Compaction {
+                id: None,
                 encrypted_content: "abc".into(),
+                metadata: None,
             }
         );
         Ok(())
@@ -1907,7 +2254,9 @@ mod tests {
         assert_eq!(
             item,
             ResponseItem::ContextCompaction {
+                id: None,
                 encrypted_content: Some("abc".into()),
+                metadata: None,
             }
         );
         Ok(())
@@ -1917,6 +2266,8 @@ mod tests {
     fn serializes_context_compaction_trigger_without_payload() -> Result<()> {
         let item = ResponseItem::ContextCompaction {
             encrypted_content: None,
+            id: None,
+            metadata: None,
         };
 
         assert_eq!(
@@ -1925,6 +2276,46 @@ mod tests {
                 "type": "context_compaction",
             })
         );
+        Ok(())
+    }
+
+    #[test]
+    fn serializes_compaction_trigger_without_payload() -> Result<()> {
+        let item = ResponseItem::CompactionTrigger { metadata: None };
+
+        assert_eq!(
+            serde_json::to_value(item)?,
+            serde_json::json!({
+                "type": "compaction_trigger",
+            })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn serializes_stamped_compaction_trigger_metadata() -> Result<()> {
+        let mut item = ResponseItem::CompactionTrigger { metadata: None };
+        item.stamp_turn_id_if_missing("turn-1");
+
+        assert_eq!(
+            serde_json::to_value(item)?,
+            serde_json::json!({
+                "type": "compaction_trigger",
+                "metadata": {
+                    "turn_id": "turn-1",
+                },
+            })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn deserializes_compaction_trigger_without_payload() -> Result<()> {
+        let json = r#"{"type":"compaction_trigger"}"#;
+
+        let item: ResponseItem = serde_json::from_str(json)?;
+
+        assert_eq!(item, ResponseItem::CompactionTrigger { metadata: None });
         Ok(())
     }
 
@@ -1965,7 +2356,6 @@ mod tests {
                     queries: Some(vec!["weather seattle".into(), "seattle weather now".into()]),
                 }),
                 Some("completed".into()),
-                true,
             ),
             (
                 r#"{
@@ -1981,7 +2371,6 @@ mod tests {
                     url: Some("https://example.com".into()),
                 }),
                 Some("open".into()),
-                true,
             ),
             (
                 r#"{
@@ -1999,7 +2388,6 @@ mod tests {
                     pattern: Some("installation".into()),
                 }),
                 Some("in_progress".into()),
-                true,
             ),
             (
                 r#"{
@@ -2010,25 +2398,21 @@ mod tests {
                 Some("ws_partial".into()),
                 None,
                 Some("in_progress".into()),
-                false,
             ),
         ];
 
-        for (json_literal, expected_id, expected_action, expected_status, expect_roundtrip) in cases
-        {
+        for (json_literal, expected_id, expected_action, expected_status) in cases {
             let parsed: ResponseItem = serde_json::from_str(json_literal)?;
             let expected = ResponseItem::WebSearchCall {
                 id: expected_id.clone(),
                 status: expected_status.clone(),
                 action: expected_action.clone(),
+                metadata: None,
             };
             assert_eq!(parsed, expected);
 
             let serialized = serde_json::to_value(&parsed)?;
-            let mut expected_serialized: serde_json::Value = serde_json::from_str(json_literal)?;
-            if !expect_roundtrip && let Some(obj) = expected_serialized.as_object_mut() {
-                obj.remove("id");
-            }
+            let expected_serialized: serde_json::Value = serde_json::from_str(json_literal)?;
             assert_eq!(serialized, expected_serialized);
         }
 
@@ -2107,6 +2491,7 @@ mod tests {
                     "query": "calendar create",
                     "limit": 1,
                 }),
+                metadata: None,
             }
         );
 
@@ -2150,6 +2535,7 @@ mod tests {
         assert_eq!(
             ResponseItem::from(input.clone()),
             ResponseItem::ToolSearchOutput {
+                id: None,
                 call_id: Some("search-1".to_string()),
                 status: "completed".to_string(),
                 execution: "client".to_string(),
@@ -2167,6 +2553,7 @@ mod tests {
                         "additionalProperties": false,
                     }
                 })],
+                metadata: None,
             }
         );
 
@@ -2220,6 +2607,7 @@ mod tests {
                 arguments: serde_json::json!({
                     "paths": ["crm"],
                 }),
+                metadata: None,
             }
         );
 
@@ -2235,10 +2623,12 @@ mod tests {
         assert_eq!(
             parsed_output,
             ResponseItem::ToolSearchOutput {
+                id: None,
                 call_id: None,
                 status: "completed".to_string(),
                 execution: "server".to_string(),
                 tools: vec![],
+                metadata: None,
             }
         );
 

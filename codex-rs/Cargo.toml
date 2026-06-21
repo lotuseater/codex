@@ -32,6 +32,9 @@ members = [
     "codex-backend-openapi-models",
     "code-mode",
     "code-mode-spec",
+    "code-mode-host",
+    "code-mode-protocol",
+    "codex-home",
     "cloud-config",
     "cloud-tasks",
     "cloud-tasks-client",
@@ -53,6 +56,7 @@ members = [
     "shell-escalation",
     "skills",
     "core",
+    "core-api",
     "core-test-suites/*/",
     "core-domain/types",
     "core-plugins",
@@ -217,6 +221,8 @@ codex-cloud-tasks-client = { path = "cloud-tasks-client" }
 codex-cloud-tasks-mock-client = { path = "cloud-tasks-mock-client" }
 codex-code-mode = { path = "code-mode" }
 codex-code-mode-spec = { path = "code-mode-spec" }
+codex-code-mode-protocol = { path = "code-mode-protocol" }
+codex-home = { path = "codex-home" }
 codex-config = { path = "config" }
 codex-config-types = { path = "config-types" }
 codex-compaction-policy = { path = "context-domain/compaction-policy" }
@@ -227,6 +233,7 @@ codex-context-reduction = { path = "context-reduction" }
 codex-context-ops-impl = { path = "context-ops-impl" }
 codex-context-fragments = { path = "context-fragments" }
 codex-core = { path = "core" }
+codex-core-api = { path = "core-api" }
 codex-core-domain-types = { path = "core-domain/types" }
 codex-core-plugins = { path = "core-plugins" }
 codex-core-skills = { path = "core-skills" }
@@ -339,6 +346,7 @@ codex-utils-json-to-toml = { path = "utils/json-to-toml" }
 codex-utils-oss = { path = "utils/oss" }
 codex-utils-output-truncation = { path = "utils/output-truncation" }
 codex-utils-path = { path = "utils/path-utils" }
+codex-utils-path-uri = { path = "utils/path-uri" }
 codex-utils-plugins = { path = "utils/plugins" }
 codex-utils-pty = { path = "utils/pty" }
 codex-utils-rustls-provider = { path = "utils/rustls-provider" }
@@ -360,10 +368,10 @@ anyhow = "1"
 arboard = { version = "3", features = ["wayland-data-control"] }
 arc-swap = "1.9.0"
 assert_cmd = "2"
-assert_matches = "1"
-async-channel = "2"
-async-io = "2"
-async-stream = "0.3"
+assert_matches = "1.5.0"
+async-channel = "2.3.1"
+async-io = "2.6.0"
+async-stream = "0.3.6"
 async-trait = "0.1"
 aws-config = "1"
 aws-credential-types = "1"
@@ -377,12 +385,20 @@ chardetng = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std", "iana-time-zone"] }
 clap = "4"
 clap_complete = "4"
-color-eyre = "0.6"
-constant_time_eq = "0.3"
-crossbeam-channel = "0.5"
-crypto_box = { version = "0.9", features = ["seal"] }
-crossterm = "0.28"
-csv = "1"
+clatter = { version = "2.2.0", default-features = false, features = [
+    "alloc",
+    "getrandom",
+    "use-25519",
+    "use-aes-gcm",
+    "use-rust-crypto-ml-kem",
+    "use-sha",
+] }
+color-eyre = "0.6.3"
+constant_time_eq = "0.3.1"
+crossbeam-channel = "0.5.15"
+crypto_box = { version = "0.9.1", features = ["seal"] }
+crossterm = "0.28.1"
+csv = "1.3.1"
 ctor = "1"
 deno_core_icudata = "0.77.0"
 derive_more = "2"
@@ -421,7 +437,10 @@ jsonwebtoken = "9.3.1"
 keyring = { version = "3.6", default-features = false }
 landlock = "0.4"
 lazy_static = "1"
-libc = "0.2"
+libc = "0.2.182"
+# Keep SQLx's bundled SQLite on a version containing the WAL-reset corruption fix:
+# https://www.sqlite.org/wal.html#the_wal_reset_bug
+libsqlite3-sys = { version = "0.37", default-features = false }
 log = "0.4"
 lru = "0.18"
 maplit = "1.0.2"
@@ -465,7 +484,7 @@ reqwest = { version = "0.12", default-features = false, features = ["cookies", "
 rmcp = { version = "1.7.0", default-features = false }
 runfiles = { git = "https://github.com/dzbarsky/rules_rust", rev = "b56cbaa8465e74127f1ea216f813cd377295ad81" }
 rustls = { version = "0.23", default-features = false, features = [
-    "ring",
+    "aws_lc_rs",
     "std",
 ] }
 rustls-native-certs = "0.8"
@@ -631,8 +650,8 @@ split-debuginfo = "off"
 # sidecar symbols and stripped the binaries.
 strip = false
 
-# See https://github.com/openai/codex/issues/1411 for details.
-codegen-units = 1
+# Balance parallel release code generation against binary size.
+codegen-units = 4
 
 [profile.profiling]
 inherits = "release"
@@ -651,7 +670,7 @@ opt-level = 0
 # ratatui = { path = "../../ratatui" }
 crossterm = { git = "https://github.com/nornagon/crossterm", rev = "87db8bfa6dc99427fd3b071681b07fc31c6ce995" }
 ratatui = { git = "https://github.com/lotuseater/ratatui", branch = "unicode-width-loose" }
-tokio-tungstenite = { git = "https://github.com/openai-oss-forks/tokio-tungstenite", rev = "132f5b39c862e3a970f731d709608b3e6276d5f6" }
+tokio-tungstenite = { git = "https://github.com/openai-oss-forks/tokio-tungstenite", rev = "e5e64b86722c5453c4038131c3193faa49a648ad" }
 tungstenite = { git = "https://github.com/openai-oss-forks/tungstenite-rs", rev = "9200079d3b54a1ff51072e24d81fd354f085156f" }
 
 # Local fork with bumped derive_more 2 / rustyline 18 / textwrap 0.16 / lalrpop 0.23 transitives
