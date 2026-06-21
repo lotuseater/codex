@@ -1,10 +1,16 @@
 use super::*;
 use crate::session::InputQueueActivity;
+use crate::session::session::Session;
+use crate::session::turn_context::TurnContext;
+use crate::tools::handlers::multi_agents::parse_agent_id_targets;
 use crate::tools::handlers::multi_agents_spec::WaitAgentTimeoutOptions;
 use crate::tools::handlers::multi_agents_spec::create_wait_agent_tool_v2;
 use crate::turn_timing::now_unix_timestamp_ms;
+use codex_protocol::ThreadId;
+use codex_protocol::protocol::CollabAgentRef;
 use codex_tool_registry_api::ToolSpec;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::Instant;
 use tokio::time::timeout_at;
@@ -71,6 +77,23 @@ impl Handler {
             None => default_timeout_ms,
         };
 
+        if args.targets.is_empty() {
+            return self
+                .wait_for_mailbox_activity(session, turn, call_id, timeout_ms)
+                .await;
+        }
+
+        self.wait_for_targets(session, turn, call_id, args.targets, timeout_ms)
+            .await
+    }
+
+    async fn wait_for_mailbox_activity(
+        &self,
+        session: Arc<Session>,
+        turn: Arc<TurnContext>,
+        call_id: String,
+        timeout_ms: i64,
+    ) -> Result<Box<dyn crate::tools::context::ToolOutput>, FunctionCallError> {
         let turn_state = session
             .input_queue
             .turn_state_for_sub_id(&session.active_turn, &turn.sub_id)
@@ -114,6 +137,95 @@ impl Handler {
 
         Ok(boxed_tool_output(result))
     }
+
+    async fn wait_for_targets(
+        &self,
+        session: Arc<Session>,
+        turn: Arc<TurnContext>,
+        call_id: String,
+        targets: Vec<String>,
+        timeout_ms: i64,
+    ) -> Result<Box<dyn crate::tools::context::ToolOutput>, FunctionCallError> {
+        let receiver_thread_ids = parse_agent_id_targets(targets)?;
+        let mut receiver_agents = Vec::with_capacity(receiver_thread_ids.len());
+        let mut target_by_thread_id = HashMap::with_capacity(receiver_thread_ids.len());
+        for receiver_thread_id in &receiver_thread_ids {
+            let agent_metadata = session
+                .services
+                .agent_control
+                .get_agent_metadata(*receiver_thread_id)
+                .unwrap_or_default();
+            target_by_thread_id.insert(
+                *receiver_thread_id,
+                agent_metadata
+                    .agent_path
+                    .as_ref()
+                    .map(ToString::to_string)
+                    .unwrap_or_else(|| receiver_thread_id.to_string()),
+            );
+            receiver_agents.push(CollabAgentRef {
+                thread_id: *receiver_thread_id,
+                agent_nickname: agent_metadata.agent_nickname,
+                agent_role: agent_metadata.agent_role,
+            });
+        }
+
+        session
+            .send_event(
+                &turn,
+                CollabWaitingBeginEvent {
+                    started_at_ms: now_unix_timestamp_ms(),
+                    sender_thread_id: session.thread_id,
+                    receiver_thread_ids: receiver_thread_ids.clone(),
+                    receiver_agents: receiver_agents.clone(),
+                    call_id: call_id.clone(),
+                }
+                .into(),
+            )
+            .await;
+
+        let pairs =
+            wait_for_targets_final_status(&session, &receiver_thread_ids, timeout_ms).await?;
+
+        let timed_out = pairs.is_empty();
+        let statuses_by_id = pairs.iter().cloned().collect::<HashMap<ThreadId, _>>();
+        let agent_statuses = build_wait_agent_statuses(&statuses_by_id, &receiver_agents);
+        let status = pairs
+            .into_iter()
+            .filter_map(|(thread_id, status)| {
+                target_by_thread_id
+                    .get(&thread_id)
+                    .cloned()
+                    .map(|target| (target, status))
+            })
+            .collect::<HashMap<String, AgentStatus>>();
+        let message = if timed_out {
+            "Wait timed out."
+        } else {
+            "Wait completed."
+        };
+        let result = WaitAgentResult {
+            message: message.to_string(),
+            timed_out,
+            status,
+        };
+
+        session
+            .send_event(
+                &turn,
+                CollabWaitingEndEvent {
+                    sender_thread_id: session.thread_id,
+                    call_id,
+                    completed_at_ms: now_unix_timestamp_ms(),
+                    agent_statuses,
+                    statuses: statuses_by_id,
+                }
+                .into(),
+            )
+            .await;
+
+        Ok(boxed_tool_output(result))
+    }
 }
 
 impl CoreToolRuntime for Handler {
@@ -125,6 +237,8 @@ impl CoreToolRuntime for Handler {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct WaitArgs {
+    #[serde(default)]
+    targets: Vec<String>,
     timeout_ms: Option<i64>,
 }
 
@@ -132,6 +246,8 @@ struct WaitArgs {
 pub(crate) struct WaitAgentResult {
     pub(crate) message: String,
     pub(crate) timed_out: bool,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub(crate) status: HashMap<String, AgentStatus>,
 }
 
 impl WaitAgentResult {
@@ -144,6 +260,7 @@ impl WaitAgentResult {
         Self {
             message: message.to_string(),
             timed_out: outcome == WaitOutcome::TimedOut,
+            status: HashMap::new(),
         }
     }
 }

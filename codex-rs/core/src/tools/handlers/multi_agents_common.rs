@@ -1,4 +1,5 @@
 use crate::agent::AgentStatus;
+use crate::agent::status::is_final;
 use crate::config::Config;
 use crate::config::DEFAULT_MULTI_AGENT_V2_MIN_WAIT_TIMEOUT_MS;
 use crate::config::HARD_MAX_MULTI_AGENT_V2_TIMEOUT_MS;
@@ -23,9 +24,17 @@ use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::user_input::UserInput;
 use codex_tool_execution_api::FunctionCallError;
 use codex_tool_execution_api::ToolOutputPayload;
+use futures::FutureExt;
+use futures::StreamExt;
+use futures::stream::FuturesUnordered;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::watch::Receiver;
+use tokio::time::Instant;
+use tokio::time::timeout_at;
 
 /// Minimum wait timeout to prevent tight polling loops from burning CPU.
 pub(crate) const MIN_WAIT_TIMEOUT_MS: i64 = DEFAULT_MULTI_AGENT_V2_MIN_WAIT_TIMEOUT_MS;
@@ -108,6 +117,95 @@ pub(crate) fn build_wait_agent_statuses(
     extras.sort_by_key(|entry| entry.thread_id.to_string());
     entries.extend(extras);
     entries
+}
+
+/// Subscribe to each target agent's status and wait until at least one reaches a final
+/// status, or the deadline elapses.
+///
+/// Returns the collected `(thread_id, status)` pairs. An empty vec means the deadline
+/// elapsed before any tracked agent reached a final status (the caller treats this as a
+/// timeout). Agents that are already final, or are not found, are returned immediately.
+///
+/// This is the shared implementation behind both the v1 and v2 `wait_agent` handlers so the
+/// targeted final-status wait lives in exactly one place.
+pub(crate) async fn wait_for_targets_final_status(
+    session: &Arc<Session>,
+    receiver_thread_ids: &[ThreadId],
+    timeout_ms: i64,
+) -> Result<Vec<(ThreadId, AgentStatus)>, FunctionCallError> {
+    let mut status_rxs = Vec::with_capacity(receiver_thread_ids.len());
+    let mut initial_final_statuses = Vec::new();
+    for id in receiver_thread_ids {
+        match session.services.agent_control.subscribe_status(*id).await {
+            Ok(rx) => {
+                let status = rx.borrow().clone();
+                if is_final(&status) {
+                    initial_final_statuses.push((*id, status));
+                }
+                status_rxs.push((*id, rx));
+            }
+            Err(CodexErr::ThreadNotFound(_)) => {
+                initial_final_statuses.push((*id, AgentStatus::NotFound));
+            }
+            Err(err) => {
+                return Err(collab_agent_error(*id, err));
+            }
+        }
+    }
+
+    if !initial_final_statuses.is_empty() {
+        return Ok(initial_final_statuses);
+    }
+
+    let mut futures = FuturesUnordered::new();
+    for (id, rx) in status_rxs.into_iter() {
+        let session = session.clone();
+        futures.push(wait_for_final_status(session, id, rx));
+    }
+    let mut results = Vec::new();
+    let deadline = Instant::now() + Duration::from_millis(timeout_ms as u64);
+    loop {
+        match timeout_at(deadline, futures.next()).await {
+            Ok(Some(Some(result))) => {
+                results.push(result);
+                break;
+            }
+            Ok(Some(None)) => continue,
+            Ok(None) | Err(_) => break,
+        }
+    }
+    if !results.is_empty() {
+        loop {
+            match futures.next().now_or_never() {
+                Some(Some(Some(result))) => results.push(result),
+                Some(Some(None)) => continue,
+                Some(None) | None => break,
+            }
+        }
+    }
+    Ok(results)
+}
+
+async fn wait_for_final_status(
+    session: Arc<Session>,
+    thread_id: ThreadId,
+    mut status_rx: Receiver<AgentStatus>,
+) -> Option<(ThreadId, AgentStatus)> {
+    let mut status = status_rx.borrow().clone();
+    if is_final(&status) {
+        return Some((thread_id, status));
+    }
+
+    loop {
+        if status_rx.changed().await.is_err() {
+            let latest = session.services.agent_control.get_status(thread_id).await;
+            return is_final(&latest).then_some((thread_id, latest));
+        }
+        status = status_rx.borrow().clone();
+        if is_final(&status) {
+            return Some((thread_id, status));
+        }
+    }
 }
 
 pub(crate) fn collab_spawn_error(err: CodexErr) -> FunctionCallError {
@@ -229,6 +327,7 @@ fn build_agent_shared_config(turn: &TurnContext) -> Result<Config, FunctionCallE
         .or_else(|| turn.model_info.default_reasoning_level.clone());
     config.model_reasoning_summary = Some(turn.reasoning_summary);
     config.developer_instructions = turn.developer_instructions.clone();
+    config.compact_prompt = turn.compact_prompt.clone();
     apply_spawn_agent_runtime_overrides(&mut config, turn)?;
 
     Ok(config)
@@ -263,6 +362,7 @@ pub(crate) fn apply_spawn_agent_runtime_overrides(
             FunctionCallError::RespondToModel(format!("approval_policy is invalid: {err}"))
         })?;
     config.approvals_reviewer = turn.config.approvals_reviewer;
+    config.permissions.shell_environment_policy = turn.shell_environment_policy.clone();
     #[allow(deprecated)]
     let turn_cwd = turn.cwd.clone();
     config.cwd = turn_cwd;
