@@ -435,6 +435,22 @@ fn plan_mode_nudge_line() -> Line<'static> {
     ])
 }
 
+fn combine_right_context_lines(
+    primary: Option<Line<'static>>,
+    session_limits: Option<Line<'static>>,
+) -> Option<Line<'static>> {
+    match (primary, session_limits) {
+        (Some(mut primary), Some(session_limits)) => {
+            primary.spans.push(" · ".into());
+            primary.spans.extend(session_limits.spans);
+            Some(primary)
+        }
+        (Some(primary), None) => Some(primary),
+        (None, Some(session_limits)) => Some(session_limits),
+        (None, None) => None,
+    }
+}
+
 impl ChatComposer {
     fn slash_input(&self) -> SlashInput<'_> {
         SlashInput::new(
@@ -4328,22 +4344,26 @@ impl ChatComposer {
                             show_queue_hint,
                         )
                     };
+                    let session_limits = self.session_limit_status_line.clone();
                     let right_line =
                         if let Some(label) = self.footer.side_conversation_context_label.as_ref() {
-                            Some(side_conversation_context_line(label))
+                            combine_right_context_lines(
+                                Some(side_conversation_context_line(label)),
+                                session_limits,
+                            )
                         } else if let Some(line) = self.shell_mode_footer_line() {
-                            Some(line)
+                            combine_right_context_lines(Some(line), session_limits)
                         } else if status_line_active {
                             let full = self.mode_indicator_line(show_cycle_hint);
                             let compact = self.mode_indicator_line(/*show_cycle_hint*/ false);
                             let full_width = full.as_ref().map(|l| l.width() as u16).unwrap_or(0);
                             if can_show_left_with_context(hint_rect, left_width, full_width) {
-                                full
+                                combine_right_context_lines(full, session_limits)
                             } else {
-                                compact
+                                combine_right_context_lines(compact, session_limits)
                             }
                         } else {
-                            Some(self.right_footer_line_with_context())
+                            session_limits.or_else(|| Some(self.right_footer_line_with_context()))
                         };
                     let right_width = right_line.as_ref().map(|l| l.width() as u16).unwrap_or(0);
                     if status_line_active
