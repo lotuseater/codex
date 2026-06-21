@@ -23,9 +23,7 @@ use codex_analytics::CompactionImplementation;
 use codex_analytics::CompactionPhase;
 use codex_analytics::CompactionReason;
 use codex_analytics::CompactionTrigger;
-use codex_config::types::PromptReductionModeToml;
 use codex_login::CodexAuth;
-use codex_prompt_reducer::PromptReductionConfig;
 use codex_prompt_reducer::PromptReductionStats;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CodexResult;
@@ -646,22 +644,17 @@ fn reduce_remote_compaction_prompt_input(
     input: &mut Vec<ResponseItem>,
     turn_context: &TurnContext,
 ) -> Option<PromptReductionStats> {
-    match turn_context.config.prompt_reduction_mode {
-        PromptReductionModeToml::Off => None,
-        PromptReductionModeToml::Conservative => {
-            let config = PromptReductionConfig::for_turn(&turn_context.sub_id);
-            match codex_prompt_reducer::reduce_prompt_items(input, &config) {
-                Ok(stats) if stats.reductions > 0 => Some(stats),
-                Ok(_) => None,
-                Err(error) => {
-                    warn!(
-                        turn_id = %turn_context.sub_id,
-                        %error,
-                        "failed to reduce remote compaction prompt input"
-                    );
-                    None
-                }
-            }
+    let config = crate::session::turn::prompt_reduction::reduction_config_for_turn(turn_context)?;
+    match codex_prompt_reducer::reduce_prompt_items(input, &config) {
+        Ok(stats) if stats.reductions > 0 => Some(stats),
+        Ok(_) => None,
+        Err(error) => {
+            warn!(
+                turn_id = %turn_context.sub_id,
+                %error,
+                "failed to reduce remote compaction prompt input"
+            );
+            None
         }
     }
 }

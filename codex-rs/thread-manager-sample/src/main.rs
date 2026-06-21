@@ -198,6 +198,7 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         model_auto_compact_token_limit: None,
         model_compact_percentage: DEFAULT_MODEL_COMPACT_PERCENTAGE,
         prompt_reduction_mode: Default::default(),
+        prompt_reduction: Default::default(),
         model_provider_id,
         model_provider,
         personality: None,

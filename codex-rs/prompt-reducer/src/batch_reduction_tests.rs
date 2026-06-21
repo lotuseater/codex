@@ -206,6 +206,7 @@ fn workflow_call(call_id: &str) -> ResponseItem {
         namespace: None,
         arguments: serde_json::json!({ "spec": {} }).to_string(),
         call_id: call_id.to_string(),
+        metadata: None,
     }
 }
 
@@ -216,13 +217,16 @@ fn shell_call(call_id: &str, command: &str) -> ResponseItem {
         namespace: None,
         arguments: serde_json::json!({ "command": command }).to_string(),
         call_id: call_id.to_string(),
+        metadata: None,
     }
 }
 
 fn shell_output(call_id: &str, text: String) -> ResponseItem {
     ResponseItem::FunctionCallOutput {
+        id: None,
         call_id: call_id.to_string(),
         output: FunctionCallOutputPayload::from_text(text),
+        metadata: None,
     }
 }
 
@@ -236,6 +240,7 @@ fn message(role: &str, text: String, kind: MessageTextKind) -> ResponseItem {
         role: role.to_string(),
         content,
         phase: None,
+        metadata: None,
     }
 }
 
@@ -253,10 +258,185 @@ fn test_config(path: &Path, preserve_recent_items: usize) -> PromptReductionConf
         path_list_threshold: 8,
         min_saved_tokens: 1,
         preserve_recent_items,
+        recency: RecencyPolicy::new(conservative_tiers(preserve_recent_items)),
+        disabled_categories: BTreeSet::new(),
     }
 }
 
 enum MessageTextKind {
     Input,
     Output,
+}
+
+// ---- Recency-tier model tests -------------------------------------------
+
+/// A config whose only reducible behaviour is driven by an explicit recency
+/// policy, so each tier test controls tiering precisely. `min_reduce_chars` is
+/// small so the global gate never masks the per-tier thresholds.
+fn tiered_config(path: &Path, recency: RecencyPolicy) -> PromptReductionConfig {
+    PromptReductionConfig {
+        artifact_dir: path.to_path_buf(),
+        min_reduce_chars: 100,
+        path_list_threshold: 8,
+        min_saved_tokens: 1,
+        preserve_recent_items: 0,
+        recency,
+        disabled_categories: BTreeSet::new(),
+    }
+}
+
+/// A large `cat`-style source-read output. Its call source contains `cat `, so
+/// `exact_preserve_reason` classifies it as `source_read` -> `source_read_digest`
+/// (which reduces regardless of recency, except under a `Preserve` tier).
+fn source_read_pair(call_id: &str, body_chars: usize) -> [ResponseItem; 2] {
+    // The call_id seeds the body so distinct pairs are not collapsed as exact
+    // `duplicate_block` matches; each still classifies as a source read.
+    let body = format!(
+        "// recovered source file dump for tier tests ({call_id})\n{}",
+        format!("let value_{call_id} = compute_widget(index, offset);\n")
+            .repeat(body_chars / 44 + 1)
+    );
+    [
+        shell_call(call_id, &format!("cat src/widget_{call_id}.rs")),
+        shell_output(call_id, body),
+    ]
+}
+
+#[test]
+fn preserve_tier_keeps_newest_source_read_verbatim() {
+    // Newest item is a reducible source read. Under a Preserve-first policy the
+    // newest band is kept verbatim; under the Conservative binary policy the
+    // same source read reduces (source reads reduce even when recent).
+    let temp = TempDir::new().unwrap();
+    let [call, output] = source_read_pair("read-1", 1_600);
+
+    let mut preserved = vec![call.clone(), output.clone()];
+    let preserve_policy = RecencyPolicy::new(recency_weighted_tiers(3, 6, 12, 0.5, 0.6));
+    let stats =
+        reduce_prompt_items(&mut preserved, &tiered_config(temp.path(), preserve_policy)).unwrap();
+    assert_eq!(
+        stats.reductions, 0,
+        "Preserve tier must keep newest verbatim"
+    );
+
+    let mut reduced = vec![call, output];
+    let conservative = RecencyPolicy::new(conservative_tiers(0));
+    let stats =
+        reduce_prompt_items(&mut reduced, &tiered_config(temp.path(), conservative)).unwrap();
+    assert_eq!(
+        stats.reductions, 1,
+        "Conservative policy still reduces the same recent source read"
+    );
+}
+
+#[test]
+fn aggressive_old_tier_saves_more_than_standard_tier() {
+    // Same large source read at the OLDEST slot under two policies. Both reduce
+    // it, but the aggressive tail tier (excerpt_mult 0.6) emits a shorter digest
+    // and therefore saves strictly more tokens than a standard all-categories
+    // tier (excerpt_mult 1.0). Padding (too short to reduce) only moves the
+    // source read to slot 0 and contributes equally to both runs, so the
+    // saved-token delta is purely the excerpt multiplier.
+    let temp = TempDir::new().unwrap();
+    let [call, output] = source_read_pair("read-old", 1_600);
+    let padding = (0..30)
+        .map(|i| {
+            message(
+                "assistant",
+                format!("status ping {i}"),
+                MessageTextKind::Output,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let build_items = || {
+        let mut v = vec![call.clone(), output.clone()];
+        v.extend(padding.iter().cloned());
+        v
+    };
+
+    // Aggressive tail: Preserve/RecentOnly/mid are size 1 so slot 0 lands in the
+    // final All{REST, 0.5, 0.6} tier.
+    let mut aggressive = build_items();
+    let agg_policy = RecencyPolicy::new(recency_weighted_tiers(1, 1, 1, 0.5, 0.6));
+    let agg_stats =
+        reduce_prompt_items(&mut aggressive, &tiered_config(temp.path(), agg_policy)).unwrap();
+
+    // Standard all-categories tier (excerpt_mult 1.0) at the same oldest slot.
+    let mut normal = build_items();
+    let normal_policy = RecencyPolicy::new(conservative_tiers(0));
+    let normal_stats =
+        reduce_prompt_items(&mut normal, &tiered_config(temp.path(), normal_policy)).unwrap();
+
+    assert_eq!(normal_stats.reductions, 1, "standard tier reduces the read");
+    assert_eq!(agg_stats.reductions, 1, "aggressive tier reduces the read");
+    assert!(
+        agg_stats.saved_tokens > normal_stats.saved_tokens,
+        "aggressive old tier (excerpt_mult 0.6) must save more than standard \
+         (agg={}, standard={})",
+        agg_stats.saved_tokens,
+        normal_stats.saved_tokens
+    );
+}
+
+#[test]
+fn disabled_category_is_skipped() {
+    let temp = TempDir::new().unwrap();
+    let [call, output] = source_read_pair("read-dis", 1_600);
+    let mut items = vec![call, output];
+
+    let mut config = tiered_config(temp.path(), RecencyPolicy::new(conservative_tiers(0)));
+    config
+        .disabled_categories
+        .insert("source_read_digest".to_string());
+
+    let stats = reduce_prompt_items(&mut items, &config).unwrap();
+    assert_eq!(
+        stats.reductions, 0,
+        "disabled source_read_digest must never reduce"
+    );
+}
+
+#[test]
+fn recency_weighted_keeps_more_recent_detail_than_conservative() {
+    // Two recent source reads plus a user turn. RecencyWeighted's Preserve band
+    // keeps both source reads; Conservative(0) reduces both.
+    let temp = TempDir::new().unwrap();
+    let [c1, o1] = source_read_pair("rw-1", 1_600);
+    let [c2, o2] = source_read_pair("rw-2", 1_600);
+    let build = || {
+        vec![
+            c1.clone(),
+            o1.clone(),
+            c2.clone(),
+            o2.clone(),
+            message("user", "continue".to_string(), MessageTextKind::Input),
+        ]
+    };
+
+    let mut weighted = build();
+    let rw = RecencyPolicy::new(recency_weighted_tiers(3, 6, 12, 0.5, 0.6));
+    let rw_stats = reduce_prompt_items(&mut weighted, &tiered_config(temp.path(), rw)).unwrap();
+
+    let mut conservative = build();
+    let cons = RecencyPolicy::new(conservative_tiers(0));
+    let cons_stats =
+        reduce_prompt_items(&mut conservative, &tiered_config(temp.path(), cons)).unwrap();
+
+    assert_eq!(
+        rw_stats.reductions, 0,
+        "RecencyWeighted Preserve band retains recent source-read detail"
+    );
+    // Conservative is recency-blind and digests the same recent source reads that
+    // RecencyWeighted preserves. `reductions` counts reduced ITEMS (call + output
+    // per source-read pair), so the exact count is incidental; the invariant under
+    // test is that Conservative reduces strictly more recent detail than
+    // RecencyWeighted.
+    assert!(
+        cons_stats.reductions > rw_stats.reductions,
+        "Conservative reduces the recent source reads that RecencyWeighted preserves \
+         (conservative={}, recency_weighted={})",
+        cons_stats.reductions,
+        rw_stats.reductions
+    );
 }

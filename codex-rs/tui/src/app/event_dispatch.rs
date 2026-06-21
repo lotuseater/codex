@@ -5,9 +5,11 @@
 
 use super::resize_reflow::trailing_run_start;
 use super::*;
+use crate::app_event::PromptReductionTuningField;
 use crate::app_event::RealtimeAudioDeviceKind;
 use crate::config_update::format_config_error;
 use crate::external_agent_config_migration_flow::ExternalAgentConfigMigrationFlowOutcome;
+use codex_config::types::PromptReductionModeToml;
 #[cfg(target_os = "windows")]
 use codex_config::types::WindowsSandboxModeToml;
 
@@ -2452,6 +2454,111 @@ impl App {
                             "Failed to save auto compact prompt: {err}"
                         ));
                     }
+                }
+            }
+            AppEvent::PersistPromptReductionMode { mode } => {
+                let mode_str = match mode {
+                    PromptReductionModeToml::Off => "off",
+                    PromptReductionModeToml::Conservative => "conservative",
+                    PromptReductionModeToml::RecencyWeighted => "recency_weighted",
+                };
+                let edit = codex_config::edit::ConfigEdit::SetPath {
+                    segments: vec!["prompt_reduction_mode".to_string()],
+                    value: toml_edit::value(mode_str),
+                };
+                match ConfigEditsBuilder::new(&self.config.codex_home)
+                    .with_edits([edit])
+                    .apply()
+                    .await
+                {
+                    Ok(()) => {
+                        self.config.prompt_reduction_mode = mode;
+                    }
+                    Err(err) => {
+                        tracing::error!(error = %err, "failed to persist prompt reduction mode");
+                        self.chat_widget.add_error_message(format!(
+                            "Failed to save prompt reduction mode: {err}"
+                        ));
+                    }
+                }
+            }
+            AppEvent::PersistPromptReductionTuning { field } => {
+                let edit = match &field {
+                    PromptReductionTuningField::PreserveRecentItems(n) => ConfigEdit::SetPath {
+                        segments: vec![
+                            "prompt_reduction".to_string(),
+                            "preserve_recent_items".to_string(),
+                        ],
+                        value: (*n as i64).into(),
+                    },
+                    PromptReductionTuningField::RecentWindowItems(n) => ConfigEdit::SetPath {
+                        segments: vec![
+                            "prompt_reduction".to_string(),
+                            "recent_window_items".to_string(),
+                        ],
+                        value: (*n as i64).into(),
+                    },
+                    PromptReductionTuningField::MidWindowItems(n) => ConfigEdit::SetPath {
+                        segments: vec![
+                            "prompt_reduction".to_string(),
+                            "mid_window_items".to_string(),
+                        ],
+                        value: (*n as i64).into(),
+                    },
+                    PromptReductionTuningField::OldThresholdMult(v) => ConfigEdit::SetPath {
+                        segments: vec![
+                            "prompt_reduction".to_string(),
+                            "old_threshold_mult".to_string(),
+                        ],
+                        value: (f64::from(*v)).into(),
+                    },
+                    PromptReductionTuningField::OldExcerptMult(v) => ConfigEdit::SetPath {
+                        segments: vec![
+                            "prompt_reduction".to_string(),
+                            "old_excerpt_mult".to_string(),
+                        ],
+                        value: (f64::from(*v)).into(),
+                    },
+                    PromptReductionTuningField::DisabledCategories(None) => ConfigEdit::ClearPath {
+                        segments: vec![
+                            "prompt_reduction".to_string(),
+                            "disabled_categories".to_string(),
+                        ],
+                    },
+                    PromptReductionTuningField::DisabledCategories(Some(cats)) => {
+                        let arr: toml_edit::Array = cats.iter().map(|s| s.as_str()).collect();
+                        ConfigEdit::SetPath {
+                            segments: vec![
+                                "prompt_reduction".to_string(),
+                                "disabled_categories".to_string(),
+                            ],
+                            value: toml_edit::Item::Value(arr.into()),
+                        }
+                    }
+                    PromptReductionTuningField::MinReduceChars(n) => ConfigEdit::SetPath {
+                        segments: vec![
+                            "prompt_reduction".to_string(),
+                            "min_reduce_chars".to_string(),
+                        ],
+                        value: (*n as i64).into(),
+                    },
+                    PromptReductionTuningField::MinSavedTokens(n) => ConfigEdit::SetPath {
+                        segments: vec![
+                            "prompt_reduction".to_string(),
+                            "min_saved_tokens".to_string(),
+                        ],
+                        value: (*n as i64).into(),
+                    },
+                };
+                if let Err(err) = ConfigEditsBuilder::new(&self.config.codex_home)
+                    .with_edits([edit])
+                    .apply()
+                    .await
+                {
+                    tracing::error!(error = %err, "failed to persist prompt reduction tuning");
+                    self.chat_widget.add_error_message(format!(
+                        "Failed to save prompt reduction tuning: {err}"
+                    ));
                 }
             }
             AppEvent::OpenKeymapActionMenu { context, action } => {

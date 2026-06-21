@@ -19,6 +19,7 @@ pub enum SlashCommand {
     BatchPrompt,
     DelegatePrompt,
     CompactConfig,
+    ReductionConfig,
     Ide,
     Permissions,
     Keymap,
@@ -140,6 +141,9 @@ impl SlashCommand {
             SlashCommand::CompactConfig => {
                 "configure auto-compaction (on/off, percent, custom prompt)"
             }
+            SlashCommand::ReductionConfig => {
+                "configure prompt-reduction mode and tuning (off/conservative/recency_weighted, knobs)"
+            }
             SlashCommand::Ide => {
                 "include current selection, open files, and other context from your IDE"
             }
@@ -191,6 +195,7 @@ impl SlashCommand {
                 | SlashCommand::BatchPrompt
                 | SlashCommand::DelegatePrompt
                 | SlashCommand::CompactConfig
+                | SlashCommand::ReductionConfig
                 | SlashCommand::Ide
                 | SlashCommand::Keymap
                 | SlashCommand::Mcp
@@ -236,6 +241,7 @@ impl SlashCommand {
             | SlashCommand::BatchPrompt
             | SlashCommand::DelegatePrompt
             | SlashCommand::CompactConfig
+            | SlashCommand::ReductionConfig
             | SlashCommand::Personality
             | SlashCommand::Permissions
             | SlashCommand::Keymap

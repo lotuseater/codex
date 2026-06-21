@@ -13,11 +13,21 @@ use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 
+mod recency;
 mod source_label;
 mod stale_notice_bundle;
 
 use source_label::compact_source_label;
 use stale_notice_bundle::bundle_stale_reduction_notices;
+
+pub use recency::CANONICAL_CATEGORY_NAMES;
+pub use recency::RecencyPolicy;
+pub use recency::RecencyTier;
+pub use recency::RecencyWeightedOpts;
+pub use recency::TierKind;
+pub use recency::conservative_tiers;
+pub use recency::parse_disabled_categories;
+pub use recency::recency_weighted_tiers;
 
 const DEFAULT_MIN_REDUCE_CHARS: usize = 2_000;
 const DEFAULT_PATH_LIST_THRESHOLD: usize = 12;
@@ -44,25 +54,71 @@ pub struct PromptReductionConfig {
     pub min_reduce_chars: usize,
     pub path_list_threshold: usize,
     pub min_saved_tokens: usize,
+    /// Seed used to build the Conservative recency policy (count of recent-only
+    /// slots). Retained for the `for_turn` (Conservative) constructor and for
+    /// test fixtures; the algorithm itself reads [`PromptReductionConfig::recency`].
     pub preserve_recent_items: usize,
+    /// Ordered (most-recent-first) recency tiers driving graduated reduction.
+    pub recency: RecencyPolicy,
+    /// Canonical category names that must never be reduced (the "list of cases").
+    pub disabled_categories: BTreeSet<String>,
 }
 
 impl PromptReductionConfig {
-    pub fn for_turn(turn_id: &str) -> Self {
+    /// Build the artifact directory for a turn id (shared by all constructors).
+    fn artifact_dir_for_turn(turn_id: &str) -> PathBuf {
         let safe_turn_id = safe_label(turn_id);
+        std::env::temp_dir()
+            .join("codex-prompt-reducer")
+            .join(if safe_turn_id.is_empty() {
+                std::process::id().to_string()
+            } else {
+                safe_turn_id
+            })
+    }
+
+    /// Conservative reduction config: today's binary behaviour expressed as a
+    /// two-tier policy (`preserve_recent_items` recent-only slots, then
+    /// all-categories). Byte-identical to the pre-tier reducer. Signature is
+    /// unchanged so existing core call sites keep compiling.
+    pub fn for_turn(turn_id: &str) -> Self {
         Self {
-            artifact_dir: std::env::temp_dir().join("codex-prompt-reducer").join(
-                if safe_turn_id.is_empty() {
-                    std::process::id().to_string()
-                } else {
-                    safe_turn_id
-                },
-            ),
+            artifact_dir: Self::artifact_dir_for_turn(turn_id),
             min_reduce_chars: DEFAULT_MIN_REDUCE_CHARS,
             path_list_threshold: DEFAULT_PATH_LIST_THRESHOLD,
             min_saved_tokens: DEFAULT_MIN_SAVED_TOKENS,
             preserve_recent_items: DEFAULT_PRESERVE_RECENT_ITEMS,
+            recency: RecencyPolicy::new(conservative_tiers(DEFAULT_PRESERVE_RECENT_ITEMS)),
+            disabled_categories: BTreeSet::new(),
         }
+    }
+
+    /// Recency-weighted (graduated) reduction config built from reducer-owned
+    /// plain-data [`RecencyWeightedOpts`]. The core call sites translate the
+    /// fork config (`codex-config`) into `opts`; the reducer never depends on
+    /// the config crate.
+    pub fn for_turn_recency_weighted(turn_id: &str, opts: &RecencyWeightedOpts) -> Self {
+        Self {
+            artifact_dir: Self::artifact_dir_for_turn(turn_id),
+            min_reduce_chars: opts.min_reduce_chars.unwrap_or(DEFAULT_MIN_REDUCE_CHARS),
+            path_list_threshold: DEFAULT_PATH_LIST_THRESHOLD,
+            min_saved_tokens: opts.min_saved_tokens.unwrap_or(DEFAULT_MIN_SAVED_TOKENS),
+            preserve_recent_items: opts.preserve_recent_items,
+            recency: RecencyPolicy::new(recency_weighted_tiers(
+                opts.preserve_recent_items,
+                opts.recent_window_items,
+                opts.mid_window_items,
+                opts.old_threshold_mult,
+                opts.old_excerpt_mult,
+            )),
+            disabled_categories: parse_disabled_categories(&opts.disabled_categories),
+        }
+    }
+
+    /// True when the given canonical category name is disabled and must be
+    /// skipped by `classify_candidate` / the bundle passes.
+    fn is_category_disabled(&self, reason: &str) -> bool {
+        self.disabled_categories.contains(reason)
     }
 }
 
@@ -86,6 +142,36 @@ struct CandidateReduction {
 struct CandidateThreshold {
     min_chars: usize,
     min_saved_tokens: usize,
+}
+
+impl CandidateThreshold {
+    /// Scale both gates by a tier's `threshold_mult`.
+    ///
+    /// `mult == 1.0` is an exact identity (the Conservative tiers rely on this
+    /// for byte-for-byte parity with the pre-tier behavior); a `mult < 1.0`
+    /// lowers the bar so older history is reduced more aggressively, and a
+    /// `mult > 1.0` raises it. The result is rounded to the nearest whole
+    /// char/token count.
+    fn scaled(self, mult: f32) -> CandidateThreshold {
+        if mult == 1.0 {
+            return self;
+        }
+        CandidateThreshold {
+            min_chars: scale_count(self.min_chars, mult),
+            min_saved_tokens: scale_count(self.min_saved_tokens, mult),
+        }
+    }
+}
+
+/// Multiply a non-negative count by `mult`, rounding to the nearest whole
+/// number and clamping at 0. Used by both the threshold and excerpt scaling so
+/// the rounding rule stays in one place.
+fn scale_count(value: usize, mult: f32) -> usize {
+    if mult == 1.0 {
+        return value;
+    }
+    let scaled = (value as f32 * mult).round();
+    if scaled <= 0.0 { 0 } else { scaled as usize }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,15 +202,25 @@ pub fn reduce_prompt_items(
 ) -> std::io::Result<PromptReductionStats> {
     fs::create_dir_all(&config.artifact_dir)?;
     let total_text_slots = count_text_slots(items);
-    let recent_text_start = total_text_slots.saturating_sub(config.preserve_recent_items);
+    let recent_text_start = config.recency.all_categories_boundary(total_text_slots);
     let mut text_slot_index = 0usize;
     let mut seen_hashes = HashMap::<String, String>::new();
     let mut call_sources = collect_call_sources(items);
     let mut stats = PromptReductionStats::default();
-    let short_tool_bundle =
-        short_tool_output_bundle(items, config, recent_text_start, &call_sources)?;
+    // Each bundling pass is a reduction category and can be disabled. When its
+    // canonical name is in `disabled_categories` we never build the bundle, so
+    // every downstream slot/notice pass that consumes it is skipped too.
+    let short_tool_bundle = if config.is_category_disabled("short_tool_output_bundle") {
+        None
+    } else {
+        short_tool_output_bundle(items, config, recent_text_start, &call_sources)?
+    };
     let short_assistant_status_bundle =
-        short_assistant_status_bundle(items, config, recent_text_start)?;
+        if config.is_category_disabled("short_assistant_status_bundle") {
+            None
+        } else {
+            short_assistant_status_bundle(items, config, recent_text_start)?
+        };
     if let Some(bundle) = &short_tool_bundle {
         let artifact_text =
             short_tool_output_bundle_artifact(items, &bundle.indices, &call_sources);
@@ -172,7 +268,7 @@ pub fn reduce_prompt_items(
                         ContentItem::InputText { text } | ContentItem::OutputText { text } => text,
                         ContentItem::InputImage { .. } => continue,
                     };
-                    let recent_prompt_item = text_slot_index >= recent_text_start;
+                    let tier = config.recency.tier_for(text_slot_index, total_text_slots);
                     if reduce_short_assistant_status_bundle_slot(
                         text,
                         text_slot_index,
@@ -187,7 +283,7 @@ pub fn reduce_prompt_items(
                         text,
                         &format!("message:{role}"),
                         text_slot_index,
-                        recent_prompt_item,
+                        tier,
                         config,
                         &mut seen_hashes,
                         &mut stats,
@@ -208,7 +304,7 @@ pub fn reduce_prompt_items(
                     output,
                     &source,
                     &mut text_slot_index,
-                    recent_text_start,
+                    total_text_slots,
                     short_tool_bundle.as_ref(),
                     config,
                     &mut seen_hashes,
@@ -226,7 +322,9 @@ pub fn reduce_prompt_items(
         }
     }
 
-    bundle_stale_reduction_notices(items, &config.artifact_dir, recent_text_start, &mut stats)?;
+    if !config.is_category_disabled("stale_reduction_notice_bundle") {
+        bundle_stale_reduction_notices(items, &config.artifact_dir, recent_text_start, &mut stats)?;
+    }
     stats.saved_tokens = stats.original_tokens.saturating_sub(stats.reduced_tokens);
     Ok(stats)
 }
@@ -259,7 +357,7 @@ fn reduce_function_output_text_slots(
     output: &mut FunctionCallOutputPayload,
     source: &str,
     text_slot_index: &mut usize,
-    recent_text_start: usize,
+    total_text_slots: usize,
     short_tool_bundle: Option<&ShortToolOutputBundle>,
     config: &PromptReductionConfig,
     seen_hashes: &mut HashMap<String, String>,
@@ -270,7 +368,7 @@ fn reduce_function_output_text_slots(
             text,
             source,
             text_slot_index,
-            recent_text_start,
+            total_text_slots,
             short_tool_bundle,
             config,
             seen_hashes,
@@ -290,7 +388,7 @@ fn reduce_function_output_text_slots(
             text,
             source,
             text_slot_index,
-            recent_text_start,
+            total_text_slots,
             short_tool_bundle,
             config,
             seen_hashes,
@@ -305,13 +403,13 @@ fn reduce_function_output_text_slot(
     text: &mut String,
     source: &str,
     text_slot_index: &mut usize,
-    recent_text_start: usize,
+    total_text_slots: usize,
     short_tool_bundle: Option<&ShortToolOutputBundle>,
     config: &PromptReductionConfig,
     seen_hashes: &mut HashMap<String, String>,
     stats: &mut PromptReductionStats,
 ) -> std::io::Result<()> {
-    let recent_prompt_item = *text_slot_index >= recent_text_start;
+    let tier = config.recency.tier_for(*text_slot_index, total_text_slots);
     *text_slot_index += 1;
     if reduce_short_tool_output_bundle_slot(text, *text_slot_index, short_tool_bundle, stats) {
         return Ok(());
@@ -320,7 +418,7 @@ fn reduce_function_output_text_slot(
         text,
         source,
         *text_slot_index,
-        recent_prompt_item,
+        tier,
         config,
         seen_hashes,
         stats,
@@ -547,7 +645,7 @@ fn reduce_text_slot(
     text: &mut String,
     source: &str,
     text_slot_index: usize,
-    recent_prompt_item: bool,
+    tier: RecencyTier,
     config: &PromptReductionConfig,
     seen_hashes: &mut HashMap<String, String>,
     stats: &mut PromptReductionStats,
@@ -556,6 +654,13 @@ fn reduce_text_slot(
     let original_tokens = approx_tokens(&original);
     stats.original_tokens = stats.original_tokens.saturating_add(original_tokens);
     if should_preserve_text_slot_from_reduction(&original) {
+        stats.reduced_tokens = stats.reduced_tokens.saturating_add(original_tokens);
+        return Ok(());
+    }
+    // `Preserve` tier: keep this (newest) slot verbatim, never reduce it. Still
+    // record it as a seen hash so later exact duplicates can be collapsed.
+    if tier.is_preserve() {
+        seen_hashes.insert(sha1_hex(&original), format!("text-slot-{text_slot_index}"));
         stats.reduced_tokens = stats.reduced_tokens.saturating_add(original_tokens);
         return Ok(());
     }
@@ -568,7 +673,7 @@ fn reduce_text_slot(
         config,
         seen_hashes,
         exact_preserve_reason,
-        recent_prompt_item,
+        tier.is_recent_only(),
     );
     seen_hashes.insert(sha1.clone(), format!("text-slot-{text_slot_index}"));
 
@@ -593,15 +698,16 @@ fn reduce_text_slot(
         return Ok(());
     }
 
-    let threshold = candidate_threshold(candidate.reason, config);
+    let threshold = candidate_threshold(candidate.reason, config).scaled(tier.threshold_mult);
     if original.chars().count() < threshold.min_chars {
         stats.reduced_tokens = stats.reduced_tokens.saturating_add(original_tokens);
         return Ok(());
     }
 
+    let digest = apply_excerpt_mult(&candidate.digest, tier.excerpt_mult);
     let replacement = render_replacement(
         candidate.reason,
-        &candidate.digest,
+        &digest,
         &artifact_path,
         original.chars().count(),
         original_tokens,
@@ -651,7 +757,9 @@ fn reduce_tool_search_output(
     };
     let original_tokens = approx_tokens(&original);
     stats.original_tokens = stats.original_tokens.saturating_add(original_tokens);
-    if original.chars().count() < config.min_reduce_chars {
+    if config.is_category_disabled("tool_search_digest")
+        || original.chars().count() < config.min_reduce_chars
+    {
         stats.reduced_tokens = stats.reduced_tokens.saturating_add(original_tokens);
         return Ok(());
     }
@@ -693,6 +801,27 @@ fn reduce_tool_search_output(
 }
 
 fn classify_candidate(
+    source: &str,
+    text: &str,
+    config: &PromptReductionConfig,
+    seen_hashes: &HashMap<String, String>,
+    exact_preserve_reason: Option<&'static str>,
+    recent_prompt_item: bool,
+) -> Option<CandidateReduction> {
+    // Skip any category the caller disabled via `disabled_categories`
+    // (the configurable "list of cases").
+    classify_candidate_inner(
+        source,
+        text,
+        config,
+        seen_hashes,
+        exact_preserve_reason,
+        recent_prompt_item,
+    )
+    .filter(|candidate| !config.is_category_disabled(candidate.reason))
+}
+
+fn classify_candidate_inner(
     source: &str,
     text: &str,
     config: &PromptReductionConfig,
@@ -2765,6 +2894,68 @@ fn excerpt(text: &str) -> String {
     format!("{head}\n...\n{tail}")
 }
 
+/// Apply a tier's `excerpt_mult` to an already-built digest.
+///
+/// `mult >= 1.0` returns the digest unchanged (the Conservative tiers and the
+/// recent/mid RecencyWeighted tiers use `1.0`, so this preserves byte-for-byte
+/// output). For `mult < 1.0` — only the oldest RecencyWeighted tier today — the
+/// digest is shrunk toward `mult * its_size`:
+///
+/// * If it contains the `\n...\n` excerpt separator produced by [`excerpt`], the
+///   head and tail segments around the separator are re-trimmed to a fraction
+///   of their length (keeping the structural separator), so a head/tail excerpt
+///   genuinely carries less old context.
+/// * Otherwise the whole digest is clipped to a head/tail window of the scaled
+///   size, with the same separator inserted, so structured digests also shrink.
+///
+/// This is a deliberately localized, post-hoc trim rather than threading an
+/// effective `EXCERPT_CHARS` through every `*_digest` builder; see the S-algo
+/// report for the rationale and the flagged (non-seam) nature of this choice.
+fn apply_excerpt_mult(digest: &str, mult: f32) -> String {
+    if mult >= 1.0 {
+        return digest.to_string();
+    }
+
+    const SEPARATOR: &str = "\n...\n";
+    if let Some((head, tail)) = digest.split_once(SEPARATOR) {
+        let head_budget = scale_count(head.chars().count(), mult);
+        let tail_budget = scale_count(tail.chars().count(), mult);
+        let head_trimmed = clip_head(head, head_budget);
+        let tail_trimmed = clip_tail(tail, tail_budget);
+        return format!("{head_trimmed}{SEPARATOR}{tail_trimmed}");
+    }
+
+    let total = digest.chars().count();
+    let budget = scale_count(total, mult);
+    if budget >= total {
+        return digest.to_string();
+    }
+    // Split the surviving budget between a leading and trailing window so the
+    // start and end of the old digest are both retained.
+    let head_budget = budget / 2;
+    let tail_budget = budget.saturating_sub(head_budget);
+    let head_trimmed = clip_head(digest, head_budget);
+    let tail_trimmed = clip_tail(digest, tail_budget);
+    format!("{head_trimmed}{SEPARATOR}{tail_trimmed}")
+}
+
+/// Keep at most `budget` leading characters of `text`.
+fn clip_head(text: &str, budget: usize) -> String {
+    if text.chars().count() <= budget {
+        return text.to_string();
+    }
+    text.chars().take(budget).collect()
+}
+
+/// Keep at most `budget` trailing characters of `text`.
+fn clip_tail(text: &str, budget: usize) -> String {
+    let char_count = text.chars().count();
+    if char_count <= budget {
+        return text.to_string();
+    }
+    text.chars().skip(char_count - budget).collect()
+}
+
 #[cfg(test)]
 mod batch_reduction_tests;
 
@@ -2774,6 +2965,60 @@ mod tests {
     use codex_protocol::models::FunctionCallOutputBody;
     use pretty_assertions::assert_eq;
     use tempfile::TempDir;
+
+    #[test]
+    fn threshold_scaled_by_one_is_identity() {
+        let base = CandidateThreshold {
+            min_chars: 600,
+            min_saved_tokens: 32,
+        };
+        let scaled = base.scaled(1.0);
+        assert_eq!(scaled.min_chars, 600);
+        assert_eq!(scaled.min_saved_tokens, 32);
+    }
+
+    #[test]
+    fn threshold_scaled_below_one_lowers_both_gates() {
+        let base = CandidateThreshold {
+            min_chars: 600,
+            min_saved_tokens: 32,
+        };
+        let scaled = base.scaled(0.5);
+        assert_eq!(scaled.min_chars, 300);
+        assert_eq!(scaled.min_saved_tokens, 16);
+    }
+
+    #[test]
+    fn excerpt_mult_at_or_above_one_is_identity() {
+        let digest = format!("head section\n...\n{}", "tail ".repeat(40));
+        assert_eq!(apply_excerpt_mult(&digest, 1.0), digest);
+        assert_eq!(apply_excerpt_mult(&digest, 1.5), digest);
+    }
+
+    #[test]
+    fn excerpt_mult_below_one_shrinks_excerpt_blocks() {
+        let head = "H".repeat(200);
+        let tail = "T".repeat(200);
+        let digest = format!("{head}\n...\n{tail}");
+        let trimmed = apply_excerpt_mult(&digest, 0.5);
+        assert!(
+            trimmed.chars().count() < digest.chars().count(),
+            "0.5 excerpt mult must shrink the digest"
+        );
+        // Structural separator is retained so recovery framing survives.
+        assert!(trimmed.contains("\n...\n"));
+        // Head/tail are each ~halved (100 chars) around the separator.
+        let (new_head, new_tail) = trimmed.split_once("\n...\n").unwrap();
+        assert_eq!(new_head.chars().count(), 100);
+        assert_eq!(new_tail.chars().count(), 100);
+    }
+
+    #[test]
+    fn excerpt_mult_below_one_clips_digest_without_separator() {
+        let digest = "X".repeat(300);
+        let trimmed = apply_excerpt_mult(&digest, 0.5);
+        assert!(trimmed.chars().count() < digest.chars().count());
+    }
 
     #[test]
     fn reduces_source_reads_even_when_recent_with_artifact_recovery() {
@@ -3720,6 +3965,8 @@ mod tests {
             path_list_threshold: 8,
             min_saved_tokens: 1,
             preserve_recent_items,
+            recency: RecencyPolicy::new(conservative_tiers(preserve_recent_items)),
+            disabled_categories: BTreeSet::new(),
         }
     }
 
@@ -3733,6 +3980,8 @@ mod tests {
             path_list_threshold: 12,
             min_saved_tokens: 128,
             preserve_recent_items,
+            recency: RecencyPolicy::new(conservative_tiers(preserve_recent_items)),
+            disabled_categories: BTreeSet::new(),
         }
     }
 
@@ -3743,18 +3992,22 @@ mod tests {
             namespace: None,
             arguments: serde_json::json!({ "command": command }).to_string(),
             call_id: call_id.to_string(),
+            metadata: None,
         }
     }
 
     fn shell_output(call_id: &str, text: String) -> ResponseItem {
         ResponseItem::FunctionCallOutput {
+            id: None,
             call_id: call_id.to_string(),
             output: FunctionCallOutputPayload::from_text(text),
+            metadata: None,
         }
     }
 
     fn image_output(call_id: &str) -> ResponseItem {
         ResponseItem::FunctionCallOutput {
+            id: None,
             call_id: call_id.to_string(),
             output: FunctionCallOutputPayload::from_content_items(vec![
                 FunctionCallOutputContentItem::InputImage {
@@ -3762,11 +4015,13 @@ mod tests {
                     detail: None,
                 },
             ]),
+            metadata: None,
         }
     }
 
     fn structured_text_output(call_id: &str, text: String) -> ResponseItem {
         ResponseItem::FunctionCallOutput {
+            id: None,
             call_id: call_id.to_string(),
             output: FunctionCallOutputPayload::from_content_items(vec![
                 FunctionCallOutputContentItem::InputText { text },
@@ -3775,15 +4030,18 @@ mod tests {
                     detail: None,
                 },
             ]),
+            metadata: None,
         }
     }
 
     fn tool_search_output(tools: Vec<Value>) -> ResponseItem {
         ResponseItem::ToolSearchOutput {
+            id: None,
             call_id: Some("tool-search".to_string()),
             status: "completed".to_string(),
             execution: "test".to_string(),
             tools,
+            metadata: None,
         }
     }
 
@@ -3802,6 +4060,7 @@ mod tests {
             role: role.to_string(),
             content,
             phase: None,
+            metadata: None,
         }
     }
 }

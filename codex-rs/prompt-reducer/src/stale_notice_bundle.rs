@@ -654,8 +654,10 @@ mod tests {
 
     fn output(call_id: &str, text: String) -> ResponseItem {
         ResponseItem::FunctionCallOutput {
+            id: None,
             call_id: call_id.to_string(),
             output: FunctionCallOutputPayload::from_text(text),
+            metadata: None,
         }
     }
 
@@ -665,6 +667,7 @@ mod tests {
             content: vec![ContentItem::InputText { text }],
             phase: None,
             id: None,
+            metadata: None,
         }
     }
 

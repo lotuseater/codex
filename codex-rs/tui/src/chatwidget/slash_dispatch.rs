@@ -289,6 +289,9 @@ impl ChatWidget {
             SlashCommand::CompactConfig => {
                 self.show_compact_config_status();
             }
+            SlashCommand::ReductionConfig => {
+                self.show_reduction_config_status();
+            }
             SlashCommand::Realtime => {
                 if !self.realtime_conversation_enabled() {
                     return;
@@ -755,6 +758,9 @@ impl ChatWidget {
             SlashCommand::CompactConfig => {
                 self.handle_compact_config_command_args(trimmed);
             }
+            SlashCommand::ReductionConfig => {
+                self.handle_reduction_config_command_args(trimmed);
+            }
             SlashCommand::Usage => {
                 if self.ensure_usage_command_available() {
                     match tokens::TokenActivityView::parse(trimmed) {
@@ -1176,6 +1182,7 @@ impl ChatWidget {
             | SlashCommand::BatchPrompt
             | SlashCommand::DelegatePrompt
             | SlashCommand::CompactConfig
+            | SlashCommand::ReductionConfig
             | SlashCommand::Ide
             | SlashCommand::Status
             | SlashCommand::Usage

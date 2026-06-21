@@ -1099,7 +1099,10 @@ impl Config {
                 cfg.model_compact_percentage,
                 &mut startup_warnings,
             ),
-            prompt_reduction_mode: cfg.prompt_reduction_mode.unwrap_or_default(),
+            prompt_reduction_mode: prompt_reduction_mode_from_env()
+                .or(cfg.prompt_reduction_mode)
+                .unwrap_or_default(),
+            prompt_reduction: cfg.prompt_reduction.clone().unwrap_or_default(),
             model_provider_id,
             model_provider,
             cwd: resolved_cwd,
@@ -1372,6 +1375,19 @@ impl Config {
         } else {
             Ok(Some(s))
         }
+    }
+}
+
+/// Parse the `CODEX_PROMPT_REDUCTION_MODE` environment variable.
+/// Returns `None` if the variable is absent, empty, or contains an
+/// unrecognised value (unknown values are silently ignored per the spec).
+fn prompt_reduction_mode_from_env() -> Option<PromptReductionModeToml> {
+    let raw = std::env::var("CODEX_PROMPT_REDUCTION_MODE").ok()?;
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "off" => Some(PromptReductionModeToml::Off),
+        "conservative" => Some(PromptReductionModeToml::Conservative),
+        "recency_weighted" => Some(PromptReductionModeToml::RecencyWeighted),
+        _ => None,
     }
 }
 

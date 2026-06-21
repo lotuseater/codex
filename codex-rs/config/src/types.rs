@@ -217,8 +217,49 @@ pub enum HistoryPersistence {
 #[serde(rename_all = "snake_case")]
 pub enum PromptReductionModeToml {
     Off,
-    #[default]
     Conservative,
+    /// Graduated recency-weighted reduction: fully preserve the newest items,
+    /// apply lighter reduction to the recent window, standard reduction to the
+    /// mid band, and aggressive reduction to older items.
+    #[default]
+    RecencyWeighted,
+}
+
+/// Per-mode tuning knobs for the recency-weighted prompt reducer.
+/// All fields are optional; absent values fall back to the per-mode defaults
+/// built into the reducer crate.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
+#[serde(default, rename_all = "snake_case")]
+pub struct PromptReductionTuning {
+    /// Number of the most-recent text slots to fully preserve (no reduction).
+    pub preserve_recent_items: Option<usize>,
+
+    /// Number of slots in the recent-only tier (light reduction, recent
+    /// categories only).
+    pub recent_window_items: Option<usize>,
+
+    /// Number of slots in the mid-tier (standard reduction, all categories).
+    pub mid_window_items: Option<usize>,
+
+    /// Threshold multiplier for the oldest tier: values below 1.0 make
+    /// reduction more aggressive (lower min_reduce_chars / min_saved_tokens).
+    pub old_threshold_mult: Option<f32>,
+
+    /// Excerpt length multiplier for the oldest tier: values below 1.0 keep
+    /// shorter excerpts for old items.
+    pub old_excerpt_mult: Option<f32>,
+
+    /// Category names that are never reduced, regardless of tier.
+    /// Use the canonical snake_case names reported by S-algo.
+    pub disabled_categories: Option<Vec<String>>,
+
+    /// Global override for the minimum character count before reduction is
+    /// attempted on a candidate (base threshold, before tier multipliers).
+    pub min_reduce_chars: Option<usize>,
+
+    /// Global override for the minimum token saving required to accept a
+    /// reduction (base threshold, before tier multipliers).
+    pub min_saved_tokens: Option<usize>,
 }
 
 // ===== Analytics configuration =====

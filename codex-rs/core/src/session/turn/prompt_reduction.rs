@@ -1,4 +1,59 @@
 use super::*;
+use codex_config::types::PromptReductionTuning;
+use codex_prompt_reducer::RecencyWeightedOpts;
+
+/// Select which [`PromptReductionConfig`] to build for this turn, or `None` when
+/// reduction is disabled. This is the single decision shared by both prompt
+/// reduction call sites (model input and remote compaction).
+///
+/// - `Off` -> `None` (skip reduction entirely).
+/// - `Conservative` -> the historical binary boundary config.
+/// - `RecencyWeighted` -> the graduated config, tuned by `[prompt_reduction]`.
+pub(crate) fn reduction_config_for_turn(
+    turn_context: &TurnContext,
+) -> Option<PromptReductionConfig> {
+    match turn_context.config.prompt_reduction_mode {
+        PromptReductionModeToml::Off => None,
+        PromptReductionModeToml::Conservative => {
+            Some(PromptReductionConfig::for_turn(&turn_context.sub_id))
+        }
+        PromptReductionModeToml::RecencyWeighted => {
+            let opts = recency_weighted_opts(&turn_context.config.prompt_reduction);
+            Some(PromptReductionConfig::for_turn_recency_weighted(
+                &turn_context.sub_id,
+                &opts,
+            ))
+        }
+    }
+}
+
+/// Translate the `codex-config` recency-weighted tuning knobs into the reducer's
+/// own [`RecencyWeightedOpts`], falling back to the reducer defaults for any
+/// field left unset in `config.toml`.
+fn recency_weighted_opts(tuning: &PromptReductionTuning) -> RecencyWeightedOpts {
+    let mut opts = RecencyWeightedOpts::default();
+    if let Some(v) = tuning.preserve_recent_items {
+        opts.preserve_recent_items = v;
+    }
+    if let Some(v) = tuning.recent_window_items {
+        opts.recent_window_items = v;
+    }
+    if let Some(v) = tuning.mid_window_items {
+        opts.mid_window_items = v;
+    }
+    if let Some(v) = tuning.old_threshold_mult {
+        opts.old_threshold_mult = v;
+    }
+    if let Some(v) = tuning.old_excerpt_mult {
+        opts.old_excerpt_mult = v;
+    }
+    if let Some(list) = &tuning.disabled_categories {
+        opts.disabled_categories = list.clone();
+    }
+    opts.min_reduce_chars = tuning.min_reduce_chars;
+    opts.min_saved_tokens = tuning.min_saved_tokens;
+    opts
+}
 
 pub(crate) fn build_prompt(
     input: Vec<ResponseItem>,
@@ -30,42 +85,39 @@ pub(super) fn reduce_prompt_input_for_model(
     mut input: Vec<ResponseItem>,
     turn_context: &TurnContext,
 ) -> (Vec<ResponseItem>, Option<PromptReductionNotice>) {
-    match turn_context.config.prompt_reduction_mode {
-        PromptReductionModeToml::Off => (input, None),
-        PromptReductionModeToml::Conservative => {
-            let reduction_config = PromptReductionConfig::for_turn(&turn_context.sub_id);
-            let original_input_tokens = estimate_prompt_input_tokens(&input);
-            match codex_prompt_reducer::reduce_prompt_items(&mut input, &reduction_config) {
-                Ok(stats) => {
-                    let reduced_input_tokens = estimate_prompt_input_tokens(&input);
-                    if stats.reductions > 0 {
-                        trace!(
-                            turn_id = %turn_context.sub_id,
-                            reductions = stats.reductions,
-                            artifacts = stats.artifacts,
-                            original_tokens = stats.original_tokens,
-                            reduced_tokens = stats.reduced_tokens,
-                            saved_tokens = stats.saved_tokens,
-                            artifact_dir = %reduction_config.artifact_dir.display(),
-                            "reduced prompt input"
-                        );
-                    }
-                    let notice = PromptReductionNotice {
-                        original_prompt_tokens: original_input_tokens,
-                        reduced_prompt_tokens: reduced_input_tokens,
-                        stats,
-                    };
-                    (input, Some(notice))
-                }
-                Err(err) => {
-                    warn!(
-                        turn_id = %turn_context.sub_id,
-                        error = %err,
-                        "failed to reduce prompt input"
-                    );
-                    (input, None)
-                }
+    let Some(reduction_config) = reduction_config_for_turn(turn_context) else {
+        return (input, None);
+    };
+    let original_input_tokens = estimate_prompt_input_tokens(&input);
+    match codex_prompt_reducer::reduce_prompt_items(&mut input, &reduction_config) {
+        Ok(stats) => {
+            let reduced_input_tokens = estimate_prompt_input_tokens(&input);
+            if stats.reductions > 0 {
+                trace!(
+                    turn_id = %turn_context.sub_id,
+                    reductions = stats.reductions,
+                    artifacts = stats.artifacts,
+                    original_tokens = stats.original_tokens,
+                    reduced_tokens = stats.reduced_tokens,
+                    saved_tokens = stats.saved_tokens,
+                    artifact_dir = %reduction_config.artifact_dir.display(),
+                    "reduced prompt input"
+                );
             }
+            let notice = PromptReductionNotice {
+                original_prompt_tokens: original_input_tokens,
+                reduced_prompt_tokens: reduced_input_tokens,
+                stats,
+            };
+            (input, Some(notice))
+        }
+        Err(err) => {
+            warn!(
+                turn_id = %turn_context.sub_id,
+                error = %err,
+                "failed to reduce prompt input"
+            );
+            (input, None)
         }
     }
 }

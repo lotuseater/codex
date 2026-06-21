@@ -22,6 +22,7 @@ use crate::types::OAuthCredentialsStoreMode;
 use crate::types::OtelConfigToml;
 use crate::types::PluginConfig;
 use crate::types::PromptReductionModeToml;
+use crate::types::PromptReductionTuning;
 use crate::types::SandboxWorkspaceWrite;
 use crate::types::ShellEnvironmentPolicyToml;
 use crate::types::SkillsConfig;
@@ -174,8 +175,13 @@ pub struct ConfigToml {
     /// disable early context-pressure compaction.
     pub model_compact_percentage: Option<i64>,
 
-    /// Prompt-clone reduction mode. Defaults to conservative reduction when omitted.
+    /// Prompt-clone reduction mode. Defaults to recency_weighted when omitted.
     pub prompt_reduction_mode: Option<PromptReductionModeToml>,
+
+    /// Optional tuning knobs for the prompt reducer. Absent fields fall back to
+    /// per-mode defaults. Only meaningful when `prompt_reduction_mode` is
+    /// `recency_weighted` (or `conservative` for threshold overrides).
+    pub prompt_reduction: Option<PromptReductionTuning>,
 
     /// Default approval policy for executing commands.
     pub approval_policy: Option<AskForApproval>,

@@ -821,6 +821,16 @@ pub(crate) enum AppEvent {
         prompt: Option<String>,
     },
 
+    /// Persist the prompt-reduction mode (off / conservative / recency_weighted).
+    PersistPromptReductionMode {
+        mode: codex_config::types::PromptReductionModeToml,
+    },
+
+    /// Persist one prompt-reduction tuning knob update for `/reduction-config`.
+    PersistPromptReductionTuning {
+        field: PromptReductionTuningField,
+    },
+
     /// Open the device picker for a realtime microphone or speaker.
     OpenRealtimeAudioDeviceSelection {
         kind: RealtimeAudioDeviceKind,
@@ -1186,6 +1196,24 @@ pub(crate) enum AppEvent {
         context: String,
         action: String,
     },
+}
+
+/// Typed tuning-knob payload for `AppEvent::PersistPromptReductionTuning`.
+///
+/// Each variant carries the already-parsed value so the persistence handler can
+/// write the correct TOML type (integer / float / array) without re-parsing
+/// a raw string.
+#[derive(Debug, Clone)]
+pub(crate) enum PromptReductionTuningField {
+    PreserveRecentItems(usize),
+    RecentWindowItems(usize),
+    MidWindowItems(usize),
+    OldThresholdMult(f32),
+    OldExcerptMult(f32),
+    /// `None` clears the field back to its default.
+    DisabledCategories(Option<Vec<String>>),
+    MinReduceChars(usize),
+    MinSavedTokens(usize),
 }
 
 /// Named profile selection to apply after any required UI guardrails complete.

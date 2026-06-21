@@ -40,6 +40,10 @@ pub struct Config {
     /// Prompt-clone reduction mode used immediately before model requests.
     pub prompt_reduction_mode: PromptReductionModeToml,
 
+    /// Resolved tuning knobs for the prompt reducer. Absent TOML fields resolve
+    /// to `None` here, and the reducer applies its per-mode defaults.
+    pub prompt_reduction: PromptReductionTuning,
+
     /// Key into the model_providers map that specifies which provider to use.
     pub model_provider_id: String,
 
