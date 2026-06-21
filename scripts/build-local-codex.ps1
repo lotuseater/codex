@@ -45,18 +45,12 @@ if ($Mode -eq "DevRelease") {
     throw "Build only release!"
 }
 
-# Auto-enable sccache for release builds when it is available on PATH and the
-# caller did not pass -UseSccache:$false explicitly. The release-only rustc
-# wrapper chains sccache safely, and warm-cache hits are the single biggest
-# win for partial rebuilds on this checkout.
-if (-not $PSBoundParameters.ContainsKey('UseSccache') -and
-    $Mode -in @("FastRelease", "LowMemRelease", "FullRelease")) {
-    $autoSccache = Get-Command sccache -ErrorAction SilentlyContinue
-    if ($autoSccache) {
-        $UseSccache = $true
-        Write-Host "sccache detected at $($autoSccache.Source) - auto-enabled. Pass -UseSccache:`$false to disable."
-    }
-}
+# sccache is intentionally NOT auto-enabled. On this warm-incremental checkout it
+# added near-zero value (cargo's in-target incremental cache already covers partial
+# rebuilds) and carried two footguns: silent activation, and a server crash that
+# surfaces as a false cargo-101 on codex-core. It stays strictly opt-in via
+# -UseSccache, and the activation block below degrades gracefully if the binary is
+# absent. See memory project_codex_build_sccache_crash.
 
 if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
     $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -1810,13 +1804,16 @@ else {
 if ($UseSccache) {
     $sccache = Get-Command sccache -ErrorAction SilentlyContinue
     if (-not $sccache) {
-        throw "sccache was requested with -UseSccache, but it is not installed or not on PATH."
+        Write-Warning "sccache was requested with -UseSccache, but it is not installed or not on PATH. Continuing WITHOUT sccache."
+        $UseSccache = $false
     }
-    $plan.env_overrides["CODEX_CARGO_INNER_RUSTC_WRAPPER"] = $sccache.Source
-    if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable("SCCACHE_CACHE_SIZE", "Process")) -and
-        [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable("SCCACHE_CACHE_SIZE", "User")) -and
-        [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable("SCCACHE_CACHE_SIZE", "Machine"))) {
-        $plan.env_overrides["SCCACHE_CACHE_SIZE"] = "2G"
+    else {
+        $plan.env_overrides["CODEX_CARGO_INNER_RUSTC_WRAPPER"] = $sccache.Source
+        if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable("SCCACHE_CACHE_SIZE", "Process")) -and
+            [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable("SCCACHE_CACHE_SIZE", "User")) -and
+            [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable("SCCACHE_CACHE_SIZE", "Machine"))) {
+            $plan.env_overrides["SCCACHE_CACHE_SIZE"] = "2G"
+        }
     }
 }
 
