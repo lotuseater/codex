@@ -1,5 +1,6 @@
 use clap::Args;
 use clap::CommandFactory;
+use clap::FromArgMatches as _;
 use clap::Parser;
 use clap_complete::Shell;
 use clap_complete::generate;
@@ -36,6 +37,7 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_cli::CliConfigOverrides;
 use codex_utils_cli::ProfileV2Name;
 use codex_utils_cli::SharedCliOptions;
+use codex_utils_cli::display_version;
 use owo_colors::OwoColorize;
 use std::collections::HashSet;
 use std::io::IsTerminal;
@@ -963,6 +965,23 @@ fn main() -> anyhow::Result<()> {
     })
 }
 
+fn display_version_for_clap() -> &'static str {
+    Box::leak(
+        display_version(
+            env!("CARGO_PKG_VERSION"),
+            option_env!("CODEX_LOCAL_BUILD_STAMP"),
+        )
+        .into_boxed_str(),
+    )
+}
+
+fn parse_multitool_cli() -> anyhow::Result<MultitoolCli> {
+    let mut command = MultitoolCli::command();
+    command = command.version(display_version_for_clap());
+    let matches = command.get_matches();
+    Ok(MultitoolCli::from_arg_matches(&matches)?)
+}
+
 async fn cli_main(
     arg0_paths: Arg0DispatchPaths,
     remote_control_disabled: bool,
@@ -973,7 +992,7 @@ async fn cli_main(
         remote,
         mut interactive,
         subcommand,
-    } = MultitoolCli::parse();
+    } = parse_multitool_cli()?;
 
     // Fold --enable/--disable into config overrides so they flow to all subcommands.
     let toggle_overrides = feature_toggles.to_overrides()?;
