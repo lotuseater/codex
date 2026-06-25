@@ -188,8 +188,11 @@ impl ViewImageHandler {
             DEFAULT_IMAGE_DETAIL
         };
 
-        // The history insertion path owns image decoding and resizing.
-        let image_url = data_url_from_bytes("application/octet-stream", &file_bytes);
+        // The history insertion path owns image decoding and resizing, but the
+        // data URL must still carry a real image MIME or the Responses API
+        // rejects it; sniff it from the bytes instead of a generic placeholder.
+        let mime = codex_utils_image::sniff_image_mime(&file_bytes);
+        let image_url = data_url_from_bytes(&mime, &file_bytes);
 
         let item = TurnItem::ImageView(ImageViewItem {
             id: call_id,

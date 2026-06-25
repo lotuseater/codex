@@ -1006,7 +1006,10 @@ impl ResponseInputItem {
                                 }
                                 LocalImagePreparation::Defer => local_image_content_items(
                                     &path,
-                                    data_url_from_bytes("application/octet-stream", &file_bytes),
+                                    data_url_from_bytes(
+                                        &codex_utils_image::sniff_image_mime(&file_bytes),
+                                        &file_bytes,
+                                    ),
                                     Some(image_index),
                                     detail.unwrap_or(DEFAULT_IMAGE_DETAIL),
                                 ),

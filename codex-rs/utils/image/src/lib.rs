@@ -55,6 +55,23 @@ pub fn data_url_from_bytes(mime: &str, bytes: &[u8]) -> String {
     format!("data:{mime};base64,{encoded}")
 }
 
+/// Best-effort image MIME type sniffed from the leading magic bytes.
+///
+/// Returns a concrete `image/*` type for the formats the prompt-image pipeline
+/// supports (PNG/JPEG/GIF/WebP) and falls back to `application/octet-stream`
+/// for anything unrecognized. Use this for locally read/attached image bytes so
+/// the resulting data URL carries a real image MIME: the Responses API rejects
+/// an `image_url` whose data-URL MIME is not an `image/*` type.
+pub fn sniff_image_mime(bytes: &[u8]) -> String {
+    match image::guess_format(bytes) {
+        Ok(ImageFormat::Png) => "image/png".to_string(),
+        Ok(ImageFormat::Jpeg) => "image/jpeg".to_string(),
+        Ok(ImageFormat::Gif) => "image/gif".to_string(),
+        Ok(ImageFormat::WebP) => "image/webp".to_string(),
+        _ => "application/octet-stream".to_string(),
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PromptImageMode {
     ResizeToFit,
