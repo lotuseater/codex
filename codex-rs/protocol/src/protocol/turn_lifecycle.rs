@@ -46,6 +46,15 @@ pub struct TurnModerationMetadataEvent {
     pub metadata: serde_json::Value,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+pub struct SafetyBufferingEvent {
+    pub model: String,
+    pub use_cases: Vec<String>,
+    pub reasons: Vec<String>,
+    pub show_buffering_ui: bool,
+    pub faster_model: Option<String>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct ContextCompactedEvent;
 

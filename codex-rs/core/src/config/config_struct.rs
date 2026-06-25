@@ -419,8 +419,8 @@ pub struct Config {
 
     /// Experimental / do not use. Selects the thread persistence backend.
     pub experimental_thread_store: ThreadStoreConfig,
-    /// When set, restricts ChatGPT login to a specific workspace identifier.
-    pub forced_chatgpt_workspace_id: Option<String>,
+    /// When set, restricts ChatGPT login to specific workspace identifiers.
+    pub forced_chatgpt_workspace_id: Option<Vec<String>>,
 
     /// When set, restricts the login mechanism users may use.
     pub forced_login_method: Option<ForcedLoginMethod>,
@@ -459,6 +459,10 @@ pub struct Config {
     /// Resolved shared rollout token-budget configuration, when the
     /// `rollout_budget` feature is enabled.
     pub rollout_budget: Option<RolloutBudgetConfig>,
+
+    /// Resolved token-economy budget configuration, when the
+    /// `token_budget` feature is enabled.
+    pub token_budget: Option<TokenBudgetConfig>,
 
     /// Resolved current-time reminder configuration, when the
     /// `current_time_reminder` feature is enabled.
@@ -604,12 +608,14 @@ impl AuthManagerConfig for Config {
     }
 
     fn forced_chatgpt_workspace_id(&self) -> Option<Vec<String>> {
-        self.forced_chatgpt_workspace_id
-            .clone()
-            .map(|workspace_id| vec![workspace_id])
+        self.forced_chatgpt_workspace_id.clone()
     }
 
     fn chatgpt_base_url(&self) -> String {
         self.chatgpt_base_url.clone()
+    }
+
+    fn auth_route_config(&self) -> Option<AuthRouteConfig> {
+        Config::auth_route_config(self)
     }
 }

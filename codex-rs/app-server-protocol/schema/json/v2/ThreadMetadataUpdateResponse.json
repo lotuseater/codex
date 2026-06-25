@@ -5,6 +5,9 @@
       "description": "A path that is guaranteed to be absolute and normalized (though it is not guaranteed to be canonicalized or exist on the filesystem).\n\nIMPORTANT: When deserializing an `AbsolutePathBuf`, a base path must be set using [AbsolutePathBufGuard::new]. If no base path is set, the deserialization will fail unless the path being deserialized is already absolute.",
       "type": "string"
     },
+    "AgentPath": {
+      "type": "string"
+    },
     "ByteRange": {
       "properties": {
         "end": {
@@ -30,6 +33,7 @@
         {
           "enum": [
             "contextWindowExceeded",
+            "sessionBudgetExceeded",
             "usageLimitExceeded",
             "serverOverloaded",
             "cyberPolicy",
@@ -196,9 +200,7 @@
         "sendInput",
         "resumeAgent",
         "wait",
-        "closeAgent",
-        "compactAgent",
-        "restartAgent"
+        "closeAgent"
       ],
       "type": "string"
     },
@@ -657,106 +659,9 @@
       ]
     },
     "ReasoningEffort": {
-      "description": "See https://platform.openai.com/docs/guides/reasoning?api-mode=responses#get-started-with-reasoning",
-      "enum": [
-        "none",
-        "minimal",
-        "low",
-        "medium",
-        "high",
-        "xhigh"
-      ],
+      "description": "A non-empty reasoning effort value advertised by the model.",
+      "minLength": 1,
       "type": "string"
-    },
-    "ReviewCodeLocation": {
-      "properties": {
-        "absoluteFilePath": {
-          "type": "string"
-        },
-        "lineRange": {
-          "$ref": "#/definitions/ReviewLineRange"
-        }
-      },
-      "required": [
-        "absoluteFilePath",
-        "lineRange"
-      ],
-      "type": "object"
-    },
-    "ReviewFinding": {
-      "properties": {
-        "body": {
-          "type": "string"
-        },
-        "codeLocation": {
-          "$ref": "#/definitions/ReviewCodeLocation"
-        },
-        "confidenceScore": {
-          "format": "float",
-          "type": "number"
-        },
-        "priority": {
-          "format": "int32",
-          "type": "integer"
-        },
-        "title": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "body",
-        "codeLocation",
-        "confidenceScore",
-        "priority",
-        "title"
-      ],
-      "type": "object"
-    },
-    "ReviewLineRange": {
-      "properties": {
-        "end": {
-          "format": "uint32",
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "start": {
-          "format": "uint32",
-          "minimum": 0.0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "end",
-        "start"
-      ],
-      "type": "object"
-    },
-    "ReviewOutput": {
-      "properties": {
-        "findings": {
-          "items": {
-            "$ref": "#/definitions/ReviewFinding"
-          },
-          "type": "array"
-        },
-        "overallConfidenceScore": {
-          "format": "float",
-          "type": "number"
-        },
-        "overallCorrectness": {
-          "type": "string"
-        },
-        "overallExplanation": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "findings",
-        "overallConfidenceScore",
-        "overallCorrectness",
-        "overallExplanation"
-      ],
-      "type": "object"
     },
     "SessionSource": {
       "oneOf": [
@@ -819,19 +724,6 @@
         {
           "additionalProperties": false,
           "properties": {
-            "other": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "other"
-          ],
-          "title": "OtherSubAgentSource",
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "properties": {
             "thread_spawn": {
               "properties": {
                 "agent_nickname": {
@@ -842,11 +734,15 @@
                   ]
                 },
                 "agent_path": {
-                  "default": null,
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/AgentPath"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
                 },
                 "agent_role": {
                   "default": null,
@@ -860,7 +756,7 @@
                   "type": "integer"
                 },
                 "parent_thread_id": {
-                  "type": "string"
+                  "$ref": "#/definitions/ThreadId"
                 }
               },
               "required": [
@@ -874,6 +770,19 @@
             "thread_spawn"
           ],
           "title": "ThreadSpawnSubAgentSource",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "other": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "other"
+          ],
+          "title": "OtherSubAgentSource",
           "type": "object"
         }
       ]
@@ -957,6 +866,7 @@
           "description": "Optional Git metadata captured when the thread was created."
         },
         "id": {
+          "description": "Identifier for this thread. Codex-generated thread IDs are UUIDv7.",
           "type": "string"
         },
         "modelProvider": {
@@ -1061,6 +971,13 @@
         "waitingOnApproval",
         "waitingOnUserInput"
       ],
+      "type": "string"
+    },
+    "ThreadExtra": {
+      "description": "Extra app-server data for a thread.",
+      "type": "object"
+    },
+    "ThreadId": {
       "type": "string"
     },
     "ThreadItem": {
@@ -1646,7 +1563,7 @@
               "type": "string"
             },
             "path": {
-              "$ref": "#/definitions/AbsolutePathBuf"
+              "$ref": "#/definitions/LegacyAppPathString"
             },
             "type": {
               "enum": [
@@ -1765,16 +1682,6 @@
             },
             "review": {
               "type": "string"
-            },
-            "reviewOutput": {
-              "anyOf": [
-                {
-                  "$ref": "#/definitions/ReviewOutput"
-                },
-                {
-                  "type": "null"
-                }
-              ]
             },
             "type": {
               "enum": [
@@ -1922,6 +1829,7 @@
           "description": "Only populated when the Turn's status is failed."
         },
         "id": {
+          "description": "Identifier for this turn. Codex-generated turn IDs are UUIDv7.",
           "type": "string"
         },
         "items": {

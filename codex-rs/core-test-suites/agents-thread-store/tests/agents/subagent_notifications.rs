@@ -2,27 +2,6 @@ use anyhow::Result;
 use codex_core::StartThreadOptions;
 use codex_core::ThreadConfigSnapshot;
 use codex_core::config::AgentRoleConfig;
-use codex_core_test_runtime::hooks::trust_discovered_hooks;
-use codex_core_test_runtime::responses::ResponsesRequest;
-use codex_core_test_runtime::responses::ev_assistant_message;
-use codex_core_test_runtime::responses::ev_completed;
-use codex_core_test_runtime::responses::ev_function_call;
-use codex_core_test_runtime::responses::ev_function_call_with_namespace;
-use codex_core_test_runtime::responses::ev_response_created;
-use codex_core_test_runtime::responses::ev_tool_search_call;
-use codex_core_test_runtime::responses::mount_response_once_match;
-use codex_core_test_runtime::responses::mount_sse_once_match;
-use codex_core_test_runtime::responses::mount_sse_sequence;
-use codex_core_test_runtime::responses::namespace_child_tool;
-use codex_core_test_runtime::responses::sse;
-use codex_core_test_runtime::responses::sse_response;
-use codex_core_test_runtime::responses::start_mock_server;
-use codex_core_test_runtime::skip_if_no_network;
-use codex_core_test_runtime::test_codex::TestCodex;
-use codex_core_test_runtime::test_codex::local_selections;
-use codex_core_test_runtime::test_codex::test_codex;
-use codex_core_test_runtime::test_codex::turn_permission_fields;
-use codex_core_test_runtime::wait_for_event_match;
 use codex_features::Feature;
 use codex_protocol::ThreadId;
 use codex_protocol::models::PermissionProfile;
@@ -34,6 +13,27 @@ use codex_protocol::protocol::Op;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::user_input::UserInput;
+use core_test_support::hooks::trust_discovered_hooks;
+use core_test_support::responses::ResponsesRequest;
+use core_test_support::responses::ev_assistant_message;
+use core_test_support::responses::ev_completed;
+use core_test_support::responses::ev_function_call_with_namespace;
+use core_test_support::responses::ev_response_created;
+use core_test_support::responses::ev_tool_search_call;
+use core_test_support::responses::mount_response_once_match;
+use core_test_support::responses::mount_sse_once_match;
+use core_test_support::responses::mount_sse_sequence;
+use core_test_support::responses::namespace_child_tool;
+use core_test_support::responses::sse;
+use core_test_support::responses::sse_response;
+use core_test_support::responses::start_mock_server;
+use core_test_support::responses::strip_metadata_from_json;
+use core_test_support::skip_if_no_network;
+use core_test_support::test_codex::TestCodex;
+use core_test_support::test_codex::local_selections;
+use core_test_support::test_codex::test_codex;
+use core_test_support::test_codex::turn_permission_fields;
+use core_test_support::wait_for_event_match;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
 use serde_json::json;
@@ -47,6 +47,7 @@ use wiremock::MockServer;
 
 const SPAWN_CALL_ID: &str = "spawn-call-1";
 const MULTI_AGENT_V1_NAMESPACE: &str = "multi_agent_v1";
+const MULTI_AGENT_V2_NAMESPACE: &str = "collaboration";
 const TURN_0_FORK_PROMPT: &str = "seed fork context";
 const TURN_1_PROMPT: &str = "spawn a child and continue";
 const TURN_2_NO_WAIT_PROMPT: &str = "follow up without wait";
@@ -62,6 +63,23 @@ const SUBAGENT_STOP_CONTINUATION: &str = "continue only the child";
 const INTERNAL_SUBAGENT_PROMPT: &str = "internal subagent: review";
 
 fn body_contains(req: &wiremock::Request, text: &str) -> bool {
+    decoded_body(req)
+        .and_then(|body| String::from_utf8(body).ok())
+        .is_some_and(|body| body.contains(text))
+}
+
+fn request_has_input_type(req: &wiremock::Request, ty: &str) -> bool {
+    decoded_body(req)
+        .and_then(|body| serde_json::from_slice::<Value>(&body).ok())
+        .and_then(|body| body.get("input").and_then(Value::as_array).cloned())
+        .is_some_and(|items| {
+            items
+                .iter()
+                .any(|item| item.get("type").and_then(Value::as_str) == Some(ty))
+        })
+}
+
+fn decoded_body(req: &wiremock::Request) -> Option<Vec<u8>> {
     let is_zstd = req
         .headers
         .get("content-encoding")
@@ -71,14 +89,11 @@ fn body_contains(req: &wiremock::Request, text: &str) -> bool {
                 .split(',')
                 .any(|entry| entry.trim().eq_ignore_ascii_case("zstd"))
         });
-    let bytes = if is_zstd {
+    if is_zstd {
         zstd::stream::decode_all(std::io::Cursor::new(&req.body)).ok()
     } else {
         Some(req.body.clone())
-    };
-    bytes
-        .and_then(|body| String::from_utf8(body).ok())
-        .is_some_and(|body| body.contains(text))
+    }
 }
 
 fn has_subagent_notification(req: &ResponsesRequest) -> bool {
@@ -312,7 +327,7 @@ async fn wait_for_spawned_thread_id(test: &TestCodex) -> Result<String> {
 }
 
 async fn wait_for_requests(
-    mock: &codex_core_test_runtime::responses::ResponseMock,
+    mock: &core_test_support::responses::ResponseMock,
 ) -> Result<Vec<ResponsesRequest>> {
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
@@ -350,12 +365,12 @@ async fn setup_turn_one_with_custom_spawned_child(
     child_response_delay: Option<Duration>,
     wait_for_parent_notification: bool,
     configure_test: impl FnOnce(
-        codex_core_test_runtime::test_codex::TestCodexBuilder,
-    ) -> codex_core_test_runtime::test_codex::TestCodexBuilder,
+        core_test_support::test_codex::TestCodexBuilder,
+    ) -> core_test_support::test_codex::TestCodexBuilder,
 ) -> Result<(
     TestCodex,
     String,
-    codex_core_test_runtime::responses::ResponseMock,
+    core_test_support::responses::ResponseMock,
 )> {
     let spawn_args = serde_json::to_string(&spawn_args)?;
 
@@ -452,8 +467,8 @@ async fn spawn_child_and_capture_snapshot(
     server: &MockServer,
     spawn_args: serde_json::Value,
     configure_test: impl FnOnce(
-        codex_core_test_runtime::test_codex::TestCodexBuilder,
-    ) -> codex_core_test_runtime::test_codex::TestCodexBuilder,
+        core_test_support::test_codex::TestCodexBuilder,
+    ) -> core_test_support::test_codex::TestCodexBuilder,
 ) -> Result<ThreadConfigSnapshot> {
     let (test, spawned_id, _child_request_log) = setup_turn_one_with_custom_spawned_child(
         server,
@@ -532,7 +547,7 @@ async fn subagent_start_replaces_session_start_and_injects_context() -> Result<(
                 .expect("failed to write subagent hook fixture");
         })
         .with_config(|config| {
-            codex_core_test_runtime::hooks::trust_discovered_hooks(config);
+            trust_discovered_hooks(config);
             config
                 .features
                 .enable(Feature::Collab)
@@ -1039,14 +1054,19 @@ async fn encrypted_multi_agent_v2_spawn_sends_agent_message_to_child() -> Result
         |req: &wiremock::Request| body_contains(req, TURN_1_PROMPT),
         sse(vec![
             ev_response_created("resp-parent-1"),
-            ev_function_call(SPAWN_CALL_ID, "spawn_agent", &spawn_args),
+            ev_function_call_with_namespace(
+                SPAWN_CALL_ID,
+                MULTI_AGENT_V2_NAMESPACE,
+                "spawn_agent",
+                &spawn_args,
+            ),
             ev_completed("resp-parent-1"),
         ]),
     )
     .await;
     let child_request_log = mount_sse_once_match(
         &server,
-        |req: &wiremock::Request| body_contains(req, "\"type\":\"agent_message\""),
+        |req: &wiremock::Request| request_has_input_type(req, "agent_message"),
         sse(vec![
             ev_response_created("resp-child-1"),
             ev_completed("resp-child-1"),
@@ -1056,7 +1076,7 @@ async fn encrypted_multi_agent_v2_spawn_sends_agent_message_to_child() -> Result
     mount_sse_once_match(
         &server,
         |req: &wiremock::Request| {
-            body_contains(req, SPAWN_CALL_ID) && !body_contains(req, "\"type\":\"agent_message\"")
+            body_contains(req, SPAWN_CALL_ID) && !request_has_input_type(req, "agent_message")
         },
         sse(vec![
             ev_response_created("resp-parent-2"),
@@ -1085,14 +1105,11 @@ async fn encrypted_multi_agent_v2_spawn_sends_agent_message_to_child() -> Result
         .pop()
         .expect("child request");
     assert_eq!(
-        child_request.inputs_of_type("agent_message"),
-        vec![json!({
+        strip_metadata_from_json(Value::Array(child_request.inputs_of_type("agent_message"))),
+        Value::Array(vec![json!({
             "type": "agent_message",
             "author": "/root",
             "recipient": "/root/worker",
-            "metadata": {
-                "source_call_id": SPAWN_CALL_ID,
-            },
             "content": [
                 {
                     "type": "input_text",
@@ -1103,7 +1120,7 @@ async fn encrypted_multi_agent_v2_spawn_sends_agent_message_to_child() -> Result
                     "encrypted_content": encrypted_message,
                 },
             ],
-        })]
+        })])
     );
 
     Ok(())
@@ -1131,7 +1148,12 @@ async fn plaintext_multi_agent_v2_completion_sends_agent_message(
         |req: &wiremock::Request| body_contains(req, TURN_1_PROMPT),
         sse(vec![
             ev_response_created("resp-parent-1"),
-            ev_function_call(SPAWN_CALL_ID, "spawn_agent", &spawn_args),
+            ev_function_call_with_namespace(
+                SPAWN_CALL_ID,
+                MULTI_AGENT_V2_NAMESPACE,
+                "spawn_agent",
+                &spawn_args,
+            ),
             ev_completed("resp-parent-1"),
         ]),
     )
@@ -1146,7 +1168,7 @@ async fn plaintext_multi_agent_v2_completion_sends_agent_message(
     };
     let child_request = mount_response_once_match(
         &server,
-        |req: &wiremock::Request| body_contains(req, "\"type\":\"agent_message\""),
+        |req: &wiremock::Request| request_has_input_type(req, "agent_message"),
         sse_response(sse(child_events)).set_delay(Duration::from_secs(1)),
     )
     .await;
@@ -1185,7 +1207,12 @@ async fn plaintext_multi_agent_v2_completion_sends_agent_message(
         },
         sse(vec![
             ev_response_created("resp-parent-3"),
-            ev_function_call("wait-agent-call", "wait_agent", "{}"),
+            ev_function_call_with_namespace(
+                "wait-agent-call",
+                MULTI_AGENT_V2_NAMESPACE,
+                "wait_agent",
+                "{}",
+            ),
             ev_completed("resp-parent-3"),
         ]),
     )
@@ -1231,8 +1258,8 @@ async fn plaintext_multi_agent_v2_completion_sends_agent_message(
         .pop()
         .expect("agent message request");
     assert_eq!(
-        request.inputs_of_type("agent_message"),
-        vec![json!({
+        strip_metadata_from_json(Value::Array(request.inputs_of_type("agent_message"))),
+        Value::Array(vec![json!({
             "type": "agent_message",
             "author": "/root/worker",
             "recipient": "/root",
@@ -1240,7 +1267,7 @@ async fn plaintext_multi_agent_v2_completion_sends_agent_message(
                 "type": "input_text",
                 "text": notification,
             }],
-        })]
+        })])
     );
 
     Ok(())

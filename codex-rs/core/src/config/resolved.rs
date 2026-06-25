@@ -229,13 +229,19 @@ pub(crate) fn resolve_rollout_budget_config(
             "features.rollout_budget.limit_tokens must be positive",
         ));
     }
-    let reminder_interval_tokens = config
-        .reminder_interval_tokens
-        .unwrap_or_else(|| (limit_tokens / 10).max(1));
-    if reminder_interval_tokens <= 0 {
+    let reminder_at_remaining_tokens = config.reminder_at_remaining_tokens.clone().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "features.rollout_budget.reminder_at_remaining_tokens is required when rollout_budget is enabled",
+        )
+    })?;
+    if reminder_at_remaining_tokens
+        .iter()
+        .any(|&tokens| tokens <= 0 || tokens >= limit_tokens)
+    {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "features.rollout_budget.reminder_interval_tokens must be positive",
+            "features.rollout_budget.reminder_at_remaining_tokens must contain only positive values below limit_tokens",
         ));
     }
     let sampling_token_weight = config.sampling_token_weight.unwrap_or(1.0);
@@ -253,7 +259,7 @@ pub(crate) fn resolve_rollout_budget_config(
     }
     Ok(Some(RolloutBudgetConfig {
         limit_tokens,
-        reminder_interval_tokens,
+        reminder_at_remaining_tokens,
         sampling_token_weight,
         prefill_token_weight,
     }))
@@ -269,18 +275,18 @@ pub(crate) fn resolve_current_time_reminder_config(
 
     let base = current_time_reminder_toml_config(config_toml.features.as_ref());
     let default = CurrentTimeReminderConfig::default();
-    let reminder_interval_model_requests = base
-        .and_then(|config| config.reminder_interval_model_requests)
-        .unwrap_or(default.reminder_interval_model_requests);
-    if reminder_interval_model_requests == 0 {
+    let reminder_interval_seconds = base
+        .and_then(|config| config.reminder_interval_seconds)
+        .unwrap_or(default.reminder_interval_seconds);
+    if reminder_interval_seconds == 0 {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "features.current_time_reminder.reminder_interval_model_requests must be positive",
+            "features.current_time_reminder.reminder_interval_seconds must be positive",
         ));
     }
 
     Ok(Some(CurrentTimeReminderConfig {
-        reminder_interval_model_requests,
+        reminder_interval_seconds,
         clock_source: base
             .and_then(|config| config.clock_source)
             .unwrap_or(default.clock_source),

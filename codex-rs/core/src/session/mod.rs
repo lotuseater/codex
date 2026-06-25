@@ -70,7 +70,7 @@ use codex_extension_api::PromptSlot;
 use codex_extension_api::TurnContextContributionInput;
 use codex_features::FEATURES;
 use codex_features::Feature;
-use codex_features::unstable_features_warning_message;
+use codex_features::unstable_features_warning_event;
 use codex_hooks::Hooks;
 use codex_hooks::HooksConfig;
 use codex_login::AuthManager;
@@ -247,6 +247,11 @@ pub(crate) mod time_reminder;
 mod token_budget;
 pub(crate) mod turn;
 pub(crate) mod turn_context;
+// upstream-added split modules (files exist on disk; consumed by sibling modules)
+mod code_mode_warning;
+pub(crate) mod context_window;
+pub(crate) mod step_context;
+mod world_state;
 use self::config_lock::export_config_lock_if_configured;
 use self::config_lock::validate_config_lock_if_configured;
 pub(crate) use self::fork_features::ForkFeaturesState;
@@ -272,6 +277,10 @@ use self::turn::filter_connectors_for_input;
 use self::turn::realtime_text_for_event;
 use self::turn_context::TurnContext;
 use self::turn_context::TurnSkillsContext;
+// imports for upstream methods relocated onto Session in this slim mod.rs
+use self::world_state::build_world_state_from_environment_snapshot;
+use crate::context::world_state::WorldState;
+use crate::session::step_context::StepContext;
 pub use codex_handle::Codex;
 pub(crate) use codex_handle::CodexSpawnArgs;
 pub use codex_handle::CodexSpawnOk;
@@ -378,6 +387,473 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_stream_parser::ProposedPlanSegment;
 
 impl Session {
+    // --- upstream-only methods relocated onto Session ---
+    // These live ONLY in upstream's monolithic session/mod.rs; the fork's split
+    // siblings do not own them, but call-sites in compact*/turn/tests still need
+    // them on `Session`, so keep them here (mirrors the existing relocated helpers).
+    pub(crate) async fn take_new_context_window_request(&self) -> bool {
+        let mut state = self.state.lock().await;
+        state.take_new_context_window_request()
+    }
+
+    pub(crate) async fn start_new_context_window(
+        &self,
+        turn_context: &TurnContext,
+        world_state: Arc<WorldState>,
+    ) -> u64 {
+        let window = {
+            let mut state = self.state.lock().await;
+            state.start_new_context_window()
+        };
+        let (window_number, window_ids) = window;
+        let context_items = self
+            .build_initial_context_with_world_state(turn_context, world_state.as_ref())
+            .await;
+        let turn_context_item = turn_context.to_turn_context_item();
+        // Keep the freshly-built world state as the live diff baseline for subsequent turns.
+        self.state
+            .lock()
+            .await
+            .history
+            .set_world_state_baseline(Arc::clone(&world_state));
+        self.replace_compacted_history(
+            context_items,
+            Some(turn_context_item),
+            CompactedItem {
+                message: String::new(),
+                replacement_history: None,
+                window_number: Some(window_number),
+                first_window_id: Some(window_ids.first_window_id.to_string()),
+                previous_window_id: window_ids.previous_window_id.map(|id| id.to_string()),
+                window_id: Some(window_ids.window_id.to_string()),
+            },
+        )
+        .await;
+        self.recompute_token_usage(turn_context).await;
+        window_number
+    }
+
+    pub(crate) async fn build_initial_context_with_world_state(
+        &self,
+        turn_context: &TurnContext,
+        world_state: &WorldState,
+    ) -> Vec<ResponseItem> {
+        let mut developer_sections = Vec::<String>::with_capacity(8);
+        let mut contextual_user_sections = Vec::<String>::with_capacity(2);
+        let mut separate_developer_sections = Vec::<String>::new();
+        let (
+            reference_context_item,
+            previous_turn_settings,
+            collaboration_mode,
+            base_instructions,
+            session_source,
+            auto_compact_window_ids,
+        ) = {
+            let state = self.state.lock().await;
+            (
+                state.reference_context_item(),
+                state.previous_turn_settings(),
+                state.session_configuration.collaboration_mode.clone(),
+                state.session_configuration.base_instructions.clone(),
+                state.session_configuration.session_source.clone(),
+                state.auto_compact_window_ids(),
+            )
+        };
+        if let Some(model_switch_message) =
+            crate::context_manager::updates::build_model_instructions_update_item(
+                previous_turn_settings.as_ref(),
+                turn_context,
+            )
+        {
+            developer_sections.push(model_switch_message);
+        }
+        if turn_context.config.include_permissions_instructions {
+            developer_sections.push(
+                PermissionsInstructions::from_permission_profile(
+                    &turn_context.permission_profile,
+                    turn_context.approval_policy.value(),
+                    turn_context.config.approvals_reviewer,
+                    self.services.exec_policy.current().as_ref(),
+                    #[allow(deprecated)]
+                    &turn_context.cwd,
+                    turn_context
+                        .config
+                        .features
+                        .enabled(Feature::ExecPermissionApprovals),
+                    turn_context
+                        .config
+                        .features
+                        .enabled(Feature::RequestPermissionsTool),
+                )
+                .render(),
+            );
+        }
+        let separate_guardian_developer_message =
+            crate::guardian::is_guardian_reviewer_source(&session_source);
+        // Keep the guardian policy prompt out of the aggregated developer bundle so it
+        // stays isolated as its own top-level developer message for guardian subagents.
+        if !separate_guardian_developer_message
+            && let Some(developer_instructions) = turn_context.developer_instructions.as_deref()
+            && !developer_instructions.is_empty()
+        {
+            developer_sections.push(developer_instructions.to_string());
+        }
+        // Add developer instructions from collaboration_mode if they exist and are non-empty
+        if turn_context.config.include_collaboration_mode_instructions
+            && let Some(collab_instructions) =
+                CollaborationModeInstructions::from_collaboration_mode(&collaboration_mode)
+        {
+            developer_sections.push(collab_instructions.render());
+        }
+        if let Some(realtime_update) = crate::context_manager::updates::build_initial_realtime_item(
+            reference_context_item.as_ref(),
+            previous_turn_settings.as_ref(),
+            turn_context,
+        ) {
+            developer_sections.push(realtime_update);
+        }
+        if self.features.enabled(Feature::Personality)
+            && let Some(personality) = turn_context.personality
+        {
+            let model_info = turn_context.model_info.clone();
+            let has_baked_personality = model_info.supports_personality()
+                && base_instructions == model_info.get_model_instructions(Some(personality));
+            if !has_baked_personality
+                && let Some(personality_message) =
+                    crate::context_manager::updates::personality_message_for(
+                        &model_info,
+                        personality,
+                    )
+            {
+                developer_sections
+                    .push(PersonalitySpecInstructions::new(personality_message).render());
+            }
+        }
+        if turn_context.config.include_apps_instructions && turn_context.apps_enabled() {
+            let mcp_connection_manager = self.services.mcp_connection_manager.load_full();
+            let accessible_and_enabled_connectors =
+                connectors::list_accessible_and_enabled_connectors_from_manager(
+                    &mcp_connection_manager,
+                    &turn_context.config,
+                )
+                .await;
+            if let Some(apps_instructions) =
+                AppsInstructions::from_connectors(&accessible_and_enabled_connectors)
+            {
+                developer_sections.push(apps_instructions.render());
+            }
+        }
+        if turn_context.config.include_skill_instructions {
+            let available_skills = build_available_skills(
+                turn_context.turn_skills.snapshot.outcome(),
+                default_skill_metadata_budget(turn_context.model_info.context_window),
+                SkillRenderSideEffects::ThreadStart {
+                    session_telemetry: &self.services.session_telemetry,
+                },
+            );
+            if let Some(available_skills) = available_skills {
+                let warning_message = available_skills.warning_message.clone();
+                let skills_instructions = AvailableSkillsInstructions::from(available_skills);
+                if let Some(warning_message) = warning_message {
+                    self.send_event_raw(Event {
+                        id: String::new(),
+                        msg: EventMsg::Warning(WarningEvent {
+                            message: warning_message,
+                        }),
+                    })
+                    .await;
+                }
+                developer_sections.push(skills_instructions.render());
+            }
+        }
+        let loaded_plugins = self
+            .services
+            .plugins_manager
+            .plugins_for_config(&turn_context.config.plugins_config_input())
+            .await;
+        let recommended_plugin_candidates =
+            if crate::tools::spec_plan::tool_suggest_enabled(turn_context) {
+                let auth = self.services.auth_manager.auth().await;
+                let plugins_config = turn_context.config.plugins_config_input();
+                self.services
+                    .plugins_manager
+                    .recommended_plugin_candidates_for_config(RecommendedPluginCandidatesInput {
+                        plugins_config: &plugins_config,
+                        loaded_plugins: &loaded_plugins,
+                        auth: auth.as_ref(),
+                        disabled_tools: &turn_context.config.tool_suggest.disabled_tools,
+                        app_server_client_name: turn_context.app_server_client_name.as_deref(),
+                    })
+                    .await
+            } else {
+                None
+            };
+        if let Some(recommended_plugins) = recommended_plugin_candidates
+            .as_deref()
+            .and_then(RecommendedPluginsInstructions::from_plugins)
+        {
+            contextual_user_sections.push(recommended_plugins.render());
+        }
+        if let Some(plugin_instructions) =
+            AvailablePluginsInstructions::from_plugins(loaded_plugins.capability_summaries())
+        {
+            developer_sections.push(plugin_instructions.render());
+        }
+        let context_contributors = self.services.extensions.context_contributors().to_vec();
+        for contributor in &context_contributors {
+            for fragment in contributor
+                .contribute_thread_context(
+                    &self.services.session_extension_data,
+                    &self.services.thread_extension_data,
+                )
+                .await
+            {
+                push_prompt_fragment(
+                    fragment,
+                    &mut developer_sections,
+                    &mut contextual_user_sections,
+                    &mut separate_developer_sections,
+                );
+            }
+        }
+        for contributor in &context_contributors {
+            for fragment in contributor
+                .contribute_turn_context(TurnContextContributionInput {
+                    thread_id: self.thread_id(),
+                    turn_id: turn_context.sub_id.as_str(),
+                    session_store: &self.services.session_extension_data,
+                    thread_store: &self.services.thread_extension_data,
+                    turn_store: turn_context.extension_data.as_ref(),
+                    model_context_window: turn_context.model_context_window(),
+                })
+                .await
+            {
+                push_prompt_fragment(
+                    fragment,
+                    &mut developer_sections,
+                    &mut contextual_user_sections,
+                    &mut separate_developer_sections,
+                );
+            }
+        }
+        if let Some(user_instructions) = turn_context.user_instructions.as_deref() {
+            contextual_user_sections.push(user_instructions.to_string());
+        }
+        // This is full-context metadata. Steady-state context diffs should not re-emit it.
+        if turn_context.config.features.enabled(Feature::TokenBudget)
+            && turn_context.model_context_window().is_some()
+        {
+            let mcp_result = self
+                .call_tool(
+                    "notes",
+                    "thread_hint",
+                    /*arguments*/ None,
+                    Some(serde_json::json!({
+                        "threadId": self.thread_id().to_string(),
+                    })),
+                )
+                .await
+                .ok()
+                .and_then(|result| {
+                    let text = result
+                        .content
+                        .iter()
+                        .filter_map(|content| {
+                            content.get("text").and_then(serde_json::Value::as_str)
+                        })
+                        .filter(|text| !text.is_empty())
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    (!text.is_empty()).then_some(text)
+                });
+            developer_sections.push(
+                crate::context::TokenBudgetContext::new(
+                    self.thread_id(),
+                    auto_compact_window_ids.first_window_id,
+                    auto_compact_window_ids.previous_window_id,
+                    auto_compact_window_ids.window_id,
+                    mcp_result,
+                )
+                .render(),
+            );
+        }
+        for fragment in world_state.render_full() {
+            match fragment.role() {
+                "developer" => developer_sections.push(fragment.render()),
+                "user" => contextual_user_sections.push(fragment.render()),
+                _ => {}
+            }
+        }
+
+        let multi_agent_v2_usage_hint_text =
+            multi_agents::usage_hint_text(turn_context, &session_source);
+
+        let mut items = Vec::with_capacity(4);
+        if let Some(developer_message) =
+            crate::context_manager::updates::build_developer_update_item(developer_sections)
+        {
+            items.push(developer_message);
+        }
+        for section in separate_developer_sections {
+            if let Some(developer_message) =
+                crate::context_manager::updates::build_developer_update_item(vec![section])
+            {
+                items.push(developer_message);
+            }
+        }
+        if let Some(usage_hint_text) = multi_agent_v2_usage_hint_text
+            && let Some(usage_hint_message) =
+                crate::context_manager::updates::build_developer_update_item(vec![
+                    usage_hint_text.to_string(),
+                ])
+        {
+            items.push(usage_hint_message);
+        }
+        match multi_agents::effective_multi_agent_mode(
+            turn_context.multi_agent_version,
+            &session_source,
+            turn_context.multi_agent_mode,
+        ) {
+            Some(
+                multi_agent_mode
+                @ (MultiAgentMode::ExplicitRequestOnly | MultiAgentMode::Proactive),
+            ) => {
+                items.push(ContextualUserFragment::into(
+                    MultiAgentModeInstructions::new(multi_agent_mode),
+                ));
+            }
+            Some(MultiAgentMode::None) | None => {}
+        }
+        if let Some(contextual_user_message) =
+            crate::context_manager::updates::build_contextual_user_message(contextual_user_sections)
+        {
+            items.push(contextual_user_message);
+        }
+        // Emit the guardian policy prompt as a separate developer item so the guardian
+        // subagent sees a distinct, easy-to-audit instruction block.
+        if separate_guardian_developer_message
+            && let Some(developer_instructions) = turn_context.developer_instructions.as_deref()
+            && !developer_instructions.is_empty()
+            && let Some(guardian_developer_message) =
+                crate::context_manager::updates::build_developer_update_item(vec![
+                    developer_instructions.to_string(),
+                ])
+        {
+            items.push(guardian_developer_message);
+        }
+        // New context windows and compaction install these items directly into replacement history.
+        for item in &mut items {
+            item.set_turn_id_if_missing(&turn_context.sub_id);
+        }
+        items
+    }
+
+    pub(crate) async fn build_world_state_for_environments(
+        &self,
+        turn_context: &TurnContext,
+        environments: &TurnEnvironmentSnapshot,
+    ) -> WorldState {
+        let environment_subagents = if turn_context.config.include_environment_context {
+            self.services
+                .agent_control
+                .format_environment_context_subagents(self.thread_id)
+                .await
+        } else {
+            String::new()
+        };
+        build_world_state_from_environment_snapshot(
+            turn_context,
+            environments,
+            &environment_subagents,
+        )
+    }
+
+    pub(crate) async fn capture_step_context(
+        &self,
+        turn_context: Arc<TurnContext>,
+    ) -> Arc<StepContext> {
+        // Keep the old turn-frozen view unless deferred executors are explicitly enabled.
+        let environments = if turn_context
+            .config
+            .features
+            .enabled(Feature::DeferredExecutor)
+        {
+            self.services.turn_environments.snapshot().await
+        } else {
+            turn_context.environments.clone()
+        };
+        Arc::new(StepContext::new(turn_context, environments))
+    }
+
+    pub(crate) async fn record_step_environment_context_if_changed(
+        &self,
+        previous_world_state: &Arc<WorldState>,
+        step_context: &step_context::StepContext,
+    ) -> Arc<WorldState> {
+        let turn_context = step_context.turn.as_ref();
+        // Render model-visible state from the same step used to build and run tools.
+        let world_state = Arc::new(
+            self.build_world_state_for_environments(turn_context, &step_context.environments)
+                .await,
+        );
+        let items = crate::context_manager::updates::merge_contextual_fragments(
+            world_state.render_diff(previous_world_state.as_ref()),
+        );
+        if !items.is_empty() {
+            self.record_conversation_items(turn_context, &items).await;
+        }
+
+        // ContextManager remembers this for later turns; run_turn owns the live value.
+        self.state
+            .lock()
+            .await
+            .history
+            .set_world_state_baseline(Arc::clone(&world_state));
+        world_state
+    }
+
+    pub(crate) fn response_item_from_user_input(&self, input: Vec<UserInput>) -> ResponseItem {
+        ResponseItem::from(ResponseInputItem::from_user_input(
+            input,
+            LocalImagePreparation::Defer,
+        ))
+    }
+
+    fn assign_missing_response_item_ids(items: Cow<'_, [ResponseItem]>) -> Cow<'_, [ResponseItem]> {
+        if items.iter().all(|item| item.id().is_some()) {
+            return items;
+        }
+        let mut items = items;
+        for item in items.to_mut() {
+            Self::assign_missing_response_item_id(item);
+        }
+        items
+    }
+
+    fn assign_missing_response_item_id(item: &mut ResponseItem) {
+        if item.id().is_some() {
+            return;
+        }
+        let prefix = match item {
+            ResponseItem::AdditionalTools { .. } => "at",
+            ResponseItem::Message { .. } => "msg",
+            ResponseItem::Reasoning { .. } => "rs",
+            ResponseItem::LocalShellCall { .. } => "lsh",
+            ResponseItem::FunctionCall { .. } => "fc",
+            ResponseItem::ToolSearchCall { .. } => "tsc",
+            ResponseItem::FunctionCallOutput { .. } => "fco",
+            ResponseItem::CustomToolCall { .. } => "ctc",
+            ResponseItem::CustomToolCallOutput { .. } => "ctco",
+            ResponseItem::ToolSearchOutput { .. } => "tso",
+            ResponseItem::WebSearchCall { .. } => "ws",
+            ResponseItem::ImageGenerationCall { .. } => "ig",
+            ResponseItem::Compaction { .. } | ResponseItem::ContextCompaction { .. } => "cmp",
+            ResponseItem::AgentMessage { .. } => "amsg",
+            ResponseItem::CompactionTrigger { .. } | ResponseItem::Other => return,
+        };
+        item.set_id(Some(format!("{prefix}_{}", Uuid::now_v7())));
+    }
+
     #[cfg(test)]
     pub(crate) async fn codex_home(&self) -> AbsolutePathBuf {
         let state = self.state.lock().await;
@@ -552,6 +1028,26 @@ impl Session {
 
     fn show_raw_agent_reasoning(&self) -> bool {
         self.services.show_raw_agent_reasoning
+    }
+}
+
+// upstream-only free fn used by relocated Session methods above
+fn push_prompt_fragment(
+    fragment: PromptFragment,
+    developer_sections: &mut Vec<String>,
+    contextual_user_sections: &mut Vec<String>,
+    separate_developer_sections: &mut Vec<String>,
+) {
+    match fragment.slot() {
+        PromptSlot::DeveloperPolicy | PromptSlot::DeveloperCapabilities => {
+            developer_sections.push(fragment.text().to_string());
+        }
+        PromptSlot::ContextualUser => {
+            contextual_user_sections.push(fragment.text().to_string());
+        }
+        PromptSlot::SeparateDeveloper => {
+            separate_developer_sections.push(fragment.text().to_string());
+        }
     }
 }
 

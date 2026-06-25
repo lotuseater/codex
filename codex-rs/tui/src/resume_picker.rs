@@ -15,6 +15,7 @@ use crate::keymap::ListKeymap;
 use crate::keymap::PagerKeymap;
 use crate::keymap::RuntimeKeymap;
 use crate::legacy_core::config::Config;
+use crate::legacy_core::config::edit::ConfigEditsBuilder;
 use crate::markdown::append_markdown;
 use crate::pager_overlay::Overlay;
 use crate::session_resume::resolve_session_thread_id;
@@ -38,7 +39,6 @@ use codex_app_server_protocol::ThreadListCwdFilter;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadSortKey;
 use codex_app_server_protocol::ThreadSourceKind;
-use codex_config::edit::ConfigEditsBuilder;
 use codex_config::types::SessionPickerViewMode;
 use codex_protocol::ThreadId;
 use codex_utils_path as path_utils;
@@ -5740,6 +5740,7 @@ session_picker_view = "dense"
         let thread_id = ThreadId::new();
         let thread = Thread {
             id: thread_id.to_string(),
+            extra: None,
             session_id: thread_id.to_string(),
             forked_from_id: None,
             parent_thread_id: None,
@@ -5776,6 +5777,7 @@ session_picker_view = "dense"
         let thread_id = ThreadId::new();
         let thread = Thread {
             id: thread_id.to_string(),
+            extra: None,
             session_id: thread_id.to_string(),
             forked_from_id: None,
             parent_thread_id: None,
@@ -5846,6 +5848,7 @@ session_picker_view = "dense"
         let thread_id = ThreadId::new();
         let thread = Thread {
             id: thread_id.to_string(),
+            extra: None,
             session_id: thread_id.to_string(),
             forked_from_id: None,
             parent_thread_id: None,
@@ -5905,6 +5908,7 @@ session_picker_view = "dense"
         let thread_id = ThreadId::new();
         let thread = Thread {
             id: thread_id.to_string(),
+            extra: None,
             session_id: thread_id.to_string(),
             forked_from_id: None,
             parent_thread_id: None,

@@ -21,6 +21,7 @@ codex-core = { workspace = true }
 codex-exec-server = { workspace = true }
 codex-extension-api = { workspace = true }
 codex-features = { workspace = true }
+codex-home = { workspace = true }
 codex-hooks = { workspace = true }
 codex-login = { workspace = true }
 codex-model-provider-info = { workspace = true }
@@ -31,6 +32,7 @@ codex-test-support-lightweight = { workspace = true, features = ["tracing"] }
 codex-test-support-responses = { workspace = true }
 codex-thread-store-api = { workspace = true }
 codex-utils-absolute-path = { workspace = true }
+codex-utils-path-uri = { workspace = true }
 codex-utils-cargo-bin = { workspace = true }
 ctor = { workspace = true }
 futures = { workspace = true }

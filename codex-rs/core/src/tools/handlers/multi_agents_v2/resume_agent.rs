@@ -5,7 +5,7 @@ use crate::agent::exceeds_thread_spawn_depth_limit;
 use crate::agent::next_thread_spawn_depth;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
-use crate::tools::handlers::multi_agents_spec::create_resume_agent_tool_v2;
+use crate::tools::handlers::multi_agents_spec::create_resume_agent_tool;
 use crate::turn_timing::now_unix_timestamp_ms;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::SessionSource;
@@ -23,7 +23,7 @@ impl ToolExecutor<ToolInvocation> for Handler {
     }
 
     fn spec(&self) -> Option<ToolSpec> {
-        Some(create_resume_agent_tool_v2())
+        Some(create_resume_agent_tool())
     }
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {

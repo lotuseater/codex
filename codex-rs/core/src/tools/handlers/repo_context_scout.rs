@@ -103,7 +103,11 @@ async fn handle_scout(
     }
 
     let args: RepoContextScoutArgs = parse_arguments(arguments)?;
-    let project_root = invocation.turn.resolve_path(args.project_root);
+    #[allow(deprecated)]
+    let project_root = args.project_root.map_or_else(
+        || invocation.turn.cwd.clone(),
+        |p| invocation.turn.cwd.join(p),
+    );
     let prompt = args.prompt.unwrap_or_default();
     let mut config = invocation.turn.config.repo_context_scout;
     if let Some(max_tokens) = args.max_tokens {

@@ -20,6 +20,7 @@ codex-app-server-protocol = { workspace = true }
 codex-config = { workspace = true }
 codex-core = { workspace = true }
 codex-core-test-runtime = { workspace = true }
+codex-exec-server = { workspace = true }
 codex-features = { workspace = true }
 codex-login = { workspace = true }
 codex-models-manager = { workspace = true }
@@ -27,6 +28,7 @@ codex-protocol = { workspace = true }
 codex-utils-cargo-bin = { workspace = true }
 codex-test-support-lightweight = { path = "../../../test-support/lightweight" }
 codex-test-support-responses = { path = "../../../test-support/responses" }
+core_test_support = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = [

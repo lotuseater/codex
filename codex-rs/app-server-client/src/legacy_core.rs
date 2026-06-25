@@ -14,10 +14,6 @@ pub use codex_core::web_search_detail;
 
 pub mod config {
     pub use codex_core::config::*;
-
-    pub mod edit {
-        pub use codex_config::edit::*;
-    }
 }
 
 pub mod connectors {

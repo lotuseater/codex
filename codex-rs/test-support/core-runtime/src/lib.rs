@@ -35,13 +35,17 @@ pub mod tracing {
 pub mod apps_test_server;
 #[path = "../../../core/tests/common/runtime_harness.rs"]
 pub mod runtime_harness;
+#[path = "../../../core/tests/common/test_environment.rs"]
+pub(crate) mod test_environment;
+pub(crate) use test_environment::TestEnvironment;
+pub(crate) use test_environment::test_environment;
+pub mod hooks;
 #[path = "../../../core/tests/common/test_codex.rs"]
 pub mod test_codex;
 #[path = "../../../core/tests/common/test_codex_exec.rs"]
 pub mod test_codex_exec;
 #[path = "../../../core/tests/common/zsh_fork.rs"]
 pub mod zsh_fork;
-pub mod hooks;
 
 pub use protocol_fixtures::RemoteEnvConfig;
 pub use protocol_fixtures::assert_regex_match;
@@ -64,6 +68,37 @@ pub use runtime_harness::submit_thread_settings;
 pub use runtime_harness::wait_for_event;
 pub use runtime_harness::wait_for_event_match;
 pub use runtime_harness::wait_for_event_with_timeout;
+
+/// Alias that mirrors the fork's `load_default_config_for_test_with_cloud_config_bundle`
+/// helper (which lives in `core/tests/common/lib.rs`) so that `test_codex.rs`, compiled
+/// via `#[path = "..."]` in this crate, can resolve `crate::load_default_config_for_test_with_cloud_config_bundle`.
+pub async fn load_default_config_for_test_with_cloud_config_bundle(
+    codex_home: &tempfile::TempDir,
+    cloud_config_bundle: codex_config::CloudConfigBundleLoader,
+) -> codex_core::config::Config {
+    #[cfg(target_os = "linux")]
+    let overrides = {
+        use codex_core::config::ConfigOverrides;
+        match runtime_harness::find_codex_linux_sandbox_exe() {
+            Ok(exe) => ConfigOverrides {
+                codex_linux_sandbox_exe: Some(exe),
+                ..ConfigOverrides::default()
+            },
+            Err(_) => ConfigOverrides::default(),
+        }
+    };
+    #[cfg(not(target_os = "linux"))]
+    let overrides = codex_core::config::ConfigOverrides::default();
+
+    codex_core::config::ConfigBuilder::default()
+        .loader_overrides(codex_config::LoaderOverrides::without_managed_config_for_tests())
+        .codex_home(codex_home.path().to_path_buf())
+        .harness_overrides(overrides)
+        .cloud_config_bundle(cloud_config_bundle)
+        .build()
+        .await
+        .expect("defaults for test should always succeed")
+}
 
 #[macro_export]
 macro_rules! skip_if_sandbox {

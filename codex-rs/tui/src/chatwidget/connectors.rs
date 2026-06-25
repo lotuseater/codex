@@ -4,7 +4,7 @@ use super::*;
 use crate::app_event::ConnectorsSnapshot;
 use crate::connector_labels::connector_display_label;
 use crate::connector_labels::connector_mention_slug;
-use codex_app_server_protocol::AppInfo;
+use codex_connectors::AppInfo;
 
 #[derive(Debug, Clone, Default)]
 pub(super) enum ConnectorsCacheState {

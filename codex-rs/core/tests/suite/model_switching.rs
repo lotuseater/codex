@@ -1,19 +1,5 @@
 use anyhow::Result;
 use codex_config::types::Personality;
-use codex_core_test_runtime::responses::ev_completed_with_tokens;
-use codex_core_test_runtime::responses::ev_image_generation_call;
-use codex_core_test_runtime::responses::ev_response_created;
-use codex_core_test_runtime::responses::mount_models_once;
-use codex_core_test_runtime::responses::mount_sse_once;
-use codex_core_test_runtime::responses::mount_sse_sequence;
-use codex_core_test_runtime::responses::sse;
-use codex_core_test_runtime::responses::sse_completed;
-use codex_core_test_runtime::responses::start_mock_server;
-use codex_core_test_runtime::skip_if_no_network;
-use codex_core_test_runtime::test_codex::TestCodex;
-use codex_core_test_runtime::test_codex::test_codex;
-use codex_core_test_runtime::test_codex::turn_permission_fields;
-use codex_core_test_runtime::wait_for_event;
 use codex_features::Feature;
 use codex_login::CodexAuth;
 use codex_models_manager::manager::RefreshStrategy;
@@ -35,6 +21,22 @@ use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
 use codex_protocol::user_input::UserInput;
+use core_test_support::responses::ev_completed_with_tokens;
+use core_test_support::responses::ev_image_generation_call;
+use core_test_support::responses::ev_response_created;
+use core_test_support::responses::mount_models_once;
+use core_test_support::responses::mount_sse_once;
+use core_test_support::responses::mount_sse_sequence;
+use core_test_support::responses::sse;
+use core_test_support::responses::sse_completed;
+use core_test_support::responses::start_mock_server;
+use core_test_support::skip_if_no_network;
+use core_test_support::skip_if_wine_exec;
+use core_test_support::test_codex::TestCodex;
+use core_test_support::test_codex::local_selections;
+use core_test_support::test_codex::test_codex;
+use core_test_support::test_codex::turn_permission_fields;
+use core_test_support::wait_for_event;
 use pretty_assertions::assert_eq;
 use std::path::Path;
 use std::path::PathBuf;
@@ -43,22 +45,26 @@ use wiremock::MockServer;
 fn read_only_user_turn(test: &TestCodex, items: Vec<UserInput>, model: String) -> Op {
     let (sandbox_policy, permission_profile) =
         turn_permission_fields(PermissionProfile::read_only(), test.cwd_path());
-    Op::UserTurn {
-        environments: None,
+    Op::UserInput {
         items,
         final_output_json_schema: None,
-        cwd: test.cwd_path().to_path_buf(),
-        approval_policy: AskForApproval::Never,
-        approvals_reviewer: None,
-        sandbox_policy,
-        permission_profile,
-        model,
-        effort: test.config.model_reasoning_effort,
-        summary: None,
-        service_tier: None,
-        context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Standard),
-        collaboration_mode: None,
-        personality: None,
+        responsesapi_client_metadata: None,
+        additional_context: Default::default(),
+        thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+            environments: Some(local_selections(test.config.cwd.clone())),
+            approval_policy: Some(AskForApproval::Never),
+            sandbox_policy: Some(sandbox_policy),
+            permission_profile,
+            collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
+                mode: codex_protocol::config_types::ModeKind::Default,
+                settings: codex_protocol::config_types::Settings {
+                    model,
+                    reasoning_effort: test.config.model_reasoning_effort.clone(),
+                    developer_instructions: None,
+                },
+            }),
+            ..Default::default()
+        },
     }
 }
 
@@ -164,23 +170,14 @@ async fn model_change_appends_model_instructions_developer_message() -> Result<(
         .await?;
     wait_for_event(&test.codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
-    test.codex
-        .submit(Op::OverrideTurnContext {
-            cwd: None,
-            approval_policy: None,
-            approvals_reviewer: None,
-            sandbox_policy: None,
-            permission_profile: None,
-            windows_sandbox_level: None,
+    core_test_support::submit_thread_settings(
+        &test.codex,
+        codex_protocol::protocol::ThreadSettingsOverrides {
             model: Some(next_model.to_string()),
-            effort: None,
-            summary: None,
-            service_tier: None,
-            context_budget_mode: None,
-            collaboration_mode: None,
-            personality: None,
-        })
-        .await?;
+            ..Default::default()
+        },
+    )
+    .await?;
 
     test.codex
         .submit(read_only_user_turn(
@@ -210,6 +207,7 @@ async fn model_change_appends_model_instructions_developer_message() -> Result<(
 
     Ok(())
 }
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn model_and_personality_change_only_appends_model_instructions() -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -244,23 +242,15 @@ async fn model_and_personality_change_only_appends_model_instructions() -> Resul
         .await?;
     wait_for_event(&test.codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
-    test.codex
-        .submit(Op::OverrideTurnContext {
-            cwd: None,
-            approval_policy: None,
-            approvals_reviewer: None,
-            sandbox_policy: None,
-            permission_profile: None,
-            windows_sandbox_level: None,
+    core_test_support::submit_thread_settings(
+        &test.codex,
+        codex_protocol::protocol::ThreadSettingsOverrides {
             model: Some(next_model.to_string()),
-            effort: None,
-            summary: None,
-            service_tier: None,
-            context_budget_mode: None,
-            collaboration_mode: None,
             personality: Some(Personality::Pragmatic),
-        })
-        .await?;
+            ..Default::default()
+        },
+    )
+    .await?;
 
     test.codex
         .submit(read_only_user_turn(
@@ -294,6 +284,7 @@ async fn model_and_personality_change_only_appends_model_instructions() -> Resul
 
     Ok(())
 }
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn service_tier_change_is_applied_on_next_http_turn() -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -323,6 +314,7 @@ async fn service_tier_change_is_applied_on_next_http_turn() -> Result<()> {
 
     Ok(())
 }
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn flex_service_tier_is_applied_to_http_turn() -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -360,6 +352,7 @@ async fn flex_service_tier_is_applied_to_http_turn() -> Result<()> {
 
     Ok(())
 }
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn unsupported_service_tier_is_omitted_from_http_turn() -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -514,7 +507,7 @@ async fn model_change_from_image_to_text_strips_prior_image_content() -> Result<
     let _ = models_manager
         .list_models(RefreshStrategy::OnlineIfUncached)
         .await;
-    let image_url = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII="
+    let image_url = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg=="
         .to_string();
 
     test.codex
@@ -803,6 +796,8 @@ async fn model_change_from_generated_image_to_text_preserves_prior_generated_ima
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn thread_rollback_after_generated_image_drops_entire_image_turn_history() -> Result<()> {
+    // TODO(anp): Remove after generated-image artifacts use target-native paths.
+    skip_if_wine_exec!(Ok(()), "uses host-native generated-image artifact paths");
     skip_if_no_network!(Ok(()));
 
     let server = MockServer::start().await;

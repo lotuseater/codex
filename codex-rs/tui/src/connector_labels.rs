@@ -1,4 +1,4 @@
-use codex_app_server_protocol::AppInfo;
+use codex_connectors::AppInfo;
 
 pub(crate) fn connector_display_label(connector: &AppInfo) -> String {
     connector.name.clone()

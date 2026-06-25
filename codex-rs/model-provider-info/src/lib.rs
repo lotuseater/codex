@@ -5,24 +5,16 @@
 //!   2. User-defined entries inside `~/.codex/config.toml` under the `model_providers`
 //!      key. These override or extend the defaults at runtime.
 
-#[cfg(feature = "runtime")]
 use codex_api::Provider as ApiProvider;
-#[cfg(feature = "runtime")]
 use codex_api::RetryConfig as ApiRetryConfig;
-#[cfg(feature = "runtime")]
-use codex_app_server_protocol::AuthMode;
-use codex_config_types::ModelProviderAuthInfo;
-#[cfg(feature = "runtime")]
+use codex_api::is_azure_responses_provider;
+use codex_protocol::auth::AuthMode;
+use codex_protocol::config_types::ModelProviderAuthInfo;
 use codex_protocol::error::CodexErr;
-#[cfg(feature = "runtime")]
 use codex_protocol::error::EnvVarError;
-#[cfg(feature = "runtime")]
 use codex_protocol::error::Result as CodexResult;
-#[cfg(feature = "runtime")]
 use http::HeaderMap;
-#[cfg(feature = "runtime")]
 use http::header::HeaderName;
-#[cfg(feature = "runtime")]
 use http::header::HeaderValue;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -215,7 +207,6 @@ impl ModelProviderInfo {
         }
     }
 
-    #[cfg(feature = "runtime")]
     fn build_header_map(&self) -> CodexResult<HeaderMap> {
         let capacity = self.http_headers.as_ref().map_or(0, HashMap::len)
             + self.env_http_headers.as_ref().map_or(0, HashMap::len);
@@ -243,7 +234,6 @@ impl ModelProviderInfo {
         Ok(headers)
     }
 
-    #[cfg(feature = "runtime")]
     pub fn to_api_provider(&self, auth_mode: Option<AuthMode>) -> CodexResult<ApiProvider> {
         let default_base_url = if matches!(
             auth_mode,
@@ -285,7 +275,6 @@ impl ModelProviderInfo {
     /// If `env_key` is Some, returns the API key for this provider if present
     /// (and non-empty) in the environment. If `env_key` is required but
     /// cannot be found, returns an error.
-    #[cfg(feature = "runtime")]
     pub fn api_key(&self) -> CodexResult<Option<String>> {
         match &self.env_key {
             Some(env_key) => {
@@ -528,29 +517,6 @@ pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> M
         requires_openai_auth: false,
         supports_websockets: false,
     }
-}
-
-pub fn is_azure_responses_provider(name: &str, base_url: Option<&str>) -> bool {
-    if name.eq_ignore_ascii_case("azure") {
-        true
-    } else if let Some(base_url) = base_url {
-        matches_azure_responses_base_url(base_url)
-    } else {
-        false
-    }
-}
-
-fn matches_azure_responses_base_url(base_url: &str) -> bool {
-    let base_url = base_url.to_ascii_lowercase();
-    const AZURE_MARKERS: [&str; 6] = [
-        "openai.azure.",
-        "cognitiveservices.azure.",
-        "aoai.azure.",
-        "azure-api.",
-        "azurefd.",
-        "windows.net/openai",
-    ];
-    AZURE_MARKERS.iter().any(|marker| base_url.contains(marker))
 }
 
 #[cfg(test)]

@@ -6,7 +6,9 @@ use crate::Features;
 use crate::FeaturesToml;
 use crate::Stage;
 use crate::feature_for_key;
-use crate::unstable_features_warning_message;
+use crate::unstable_features_warning_event;
+use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::WarningEvent;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 use toml::Table;
@@ -16,14 +18,6 @@ use toml::Value as TomlValue;
 fn under_development_features_are_disabled_by_default() {
     for spec in crate::FEATURES {
         if matches!(spec.stage, Stage::UnderDevelopment) {
-            if matches!(
-                spec.id,
-                Feature::ToolSearchAlwaysDeferMcpTools
-                    | Feature::ContextOpsShadow
-                    | Feature::ContextOpsReplace
-            ) {
-                continue;
-            }
             assert_eq!(
                 spec.default_enabled, false,
                 "feature `{}` is under development and must be disabled by default",
@@ -38,14 +32,7 @@ fn default_enabled_features_are_stable() {
     for spec in crate::FEATURES {
         if spec.default_enabled {
             assert!(
-                matches!(spec.stage, Stage::Stable | Stage::Removed)
-                    || matches!(
-                        spec.id,
-                        Feature::TerminalResizeReflow
-                            | Feature::ToolSearchAlwaysDeferMcpTools
-                            | Feature::ContextOpsShadow
-                            | Feature::ContextOpsReplace
-                    ),
+                matches!(spec.stage, Stage::Stable | Stage::Removed),
                 "feature `{}` is enabled by default but is not stable/removed ({:?})",
                 spec.key,
                 spec.stage
@@ -219,22 +206,6 @@ fn tool_search_is_removed_and_disabled_by_default() {
 }
 
 #[test]
-fn tool_search_always_defer_mcp_tools_is_enabled_by_default_for_local_token_savings() {
-    assert_eq!(
-        feature_for_key("tool_search_always_defer_mcp_tools"),
-        Some(Feature::ToolSearchAlwaysDeferMcpTools)
-    );
-    assert_eq!(
-        Feature::ToolSearchAlwaysDeferMcpTools.stage(),
-        Stage::UnderDevelopment
-    );
-    assert_eq!(
-        Feature::ToolSearchAlwaysDeferMcpTools.default_enabled(),
-        true
-    );
-}
-
-#[test]
 fn secret_auth_storage_defaults_to_windows_only() {
     assert_eq!(Feature::SecretAuthStorage.stage(), Stage::Stable);
     assert_eq!(Feature::SecretAuthStorage.default_enabled(), cfg!(windows));
@@ -242,26 +213,6 @@ fn secret_auth_storage_defaults_to_windows_only() {
         feature_for_key("secret_auth_storage"),
         Some(Feature::SecretAuthStorage)
     );
-}
-
-#[test]
-fn context_ops_shadow_is_enabled_by_default_for_local_benchmarking() {
-    assert_eq!(
-        feature_for_key("context_ops_shadow"),
-        Some(Feature::ContextOpsShadow)
-    );
-    assert_eq!(Feature::ContextOpsShadow.stage(), Stage::UnderDevelopment);
-    assert_eq!(Feature::ContextOpsShadow.default_enabled(), true);
-}
-
-#[test]
-fn context_ops_replace_is_enabled_by_default_for_promoted_local_replacements() {
-    assert_eq!(
-        feature_for_key("context_ops_replace"),
-        Some(Feature::ContextOpsReplace)
-    );
-    assert_eq!(Feature::ContextOpsReplace.stage(), Stage::UnderDevelopment);
-    assert_eq!(Feature::ContextOpsReplace.default_enabled(), true);
 }
 
 #[test]
@@ -413,16 +364,6 @@ fn workspace_dependencies_is_stable_and_enabled_by_default() {
 }
 
 #[test]
-fn semantic_auto_compact_is_stable_and_enabled_by_default() {
-    assert_eq!(Feature::SemanticAutoCompact.stage(), Stage::Stable);
-    assert_eq!(Feature::SemanticAutoCompact.default_enabled(), true);
-    assert_eq!(
-        feature_for_key("semantic_auto_compact"),
-        Some(Feature::SemanticAutoCompact)
-    );
-}
-
-#[test]
 fn telepathy_is_legacy_alias_for_chronicle() {
     assert_eq!(Feature::Chronicle.stage(), Stage::UnderDevelopment);
     assert_eq!(Feature::Chronicle.default_enabled(), false);
@@ -536,6 +477,23 @@ fn from_sources_ignores_removed_image_detail_original_feature_key() {
 }
 
 #[test]
+fn from_sources_ignores_removed_resize_all_images_feature_key() {
+    let features_toml =
+        FeaturesToml::from(BTreeMap::from([("resize_all_images".to_string(), false)]));
+
+    let features = Features::from_sources(
+        FeatureConfigSource {
+            features: Some(&features_toml),
+            ..Default::default()
+        },
+        FeatureConfigSource::default(),
+        FeatureOverrides::default(),
+    );
+
+    assert_eq!(features, Features::with_defaults());
+}
+
+#[test]
 fn from_sources_ignores_removed_undo_feature_key() {
     let features_toml = FeaturesToml::from(BTreeMap::from([("undo".to_string(), true)]));
 
@@ -590,6 +548,25 @@ fn from_sources_ignores_removed_apply_patch_freeform_feature_key() {
 #[test]
 fn from_sources_ignores_removed_plugin_hooks_feature_key() {
     let features_toml = FeaturesToml::from(BTreeMap::from([("plugin_hooks".to_string(), true)]));
+
+    let features = Features::from_sources(
+        FeatureConfigSource {
+            features: Some(&features_toml),
+            ..Default::default()
+        },
+        FeatureConfigSource::default(),
+        FeatureOverrides::default(),
+    );
+
+    assert_eq!(features, Features::with_defaults());
+}
+
+#[test]
+fn from_sources_ignores_removed_tool_search_always_defer_mcp_tools_feature_key() {
+    let features_toml = FeaturesToml::from(BTreeMap::from([(
+        "tool_search_always_defer_mcp_tools".to_string(),
+        false,
+    )]));
 
     let features = Features::from_sources(
         FeatureConfigSource {
@@ -664,45 +641,6 @@ non_code_mode_only = true
 }
 
 #[test]
-fn multi_agent_v2_feature_config_usage_hint_enabled_does_not_disable_default_feature() {
-    let features_toml: FeaturesToml = toml::from_str(
-        r#"
-[multi_agent_v2]
-usage_hint_enabled = false
-"#,
-    )
-    .expect("features table should deserialize");
-    let features = Features::from_sources(
-        FeatureConfigSource {
-            features: Some(&features_toml),
-            ..Default::default()
-        },
-        FeatureConfigSource::default(),
-        FeatureOverrides::default(),
-    );
-
-    assert_eq!(features.enabled(Feature::MultiAgentV2), true);
-    assert_eq!(features_toml.entries(), BTreeMap::new());
-    assert_eq!(
-        features_toml.multi_agent_v2,
-        Some(crate::FeatureToml::Config(crate::MultiAgentV2ConfigToml {
-            enabled: None,
-            max_concurrent_threads_per_session: None,
-            min_wait_timeout_ms: None,
-            max_wait_timeout_ms: None,
-            default_wait_timeout_ms: None,
-            usage_hint_enabled: Some(false),
-            usage_hint_text: None,
-            root_agent_usage_hint_text: None,
-            subagent_usage_hint_text: None,
-            tool_namespace: None,
-            hide_spawn_agent_metadata: None,
-            non_code_mode_only: None,
-        }))
-    );
-}
-
-#[test]
 fn materialize_resolved_enabled_writes_all_features_and_preserves_custom_config() {
     let mut features = Features::with_defaults();
     features.enable(Feature::CodeMode);
@@ -764,7 +702,7 @@ fn materialize_resolved_enabled_writes_all_features_and_preserves_custom_config(
 }
 
 #[test]
-fn unstable_warning_message_only_mentions_enabled_under_development_features() {
+fn unstable_warning_event_only_mentions_enabled_under_development_features() {
     let mut configured_features = Table::new();
     configured_features.insert(
         "apply_patch_streaming_events".to_string(),
@@ -776,14 +714,17 @@ fn unstable_warning_message_only_mentions_enabled_under_development_features() {
     let mut features = Features::with_defaults();
     features.enable(Feature::ApplyPatchStreamingEvents);
 
-    let message = unstable_features_warning_message(
+    let warning = unstable_features_warning_event(
         Some(&configured_features),
         /*suppress_unstable_features_warning*/ false,
         &features,
         "/tmp/config.toml",
     )
-    .expect("warning message");
+    .expect("warning event");
 
+    let EventMsg::Warning(WarningEvent { message }) = warning.msg else {
+        panic!("expected warning event");
+    };
     assert!(message.contains("apply_patch_streaming_events"));
     assert!(!message.contains("personality"));
     assert!(message.contains("/tmp/config.toml"));

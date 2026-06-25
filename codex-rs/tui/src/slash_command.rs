@@ -114,7 +114,7 @@ impl SlashCommand {
             SlashCommand::Import => "import setup, this project, and recent chats from Claude Code",
             SlashCommand::Hooks => "view and manage lifecycle hooks",
             SlashCommand::Status => "show current session configuration and token usage",
-            SlashCommand::Usage => "view account usage or use a rate-limit reset",
+            SlashCommand::Usage => "view account usage or use a usage limit reset",
             SlashCommand::DebugConfig => "show config layers and requirement sources for debugging",
             SlashCommand::Title => "configure which items appear in the terminal title",
             SlashCommand::Statusline => "configure which items appear in the status line",
@@ -230,11 +230,9 @@ impl SlashCommand {
             SlashCommand::New
             | SlashCommand::Archive
             | SlashCommand::Delete
-            | SlashCommand::Resume
             | SlashCommand::Fork
             | SlashCommand::Init
             | SlashCommand::Compact
-            | SlashCommand::Model
             | SlashCommand::Fast
             | SlashCommand::Slow
             | SlashCommand::ActionPrompt
@@ -242,8 +240,6 @@ impl SlashCommand {
             | SlashCommand::DelegatePrompt
             | SlashCommand::CompactConfig
             | SlashCommand::ReductionConfig
-            | SlashCommand::Personality
-            | SlashCommand::Permissions
             | SlashCommand::Keymap
             | SlashCommand::Vim
             | SlashCommand::ElevateSandbox
@@ -258,6 +254,10 @@ impl SlashCommand {
             | SlashCommand::MemoryDrop
             | SlashCommand::MemoryUpdate => false,
             SlashCommand::Diff
+            | SlashCommand::Resume
+            | SlashCommand::Model
+            | SlashCommand::Personality
+            | SlashCommand::Permissions
             | SlashCommand::Copy
             | SlashCommand::Raw
             | SlashCommand::Rename

@@ -18,8 +18,6 @@ const APPROVAL_POLICY_NEVER: &str =
     include_str!("../templates/permissions/approval_policy/never.md");
 const APPROVAL_POLICY_UNLESS_TRUSTED: &str =
     include_str!("../templates/permissions/approval_policy/unless_trusted.md");
-const APPROVAL_POLICY_ON_FAILURE: &str =
-    include_str!("../templates/permissions/approval_policy/on_failure.md");
 const APPROVAL_POLICY_ON_REQUEST_RULE: &str =
     include_str!("../templates/permissions/approval_policy/on_request.md");
 const APPROVAL_POLICY_ON_REQUEST_AUTO_REVIEW: &str =
@@ -231,8 +229,9 @@ fn approval_text(
         AskForApproval::UnlessTrusted => {
             with_request_permissions_tool(APPROVAL_POLICY_UNLESS_TRUSTED)
         }
-        AskForApproval::OnFailure => with_request_permissions_tool(APPROVAL_POLICY_ON_FAILURE),
-        AskForApproval::OnRequest => on_request_instructions(),
+        // OnFailure is deprecated; it runs commands in a sandbox and escalates
+        // to the user only on failure — treat it like OnRequest for prompt text.
+        AskForApproval::OnFailure | AskForApproval::OnRequest => on_request_instructions(),
         AskForApproval::Granular(granular_config) => granular_instructions(
             granular_config,
             exec_policy,

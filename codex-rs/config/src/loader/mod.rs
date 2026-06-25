@@ -7,6 +7,7 @@ mod tests;
 use self::layer_io::LoadedConfigLayers;
 use crate::CONFIG_TOML_FILE;
 use crate::CloudConfigBundleLayers;
+use crate::ConfigLayerSource;
 use crate::ProfileV2Name;
 use crate::RequirementsLayerEntry;
 use crate::compose_requirements;
@@ -26,24 +27,22 @@ use crate::state::ConfigLayerEntry;
 use crate::state::ConfigLayerStack;
 use crate::state::ConfigLoadOptions;
 use crate::state::LoaderOverrides;
-use crate::state::UserConfigLayerSource;
 use crate::strict_config::config_error_from_ignored_toml_value_fields;
 use crate::strict_config::ignored_toml_value_field;
 use crate::strict_config::unknown_feature_toml_value_field;
 use crate::thread_config::ThreadConfigContext;
 use crate::thread_config::ThreadConfigLoader;
-use codex_config_types::ApprovalsReviewer;
-use codex_config_types::ConfigLayerSource;
-use codex_config_types::SandboxMode;
-use codex_config_types::TrustLevel;
 use codex_file_system::ExecutorFileSystem;
-use codex_permission_types::AskForApproval;
+use codex_git_utils::resolve_root_git_project_for_trust;
+use codex_protocol::config_types::ApprovalsReviewer;
+use codex_protocol::config_types::SandboxMode;
+use codex_protocol::config_types::TrustLevel;
+use codex_protocol::protocol::AskForApproval;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::AbsolutePathBufGuard;
 use codex_utils_path_uri::PathUri;
 use dunce::canonicalize as normalize_path;
 use serde::Deserialize;
-use std::ffi::OsStr;
 use std::io;
 use std::path::Path;
 #[cfg(windows)]
@@ -246,7 +245,8 @@ pub async fn load_config_layers_state(
     let base_user_file = AbsolutePathBuf::resolve_path_against_base(CONFIG_TOML_FILE, codex_home);
     let base_user_layer = load_user_config_layer(
         fs,
-        UserConfigLayerSource::unprofiled(base_user_file.clone()),
+        &base_user_file,
+        /*profile*/ None,
         ignore_user_config,
         strict_config,
     )
@@ -276,14 +276,11 @@ pub async fn load_config_layers_state(
     layers.push(base_user_layer);
 
     if active_user_file != base_user_file {
-        let active_user_layer_source = match active_user_profile.clone() {
-            Some(profile) => UserConfigLayerSource::profiled(active_user_file.clone(), profile),
-            None => UserConfigLayerSource::unprofiled(active_user_file.clone()),
-        };
         layers.push(
             load_user_config_layer(
                 fs,
-                active_user_layer_source,
+                &active_user_file,
+                active_user_profile.as_ref(),
                 ignore_user_config,
                 strict_config,
             )
@@ -425,20 +422,30 @@ pub async fn load_config_layers_state(
 
 async fn load_user_config_layer(
     fs: &dyn ExecutorFileSystem,
-    source: UserConfigLayerSource,
+    user_file: &AbsolutePathBuf,
+    profile: Option<&ProfileV2Name>,
     ignore_user_config: bool,
     strict_config: bool,
 ) -> io::Result<ConfigLayerEntry> {
+    let profile = profile.map(ToString::to_string);
     if ignore_user_config {
         return Ok(ConfigLayerEntry::new(
-            source.into(),
+            ConfigLayerSource::User {
+                file: user_file.clone(),
+                profile,
+            },
             TomlValue::Table(toml::map::Map::new()),
         ));
     }
 
-    let user_file = source.file.clone();
-    load_config_toml_for_required_layer(fs, &user_file, strict_config, |config_toml| {
-        ConfigLayerEntry::new(source.clone().into(), config_toml)
+    load_config_toml_for_required_layer(fs, user_file, strict_config, |config_toml| {
+        ConfigLayerEntry::new(
+            ConfigLayerSource::User {
+                file: user_file.clone(),
+                profile: profile.clone(),
+            },
+            config_toml,
+        )
     })
     .await
 }
@@ -686,12 +693,7 @@ fn windows_program_data_dir_from_known_folder() -> io::Result<PathBuf> {
     // SAFETY: SHGetKnownFolderPath initializes path_ptr with a CoTaskMem-allocated,
     // null-terminated UTF-16 string on success.
     let hr = unsafe {
-        SHGetKnownFolderPath(
-            &FOLDERID_ProgramData,
-            known_folder_flags,
-            std::ptr::null_mut(),
-            &mut path_ptr,
-        )
+        SHGetKnownFolderPath(&FOLDERID_ProgramData, known_folder_flags, 0, &mut path_ptr)
     };
     if hr != 0 {
         return Err(io::Error::other(format!(
@@ -1174,63 +1176,6 @@ async fn find_git_checkout_root(
             .is_ok()
         {
             return Some(dir);
-        }
-    }
-    None
-}
-
-async fn resolve_root_git_project_for_trust(
-    fs: &dyn ExecutorFileSystem,
-    cwd: &AbsolutePathBuf,
-) -> Option<AbsolutePathBuf> {
-    let cwd_uri = PathUri::from_abs_path(cwd);
-    let base = match fs.get_metadata(&cwd_uri, /*sandbox*/ None).await {
-        Ok(metadata) if metadata.is_directory => cwd.clone(),
-        _ => cwd.parent()?,
-    };
-    let (repo_root, dot_git) = find_ancestor_git_entry_with_fs(fs, &base).await?;
-    let dot_git_uri = PathUri::from_abs_path(&dot_git);
-    if fs
-        .get_metadata(&dot_git_uri, /*sandbox*/ None)
-        .await
-        .ok()?
-        .is_directory
-    {
-        return Some(repo_root);
-    }
-
-    let git_dir_s = fs
-        .read_file_text(&dot_git_uri, /*sandbox*/ None)
-        .await
-        .ok()?;
-    let git_dir_rel = git_dir_s.trim().strip_prefix("gitdir:")?.trim();
-    if git_dir_rel.is_empty() {
-        return None;
-    }
-
-    let git_dir_path = AbsolutePathBuf::resolve_path_against_base(git_dir_rel, repo_root.as_path());
-    let worktrees_dir = git_dir_path.parent()?;
-    if worktrees_dir.as_path().file_name() != Some(OsStr::new("worktrees")) {
-        return None;
-    }
-
-    let common_dir = worktrees_dir.parent()?;
-    common_dir.parent()
-}
-
-async fn find_ancestor_git_entry_with_fs(
-    fs: &dyn ExecutorFileSystem,
-    base_dir: &AbsolutePathBuf,
-) -> Option<(AbsolutePathBuf, AbsolutePathBuf)> {
-    for dir in base_dir.ancestors() {
-        let dot_git = dir.join(".git");
-        let dot_git_uri = PathUri::from_abs_path(&dot_git);
-        if fs
-            .get_metadata(&dot_git_uri, /*sandbox*/ None)
-            .await
-            .is_ok()
-        {
-            return Some((dir, dot_git));
         }
     }
     None

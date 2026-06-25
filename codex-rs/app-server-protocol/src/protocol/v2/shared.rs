@@ -70,6 +70,7 @@ pub enum NonSteerableTurnKind {
 #[ts(export_to = "v2/")]
 pub enum CodexErrorInfo {
     ContextWindowExceeded,
+    SessionBudgetExceeded,
     UsageLimitExceeded,
     ServerOverloaded,
     CyberPolicy,
@@ -115,6 +116,7 @@ impl From<CoreCodexErrorInfo> for CodexErrorInfo {
     fn from(value: CoreCodexErrorInfo) -> Self {
         match value {
             CoreCodexErrorInfo::ContextWindowExceeded => CodexErrorInfo::ContextWindowExceeded,
+            CoreCodexErrorInfo::SessionBudgetExceeded => CodexErrorInfo::SessionBudgetExceeded,
             CoreCodexErrorInfo::UsageLimitExceeded => CodexErrorInfo::UsageLimitExceeded,
             CoreCodexErrorInfo::ServerOverloaded => CodexErrorInfo::ServerOverloaded,
             CoreCodexErrorInfo::CyberPolicy => CodexErrorInfo::CyberPolicy,
@@ -163,6 +165,9 @@ pub enum AskForApproval {
     #[serde(rename = "untrusted")]
     #[ts(rename = "untrusted")]
     UnlessTrusted,
+    /// DEPRECATED: run commands inside a sandbox; escalate to the user only on
+    /// failure. Prefer `OnRequest` for interactive runs or `Never` for
+    /// non-interactive runs.
     OnFailure,
     OnRequest,
     #[experimental("askForApproval.granular")]

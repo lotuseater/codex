@@ -2,6 +2,7 @@ use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::context::ToolSearchOutput;
 use crate::tools::context::boxed_tool_output;
+use crate::tools::handlers::tool_search_spec::create_tool_search_tool;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
 use bm25::Document;
@@ -17,7 +18,6 @@ use codex_tool_registry_api::ToolSpec;
 use codex_tool_registry_api::coalesce_loadable_tool_specs;
 use codex_tools::ToolSearchEntry;
 use codex_tools::ToolSearchInfo;
-use codex_tools::create_tool_search_tool;
 use std::sync::Arc;
 use std::sync::Mutex;
 use tracing::instrument;
@@ -75,6 +75,16 @@ impl ToolSearchHandler {
         let search_source_infos = search_infos
             .iter()
             .filter_map(|search_info| search_info.source_info.clone())
+            // `ToolSearchInfo::source_info` carries `codex_tools::ToolSearchSourceInfo`,
+            // but the localized `create_tool_search_tool` consumes the
+            // `codex_tool_registry_api` variant; the two structs are field-identical,
+            // so re-pack across the crate boundary.
+            .map(
+                |source_info| codex_tool_registry_api::ToolSearchSourceInfo {
+                    name: source_info.name,
+                    description: source_info.description,
+                },
+            )
             .collect::<Vec<_>>();
         let spec = create_tool_search_tool(&search_source_infos, TOOL_SEARCH_DEFAULT_LIMIT);
         let documents: Vec<Document<usize>> = search_infos

@@ -1,22 +1,7 @@
+use core_test_support::test_codex::local_selections;
 use std::sync::Arc;
 
 use codex_core::CodexThread;
-use codex_core_test_runtime::responses;
-use codex_core_test_runtime::responses::ev_completed;
-use codex_core_test_runtime::responses::ev_completed_with_tokens;
-use codex_core_test_runtime::responses::ev_function_call;
-use codex_core_test_runtime::responses::ev_message_item_added;
-use codex_core_test_runtime::responses::ev_output_text_delta;
-use codex_core_test_runtime::responses::ev_reasoning_item;
-use codex_core_test_runtime::responses::ev_reasoning_item_added;
-use codex_core_test_runtime::responses::ev_response_created;
-use codex_core_test_runtime::streaming_sse::StreamingSseChunk;
-use codex_core_test_runtime::streaming_sse::StreamingSseServer;
-use codex_core_test_runtime::streaming_sse::start_streaming_sse_server;
-use codex_core_test_runtime::test_codex::TestCodex;
-use codex_core_test_runtime::test_codex::test_codex;
-use codex_core_test_runtime::test_codex::turn_permission_fields;
-use codex_core_test_runtime::wait_for_event;
 use codex_features::Feature;
 use codex_protocol::AgentPath;
 use codex_protocol::items::SleepItem;
@@ -29,8 +14,25 @@ use codex_protocol::protocol::Op;
 use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::RolloutLine;
 use codex_protocol::user_input::UserInput;
-use codex_test_support_responses::context_snapshot;
-use codex_test_support_responses::context_snapshot::ContextSnapshotOptions;
+use core_test_support::context_snapshot;
+use core_test_support::context_snapshot::ContextSnapshotOptions;
+use core_test_support::responses;
+use core_test_support::responses::ev_completed;
+use core_test_support::responses::ev_completed_with_tokens;
+use core_test_support::responses::ev_function_call;
+use core_test_support::responses::ev_function_call_with_namespace;
+use core_test_support::responses::ev_message_item_added;
+use core_test_support::responses::ev_output_text_delta;
+use core_test_support::responses::ev_reasoning_item;
+use core_test_support::responses::ev_reasoning_item_added;
+use core_test_support::responses::ev_response_created;
+use core_test_support::streaming_sse::StreamingSseChunk;
+use core_test_support::streaming_sse::StreamingSseServer;
+use core_test_support::streaming_sse::start_streaming_sse_server;
+use core_test_support::test_codex::TestCodex;
+use core_test_support::test_codex::test_codex;
+use core_test_support::test_codex::turn_permission_fields;
+use core_test_support::wait_for_event;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
 use serde_json::from_slice;
@@ -128,8 +130,6 @@ async fn build_codex(server: &StreamingSseServer) -> Arc<CodexThread> {
 async fn submit_user_input(codex: &CodexThread, text: &str) {
     codex
         .submit(Op::UserInput {
-            environments: None,
-
             items: vec![UserInput::Text {
                 text: text.to_string(),
                 text_elements: Vec::new(),
@@ -147,25 +147,29 @@ async fn submit_danger_full_access_user_turn(test: &TestCodex, text: &str) {
     let (sandbox_policy, permission_profile) =
         turn_permission_fields(PermissionProfile::Disabled, test.config.cwd.as_path());
     test.codex
-        .submit(Op::UserTurn {
-            environments: None,
+        .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: text.to_string(),
                 text_elements: Vec::new(),
             }],
             final_output_json_schema: None,
-            cwd: test.config.cwd.to_path_buf(),
-            approval_policy: AskForApproval::Never,
-            approvals_reviewer: None,
-            sandbox_policy,
-            permission_profile,
-            model: test.session_configured.model.clone(),
-            effort: None,
-            summary: None,
-            service_tier: None,
-            context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Standard),
-            collaboration_mode: None,
-            personality: None,
+            responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                environments: Some(local_selections(test.config.cwd.clone())),
+                approval_policy: Some(AskForApproval::Never),
+                sandbox_policy: Some(sandbox_policy),
+                permission_profile,
+                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
+                    mode: codex_protocol::config_types::ModeKind::Default,
+                    settings: codex_protocol::config_types::Settings {
+                        model: test.session_configured.model.clone(),
+                        reasoning_effort: None,
+                        developer_instructions: None,
+                    },
+                }),
+                ..Default::default()
+            },
         })
         .await
         .expect("submit user turn");
@@ -287,11 +291,13 @@ async fn steer_interrupts_wait_agent_and_is_sent_in_follow_up_request() {
     const WAIT_CALL_ID: &str = "wait-call";
     const INITIAL_PROMPT: &str = "wait for an agent";
     const STEER_PROMPT: &str = "stop waiting and continue";
+    const MULTI_AGENT_V2_NAMESPACE: &str = "collaboration";
 
     let first_chunks = vec![
         chunk(ev_response_created("resp-1")),
-        chunk(ev_function_call(
+        chunk(ev_function_call_with_namespace(
             WAIT_CALL_ID,
+            MULTI_AGENT_V2_NAMESPACE,
             "wait_agent",
             r#"{"timeout_ms":10000}"#,
         )),
@@ -531,8 +537,6 @@ async fn injected_user_input_triggers_follow_up_request_with_deltas() {
 
     codex
         .submit(Op::UserInput {
-            environments: None,
-
             items: vec![UserInput::Text {
                 text: "first prompt".into(),
                 text_elements: Vec::new(),
@@ -552,8 +556,6 @@ async fn injected_user_input_triggers_follow_up_request_with_deltas() {
 
     codex
         .submit(Op::UserInput {
-            environments: None,
-
             items: vec![UserInput::Text {
                 text: "second prompt".into(),
                 text_elements: Vec::new(),

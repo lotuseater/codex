@@ -10,6 +10,7 @@ use tracing::instrument;
 use tracing::warn;
 
 use crate::client::ModelClientSession;
+use crate::guardian::routes_approval_to_guardian;
 use crate::responses_metadata::CodexResponsesRequestKind;
 use crate::session::INITIAL_SUBMIT_ID;
 use crate::session::session::Session;
@@ -20,7 +21,6 @@ use codex_otel::STARTUP_PREWARM_DURATION_METRIC;
 use codex_otel::SessionTelemetry;
 use codex_protocol::error::Result as CodexResult;
 use codex_protocol::models::BaseInstructions;
-use codex_protocol::models::ResponseItem;
 
 pub(crate) struct SessionStartupPrewarmHandle {
     task: AbortOnDropHandle<CodexResult<ModelClientSession>>,
@@ -243,15 +243,29 @@ async fn schedule_startup_prewarm_inner(
         prewarm_started_at.elapsed(),
         /*status*/ None,
     );
+    if routes_approval_to_guardian(&startup_turn_context) {
+        let guardian_session = Arc::clone(&session);
+        let guardian_parent_turn = Arc::clone(&startup_turn_context);
+        drop(tokio::spawn(async move {
+            if let Err(err) = guardian_session
+                .guardian_review_session
+                .initialize(Arc::clone(&guardian_session), guardian_parent_turn)
+                .await
+            {
+                warn!("failed to initialize guardian review session: {err:#}");
+            }
+        }));
+    }
     let startup_cancellation_token = CancellationToken::new();
     let built_tools_started_at = Instant::now();
-    let startup_input: Vec<ResponseItem> = Vec::new();
-    let startup_explicitly_enabled_connectors = std::collections::HashSet::new();
+    let step_context = session
+        .capture_step_context(Arc::clone(&startup_turn_context))
+        .await;
     let startup_router = built_tools(
         session.as_ref(),
-        startup_turn_context.as_ref(),
-        &startup_input,
-        &startup_explicitly_enabled_connectors,
+        step_context.as_ref(),
+        &[],
+        &Default::default(),
         None,
         &startup_cancellation_token,
     )
@@ -301,6 +315,5 @@ async fn schedule_startup_prewarm_inner(
         websocket_warmup_started_at.elapsed(),
         /*status*/ None,
     );
-
     Ok(client_session)
 }

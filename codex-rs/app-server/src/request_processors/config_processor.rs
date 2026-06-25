@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::app_catalog_protocol::app_infos_to_v2;
+use crate::app_info::app_info_to_api;
 use crate::config_manager::ConfigManager;
 use crate::config_manager_service::ConfigManagerError;
 use crate::error_code::internal_error;
@@ -262,7 +262,7 @@ impl ConfigRequestProcessor {
             outgoing
                 .send_server_notification(ServerNotification::AppListUpdated(
                     AppListUpdatedNotification {
-                        data: app_infos_to_v2(data),
+                        data: data.into_iter().map(app_info_to_api).collect(),
                     },
                 ))
                 .await;
@@ -383,15 +383,14 @@ impl ConfigRequestProcessor {
         &self,
         pending_changes: std::collections::BTreeMap<String, bool>,
     ) {
+        let plugins_manager = self.thread_manager.plugins_manager();
         for (plugin_id, enabled) in pending_changes {
             let Ok(plugin_id) = PluginId::parse(&plugin_id) else {
                 continue;
             };
-            let metadata = codex_core_plugins::loader::installed_plugin_telemetry_metadata(
-                self.config_manager.codex_home(),
-                &plugin_id,
-            )
-            .await;
+            let metadata = plugins_manager
+                .telemetry_metadata_for_installed_plugin(&plugin_id)
+                .await;
             if enabled {
                 self.analytics_events_client.track_plugin_enabled(metadata);
             } else {

@@ -9,7 +9,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use arc_swap::ArcSwap;
-use codex_app_server_protocol::JSONRPCNotification;
+use codex_exec_server_protocol::JSONRPCNotification;
 use futures::FutureExt;
 use futures::future::BoxFuture;
 use serde_json::Value;
@@ -58,6 +58,7 @@ use crate::protocol::FS_READ_BLOCK_METHOD;
 use crate::protocol::FS_READ_DIRECTORY_METHOD;
 use crate::protocol::FS_READ_FILE_METHOD;
 use crate::protocol::FS_REMOVE_METHOD;
+use crate::protocol::FS_WALK_METHOD;
 use crate::protocol::FS_WRITE_FILE_METHOD;
 use crate::protocol::FsCanonicalizeParams;
 use crate::protocol::FsCanonicalizeResponse;
@@ -79,6 +80,8 @@ use crate::protocol::FsReadFileParams;
 use crate::protocol::FsReadFileResponse;
 use crate::protocol::FsRemoveParams;
 use crate::protocol::FsRemoveResponse;
+use crate::protocol::FsWalkParams;
+use crate::protocol::FsWalkResponse;
 use crate::protocol::FsWriteFileParams;
 use crate::protocol::FsWriteFileResponse;
 use crate::protocol::HTTP_REQUEST_BODY_DELTA_METHOD;
@@ -620,6 +623,10 @@ impl ExecServerClient {
         self.call(FS_READ_DIRECTORY_METHOD, &params).await
     }
 
+    pub async fn fs_walk(&self, params: FsWalkParams) -> Result<FsWalkResponse, ExecServerError> {
+        self.call(FS_WALK_METHOD, &params).await
+    }
+
     pub async fn fs_remove(
         &self,
         params: FsRemoveParams,
@@ -926,6 +933,7 @@ impl SessionState {
             exit_code: None,
             closed: true,
             failure: Some(message),
+            sandbox_denied: false,
         }
     }
 
@@ -1186,9 +1194,9 @@ async fn handle_server_notification(
 
 #[cfg(test)]
 mod tests {
-    use codex_app_server_protocol::JSONRPCMessage;
-    use codex_app_server_protocol::JSONRPCNotification;
-    use codex_app_server_protocol::JSONRPCResponse;
+    use codex_exec_server_protocol::JSONRPCMessage;
+    use codex_exec_server_protocol::JSONRPCNotification;
+    use codex_exec_server_protocol::JSONRPCResponse;
     use futures::SinkExt;
     use futures::StreamExt;
     use pretty_assertions::assert_eq;
@@ -1869,6 +1877,7 @@ mod tests {
                         exit_code: None,
                         closed: false,
                         failure: None,
+                        sandbox_denied: false,
                     })
                     .expect("read response should serialize"),
                 }),

@@ -81,6 +81,11 @@ pub(crate) struct CodexSpawnArgs {
     pub(crate) agent_control: AgentControl,
     pub(crate) dynamic_tools: Vec<DynamicToolSpec>,
     pub(crate) parent_thread_id: Option<ThreadId>,
+    /// Effective originator for this thread's Responses requests and analytics
+    /// events. Resolved by the thread manager (service-name / persisted /
+    /// inherited / env / default precedence) and threaded into
+    /// `SessionConfiguration.originator`.
+    pub(crate) originator: String,
     pub(crate) inherited_multi_agent_version: Option<MultiAgentVersion>,
     pub(crate) initial_multi_agent_mode: Option<MultiAgentMode>,
     pub(crate) persist_extended_history: bool,
@@ -153,6 +158,7 @@ impl Codex {
             agent_control,
             dynamic_tools,
             parent_thread_id,
+            originator,
             inherited_multi_agent_version,
             initial_multi_agent_mode,
             persist_extended_history: _,
@@ -296,7 +302,12 @@ impl Codex {
         let session_configuration = SessionConfiguration {
             provider: config.model_provider.clone(),
             collaboration_mode: collaboration_mode.clone(),
-            multi_agent_mode,
+            // Upstream made `SessionConfiguration.multi_agent_mode` a non-optional
+            // `MultiAgentMode`; the fork's spawn arg is still `Option` (absent on
+            // most spawn paths). Map `None` to the enum default
+            // (`ExplicitRequestOnly`) so the stored thread mode matches upstream's
+            // convention without dropping any caller-provided mode.
+            multi_agent_mode: multi_agent_mode.unwrap_or_default(),
             model_reasoning_summary: config.model_reasoning_summary,
             service_tier,
             context_budget_mode: config.context_budget_mode,
@@ -334,6 +345,7 @@ impl Codex {
             forked_from_thread_id,
             parent_thread_id,
             thread_source,
+            originator,
             dynamic_tools,
             user_shell_override,
         };

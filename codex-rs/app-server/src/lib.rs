@@ -5,11 +5,11 @@ use codex_arg0::Arg0DispatchPaths;
 use codex_config::ConfigLayerStackOrdering;
 use codex_config::LoaderOverrides;
 use codex_config::NoopThreadConfigLoader;
+use codex_config::RemoteThreadConfigLoader;
 use codex_config::ThreadConfigLoader;
 use codex_core::config::Config;
 use codex_core::resolve_installation_id;
 use codex_login::AuthManager;
-use codex_thread_config_remote::RemoteThreadConfigLoader;
 #[cfg(debug_assertions)]
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_cli::CliConfigOverrides;
@@ -27,7 +27,6 @@ use crate::config_manager::ConfigManager;
 use crate::connection_cleanup::ConnectionCleanupTasks;
 use crate::message_processor::MessageProcessor;
 use crate::message_processor::MessageProcessorArgs;
-use crate::message_processor::thread_store_selection;
 use crate::outgoing_message::ConnectionId;
 use crate::outgoing_message::OutgoingEnvelope;
 use crate::outgoing_message::OutgoingMessageSender;
@@ -48,12 +47,12 @@ use crate::transport::start_remote_control;
 use crate::transport::start_stdio_connection;
 use crate::transport::start_websocket_acceptor;
 use codex_analytics::AppServerRpcTransport;
-use codex_app_server_protocol::ConfigLayerSource;
 use codex_app_server_protocol::ConfigWarningNotification;
 use codex_app_server_protocol::JSONRPCMessage;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::TextPosition as AppTextPosition;
 use codex_app_server_protocol::TextRange as AppTextRange;
+use codex_config::ConfigLayerSource;
 use codex_config::ConfigLoadError;
 use codex_config::TextRange as CoreTextRange;
 use codex_core::ExecPolicyError;
@@ -65,18 +64,15 @@ use codex_feedback::CodexFeedback;
 use codex_protocol::protocol::SessionSource;
 use codex_rollout::state_db as rollout_state_db;
 use codex_state::log_db;
-use codex_thread_store::thread_store_from_config;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
-use tracing::Level;
 use tracing::error;
 use tracing::info;
 use tracing::warn;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Layer;
-use tracing_subscriber::filter::Targets;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::registry::Registry;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -85,11 +81,14 @@ const SQLITE_RECOVERY_CONFIG_WARNING_SUMMARY: &str = "Codex rebuilt its local da
 
 mod analytics_utils;
 mod app_catalog_protocol;
+mod app_info;
 mod app_server_tracing;
 mod attestation;
+mod auth_mode;
 mod bespoke_event_handling;
 mod command_exec;
 mod config;
+mod config_layer;
 mod config_manager;
 mod config_manager_service;
 mod connection_cleanup;
@@ -101,6 +100,7 @@ mod extensions;
 mod filters;
 mod fs_watch;
 mod fuzzy_file_search;
+mod image_url;
 pub mod in_process;
 mod mcp_refresh;
 mod message_processor;
@@ -576,15 +576,10 @@ pub async fn run_main_with_transport_options(
         let effective_toml = config.config_layer_stack.effective_config();
         match effective_toml.try_into() {
             Ok(config_toml) => {
-                let thread_store = thread_store_from_config(
-                    &config,
-                    thread_store_selection(&config),
-                    state_db.clone(),
-                );
                 match codex_core::personality_migration::maybe_migrate_personality(
                     &config.codex_home,
                     &config_toml,
-                    thread_store,
+                    state_db.clone(),
                 )
                 .await
                 {
@@ -674,7 +669,7 @@ pub async fn run_main_with_transport_options(
     let log_db = state_db.clone().map(log_db::start);
     let log_db_layer = log_db
         .clone()
-        .map(|layer| layer.with_filter(Targets::new().with_default(Level::TRACE)));
+        .map(|layer| layer.with_filter(log_db::default_filter()));
     let otel_logger_layer = otel.as_ref().and_then(|o| o.logger_layer());
     let otel_tracing_layer = otel.as_ref().and_then(|o| o.tracing_layer());
     let _ = tracing_subscriber::registry()

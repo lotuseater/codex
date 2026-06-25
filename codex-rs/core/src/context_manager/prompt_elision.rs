@@ -38,6 +38,7 @@ pub(super) fn elide_repeated_large_tool_outputs(items: &mut [ResponseItem]) {
             | ResponseItem::CompactionTrigger { .. }
             | ResponseItem::Compaction { .. }
             | ResponseItem::ContextCompaction { .. }
+            | ResponseItem::AdditionalTools { .. }
             | ResponseItem::Other => {}
         }
     }

@@ -6,7 +6,6 @@ use anyhow::Result;
 use anyhow::anyhow;
 use anyhow::bail;
 use clap::ArgGroup;
-use codex_config::edit::ConfigEditsBuilder;
 use codex_config::types::AppToolApproval;
 use codex_config::types::McpServerConfig;
 use codex_config::types::McpServerOAuthConfig;
@@ -15,6 +14,7 @@ use codex_core::McpManager;
 use codex_core::config::Config;
 use codex_core::config::ConfigBuilder;
 use codex_core::config::LoaderOverrides;
+use codex_core::config::edit::ConfigEditsBuilder;
 use codex_core::config::find_codex_home;
 use codex_core::config::load_global_mcp_servers;
 use codex_core_plugins::PluginsManager;
@@ -640,7 +640,7 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
                 let env_display = format_env_display(env.as_ref(), env_vars);
                 let cwd_display = cwd
                     .as_ref()
-                    .map(|path| path.display().to_string())
+                    .map(ToString::to_string)
                     .filter(|value| !value.is_empty())
                     .unwrap_or_else(|| "-".to_string());
                 let status = format_mcp_status(cfg);
@@ -897,7 +897,7 @@ async fn run_get(config_overrides: &CliConfigOverrides, get_args: GetArgs) -> Re
             println!("  args: {args_display}");
             let cwd_display = cwd
                 .as_ref()
-                .map(|path| path.display().to_string())
+                .map(ToString::to_string)
                 .filter(|value| !value.is_empty())
                 .unwrap_or_else(|| "-".to_string());
             println!("  cwd: {cwd_display}");

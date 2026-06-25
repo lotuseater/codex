@@ -2,16 +2,17 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use codex_protocol::models::ShellCommandToolCallParams;
-use codex_test_support_lightweight::PathBufExt;
-use codex_test_support_lightweight::test_path_buf;
 use pretty_assertions::assert_eq;
 
 use crate::exec_env::create_env;
 use crate::sandboxing::SandboxPermissions;
+use crate::session::step_context::StepContext;
 use crate::session::tests::make_session_and_context;
+use crate::session::turn_context::TurnEnvironment;
 use crate::shell::Shell;
 use crate::shell::ShellType;
 use crate::tools::context::FunctionToolOutput;
+use crate::tools::context::ToolCallSource;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::handlers::ShellCommandHandler;
@@ -21,9 +22,8 @@ use crate::turn_diff_tracker::TurnDiffTracker;
 use codex_shell_command::is_safe_command::is_known_safe_command;
 use codex_shell_command::powershell::try_find_powershell_executable_blocking;
 use codex_shell_command::powershell::try_find_pwsh_executable_blocking;
-use codex_tool_execution_api::ToolCallSource;
+use codex_utils_path_uri::PathUri;
 use serde_json::json;
-use tempfile::TempDir;
 use tokio::sync::Mutex;
 
 /// The logic for is_known_safe_command() has heuristics for known shells,
@@ -70,7 +70,7 @@ fn assert_safe(shell: &Shell, command: &str) {
 }
 
 #[tokio::test]
-async fn shell_command_handler_to_exec_params_uses_session_shell_and_turn_context() {
+async fn shell_command_handler_to_exec_params_uses_selected_environment() {
     let (session, turn_context) = make_session_and_context().await;
 
     let command = "echo hello".to_string();
@@ -80,11 +80,25 @@ async fn shell_command_handler_to_exec_params_uses_session_shell_and_turn_contex
     let sandbox_permissions = SandboxPermissions::RequireEscalated;
     let justification = Some("because tests".to_string());
 
-    let expected_command = session
-        .user_shell()
-        .derive_exec_args(&command, /*use_login_shell*/ true);
-    #[allow(deprecated)]
-    let expected_cwd = turn_context.resolve_path(workdir.clone());
+    let selected_shell = Shell {
+        shell_type: ShellType::Bash,
+        shell_path: PathBuf::from("/selected/bin/bash"),
+    };
+    let expected_command = selected_shell.derive_exec_args(&command, /*use_login_shell*/ true);
+    let selected_cwd = turn_context.config.cwd.join("selected-environment");
+    let expected_cwd = selected_cwd.join("subdir");
+    let selected_environment = TurnEnvironment::new(
+        "selected-environment".to_string(),
+        Arc::clone(
+            &turn_context
+                .environments
+                .primary()
+                .expect("primary environment")
+                .environment,
+        ),
+        PathUri::from_abs_path(&selected_cwd),
+        Some(selected_shell),
+    );
     let expected_env = create_env(
         &turn_context.config.permissions.shell_environment_policy,
         Some(session.thread_id),
@@ -105,7 +119,8 @@ async fn shell_command_handler_to_exec_params_uses_session_shell_and_turn_contex
         &params,
         &session,
         &turn_context,
-        session.thread_id,
+        &selected_environment,
+        expected_cwd.clone(),
         /*allow_login_shell*/ true,
     )
     .expect("login shells should be allowed");
@@ -115,6 +130,10 @@ async fn shell_command_handler_to_exec_params_uses_session_shell_and_turn_contex
     assert_eq!(exec_params.cwd, expected_cwd);
     assert_eq!(exec_params.env, expected_env);
     assert_eq!(exec_params.network, turn_context.network);
+    assert_eq!(
+        exec_params.network_environment_id.as_deref(),
+        Some("selected-environment")
+    );
     assert_eq!(exec_params.expiration.timeout_ms(), timeout_ms);
     assert_eq!(exec_params.sandbox_permissions, sandbox_permissions);
     assert_eq!(exec_params.justification, justification);
@@ -152,6 +171,14 @@ fn shell_command_handler_respects_explicit_login_flag() {
 #[tokio::test]
 async fn shell_command_handler_defaults_to_non_login_when_disallowed() {
     let (session, turn_context) = make_session_and_context().await;
+    let turn_environment = turn_context
+        .environments
+        .primary()
+        .expect("primary environment");
+    let cwd = turn_environment
+        .cwd()
+        .to_abs_path()
+        .expect("native environment cwd");
     let params = ShellCommandToolCallParams {
         command: "echo hello".to_string(),
         workdir: None,
@@ -167,7 +194,8 @@ async fn shell_command_handler_defaults_to_non_login_when_disallowed() {
         &params,
         &session,
         &turn_context,
-        session.thread_id,
+        turn_environment,
+        cwd,
         /*allow_login_shell*/ false,
     )
     .expect("non-login shells should still be allowed");
@@ -193,47 +221,25 @@ fn shell_command_handler_rejects_login_when_disallowed() {
     );
 }
 
-#[test]
-fn detects_codex_checkout_workdir_for_debug_build_guard() {
-    let temp = TempDir::new().expect("temp dir");
-    let repo = temp.path();
-    std::fs::create_dir_all(repo.join("codex-rs")).expect("create codex-rs");
-    std::fs::create_dir_all(repo.join("scripts")).expect("create scripts");
-    std::fs::write(repo.join("codex-rs").join("Cargo.toml"), "[workspace]\n")
-        .expect("write cargo toml");
-    std::fs::write(
-        repo.join("scripts").join("build-local-codex.ps1"),
-        "# build helper\n",
-    )
-    .expect("write build helper");
-
-    assert!(super::shell_command::is_codex_checkout_workdir(repo));
-    assert!(super::shell_command::is_codex_checkout_workdir(
-        &repo.join("codex-rs")
-    ));
-    assert!(!super::shell_command::is_codex_checkout_workdir(
-        temp.path().join("other").as_path()
-    ));
-}
-
 #[tokio::test]
 async fn shell_command_pre_tool_use_payload_uses_raw_command() {
     let payload = ToolPayload::Function {
         arguments: json!({ "command": "printf shell command" }).to_string(),
     };
     let (session, turn) = make_session_and_context().await;
-    let handler =
-        ShellCommandHandler::from(codex_tool_execution_api::ShellCommandBackendConfig::Classic);
+    let turn = Arc::new(turn);
+    let handler = ShellCommandHandler::from(codex_tools::ShellCommandBackendConfig::Classic);
 
     assert_eq!(
         handler.pre_tool_use_payload(&ToolInvocation {
             session: session.into(),
-            turn: turn.into(),
+            step_context: StepContext::for_test(Arc::clone(&turn)),
+            turn,
             cancellation_token: tokio_util::sync::CancellationToken::new(),
             tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
             call_id: "call-42".to_string(),
-            tool_name: codex_tool_execution_api::ToolName::plain("shell_command"),
-            source: codex_tool_execution_api::ToolCallSource::Direct,
+            tool_name: codex_tools::ToolName::plain("shell_command"),
+            source: crate::tools::context::ToolCallSource::Direct,
             payload,
         }),
         Some(crate::tools::registry::PreToolUsePayload {
@@ -253,16 +259,17 @@ async fn build_post_tool_use_payload_uses_tool_output_wire_value() {
         success: Some(true),
         post_tool_use_response: Some(json!("shell output")),
     };
-    let handler =
-        ShellCommandHandler::from(codex_tool_execution_api::ShellCommandBackendConfig::Classic);
+    let handler = ShellCommandHandler::from(codex_tools::ShellCommandBackendConfig::Classic);
     let (session, turn) = make_session_and_context().await;
+    let turn = Arc::new(turn);
     let invocation = ToolInvocation {
         session: session.into(),
-        turn: turn.into(),
+        step_context: StepContext::for_test(Arc::clone(&turn)),
+        turn,
         cancellation_token: tokio_util::sync::CancellationToken::new(),
         tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
         call_id: "call-42".to_string(),
-        tool_name: codex_tool_execution_api::ToolName::plain("shell_command"),
+        tool_name: codex_tools::ToolName::plain("shell_command"),
         source: ToolCallSource::Direct,
         payload,
     };

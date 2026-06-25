@@ -101,10 +101,10 @@ impl Default for MultiAgentV2Config {
 /// the fork keeps resolved config types (`crate::config::*`) separate from the raw
 /// TOML feature types (`codex_features::*Toml`). Resolution lives in
 /// [`super::resolved::resolve_rollout_budget_config`].
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct RolloutBudgetConfig {
     pub limit_tokens: i64,
-    pub reminder_interval_tokens: i64,
+    pub reminder_at_remaining_tokens: Vec<i64>,
     pub sampling_token_weight: f64,
     pub prefill_token_weight: f64,
 }
@@ -115,14 +115,14 @@ pub struct RolloutBudgetConfig {
 /// Resolution lives in [`super::resolved::resolve_current_time_reminder_config`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct CurrentTimeReminderConfig {
-    pub reminder_interval_model_requests: u64,
+    pub reminder_interval_seconds: u64,
     pub clock_source: CurrentTimeSource,
 }
 
 impl Default for CurrentTimeReminderConfig {
     fn default() -> Self {
         Self {
-            reminder_interval_model_requests: 1,
+            reminder_interval_seconds: 1,
             clock_source: CurrentTimeSource::System,
         }
     }

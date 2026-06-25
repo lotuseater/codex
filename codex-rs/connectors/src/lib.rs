@@ -5,19 +5,22 @@ use std::sync::Mutex as StdMutex;
 use std::time::Duration;
 use std::time::Instant;
 
-use codex_app_catalog_types::AppBranding;
-use codex_app_catalog_types::AppInfo;
-use codex_app_catalog_types::AppMetadata;
 use serde::Deserialize;
 use serde::Serialize;
 
 pub mod accessible;
+mod app_info;
 mod app_tool_policy;
 mod directory_cache;
 pub mod filter;
 pub mod merge;
 pub mod metadata;
 
+pub use app_info::AppBranding;
+pub use app_info::AppInfo;
+pub use app_info::AppMetadata;
+pub use app_info::AppReview;
+pub use app_info::AppScreenshot;
 pub use app_tool_policy::AppToolPolicy;
 pub use app_tool_policy::AppToolPolicyEvaluator;
 pub use app_tool_policy::AppToolPolicyInput;
@@ -26,14 +29,6 @@ pub use app_tool_policy::apps_config_from_layer_stack;
 pub use directory_cache::ConnectorDirectoryCacheContext;
 
 pub const CONNECTORS_CACHE_TTL: Duration = Duration::from_secs(3600);
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ConnectorDirectoryFetchPolicy {
-    /// Return unexpired in-memory results before fetching from ChatGPT.
-    UseCache,
-    /// Fetch from ChatGPT even when an in-memory result is still valid.
-    ForceRefresh,
-}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConnectorDirectoryCacheKey {
@@ -144,38 +139,13 @@ pub async fn list_all_connectors_with_options<F, Fut>(
     cache_context: ConnectorDirectoryCacheContext,
     is_workspace_account: bool,
     force_refetch: bool,
-    fetch_page: F,
-) -> anyhow::Result<Vec<AppInfo>>
-where
-    F: FnMut(String) -> Fut,
-    Fut: Future<Output = anyhow::Result<DirectoryListResponse>>,
-{
-    // Compatibility bridge for existing app-server/chatgpt callsites.
-    let fetch_policy = if force_refetch {
-        ConnectorDirectoryFetchPolicy::ForceRefresh
-    } else {
-        ConnectorDirectoryFetchPolicy::UseCache
-    };
-    list_all_connectors_with_fetch_policy(
-        cache_context,
-        is_workspace_account,
-        fetch_policy,
-        fetch_page,
-    )
-    .await
-}
-
-pub async fn list_all_connectors_with_fetch_policy<F, Fut>(
-    cache_context: ConnectorDirectoryCacheContext,
-    is_workspace_account: bool,
-    fetch_policy: ConnectorDirectoryFetchPolicy,
     mut fetch_page: F,
 ) -> anyhow::Result<Vec<AppInfo>>
 where
     F: FnMut(String) -> Fut,
     Fut: Future<Output = anyhow::Result<DirectoryListResponse>>,
 {
-    if fetch_policy == ConnectorDirectoryFetchPolicy::UseCache
+    if !force_refetch
         && let Some(cached_connectors) =
             unexpired_directory_connectors_in_memory(&cache_context.cache_key)
     {
@@ -560,10 +530,10 @@ mod tests {
         let codex_home = TempDir::new()?;
         let cache_context = cache_context(&codex_home, "shared");
 
-        let first = list_all_connectors_with_fetch_policy(
+        let first = list_all_connectors_with_options(
             cache_context.clone(),
             /*is_workspace_account*/ false,
-            ConnectorDirectoryFetchPolicy::UseCache,
+            /*force_refetch*/ false,
             move |_path| {
                 let call_counter = Arc::clone(&call_counter);
                 async move {
@@ -577,10 +547,10 @@ mod tests {
         )
         .await?;
 
-        let second = list_all_connectors_with_fetch_policy(
+        let second = list_all_connectors_with_options(
             cache_context,
             /*is_workspace_account*/ false,
-            ConnectorDirectoryFetchPolicy::UseCache,
+            /*force_refetch*/ false,
             move |_path| async move {
                 anyhow::bail!("cache should have been used");
             },
@@ -605,10 +575,10 @@ mod tests {
         let calls = Arc::new(AtomicUsize::new(0));
         let call_counter = Arc::clone(&calls);
 
-        let connectors = list_all_connectors_with_fetch_policy(
+        let connectors = list_all_connectors_with_options(
             cache_context,
             /*is_workspace_account*/ true,
-            ConnectorDirectoryFetchPolicy::ForceRefresh,
+            /*force_refetch*/ true,
             move |path| {
                 let call_counter = Arc::clone(&call_counter);
                 async move {
@@ -683,10 +653,10 @@ mod tests {
         let calls = Arc::new(AtomicUsize::new(0));
         let call_counter = Arc::clone(&calls);
 
-        let first = list_all_connectors_with_fetch_policy(
+        let first = list_all_connectors_with_options(
             cache_context.clone(),
             /*is_workspace_account*/ false,
-            ConnectorDirectoryFetchPolicy::UseCache,
+            /*force_refetch*/ false,
             move |_path| {
                 let call_counter = Arc::clone(&call_counter);
                 async move {
@@ -723,10 +693,10 @@ mod tests {
         let calls = Arc::new(AtomicUsize::new(0));
         let call_counter = Arc::clone(&calls);
 
-        list_all_connectors_with_fetch_policy(
+        list_all_connectors_with_options(
             cache_context.clone(),
             /*is_workspace_account*/ false,
-            ConnectorDirectoryFetchPolicy::UseCache,
+            /*force_refetch*/ false,
             move |_path| {
                 let call_counter = Arc::clone(&call_counter);
                 async move {
@@ -752,10 +722,10 @@ mod tests {
         );
         let refreshed_calls = Arc::clone(&calls);
 
-        let refreshed = list_all_connectors_with_fetch_policy(
+        let refreshed = list_all_connectors_with_options(
             cache_context,
             /*is_workspace_account*/ false,
-            ConnectorDirectoryFetchPolicy::UseCache,
+            /*force_refetch*/ false,
             move |_path| {
                 let call_counter = Arc::clone(&refreshed_calls);
                 async move {

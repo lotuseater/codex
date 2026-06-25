@@ -125,6 +125,7 @@ async fn responses_stream_includes_subagent_header_on_review() {
         thread_id,
         provider.clone(),
         session_source.clone(),
+        "test_originator".to_string(),
         config.model_verbosity,
         /*enable_request_compression*/ false,
         /*include_timing_metrics*/ false,
@@ -143,7 +144,7 @@ async fn responses_stream_includes_subagent_header_on_review() {
             text: "hello".into(),
         }],
         phase: None,
-        metadata: None,
+        internal_chat_message_metadata_passthrough: None,
     }];
 
     let mut stream = client_session
@@ -257,6 +258,7 @@ async fn responses_stream_includes_subagent_header_on_other() {
         thread_id,
         provider.clone(),
         session_source.clone(),
+        "test_originator".to_string(),
         config.model_verbosity,
         /*enable_request_compression*/ false,
         /*include_timing_metrics*/ false,
@@ -275,7 +277,7 @@ async fn responses_stream_includes_subagent_header_on_other() {
             text: "hello".into(),
         }],
         phase: None,
-        metadata: None,
+        internal_chat_message_metadata_passthrough: None,
     }];
 
     let mut stream = client_session
@@ -375,6 +377,7 @@ async fn responses_respects_model_info_overrides_from_config() {
         thread_id,
         provider.clone(),
         session_source.clone(),
+        "test_originator".to_string(),
         config.model_verbosity,
         /*enable_request_compression*/ false,
         /*include_timing_metrics*/ false,
@@ -393,7 +396,7 @@ async fn responses_respects_model_info_overrides_from_config() {
             text: "hello".into(),
         }],
         phase: None,
-        metadata: None,
+        internal_chat_message_metadata_passthrough: None,
     }];
 
     let mut stream = client_session

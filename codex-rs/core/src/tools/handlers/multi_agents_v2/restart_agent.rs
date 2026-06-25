@@ -2,7 +2,7 @@ use super::resume_agent::persisted_agent_metadata;
 use super::resume_agent::resolve_resume_target;
 use super::resume_agent::try_resume_closed_agent;
 use super::*;
-use crate::tools::handlers::multi_agents_spec::create_restart_agent_tool;
+use crate::tools::handlers::multi_agents_spec::create_resume_agent_tool;
 use crate::turn_timing::now_unix_timestamp_ms;
 use codex_protocol::error::CodexErr;
 use codex_protocol::openai_models::ReasoningEffort;
@@ -19,7 +19,7 @@ impl ToolExecutor<ToolInvocation> for Handler {
     }
 
     fn spec(&self) -> Option<ToolSpec> {
-        Some(create_restart_agent_tool())
+        Some(create_resume_agent_tool())
     }
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {

@@ -256,7 +256,7 @@ fn subagent_activity_summary(item: &ThreadItem) -> Option<SubagentActivitySummar
         }
         ThreadItem::ImageView { path, .. } => Some(SubagentActivitySummary {
             title: "Viewed image",
-            details: vec![compact_path_core(&path.display().to_string()).into()],
+            details: vec![compact_path_core(path.as_str()).into()],
         }),
         ThreadItem::ImageGeneration {
             status,

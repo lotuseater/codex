@@ -36,6 +36,7 @@ use codex_config_types::Personality;
 use codex_config_types::ReasoningEffort;
 use codex_config_types::ReasoningSummary;
 use codex_config_types::SandboxMode;
+use codex_config_types::SandboxSettings;
 use codex_config_types::Tools;
 use codex_config_types::TrustLevel;
 use codex_config_types::UserSavedConfig;
@@ -267,9 +268,9 @@ pub struct ConfigToml {
     /// Defaults to `true` when omitted.
     pub auto_compact_enabled: Option<bool>,
 
-    /// When set, restricts ChatGPT login to a specific workspace identifier.
+    /// When set, restricts ChatGPT login to one or more workspace identifiers.
     #[serde(default)]
-    pub forced_chatgpt_workspace_id: Option<String>,
+    pub forced_chatgpt_workspace_id: Option<ForcedChatgptWorkspaceIds>,
 
     /// When set, restricts the login mechanism users may use.
     #[serde(default)]
@@ -692,8 +693,17 @@ impl From<ConfigToml> for UserSavedConfig {
         Self {
             approval_policy: config_toml.approval_policy,
             sandbox_mode: config_toml.sandbox_mode,
-            sandbox_settings: config_toml.sandbox_workspace_write.map(From::from),
-            forced_chatgpt_workspace_id: config_toml.forced_chatgpt_workspace_id,
+            sandbox_settings: config_toml
+                .sandbox_workspace_write
+                .map(|w| SandboxSettings {
+                    writable_roots: w.writable_roots,
+                    network_access: Some(w.network_access),
+                    exclude_tmpdir_env_var: Some(w.exclude_tmpdir_env_var),
+                    exclude_slash_tmp: Some(w.exclude_slash_tmp),
+                }),
+            forced_chatgpt_workspace_id: config_toml
+                .forced_chatgpt_workspace_id
+                .map(|v| v.into_vec().join(",")),
             forced_login_method: config_toml.forced_login_method,
             model: config_toml.model,
             model_reasoning_effort: config_toml.model_reasoning_effort,

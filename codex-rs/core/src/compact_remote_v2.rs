@@ -22,6 +22,7 @@ use crate::responses_metadata::CompactionTurnMetadata;
 use crate::responses_retry::ResponsesStreamRequest;
 use crate::responses_retry::handle_retryable_response_stream_error;
 use crate::session::session::Session;
+use crate::session::step_context::StepContext;
 use crate::session::turn::built_tools;
 use crate::session::turn_context::TurnContext;
 use codex_analytics::CompactionImplementation;
@@ -56,7 +57,7 @@ const MAX_REMOTE_COMPACTION_V2_STREAM_RETRIES: u64 = 2;
 
 pub(crate) async fn run_inline_remote_auto_compact_task(
     sess: Arc<Session>,
-    turn_context: Arc<TurnContext>,
+    step_context: Arc<StepContext>,
     client_session: &mut ModelClientSession,
     initial_context_injection: InitialContextInjection,
     reason: CompactionReason,
@@ -64,7 +65,7 @@ pub(crate) async fn run_inline_remote_auto_compact_task(
 ) -> CodexResult<()> {
     run_remote_compact_task_inner(
         &sess,
-        &turn_context,
+        &step_context,
         Some(client_session),
         initial_context_injection,
         CompactionTrigger::Auto,
@@ -78,6 +79,8 @@ pub(crate) async fn run_remote_compact_task(
     sess: Arc<Session>,
     turn_context: Arc<TurnContext>,
 ) -> CodexResult<()> {
+    // Standalone compaction is its own request boundary, so it captures a fresh step.
+    let step_context = sess.capture_step_context(Arc::clone(&turn_context)).await;
     let start_event = EventMsg::TurnStarted(TurnStartedEvent {
         turn_id: turn_context.sub_id.clone(),
         trace_id: turn_context.trace_id.clone(),
@@ -89,7 +92,7 @@ pub(crate) async fn run_remote_compact_task(
 
     run_remote_compact_task_inner(
         &sess,
-        &turn_context,
+        &step_context,
         /*client_session*/ None,
         InitialContextInjection::DoNotInject,
         CompactionTrigger::Manual,
@@ -101,13 +104,14 @@ pub(crate) async fn run_remote_compact_task(
 
 async fn run_remote_compact_task_inner(
     sess: &Arc<Session>,
-    turn_context: &Arc<TurnContext>,
+    step_context: &Arc<StepContext>,
     client_session: Option<&mut ModelClientSession>,
     initial_context_injection: InitialContextInjection,
     trigger: CompactionTrigger,
     reason: CompactionReason,
     phase: CompactionPhase,
 ) -> CodexResult<()> {
+    let turn_context = &step_context.turn;
     let compaction_metadata = CompactionTurnMetadata::new(
         trigger,
         reason,
@@ -145,7 +149,7 @@ async fn run_remote_compact_task_inner(
     }
     let result = run_remote_compact_task_inner_impl(
         sess,
-        turn_context,
+        step_context,
         client_session,
         initial_context_injection,
         compaction_metadata,
@@ -166,28 +170,29 @@ async fn run_remote_compact_task_inner(
     attempt
         .track(sess.as_ref(), status, codex_error, analytics_details)
         .await;
-    if matches!(&result, Err(CodexErr::TurnAborted)) {
-        return result;
+    match result {
+        Ok(()) => Ok(()),
+        Err(err @ CodexErr::TurnAborted) => Err(err),
+        Err(err) => {
+            sess.track_turn_codex_error(turn_context, &err);
+            let event = EventMsg::Error(
+                err.to_error_event(Some("Error running remote compact task".to_string())),
+            );
+            sess.send_event(turn_context, event).await;
+            Err(err)
+        }
     }
-    if let Err(err) = result {
-        sess.track_turn_codex_error(turn_context, &err);
-        let event = EventMsg::Error(
-            err.to_error_event(Some("Error running remote compact task".to_string())),
-        );
-        sess.send_event(turn_context, event).await;
-        return Err(err);
-    }
-    Ok(())
 }
 
 async fn run_remote_compact_task_inner_impl(
     sess: &Arc<Session>,
-    turn_context: &Arc<TurnContext>,
+    step_context: &Arc<StepContext>,
     client_session: Option<&mut ModelClientSession>,
     initial_context_injection: InitialContextInjection,
     compaction_metadata: CompactionTurnMetadata,
     analytics_details: &mut CompactionAnalyticsDetails,
 ) -> CodexResult<()> {
+    let turn_context = &step_context.turn;
     let context_compaction_item = ContextCompactionItem::new();
     let compaction_trace = sess.services.rollout_thread_trace.compaction_trace_context(
         turn_context.sub_id.as_str(),
@@ -230,19 +235,20 @@ async fn run_remote_compact_task_inner_impl(
     let mut task_memory =
         crate::task_memory::CompactionTaskMemory::from_history(&trace_input_history);
     let prompt_input = history.for_prompt(&turn_context.model_info.input_modalities);
-    let explicitly_enabled_connectors = HashSet::new();
-    let cancellation_token = CancellationToken::new();
     let tool_router = built_tools(
         sess.as_ref(),
-        turn_context.as_ref(),
-        &prompt_input,
-        &explicitly_enabled_connectors,
+        step_context.as_ref(),
+        // Compaction builds the full tool router; it has no user-mention input to drive
+        // per-input connector enablement, no explicit per-turn connectors, and loads no
+        // skills (session-level connector selection is still applied inside `built_tools`).
+        &[],
+        &HashSet::new(),
         None,
-        &cancellation_token,
+        &CancellationToken::new(),
     )
     .await?;
     let mut input = prompt_input.clone();
-    input.push(ResponseItem::CompactionTrigger { metadata: None });
+    input.push(ResponseItem::CompactionTrigger {});
     let prompt = Prompt {
         input,
         tools: tool_router.model_visible_specs(),
@@ -301,25 +307,29 @@ async fn run_remote_compact_task_inner_impl(
     let (compacted_history, retained_images) =
         build_v2_compacted_history(&prompt_input, compaction_output);
     analytics_details.retained_image_count = Some(retained_images);
-    let (new_window_number, new_window_id) = sess.advance_auto_compact_window().await;
-    let new_history = process_compacted_history(
+    let (new_window_number, new_window_ids) = sess.advance_auto_compact_window().await;
+    let (new_history, _world_state_baseline) = process_compacted_history(
         sess.as_ref(),
         turn_context.as_ref(),
         compacted_history,
-        initial_context_injection,
+        &initial_context_injection,
         &mut task_memory,
     )
     .await;
 
     let reference_context_item = match initial_context_injection {
         InitialContextInjection::DoNotInject => None,
-        InitialContextInjection::BeforeLastUserMessage => Some(turn_context.to_turn_context_item()),
+        InitialContextInjection::BeforeLastUserMessage(_) => {
+            Some(turn_context.to_turn_context_item())
+        }
     };
     let compacted_item = CompactedItem {
         message: String::new(),
         replacement_history: Some(new_history.clone()),
         window_number: Some(new_window_number),
-        window_id: Some(new_window_id),
+        first_window_id: Some(new_window_ids.first_window_id.to_string()),
+        previous_window_id: new_window_ids.previous_window_id.map(|id| id.to_string()),
+        window_id: Some(new_window_ids.window_id.to_string()),
     };
     compaction_trace.record_installed(&CompactionCheckpointTracePayload {
         input_history: &trace_input_history,
@@ -531,7 +541,7 @@ fn truncate_message_text_to_token_budget(
         role,
         content,
         phase,
-        metadata,
+        internal_chat_message_metadata_passthrough: metadata,
     } = item
     else {
         return Some(item);
@@ -570,7 +580,7 @@ fn truncate_message_text_to_token_budget(
         role,
         content: truncated_content,
         phase,
-        metadata,
+        internal_chat_message_metadata_passthrough: metadata,
     })
 }
 
@@ -591,7 +601,7 @@ mod tests {
                 text: text.to_string(),
             }],
             phase,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         }
     }
 
@@ -623,18 +633,18 @@ mod tests {
                 namespace: None,
                 arguments: "{}".to_string(),
                 call_id: "call_1".to_string(),
-                metadata: None,
+                internal_chat_message_metadata_passthrough: None,
             },
             ResponseItem::Compaction {
                 id: None,
                 encrypted_content: "old".to_string(),
-                metadata: None,
+                internal_chat_message_metadata_passthrough: None,
             },
         ];
         let output = ResponseItem::Compaction {
             id: None,
             encrypted_content: "new".to_string(),
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         };
 
         let (history, _) = build_v2_compacted_history(&input, output.clone());
@@ -663,7 +673,7 @@ mod tests {
         let output = ResponseItem::Compaction {
             id: None,
             encrypted_content: "new".to_string(),
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         };
 
         let (history, _) = build_v2_compacted_history(&input, output.clone());
@@ -690,12 +700,12 @@ mod tests {
                 },
             ],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         }];
         let output = ResponseItem::Compaction {
             id: None,
             encrypted_content: "new".to_string(),
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         };
 
         let (_, retained_image_count) = build_v2_compacted_history(&input, output);
@@ -743,7 +753,7 @@ mod tests {
                 },
             ],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         };
 
         let truncated =
@@ -767,7 +777,7 @@ mod tests {
                     },
                 ],
                 phase: None,
-                metadata: None,
+                internal_chat_message_metadata_passthrough: None,
             }]
         );
     }
@@ -782,7 +792,7 @@ mod tests {
                 detail: None,
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         };
         let newest = message("user", "new", /*phase*/ None);
         let retained = vec![
@@ -807,7 +817,7 @@ mod tests {
                 detail: None,
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         };
         let newest = message("user", "new", /*phase*/ None);
         let retained = vec![image_only_message, newest.clone()];
@@ -823,7 +833,7 @@ mod tests {
         let compaction = ResponseItem::Compaction {
             id: None,
             encrypted_content: "encrypted".to_string(),
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         };
         let stream = response_stream(vec![
             Ok(ResponseEvent::OutputItemDone(message(

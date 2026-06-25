@@ -1,18 +1,18 @@
 use std::time::Duration;
 
 use anyhow::Result;
-use codex_core_test_runtime::assert_regex_match;
-use codex_core_test_runtime::responses::ev_assistant_message;
-use codex_core_test_runtime::responses::ev_completed;
-use codex_core_test_runtime::responses::ev_function_call;
-use codex_core_test_runtime::responses::ev_response_created;
-use codex_core_test_runtime::responses::mount_sse_sequence;
-use codex_core_test_runtime::responses::sse;
-use codex_core_test_runtime::skip_if_no_network;
-use codex_core_test_runtime::skip_if_windows;
-use codex_core_test_runtime::test_codex::TestCodexBuilder;
-use codex_core_test_runtime::test_codex::TestCodexHarness;
-use codex_core_test_runtime::test_codex::test_codex;
+use core_test_support::assert_regex_match;
+use core_test_support::responses::ev_assistant_message;
+use core_test_support::responses::ev_completed;
+use core_test_support::responses::ev_function_call;
+use core_test_support::responses::ev_response_created;
+use core_test_support::responses::mount_sse_sequence;
+use core_test_support::responses::sse;
+use core_test_support::skip_if_host_windows;
+use core_test_support::skip_if_no_network;
+use core_test_support::test_codex::TestCodexBuilder;
+use core_test_support::test_codex::TestCodexHarness;
+use core_test_support::test_codex::test_codex;
 use serde_json::json;
 use test_case::test_case;
 
@@ -181,7 +181,7 @@ async fn multi_line_output_with_login() -> anyhow::Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pipe_output_with_login() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
-    skip_if_windows!(Ok(()));
+    skip_if_host_windows!(Ok(()));
 
     let harness = shell_command_harness_with(|builder| builder.with_model("gpt-5.4")).await?;
 
@@ -204,7 +204,7 @@ async fn pipe_output_with_login() -> anyhow::Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pipe_output_without_login() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
-    skip_if_windows!(Ok(()));
+    skip_if_host_windows!(Ok(()));
 
     let harness = shell_command_harness_with(|builder| builder.with_model("gpt-5.4")).await?;
 

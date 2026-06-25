@@ -1,5 +1,4 @@
 use super::AuthRequestTelemetryContext;
-use super::CompactConversationRequestSettings;
 use super::ModelClient;
 use super::PendingUnauthorizedRetry;
 use super::UnauthorizedRecoveryExecution;
@@ -11,31 +10,30 @@ use super::X_OPENAI_SUBAGENT_HEADER;
 use crate::AttestationContext;
 use crate::AttestationProvider;
 use crate::GenerateAttestationFuture;
-use crate::client_common::Prompt;
 use crate::responses_metadata::CodexResponsesMetadata;
 use crate::test_support::TestCodexResponsesRequestKind;
 use crate::test_support::responses_metadata as test_responses_metadata;
 use codex_api::ApiError;
 use codex_api::ResponseEvent;
+use codex_api::TransportError;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_model_provider::BearerAuthProvider;
+use codex_model_provider::SharedModelProvider;
+use codex_model_provider::create_model_provider;
 use codex_model_provider_info::CHATGPT_CODEX_BASE_URL;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::WireApi;
 use codex_model_provider_info::create_oss_provider_with_base_url;
 use codex_otel::SessionTelemetry;
 use codex_protocol::ThreadId;
-use codex_protocol::config_types::ReasoningSummary;
-use codex_protocol::models::BaseInstructions;
+use codex_protocol::auth::AuthMode;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::protocol::InternalSessionSource;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
-use codex_protocol::protocol::TokenUsage;
-use codex_rollout_trace::CompactionTraceContext;
 use codex_rollout_trace::ExecutionStatus;
 use codex_rollout_trace::InferenceTraceAttempt;
 use codex_rollout_trace::InferenceTraceContext;
@@ -57,7 +55,6 @@ use std::task::Context;
 use std::task::Poll;
 use std::time::Duration;
 use tempfile::TempDir;
-use tokio::io::AsyncWriteExt;
 use tokio::sync::Notify;
 use tracing::Event;
 use tracing::Subscriber;
@@ -78,6 +75,7 @@ fn test_model_client(session_source: SessionSource) -> ModelClient {
         thread_id,
         provider,
         session_source,
+        "test_originator".to_string(),
         /*model_verbosity*/ None,
         /*enable_request_compression*/ false,
         /*include_timing_metrics*/ false,
@@ -85,6 +83,10 @@ fn test_model_client(session_source: SessionSource) -> ModelClient {
         /*item_ids_enabled*/ false,
         /*attestation_provider*/ None,
     )
+}
+
+fn test_model_provider() -> SharedModelProvider {
+    test_model_client(SessionSource::Cli).state.provider.clone()
 }
 
 fn test_responses_metadata_for_client(
@@ -109,16 +111,6 @@ fn test_responses_metadata_for_client(
 
 fn test_model_info() -> ModelInfo {
     serde_json::from_value(json!({
-
-    default_service_tier: None,
-
-    use_responses_lite: false,
-
-    auto_review_model_override: None,
-
-    tool_mode: None,
-
-    multi_agent_version: None,
         "slug": "gpt-test",
         "display_name": "gpt-test",
         "description": "desc",
@@ -198,22 +190,6 @@ where
     }
 }
 
-#[derive(Clone)]
-struct EventCollectorLayer {
-    events: Arc<Mutex<Vec<BTreeMap<String, String>>>>,
-}
-
-impl<S> Layer<S> for EventCollectorLayer
-where
-    S: Subscriber + for<'a> LookupSpan<'a>,
-{
-    fn on_event(&self, event: &Event<'_>, _ctx: LayerContext<'_, S>) {
-        let mut visitor = TagCollectorVisitor::default();
-        event.record(&mut visitor);
-        self.events.lock().unwrap().push(visitor.tags);
-    }
-}
-
 fn started_inference_attempt(temp: &TempDir) -> anyhow::Result<InferenceTraceAttempt> {
     let writer = Arc::new(TraceWriter::create(
         temp.path(),
@@ -258,18 +234,7 @@ fn output_message(id: &str, text: &str) -> ResponseItem {
             text: text.to_string(),
         }],
         phase: None,
-        metadata: None,
-    }
-}
-
-fn input_message(text: &str) -> ResponseItem {
-    ResponseItem::Message {
-        id: None,
-        role: "user".to_string(),
-        content: vec![ContentItem::InputText {
-            text: text.to_string(),
-        }],
-        phase: None,
+        internal_chat_message_metadata_passthrough: None,
     }
 }
 
@@ -288,108 +253,6 @@ async fn replay_until_cancelled(temp: &TempDir) -> anyhow::Result<RolloutTrace> 
         rollout = replay_bundle(temp.path())?;
     }
     Ok(rollout)
-}
-
-#[tokio::test]
-async fn compact_conversation_history_logs_serialized_payload_byte_count() {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let _guard = tracing_subscriber::registry()
-        .with(EventCollectorLayer {
-            events: events.clone(),
-        })
-        .set_default();
-
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind one-shot compact endpoint");
-    let base_url = format!("http://{}/v1", listener.local_addr().unwrap());
-    let server = tokio::spawn(async move {
-        let (mut socket, _) = listener
-            .accept()
-            .await
-            .expect("accept compact endpoint request");
-        socket
-            .write_all(
-                b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-            )
-            .await
-            .expect("write compact endpoint response");
-    });
-
-    let provider = create_oss_provider_with_base_url(&base_url, WireApi::Responses);
-    let thread_id = ThreadId::new();
-    let model_client = ModelClient::new(
-        /*auth_manager*/ None,
-        thread_id.into(),
-        thread_id,
-        /*installation_id*/ "11111111-1111-4111-8111-111111111111".to_string(),
-        provider,
-        SessionSource::Exec,
-        /*model_verbosity*/ None,
-        /*enable_request_compression*/ false,
-        /*include_timing_metrics*/ false,
-        /*beta_features_header*/ None,
-        /*attestation_provider*/ None,
-    );
-    let prompt = Prompt {
-        input: vec![input_message("compact this conversation")],
-        base_instructions: BaseInstructions {
-            text: "compact instructions".to_string(),
-        },
-        ..Prompt::default()
-    };
-    let settings = CompactConversationRequestSettings {
-        effort: None,
-        summary: ReasoningSummary::Auto,
-        service_tier: None,
-    };
-    let responses_metadata = test_responses_metadata_for_client(
-        &model_client,
-        None,
-        "test-window".to_string(),
-        None,
-        TestCodexResponsesRequestKind::Turn,
-    );
-
-    let _ = model_client
-        .compact_conversation_history(
-            &prompt,
-            &test_model_info(),
-            /*turn_state*/ None,
-            settings,
-            &test_session_telemetry(),
-            &CompactionTraceContext::disabled(),
-            &responses_metadata,
-        )
-        .await;
-    server.await.expect("compact endpoint server task finished");
-
-    let events = events.lock().unwrap();
-    let compact_request_event = events
-        .iter()
-        .find(|event| {
-            event
-                .get("message")
-                .is_some_and(|message| message.contains("sending remote compaction request"))
-        })
-        .expect("compaction request log event was emitted");
-    let payload_bytes = compact_request_event
-        .get("compact_request_payload_bytes")
-        .expect("compaction request log includes serialized payload bytes");
-    assert!(
-        payload_bytes.starts_with("Some(") && payload_bytes.ends_with(')'),
-        "expected serialized payload byte count, got {payload_bytes:?}"
-    );
-    assert_ne!(
-        payload_bytes, "Some(0)",
-        "serialized payload byte count should be non-zero"
-    );
-    assert_eq!(
-        compact_request_event
-            .get("compact_request_input_items")
-            .map(String::as_str),
-        Some("1")
-    );
 }
 
 struct NotifyAfterEventStream {
@@ -436,6 +299,10 @@ fn build_subagent_headers_sets_internal_memory_consolidation_label() {
         .get(X_OPENAI_SUBAGENT_HEADER)
         .and_then(|value| value.to_str().ok());
     assert_eq!(value, Some("memory_consolidation"));
+    assert_eq!(
+        headers.get("originator"),
+        Some(&http::HeaderValue::from_static("test_originator"))
+    );
 }
 
 #[test]
@@ -536,6 +403,7 @@ async fn dropped_response_stream_traces_cancelled_partial_output() -> anyhow::Re
         api_stream,
         test_session_telemetry(),
         attempt,
+        test_model_provider(),
     );
 
     let observed = stream
@@ -585,6 +453,7 @@ async fn response_stream_records_last_model_feedback_ids() {
         api_stream,
         test_session_telemetry(),
         InferenceTraceAttempt::disabled(),
+        test_model_provider(),
     );
 
     while stream.next().await.is_some() {}
@@ -601,65 +470,36 @@ async fn response_stream_records_last_model_feedback_ids() {
 }
 
 #[tokio::test]
-async fn response_stream_records_incomplete_as_terminal_response() -> anyhow::Result<()> {
-    let item = output_message("msg-1", "partial answer");
-    let token_usage = TokenUsage {
-        input_tokens: 11,
-        cached_input_tokens: 5,
-        output_tokens: 7,
-        reasoning_output_tokens: 3,
-        total_tokens: 18,
-    };
-    let api_stream = futures::stream::iter([
-        Ok(ResponseEvent::OutputItemDone(item.clone())),
-        Ok(ResponseEvent::Incomplete {
-            response_id: "resp-incomplete".to_string(),
-            token_usage: Some(token_usage.clone()),
-            reason: "max_output_tokens".to_string(),
-        }),
-    ]);
-
-    let (mut stream, last_response_rx) = super::map_response_events(
-        Some("req-123".to_string()),
-        api_stream,
-        test_session_telemetry(),
-        InferenceTraceAttempt::disabled(),
+async fn bedrock_unauthorized_error_uses_provider_mapping() {
+    let provider = create_model_provider(
+        ModelProviderInfo::create_amazon_bedrock_provider(/*aws*/ None),
+        /*auth_manager*/ None,
     );
+    let mut auth_recovery = None;
+    let url = "https://bedrock-mantle.us-east-2.api.aws/openai/v1/responses";
+    let error = super::handle_unauthorized(
+        TransportError::Http {
+            status: http::StatusCode::UNAUTHORIZED,
+            url: Some(url.to_string()),
+            headers: None,
+            body: Some(
+                "Signature expired: 20260609T133205Z is now earlier than 20260614T062525Z"
+                    .to_string(),
+            ),
+        },
+        &mut auth_recovery,
+        &test_session_telemetry(),
+        &provider,
+    )
+    .await
+    .expect_err("expired Bedrock signature should fail");
 
-    let observed_item = stream
-        .next()
-        .await
-        .expect("mapped stream should yield output item")?;
-    assert!(matches!(
-        observed_item,
-        ResponseEvent::OutputItemDone(ResponseItem::Message { .. })
-    ));
-
-    let terminal = stream
-        .next()
-        .await
-        .expect("mapped stream should yield incomplete terminal event")?;
-    match terminal {
-        ResponseEvent::Incomplete {
-            response_id,
-            token_usage: observed_usage,
-            reason,
-        } => {
-            assert_eq!(response_id, "resp-incomplete");
-            assert_eq!(observed_usage, Some(token_usage));
-            assert_eq!(reason, "max_output_tokens");
-        }
-        other => panic!("expected incomplete terminal event, got {other:?}"),
-    }
-    assert!(stream.next().await.is_none());
-
-    let last_response = last_response_rx
-        .await
-        .expect("incomplete terminal event should record last response");
-    assert_eq!(last_response.response_id, "resp-incomplete");
-    assert_eq!(last_response.items_added, vec![item]);
-
-    Ok(())
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "Amazon Bedrock rejected the request because its AWS signature has expired. Refresh your AWS credentials and retry. If `AWS_BEARER_TOKEN_BEDROCK` is set, update or unset it, then restart Codex, url: {url}"
+        )
+    );
 }
 
 #[tokio::test]
@@ -688,6 +528,7 @@ async fn dropped_backpressured_response_stream_traces_cancelled_partial_output()
         api_stream,
         test_session_telemetry(),
         attempt,
+        test_model_provider(),
     );
 
     // Fill the mapper channel with non-terminal events, then yield one output
@@ -713,9 +554,8 @@ async fn dropped_backpressured_response_stream_traces_cancelled_partial_output()
 
 #[test]
 fn auth_request_telemetry_context_tracks_attached_auth_and_retry_phase() {
-    let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
     let auth_context = AuthRequestTelemetryContext::new(
-        Some(&auth),
+        Some(AuthMode::Chatgpt),
         &BearerAuthProvider::for_test(Some("access-token"), Some("workspace-123")),
         PendingUnauthorizedRetry::from_recovery(UnauthorizedRecoveryExecution {
             mode: "managed",
@@ -723,7 +563,7 @@ fn auth_request_telemetry_context_tracks_attached_auth_and_retry_phase() {
         }),
     );
 
-    assert_eq!(auth_context.auth_mode, Some(RuntimeAuthMode::Chatgpt));
+    assert_eq!(auth_context.auth_mode, Some("Chatgpt"));
     assert!(auth_context.auth_header_attached);
     assert_eq!(auth_context.auth_header_name, Some("authorization"));
     assert!(auth_context.retry_after_unauthorized);
@@ -771,6 +611,7 @@ fn model_client_with_counting_attestation(
         ThreadId::new(),
         provider,
         SessionSource::Exec,
+        "test_originator".to_string(),
         /*model_verbosity*/ None,
         /*enable_request_compression*/ false,
         /*include_timing_metrics*/ false,

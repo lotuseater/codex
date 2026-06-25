@@ -17,6 +17,8 @@ use crate::session::resolve_multi_agent_version;
 use crate::tasks::InterruptedTurnHistoryMarker;
 use crate::tasks::interrupted_turn_history_marker;
 use codex_analytics::AnalyticsEventsClient;
+use codex_app_server_protocol::ThreadHistoryBuilder;
+use codex_app_server_protocol::TurnStatus;
 use codex_core_plugins::PluginsManager;
 use codex_exec_server::EnvironmentManager;
 use codex_extension_api::ExtensionDataInit;
@@ -27,8 +29,11 @@ use codex_extension_api::empty_extension_registry;
 use codex_features::Feature;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
+use codex_login::default_client::CODEX_INTERNAL_ORIGINATOR_OVERRIDE_ENV_VAR;
+use codex_login::default_client::originator;
 use codex_model_provider::create_model_provider;
 use codex_model_provider_info::ModelProviderInfo;
+use codex_model_provider_info::OPENAI_PROVIDER_ID;
 use codex_models_manager::manager::RefreshStrategy;
 use codex_models_manager::manager::SharedModelsManager;
 use codex_protocol::ThreadId;
@@ -54,14 +59,17 @@ use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::protocol::W3cTraceContext;
 use codex_rollout::state_db::StateDbHandle;
 use codex_state::DirectionalThreadSpawnEdgeStatus;
+use codex_thread_store::InMemoryThreadStore;
+use codex_thread_store::LocalThreadStore;
+use codex_thread_store::LocalThreadStoreConfig;
+use codex_thread_store::ThreadStore;
+use codex_thread_store::ThreadStoreError;
 use codex_thread_store_api::LiveThreadFactory;
 use codex_thread_store_api::ReadThreadByRolloutPathParams;
 use codex_thread_store_api::ReadThreadParams;
 use codex_thread_store_api::StoredThread;
 use codex_thread_store_api::ThreadMetadataPatch;
-use codex_thread_store_api::ThreadPersistenceServices;
-use codex_thread_store_api::ThreadStore;
-use codex_thread_store_api::ThreadStoreError;
+use codex_thread_store_api::UnsupportedLiveThreadFactory;
 use codex_thread_store_api::UpdateThreadMetadataParams;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use futures::StreamExt;
@@ -188,6 +196,28 @@ pub struct StartThreadOptions {
     pub supports_openai_form_elicitation: bool,
 }
 
+fn originator_from_service_name(service_name: Option<&str>) -> Option<String> {
+    let service_name = service_name?.trim();
+    if service_name.eq_ignore_ascii_case("codex_work_desktop") {
+        return Some("codex_work_desktop".to_string());
+    }
+    None
+}
+
+fn effective_originator_value(
+    metrics_service_name: Option<&str>,
+    env_originator: Option<String>,
+    persisted_originator: Option<String>,
+    inherited_originator: Option<String>,
+    default_originator: String,
+) -> String {
+    originator_from_service_name(metrics_service_name)
+        .or(persisted_originator)
+        .or(inherited_originator)
+        .or(env_originator)
+        .unwrap_or(default_originator)
+}
+
 pub(crate) struct ResumeThreadWithHistoryOptions {
     pub(crate) config: Config,
     pub(crate) initial_history: InitialHistory,
@@ -211,8 +241,9 @@ pub(crate) struct ThreadManagerState {
     plugins_manager: Arc<PluginsManager>,
     mcp_manager: Arc<McpManager>,
     extensions: Arc<ExtensionRegistry<Config>>,
-    persistence: ThreadPersistenceServices,
     user_instructions_provider: Arc<dyn UserInstructionsProvider>,
+    thread_store: Arc<dyn ThreadStore>,
+    live_thread_factory: Arc<dyn LiveThreadFactory>,
     attestation_provider: Option<Arc<dyn AttestationProvider>>,
     external_time_provider: Option<Arc<dyn TimeProvider>>,
     session_source: SessionSource,
@@ -232,6 +263,27 @@ pub fn build_models_manager(
         config.codex_home.to_path_buf(),
         config.model_catalog.clone(),
     )
+}
+
+pub fn thread_store_from_config(
+    config: &Config,
+    state_db: Option<StateDbHandle>,
+) -> Arc<dyn ThreadStore> {
+    match &config.experimental_thread_store {
+        ThreadStoreConfig::Local => {
+            if config
+                .features
+                .enabled(Feature::LocalThreadStoreCompression)
+            {
+                codex_rollout::spawn_rollout_compression_worker(config.codex_home.to_path_buf());
+            }
+            Arc::new(LocalThreadStore::new(
+                LocalThreadStoreConfig::from_config(config),
+                state_db,
+            ))
+        }
+        ThreadStoreConfig::InMemory { id } => InMemoryThreadStore::for_id(id),
+    }
 }
 
 impl ThreadManager {
@@ -278,8 +330,9 @@ impl ThreadManager {
                 plugins_manager,
                 mcp_manager,
                 extensions,
-                persistence: ThreadPersistenceServices::new(thread_store, live_thread_factory),
                 user_instructions_provider,
+                thread_store,
+                live_thread_factory,
                 attestation_provider,
                 external_time_provider,
                 auth_manager,
@@ -363,6 +416,14 @@ impl ThreadManager {
         ));
         // This test constructor has no Config input. Tests that need a non-local
         // process store should construct ThreadManager::new with an explicit store.
+        let thread_store: Arc<dyn ThreadStore> = Arc::new(LocalThreadStore::new(
+            LocalThreadStoreConfig {
+                codex_home: codex_home.clone(),
+                sqlite_home: codex_home.clone(),
+                default_model_provider_id: OPENAI_PROVIDER_ID.to_string(),
+            },
+            state_db.clone(),
+        ));
         Self {
             state: Arc::new(ThreadManagerState {
                 threads: Arc::new(RwLock::new(HashMap::new())),
@@ -374,10 +435,11 @@ impl ThreadManager {
                 plugins_manager,
                 mcp_manager,
                 extensions: empty_extension_registry(),
-                persistence: ThreadPersistenceServices::recording(),
                 user_instructions_provider: Arc::new(
                     crate::test_support::EmptyUserInstructionsProvider,
                 ),
+                thread_store,
+                live_thread_factory: Arc::new(UnsupportedLiveThreadFactory::new()),
                 attestation_provider: None,
                 external_time_provider: None,
                 auth_manager,
@@ -498,7 +560,6 @@ impl ThreadManager {
                 .map_err(|err| thread_store_metadata_update_error(thread_id, err));
         }
         self.state
-            .persistence
             .thread_store
             .update_thread_metadata(UpdateThreadMetadataParams {
                 thread_id,
@@ -601,9 +662,23 @@ impl ThreadManager {
         forked_from_thread_id: Option<ThreadId>,
     ) -> CodexResult<NewThread> {
         let agent_control = self.agent_control_for_config(&options.config);
-        let (resumed_session_source, resumed_thread_source) =
-            resumed_session_sources(&options.initial_history)
-                .unwrap_or_else(|| (self.state.session_source.clone(), None));
+        let (resumed_session_source, resumed_thread_source) = (|| {
+            if let InitialHistory::Resumed(resumed) = &options.initial_history {
+                resumed.history.iter().find_map(|item| {
+                    if let RolloutItem::SessionMeta(meta_line) = item {
+                        Some((
+                            meta_line.meta.source.clone(),
+                            meta_line.meta.thread_source.clone(),
+                        ))
+                    } else {
+                        None
+                    }
+                })
+            } else {
+                None
+            }
+        })()
+        .unwrap_or_else(|| (self.state.session_source.clone(), None));
         let session_source = options.session_source.unwrap_or(resumed_session_source);
         let thread_source = options.thread_source.or(resumed_thread_source);
         Box::pin(self.state.spawn_thread_with_source(
@@ -699,8 +774,23 @@ impl ThreadManager {
             self.state.environment_manager.as_ref(),
             &config.cwd,
         );
-        let (session_source, thread_source) = resumed_session_sources(&initial_history)
-            .unwrap_or_else(|| (self.state.session_source.clone(), None));
+        let (session_source, thread_source) = (|| {
+            if let InitialHistory::Resumed(resumed) = &initial_history {
+                resumed.history.iter().find_map(|item| {
+                    if let RolloutItem::SessionMeta(meta_line) = item {
+                        Some((
+                            meta_line.meta.source.clone(),
+                            meta_line.meta.thread_source.clone(),
+                        ))
+                    } else {
+                        None
+                    }
+                })
+            } else {
+                None
+            }
+        })()
+        .unwrap_or_else(|| (self.state.session_source.clone(), None));
         let initial_multi_agent_mode = initial_history.get_latest_effective_multi_agent_mode();
         Box::pin(self.state.spawn_thread_with_source(
             config,
@@ -770,8 +860,23 @@ impl ThreadManager {
             self.state.environment_manager.as_ref(),
             &config.cwd,
         );
-        let (session_source, thread_source) = resumed_session_sources(&initial_history)
-            .unwrap_or_else(|| (self.state.session_source.clone(), None));
+        let (session_source, thread_source) = (|| {
+            if let InitialHistory::Resumed(resumed) = &initial_history {
+                resumed.history.iter().find_map(|item| {
+                    if let RolloutItem::SessionMeta(meta_line) = item {
+                        Some((
+                            meta_line.meta.source.clone(),
+                            meta_line.meta.thread_source.clone(),
+                        ))
+                    } else {
+                        None
+                    }
+                })
+            } else {
+                None
+            }
+        })()
+        .unwrap_or_else(|| (self.state.session_source.clone(), None));
         let initial_multi_agent_mode = initial_history.get_latest_effective_multi_agent_mode();
         Box::pin(self.state.spawn_thread_with_source(
             config,
@@ -889,7 +994,6 @@ impl ThreadManager {
         let requested_rollout_path = rollout_path.clone();
         let stored_thread = self
             .state
-            .persistence
             .thread_store
             .read_thread_by_rollout_path(ReadThreadByRolloutPathParams {
                 rollout_path,
@@ -943,7 +1047,7 @@ impl ThreadManager {
         };
         let initial_multi_agent_mode = match source_thread_id {
             Some(thread_id) => match self.get_thread(thread_id).await {
-                Ok(thread) => thread.config_snapshot().await.multi_agent_mode,
+                Ok(thread) => Some(thread.config_snapshot().await.multi_agent_mode),
                 Err(_) => history.get_latest_effective_multi_agent_mode(),
             },
             None => history.get_latest_effective_multi_agent_mode(),
@@ -991,7 +1095,7 @@ impl ThreadManager {
     }
 
     fn agent_control_for_config(&self, config: &Config) -> AgentControl {
-        AgentControl::new(Arc::downgrade(&self.state), config.rollout_budget)
+        AgentControl::new(Arc::downgrade(&self.state), config.rollout_budget.clone())
     }
 
     #[cfg(test)]
@@ -1055,8 +1159,7 @@ impl ThreadManagerState {
         params: ReadThreadParams,
     ) -> CodexResult<StoredThread> {
         let thread_id = params.thread_id;
-        self.persistence
-            .thread_store
+        self.thread_store
             .read_thread(params)
             .await
             .map_err(|err| match err {
@@ -1186,6 +1289,74 @@ impl ThreadManagerState {
             instructions,
             warnings: Vec::new(),
         }
+    }
+
+    async fn inherited_originator_for_parent_thread(
+        &self,
+        session_source: &SessionSource,
+        parent_thread_id: Option<ThreadId>,
+        forked_from_thread_id: Option<ThreadId>,
+    ) -> Option<String> {
+        let inherited_thread_id = match session_source {
+            SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                parent_thread_id, ..
+            }) => Some(*parent_thread_id),
+            _ => parent_thread_id.or(forked_from_thread_id),
+        };
+        let thread = self.get_thread(inherited_thread_id?).await.ok()?;
+        let originator = thread.config_snapshot().await.originator;
+        (!originator.is_empty()).then_some(originator)
+    }
+
+    async fn effective_originator(
+        &self,
+        initial_history: &InitialHistory,
+        metrics_service_name: Option<&str>,
+        session_source: &SessionSource,
+        parent_thread_id: Option<ThreadId>,
+        forked_from_thread_id: Option<ThreadId>,
+    ) -> String {
+        let persisted_originator = match initial_history {
+            InitialHistory::Resumed(resumed) => resumed.history.iter().find_map(|item| {
+                if let RolloutItem::SessionMeta(meta_line) = item {
+                    let orig = meta_line.meta.originator.clone();
+                    (!orig.is_empty()).then_some(orig)
+                } else {
+                    None
+                }
+            }),
+            _ => None,
+        };
+        let inherited_originator = match initial_history {
+            InitialHistory::New | InitialHistory::Cleared => {
+                self.inherited_originator_for_parent_thread(
+                    session_source,
+                    parent_thread_id,
+                    forked_from_thread_id,
+                )
+                .await
+            }
+            InitialHistory::Forked(_) if persisted_originator.is_none() => {
+                self.inherited_originator_for_parent_thread(
+                    session_source,
+                    parent_thread_id,
+                    forked_from_thread_id,
+                )
+                .await
+            }
+            InitialHistory::Resumed(_) | InitialHistory::Forked(_) => None,
+        };
+
+        let env_originator = std::env::var(CODEX_INTERNAL_ORIGINATOR_OVERRIDE_ENV_VAR)
+            .is_ok()
+            .then(|| originator().value);
+        effective_originator_value(
+            metrics_service_name,
+            env_originator,
+            persisted_originator,
+            inherited_originator,
+            originator().value,
+        )
     }
 
     /// Spawn a new thread with no history using a provided config.
@@ -1434,6 +1605,15 @@ impl ThreadManagerState {
                 forked_from_thread_id,
             )
             .await;
+        let originator = self
+            .effective_originator(
+                &initial_history,
+                metrics_service_name.as_deref(),
+                &session_source,
+                parent_thread_id,
+                forked_from_thread_id,
+            )
+            .await;
         let CodexSpawnOk {
             codex, thread_id, ..
         } = Box::pin(Codex::spawn(CodexSpawnArgs {
@@ -1452,6 +1632,7 @@ impl ThreadManagerState {
             forked_from_thread_id,
             parent_thread_id,
             thread_source,
+            originator,
             agent_control,
             dynamic_tools,
             metrics_service_name,
@@ -1464,13 +1645,13 @@ impl ThreadManagerState {
             thread_extension_init,
             supports_openai_form_elicitation,
             analytics_events_client: self.analytics_events_client.clone(),
-            thread_store: Arc::clone(&self.persistence.thread_store),
-            live_thread_factory: Arc::clone(&self.persistence.live_thread_factory),
-            state_db: self.state_db.clone(),
+            thread_store: Arc::clone(&self.thread_store),
+            live_thread_factory: Arc::clone(&self.live_thread_factory),
+            persist_extended_history: false,
+            state_db: self.state_db(),
             attestation_provider: self.attestation_provider.clone(),
             external_time_provider: self.external_time_provider.clone(),
             inherited_multi_agent_version: multi_agent_version,
-            persist_extended_history: false,
             initial_multi_agent_mode,
         }))
         .await?;
@@ -1561,24 +1742,6 @@ impl ThreadManagerState {
     }
 }
 
-/// Recover the session/thread source recorded in a resumed thread's first
-/// `SessionMeta`. Mirrors the former `InitialHistory::get_resumed_session_sources`
-/// helper (only `Resumed` histories carry a source).
-fn resumed_session_sources(
-    history: &InitialHistory,
-) -> Option<(SessionSource, Option<ThreadSource>)> {
-    match history {
-        InitialHistory::New | InitialHistory::Cleared | InitialHistory::Forked(_) => None,
-        InitialHistory::Resumed(resumed) => resumed.history.iter().find_map(|item| match item {
-            RolloutItem::SessionMeta(meta_line) => Some((
-                meta_line.meta.source.clone(),
-                meta_line.meta.thread_source.clone(),
-            )),
-            _ => None,
-        }),
-    }
-}
-
 fn stored_thread_to_initial_history(
     stored_thread: StoredThread,
     rollout_path: Option<PathBuf>,
@@ -1591,7 +1754,7 @@ fn stored_thread_to_initial_history(
     })?;
     Ok(InitialHistory::Resumed(ResumedHistory {
         conversation_id: thread_id,
-        history: history.items,
+        history: Arc::new(history.items),
         rollout_path: rollout_path.or(stored_thread.rollout_path),
     }))
 }
@@ -1628,7 +1791,7 @@ fn truncate_before_nth_user_message(
     n: usize,
     snapshot_state: &SnapshotTurnState,
 ) -> InitialHistory {
-    let items: Vec<RolloutItem> = history.get_rollout_items();
+    let items = history.get_rollout_items().to_vec();
     let user_positions = truncation::user_message_positions_in_rollout(&items);
     let rolled = if snapshot_state.ends_mid_turn && n >= user_positions.len() {
         if let Some(cut_idx) = snapshot_state
@@ -1657,60 +1820,19 @@ struct SnapshotTurnState {
     active_turn_start_index: Option<usize>,
 }
 
-struct SnapshotActiveTurn {
-    id: String,
-    rollout_start_index: usize,
-    in_progress: bool,
-}
-
 fn snapshot_turn_state(history: &InitialHistory) -> SnapshotTurnState {
     let rollout_items = history.get_rollout_items();
-    let mut active_turn: Option<SnapshotActiveTurn> = None;
-    let mut inactive_explicit_turn_ids = HashSet::new();
-
-    for (rollout_index, item) in rollout_items.iter().enumerate() {
-        let RolloutItem::EventMsg(event) = item else {
-            continue;
-        };
-
-        match event {
-            EventMsg::TurnStarted(payload) => {
-                finish_snapshot_active_turn(&mut active_turn, &mut inactive_explicit_turn_ids);
-                active_turn = Some(SnapshotActiveTurn {
-                    id: payload.turn_id.clone(),
-                    rollout_start_index: rollout_index,
-                    in_progress: true,
-                });
-            }
-            EventMsg::TurnComplete(payload) => {
-                if active_turn
-                    .as_ref()
-                    .is_some_and(|turn| turn.id == payload.turn_id)
-                    || !inactive_explicit_turn_ids.contains(&payload.turn_id)
-                {
-                    finish_snapshot_active_turn(&mut active_turn, &mut inactive_explicit_turn_ids);
-                }
-            }
-            EventMsg::TurnAborted(payload) => {
-                if let Some(turn_id) = payload.turn_id.as_deref() {
-                    if active_turn.as_ref().is_some_and(|turn| turn.id == turn_id)
-                        || !inactive_explicit_turn_ids.contains(turn_id)
-                    {
-                        mark_snapshot_active_turn_inactive(&mut active_turn);
-                    }
-                } else {
-                    mark_snapshot_active_turn_inactive(&mut active_turn);
-                }
-            }
-            EventMsg::Error(payload) if payload.affects_turn_status() => {
-                mark_snapshot_active_turn_inactive(&mut active_turn);
-            }
-            _ => {}
-        }
+    let mut builder = ThreadHistoryBuilder::new();
+    for item in &rollout_items {
+        builder.handle_rollout_item(item);
     }
-
-    if let Some(active_turn) = active_turn {
-        if !active_turn.in_progress {
+    let active_turn_id = builder.active_turn_id_if_explicit();
+    if builder.has_active_turn() && active_turn_id.is_some() {
+        let active_turn_snapshot = builder.active_turn_snapshot();
+        if active_turn_snapshot
+            .as_ref()
+            .is_some_and(|turn| turn.status != TurnStatus::InProgress)
+        {
             return SnapshotTurnState {
                 ends_mid_turn: false,
                 active_turn_id: None,
@@ -1720,8 +1842,8 @@ fn snapshot_turn_state(history: &InitialHistory) -> SnapshotTurnState {
 
         return SnapshotTurnState {
             ends_mid_turn: true,
-            active_turn_id: Some(active_turn.id),
-            active_turn_start_index: Some(active_turn.rollout_start_index),
+            active_turn_id,
+            active_turn_start_index: builder.active_turn_start_index(),
         };
     }
 
@@ -1751,21 +1873,6 @@ fn snapshot_turn_state(history: &InitialHistory) -> SnapshotTurnState {
     }
 }
 
-fn finish_snapshot_active_turn(
-    active_turn: &mut Option<SnapshotActiveTurn>,
-    inactive_explicit_turn_ids: &mut HashSet<String>,
-) {
-    if let Some(turn) = active_turn.take() {
-        inactive_explicit_turn_ids.insert(turn.id);
-    }
-}
-
-fn mark_snapshot_active_turn_inactive(active_turn: &mut Option<SnapshotActiveTurn>) {
-    if let Some(turn) = active_turn.as_mut() {
-        turn.in_progress = false;
-    }
-}
-
 fn fork_history_from_snapshot(
     snapshot: ForkSnapshot,
     history: InitialHistory,
@@ -1781,7 +1888,9 @@ fn fork_history_from_snapshot(
                 InitialHistory::New => InitialHistory::New,
                 InitialHistory::Cleared => InitialHistory::Cleared,
                 InitialHistory::Forked(history) => InitialHistory::Forked(history),
-                InitialHistory::Resumed(resumed) => InitialHistory::Forked(resumed.history),
+                InitialHistory::Resumed(resumed) => {
+                    InitialHistory::Forked(Arc::unwrap_or_clone(resumed.history))
+                }
             };
             if snapshot_state.ends_mid_turn {
                 append_interrupted_boundary(
@@ -1827,12 +1936,13 @@ fn append_interrupted_boundary(
             history.push(aborted_event);
             InitialHistory::Forked(history)
         }
-        InitialHistory::Resumed(mut resumed) => {
+        InitialHistory::Resumed(resumed) => {
+            let mut history = Arc::unwrap_or_clone(resumed.history);
             if let Some(marker) = interrupted_turn_history_marker(interrupted_marker) {
-                resumed.history.push(RolloutItem::ResponseItem(marker));
+                history.push(RolloutItem::ResponseItem(marker));
             }
-            resumed.history.push(aborted_event);
-            InitialHistory::Forked(resumed.history)
+            history.push(aborted_event);
+            InitialHistory::Forked(history)
         }
     }
 }

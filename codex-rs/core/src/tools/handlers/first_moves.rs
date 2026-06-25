@@ -128,7 +128,13 @@ async fn handle_stats(
 }
 
 fn resolve_project_root(invocation: &ToolInvocation, project_root: Option<String>) -> PathBuf {
-    invocation.turn.resolve_path(project_root).to_path_buf()
+    #[allow(deprecated)]
+    project_root
+        .map_or_else(
+            || invocation.turn.cwd.clone(),
+            |p| invocation.turn.cwd.join(p),
+        )
+        .to_path_buf()
 }
 
 fn json_output(value: Value) -> Result<FunctionToolOutput, FunctionCallError> {

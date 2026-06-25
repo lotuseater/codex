@@ -8,6 +8,8 @@ use std::sync::Arc;
 use anyhow::Context;
 use anyhow::bail;
 use clap::Parser;
+use codex_core::config::ActionOptimizationInstructionsConfig;
+use codex_core::config::BatchMiniProgrammingInstructionsConfig;
 use codex_core_api::AbsolutePathBuf;
 use codex_core_api::AltScreenMode;
 use codex_core_api::ApprovalsReviewer;
@@ -28,6 +30,7 @@ use codex_core_api::Feature;
 use codex_core_api::Features;
 use codex_core_api::GhostSnapshotConfig;
 use codex_core_api::History;
+use codex_core_api::LoadedAgentsMd;
 use codex_core_api::MemoriesConfig;
 use codex_core_api::ModelAvailabilityNuxConfig;
 use codex_core_api::MultiAgentV2Config;
@@ -196,6 +199,7 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         review_model: None,
         model_context_window: None,
         model_auto_compact_token_limit: None,
+        model_auto_compact_token_limit_scope: AutoCompactTokenLimitScope::Total,
         model_compact_percentage: DEFAULT_MODEL_COMPACT_PERCENTAGE,
         prompt_reduction_mode: Default::default(),
         prompt_reduction: Default::default(),
@@ -211,17 +215,21 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         enforce_residency: Constrained::allow_any(/*initial_value*/ None),
         hide_agent_reasoning: false,
         show_raw_agent_reasoning: false,
+        user_instructions: None,
         base_instructions: None,
         developer_instructions: None,
         guardian_policy_config: None,
         include_permissions_instructions: false,
         include_apps_instructions: false,
         include_collaboration_mode_instructions: false,
+        action_optimization_instructions: ActionOptimizationInstructionsConfig::default(),
+        batch_mini_programming_instructions: BatchMiniProgrammingInstructionsConfig::default(),
         include_skill_instructions: false,
         orchestrator_skills_enabled: false,
         orchestrator_mcp_enabled: false,
         include_environment_context: false,
         compact_prompt: None,
+        auto_compact_enabled: false,
         notify: None,
         tui_notifications: TuiNotificationSettings::default(),
         animations: true,
@@ -279,7 +287,7 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         model_catalog: None,
         model_verbosity: None,
         chatgpt_base_url: "https://chatgpt.com/backend-api/".to_string(),
-        respect_system_proxy: false,
+        apps_mcp_path_override: None,
         apps_mcp_product_sku: None,
         realtime_audio: RealtimeAudioConfig::default(),
         experimental_realtime_ws_base_url: None,
@@ -305,6 +313,7 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         background_terminal_max_timeout: 300_000,
         ghost_snapshot: GhostSnapshotConfig::default(),
         multi_agent_v2: MultiAgentV2Config::default(),
+        token_budget: None,
         rollout_budget: None,
         current_time_reminder: None,
         features: Default::default(),

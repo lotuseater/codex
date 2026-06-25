@@ -1,5 +1,5 @@
 use super::*;
-use crate::tools::handlers::multi_agents_spec::create_compact_agent_tool;
+use crate::tools::handlers::multi_agents_spec::create_resume_agent_tool;
 use crate::turn_timing::now_unix_timestamp_ms;
 use codex_tool_registry_api::ToolSpec;
 
@@ -13,7 +13,7 @@ impl ToolExecutor<ToolInvocation> for Handler {
     }
 
     fn spec(&self) -> Option<ToolSpec> {
-        Some(create_compact_agent_tool())
+        Some(create_resume_agent_tool())
     }
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {

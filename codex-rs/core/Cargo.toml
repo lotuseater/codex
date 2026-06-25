@@ -290,7 +290,7 @@ codex-memories-context = { workspace = true }
 codex-memories-read = { workspace = true }
 codex-mcp = { workspace = true }
 codex-mcp-elicitation-api = { workspace = true }
-codex-model-provider-info = { workspace = true, features = ["runtime"] }
+codex-model-provider-info = { workspace = true }
 codex-models-manager = { workspace = true }
 codex-shell-command = { workspace = true }
 codex-execpolicy = { workspace = true, features = ["starlark-parser"] }

@@ -18,13 +18,6 @@
         "id": {
           "description": "Identifier from `default_permissions` or the implicit built-in default, such as `:workspace` or a user-defined `[permissions.<id>]` profile.",
           "type": "string"
-        },
-        "modifications": {
-          "default": [],
-          "items": {
-            "$ref": "#/definitions/ActivePermissionProfileModification"
-          },
-          "type": "array"
         }
       },
       "required": [
@@ -32,29 +25,8 @@
       ],
       "type": "object"
     },
-    "ActivePermissionProfileModification": {
-      "oneOf": [
-        {
-          "properties": {
-            "path": {
-              "$ref": "#/definitions/AbsolutePathBuf"
-            },
-            "type": {
-              "enum": [
-                "additionalWritableRoot"
-              ],
-              "title": "AdditionalWritableRootActivePermissionProfileModificationType",
-              "type": "string"
-            }
-          },
-          "required": [
-            "path",
-            "type"
-          ],
-          "title": "AdditionalWritableRootActivePermissionProfileModification",
-          "type": "object"
-        }
-      ]
+    "AgentPath": {
+      "type": "string"
     },
     "ApprovalsReviewer": {
       "description": "Configures who approval requests are routed to for review. Examples include sandbox escapes, blocked network access, MCP approval prompts, and ARC escalations. Defaults to `user`. `auto_review` uses a carefully prompted subagent to gather relevant context and apply a risk-based decision framework before approving or denying the request. The legacy value `guardian_subagent` is accepted for compatibility.",
@@ -70,7 +42,6 @@
         {
           "enum": [
             "untrusted",
-            "on-failure",
             "on-request",
             "never"
           ],
@@ -140,6 +111,7 @@
         {
           "enum": [
             "contextWindowExceeded",
+            "sessionBudgetExceeded",
             "usageLimitExceeded",
             "serverOverloaded",
             "cyberPolicy",
@@ -306,9 +278,7 @@
         "sendInput",
         "resumeAgent",
         "wait",
-        "closeAgent",
-        "compactAgent",
-        "restartAgent"
+        "closeAgent"
       ],
       "type": "string"
     },
@@ -693,8 +663,9 @@
       ]
     },
     "MultiAgentMode": {
-      "description": "Controls whether the model should only spawn sub-agents after an explicit user request or may delegate proactively when doing so would help.",
+      "description": "Controls whether the model receives multi-agent delegation instructions and, when it does, whether it should only spawn sub-agents after an explicit user request or may delegate proactively when doing so would help. `none` leaves the multi-agent tools available without injecting delegation instructions.",
       "enum": [
+        "none",
         "explicitRequestOnly",
         "proactive"
       ],
@@ -782,106 +753,9 @@
       ]
     },
     "ReasoningEffort": {
-      "description": "See https://platform.openai.com/docs/guides/reasoning?api-mode=responses#get-started-with-reasoning",
-      "enum": [
-        "none",
-        "minimal",
-        "low",
-        "medium",
-        "high",
-        "xhigh"
-      ],
+      "description": "A non-empty reasoning effort value advertised by the model.",
+      "minLength": 1,
       "type": "string"
-    },
-    "ReviewCodeLocation": {
-      "properties": {
-        "absoluteFilePath": {
-          "type": "string"
-        },
-        "lineRange": {
-          "$ref": "#/definitions/ReviewLineRange"
-        }
-      },
-      "required": [
-        "absoluteFilePath",
-        "lineRange"
-      ],
-      "type": "object"
-    },
-    "ReviewFinding": {
-      "properties": {
-        "body": {
-          "type": "string"
-        },
-        "codeLocation": {
-          "$ref": "#/definitions/ReviewCodeLocation"
-        },
-        "confidenceScore": {
-          "format": "float",
-          "type": "number"
-        },
-        "priority": {
-          "format": "int32",
-          "type": "integer"
-        },
-        "title": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "body",
-        "codeLocation",
-        "confidenceScore",
-        "priority",
-        "title"
-      ],
-      "type": "object"
-    },
-    "ReviewLineRange": {
-      "properties": {
-        "end": {
-          "format": "uint32",
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "start": {
-          "format": "uint32",
-          "minimum": 0.0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "end",
-        "start"
-      ],
-      "type": "object"
-    },
-    "ReviewOutput": {
-      "properties": {
-        "findings": {
-          "items": {
-            "$ref": "#/definitions/ReviewFinding"
-          },
-          "type": "array"
-        },
-        "overallConfidenceScore": {
-          "format": "float",
-          "type": "number"
-        },
-        "overallCorrectness": {
-          "type": "string"
-        },
-        "overallExplanation": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "findings",
-        "overallConfidenceScore",
-        "overallCorrectness",
-        "overallExplanation"
-      ],
-      "type": "object"
     },
     "SandboxPolicy": {
       "oneOf": [
@@ -1043,19 +917,6 @@
         {
           "additionalProperties": false,
           "properties": {
-            "other": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "other"
-          ],
-          "title": "OtherSubAgentSource",
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "properties": {
             "thread_spawn": {
               "properties": {
                 "agent_nickname": {
@@ -1066,11 +927,15 @@
                   ]
                 },
                 "agent_path": {
-                  "default": null,
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/AgentPath"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
                 },
                 "agent_role": {
                   "default": null,
@@ -1084,7 +949,7 @@
                   "type": "integer"
                 },
                 "parent_thread_id": {
-                  "type": "string"
+                  "$ref": "#/definitions/ThreadId"
                 }
               },
               "required": [
@@ -1098,6 +963,19 @@
             "thread_spawn"
           ],
           "title": "ThreadSpawnSubAgentSource",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "other": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "other"
+          ],
+          "title": "OtherSubAgentSource",
           "type": "object"
         }
       ]
@@ -1181,6 +1059,7 @@
           "description": "Optional Git metadata captured when the thread was created."
         },
         "id": {
+          "description": "Identifier for this thread. Codex-generated thread IDs are UUIDv7.",
           "type": "string"
         },
         "modelProvider": {
@@ -1285,6 +1164,13 @@
         "waitingOnApproval",
         "waitingOnUserInput"
       ],
+      "type": "string"
+    },
+    "ThreadExtra": {
+      "description": "Extra app-server data for a thread.",
+      "type": "object"
+    },
+    "ThreadId": {
       "type": "string"
     },
     "ThreadItem": {
@@ -1870,7 +1756,7 @@
               "type": "string"
             },
             "path": {
-              "$ref": "#/definitions/AbsolutePathBuf"
+              "$ref": "#/definitions/LegacyAppPathString"
             },
             "type": {
               "enum": [
@@ -1989,16 +1875,6 @@
             },
             "review": {
               "type": "string"
-            },
-            "reviewOutput": {
-              "anyOf": [
-                {
-                  "$ref": "#/definitions/ReviewOutput"
-                },
-                {
-                  "type": "null"
-                }
-              ]
             },
             "type": {
               "enum": [
@@ -2146,6 +2022,7 @@
           "description": "Only populated when the Turn's status is failed."
         },
         "id": {
+          "description": "Identifier for this turn. Codex-generated turn IDs are UUIDv7.",
           "type": "string"
         },
         "items": {

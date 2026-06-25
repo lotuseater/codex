@@ -189,12 +189,12 @@ pub(crate) fn thread_settings_from_config_snapshot(
     config_snapshot: &ThreadConfigSnapshot,
 ) -> ThreadSettings {
     ThreadSettings {
-        cwd: config_snapshot.cwd.clone(),
+        cwd: config_snapshot.environments.legacy_fallback_cwd.clone(),
         approval_policy: config_snapshot.approval_policy.into(),
         approvals_reviewer: config_snapshot.approvals_reviewer.into(),
         sandbox_policy: thread_response_sandbox_policy(
             &config_snapshot.permission_profile,
-            config_snapshot.cwd.as_path(),
+            config_snapshot.environments.legacy_fallback_cwd.as_path(),
         ),
         active_permission_profile: thread_response_active_permission_profile(
             config_snapshot.active_permission_profile.clone(),
@@ -314,6 +314,7 @@ pub(crate) fn summary_to_thread(
     let thread_id = conversation_id.to_string();
     Thread {
         id: thread_id.clone(),
+        extra: None,
         session_id: thread_id,
         forked_from_id: None,
         parent_thread_id: None,

@@ -1,12 +1,13 @@
+use std::fmt::Write as _;
 use std::path::PathBuf;
 
-use codex_app_catalog_types::AppInfo;
 use serde::Deserialize;
 use serde::Serialize;
 use sha1::Digest;
 use sha1::Sha1;
 use tracing::warn;
 
+use crate::AppInfo;
 use crate::ConnectorDirectoryCacheKey;
 
 pub(crate) const CONNECTOR_DIRECTORY_DISK_CACHE_SCHEMA_VERSION: u8 = 1;
@@ -107,5 +108,11 @@ struct ConnectorDirectoryDiskCache {
 fn sha1_hex(value: &str) -> String {
     let mut hasher = Sha1::new();
     hasher.update(value.as_bytes());
-    hex::encode(hasher.finalize())
+    let sha1 = hasher.finalize();
+
+    let mut hex = String::with_capacity(sha1.len() * 2);
+    for &byte in sha1.iter() {
+        let _ = write!(&mut hex, "{byte:02x}");
+    }
+    hex
 }

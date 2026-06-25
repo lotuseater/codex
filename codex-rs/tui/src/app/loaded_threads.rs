@@ -15,9 +15,9 @@
 //! found. The primary thread itself is never included in the output.
 
 use codex_app_server_protocol::SessionSource;
-use codex_app_server_protocol::SubAgentSource;
 use codex_app_server_protocol::Thread;
 use codex_protocol::ThreadId;
+use codex_protocol::protocol::SubAgentSource;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
@@ -98,7 +98,7 @@ pub(crate) fn find_loaded_subagent_threads_for_primary(
 fn thread_spawn_agent_path(source: &SessionSource) -> Option<String> {
     match source {
         SessionSource::SubAgent(SubAgentSource::ThreadSpawn { agent_path, .. }) => {
-            agent_path.clone()
+            agent_path.as_ref().map(|p| p.to_string())
         }
         _ => None,
     }
@@ -108,7 +108,7 @@ fn thread_spawn_parent_thread_id(source: &SessionSource) -> Option<ThreadId> {
     match source {
         SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
             parent_thread_id, ..
-        }) => ThreadId::from_string(parent_thread_id).ok(),
+        }) => Some(*parent_thread_id),
         _ => None,
     }
 }
@@ -128,6 +128,7 @@ mod tests {
     fn test_thread(thread_id: ThreadId, source: SessionSource) -> Thread {
         Thread {
             id: thread_id.to_string(),
+            extra: None,
             session_id: thread_id.to_string(),
             forked_from_id: None,
             parent_thread_id: None,

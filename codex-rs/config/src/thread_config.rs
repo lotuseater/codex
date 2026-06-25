@@ -3,13 +3,17 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 
-use codex_app_server_protocol::ConfigLayerSource;
+use crate::ConfigLayerSource;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use thiserror::Error;
 use toml::Value as TomlValue;
 
 use crate::ConfigLayerEntry;
+
+mod remote;
+
+pub use remote::RemoteThreadConfigLoader;
 
 /// Context available to implementations when loading thread-scoped config.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

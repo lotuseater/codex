@@ -28,7 +28,6 @@ use codex_protocol::protocol::W3cTraceContext;
 use codex_protocol::user_input::UserInput;
 pub use codex_thread_manager_api::CodexThreadSettingsOverrides;
 pub use codex_thread_manager_api::CodexThreadTurnContextOverrides;
-pub use codex_thread_manager_api::ThreadConfigSnapshot;
 use codex_thread_store_api::StoredThread;
 use codex_thread_store_api::StoredThreadHistory;
 use codex_thread_store_api::ThreadMetadataPatch;
@@ -45,7 +44,43 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::watch;
 
+use codex_protocol::ThreadId;
+use codex_protocol::config_types::ApprovalsReviewer;
+use codex_protocol::config_types::CollaborationMode;
+use codex_protocol::config_types::MultiAgentMode;
+use codex_protocol::config_types::Personality;
+use codex_protocol::config_types::ReasoningSummary;
+use codex_protocol::models::ActivePermissionProfile;
+use codex_protocol::models::PermissionProfile;
+use codex_protocol::openai_models::ReasoningEffort;
+use codex_protocol::protocol::AskForApproval;
+use codex_protocol::protocol::ThreadSource;
 use codex_rollout::state_db::StateDbHandle;
+
+#[derive(Clone, Debug)]
+pub struct ThreadConfigSnapshot {
+    pub model: String,
+    pub model_provider_id: String,
+    pub service_tier: Option<String>,
+    pub approval_policy: AskForApproval,
+    pub approvals_reviewer: ApprovalsReviewer,
+    pub permission_profile: PermissionProfile,
+    pub active_permission_profile: Option<ActivePermissionProfile>,
+    pub environments: TurnEnvironmentSelections,
+    pub workspace_roots: Vec<AbsolutePathBuf>,
+    pub profile_workspace_roots: Vec<AbsolutePathBuf>,
+    pub ephemeral: bool,
+    pub reasoning_effort: Option<ReasoningEffort>,
+    pub reasoning_summary: Option<ReasoningSummary>,
+    pub personality: Option<Personality>,
+    pub collaboration_mode: CollaborationMode,
+    pub multi_agent_mode: MultiAgentMode,
+    pub session_source: SessionSource,
+    pub forked_from_thread_id: Option<ThreadId>,
+    pub parent_thread_id: Option<ThreadId>,
+    pub thread_source: Option<ThreadSource>,
+    pub originator: String,
+}
 
 /// Explains why `CodexThread::try_start_turn_if_idle` rejected an automatic
 /// idle turn.
@@ -416,7 +451,7 @@ impl CodexThread {
             role: "user".to_string(),
             content: vec![ContentItem::InputText { text: message }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         };
         self.codex
             .session

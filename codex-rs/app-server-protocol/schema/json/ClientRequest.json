@@ -125,7 +125,6 @@
         {
           "enum": [
             "untrusted",
-            "on-failure",
             "on-request",
             "never"
           ],
@@ -210,6 +209,7 @@
               "type": "string"
             },
             "path": {
+              "description": "Absolute path for the root in the selected environment.",
               "type": "string"
             },
             "type": {
@@ -1349,6 +1349,18 @@
       ],
       "type": "object"
     },
+    "InternalChatMessageMetadataPassthrough": {
+      "description": "Internal Responses API passthrough metadata copied into underlying chat messages.\n\nResponses API strongly types this payload. Do not modify it without first getting API approval and making the corresponding Responses API change.",
+      "properties": {
+        "turn_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "LegacyAppPathString": {
       "type": "string"
     },
@@ -1795,8 +1807,9 @@
       "type": "object"
     },
     "MultiAgentMode": {
-      "description": "Controls whether the model should only spawn sub-agents after an explicit user request or may delegate proactively when doing so would help.",
+      "description": "Controls whether the model receives multi-agent delegation instructions and, when it does, whether it should only spawn sub-agents after an explicit user request or may delegate proactively when doing so would help. `none` leaves the multi-agent tools available without injecting delegation instructions.",
       "enum": [
+        "none",
         "explicitRequestOnly",
         "proactive"
       ],
@@ -2342,10 +2355,10 @@
                 "null"
               ]
             },
-            "metadata": {
+            "internal_chat_message_metadata_passthrough": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/ResponseItemMetadata"
+                  "$ref": "#/definitions/InternalChatMessageMetadataPassthrough"
                 },
                 {
                   "type": "null"
@@ -2398,10 +2411,10 @@
                 "null"
               ]
             },
-            "metadata": {
+            "internal_chat_message_metadata_passthrough": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/ResponseItemMetadata"
+                  "$ref": "#/definitions/InternalChatMessageMetadataPassthrough"
                 },
                 {
                   "type": "null"
@@ -2452,10 +2465,10 @@
                 "null"
               ]
             },
-            "metadata": {
+            "internal_chat_message_metadata_passthrough": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/ResponseItemMetadata"
+                  "$ref": "#/definitions/InternalChatMessageMetadataPassthrough"
                 },
                 {
                   "type": "null"
@@ -2502,10 +2515,10 @@
                 "null"
               ]
             },
-            "metadata": {
+            "internal_chat_message_metadata_passthrough": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/ResponseItemMetadata"
+                  "$ref": "#/definitions/InternalChatMessageMetadataPassthrough"
                 },
                 {
                   "type": "null"
@@ -2545,10 +2558,10 @@
                 "null"
               ]
             },
-            "metadata": {
+            "internal_chat_message_metadata_passthrough": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/ResponseItemMetadata"
+                  "$ref": "#/definitions/InternalChatMessageMetadataPassthrough"
                 },
                 {
                   "type": "null"
@@ -2599,10 +2612,10 @@
                 "null"
               ]
             },
-            "metadata": {
+            "internal_chat_message_metadata_passthrough": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/ResponseItemMetadata"
+                  "$ref": "#/definitions/InternalChatMessageMetadataPassthrough"
                 },
                 {
                   "type": "null"
@@ -2642,10 +2655,10 @@
                 "null"
               ]
             },
-            "metadata": {
+            "internal_chat_message_metadata_passthrough": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/ResponseItemMetadata"
+                  "$ref": "#/definitions/InternalChatMessageMetadataPassthrough"
                 },
                 {
                   "type": "null"
@@ -2685,10 +2698,10 @@
             "input": {
               "type": "string"
             },
-            "metadata": {
+            "internal_chat_message_metadata_passthrough": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/ResponseItemMetadata"
+                  "$ref": "#/definitions/InternalChatMessageMetadataPassthrough"
                 },
                 {
                   "type": "null"
@@ -2732,10 +2745,10 @@
                 "null"
               ]
             },
-            "metadata": {
+            "internal_chat_message_metadata_passthrough": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/ResponseItemMetadata"
+                  "$ref": "#/definitions/InternalChatMessageMetadataPassthrough"
                 },
                 {
                   "type": "null"
@@ -2784,10 +2797,10 @@
                 "null"
               ]
             },
-            "metadata": {
+            "internal_chat_message_metadata_passthrough": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/ResponseItemMetadata"
+                  "$ref": "#/definitions/InternalChatMessageMetadataPassthrough"
                 },
                 {
                   "type": "null"
@@ -2836,10 +2849,10 @@
                 "null"
               ]
             },
-            "metadata": {
+            "internal_chat_message_metadata_passthrough": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/ResponseItemMetadata"
+                  "$ref": "#/definitions/InternalChatMessageMetadataPassthrough"
                 },
                 {
                   "type": "null"
@@ -2874,10 +2887,10 @@
                 "null"
               ]
             },
-            "metadata": {
+            "internal_chat_message_metadata_passthrough": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/ResponseItemMetadata"
+                  "$ref": "#/definitions/InternalChatMessageMetadataPassthrough"
                 },
                 {
                   "type": "null"
@@ -2939,10 +2952,10 @@
                 "null"
               ]
             },
-            "metadata": {
+            "internal_chat_message_metadata_passthrough": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/ResponseItemMetadata"
+                  "$ref": "#/definitions/InternalChatMessageMetadataPassthrough"
                 },
                 {
                   "type": "null"
@@ -2966,16 +2979,6 @@
         },
         {
           "properties": {
-            "metadata": {
-              "anyOf": [
-                {
-                  "$ref": "#/definitions/ResponseItemMetadata"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
             "type": {
               "enum": [
                 "compaction_trigger"
@@ -3004,10 +3007,10 @@
                 "null"
               ]
             },
-            "metadata": {
+            "internal_chat_message_metadata_passthrough": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/ResponseItemMetadata"
+                  "$ref": "#/definitions/InternalChatMessageMetadataPassthrough"
                 },
                 {
                   "type": "null"
@@ -3045,23 +3048,6 @@
           "type": "object"
         }
       ]
-    },
-    "ResponseItemMetadata": {
-      "properties": {
-        "source_call_id": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "turn_id": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "type": "object"
     },
     "ResponsesApiWebSearchAction": {
       "oneOf": [
@@ -6527,6 +6513,29 @@
         "method"
       ],
       "title": "Account/usage/readRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "account/workspaceMessages/read"
+          ],
+          "title": "Account/workspaceMessages/readRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "type": "null"
+        }
+      },
+      "required": [
+        "id",
+        "method"
+      ],
+      "title": "Account/workspaceMessages/readRequest",
       "type": "object"
     },
     {

@@ -66,6 +66,7 @@ members = [
     "exec",
     "file-system",
     "exec-server",
+    "exec-server-protocol",
     "execpolicy",
     "execpolicy-legacy",
     "ext/extension-api",
@@ -241,6 +242,8 @@ codex-desktop-automation = { path = "desktop-automation" }
 codex-exec = { path = "exec" }
 codex-file-system = { path = "file-system" }
 codex-exec-server = { path = "exec-server" }
+codex-exec-server-protocol = { path = "exec-server-protocol" }
+system-configuration = "0.7"
 codex-execpolicy = { path = "execpolicy", default-features = false }
 codex-extension-api = { path = "ext/extension-api" }
 codex-goal-extension = { path = "ext/goal" }

@@ -513,6 +513,9 @@ impl App {
             AppEvent::PluginsLoaded { cwd, result } => {
                 self.chat_widget.on_plugins_loaded(cwd, result);
             }
+            AppEvent::OpenPluginsList { cwd, response } => {
+                self.chat_widget.open_plugins_list(cwd, response);
+            }
             AppEvent::PluginRemoteSectionsLoaded {
                 cwd,
                 marketplaces,
@@ -722,6 +725,9 @@ impl App {
             AppEvent::RefreshTokenActivity { request_id } => {
                 self.refresh_token_activity(app_server, request_id);
             }
+            AppEvent::RefreshStatusLineWorkspaceHeadline { request_id } => {
+                self.refresh_status_line_workspace_headline(app_server, request_id);
+            }
             AppEvent::OpenThreadGoalMenu { thread_id } => {
                 self.open_thread_goal_menu(app_server, thread_id).await;
             }
@@ -758,15 +764,14 @@ impl App {
             AppEvent::RateLimitsLoaded { origin, result } => match result {
                 Ok(response) => {
                     let rate_limit_reset_credits = response.rate_limit_reset_credits.clone();
-                    for snapshot in app_server_rate_limit_snapshots(response) {
-                        self.chat_widget.on_rate_limit_snapshot(Some(snapshot));
-                    }
+                    let snapshots = app_server_rate_limit_snapshots(response);
                     match origin {
                         RateLimitRefreshOrigin::StartupPrefetch {
                             reset_hint_request_id,
                         } => {
                             if self.chat_widget.finish_rate_limit_reset_hint_refresh(
                                 reset_hint_request_id,
+                                snapshots,
                                 rate_limit_reset_credits.ok_or_else(|| {
                                     "account/rateLimits/read response did not include rateLimitResetCredits"
                                         .to_string()
@@ -779,6 +784,7 @@ impl App {
                         RateLimitRefreshOrigin::ResetConsume { request_id } => {
                             self.chat_widget.finish_post_consume_reset_credits_refresh(
                                 request_id,
+                                snapshots,
                                 rate_limit_reset_credits.ok_or_else(|| {
                                     "account/rateLimits/read response did not include rateLimitResetCredits"
                                         .to_string()
@@ -788,7 +794,17 @@ impl App {
                         }
                         RateLimitRefreshOrigin::StatusCommand { request_id } => {
                             self.chat_widget
-                                .finish_status_rate_limit_refresh(request_id);
+                                .finish_status_rate_limit_refresh(request_id, snapshots);
+                        }
+                        RateLimitRefreshOrigin::UsageMenu { request_id } => {
+                            self.chat_widget.finish_usage_menu_rate_limit_refresh(
+                                request_id,
+                                snapshots,
+                                rate_limit_reset_credits.ok_or_else(|| {
+                                    "account/rateLimits/read response did not include rateLimitResetCredits"
+                                        .to_string()
+                                }),
+                            );
                         }
                     }
                 }
@@ -800,16 +816,27 @@ impl App {
                         } => {
                             self.chat_widget.finish_rate_limit_reset_hint_refresh(
                                 reset_hint_request_id,
+                                Vec::new(),
                                 Err(err),
                             );
                         }
                         RateLimitRefreshOrigin::ResetConsume { request_id } => {
-                            self.chat_widget
-                                .finish_post_consume_reset_credits_refresh(request_id, Err(err));
+                            self.chat_widget.finish_post_consume_reset_credits_refresh(
+                                request_id,
+                                Vec::new(),
+                                Err(err),
+                            );
                         }
                         RateLimitRefreshOrigin::StatusCommand { request_id } => {
                             self.chat_widget
-                                .finish_status_rate_limit_refresh(request_id);
+                                .finish_status_rate_limit_refresh(request_id, Vec::new());
+                        }
+                        RateLimitRefreshOrigin::UsageMenu { request_id } => {
+                            self.chat_widget.finish_usage_menu_rate_limit_refresh(
+                                request_id,
+                                Vec::new(),
+                                Err(err),
+                            );
                         }
                     }
                 }
@@ -822,15 +849,29 @@ impl App {
                 let request_id = self.chat_widget.show_rate_limit_reset_loading_popup();
                 self.refresh_rate_limit_reset_credits(app_server, request_id);
             }
-            AppEvent::RateLimitResetCreditsLoaded { request_id, result } => {
-                if let Err(err) = &result {
+            AppEvent::RateLimitResetCreditsLoaded { request_id, result } => match result {
+                Ok(response) => {
+                    let rate_limit_reset_credits = response.rate_limit_reset_credits.clone();
+                    self.chat_widget.finish_rate_limit_reset_credits_refresh(
+                        request_id,
+                        app_server_rate_limit_snapshots(response),
+                        rate_limit_reset_credits.ok_or_else(|| {
+                            "account/rateLimits/read response did not include rateLimitResetCredits"
+                                .to_string()
+                        }),
+                    );
+                }
+                Err(err) => {
                     tracing::warn!(
                         "account/rateLimits/read failed during reset-credit refresh: {err}"
                     );
+                    self.chat_widget.finish_rate_limit_reset_credits_refresh(
+                        request_id,
+                        Vec::new(),
+                        Err(err),
+                    );
                 }
-                self.chat_widget
-                    .finish_rate_limit_reset_credits_refresh(request_id, result);
-            }
+            },
             AppEvent::ConsumeRateLimitResetCredit { idempotency_key } => {
                 let request_id = self.chat_widget.show_rate_limit_reset_consuming_popup();
                 self.consume_rate_limit_reset_credit(app_server, request_id, idempotency_key);
@@ -897,6 +938,16 @@ impl App {
                 self.on_update_personality(personality);
                 self.sync_active_thread_personality_setting(app_server, personality)
                     .await;
+            }
+            AppEvent::SettingsSelectionClosed => {
+                self.app_event_tx.send(AppEvent::SettingsSelectionSettled);
+            }
+            AppEvent::SettingsSelectionSettled => {
+                if self.chat_widget.no_modal_or_popup_active() {
+                    self.chat_widget
+                        .set_queue_autosend_suppressed(/*suppressed*/ false);
+                    self.chat_widget.maybe_send_next_queued_input();
+                }
             }
             AppEvent::OpenReasoningPopup { model } => {
                 self.chat_widget.open_reasoning_popup(model);
@@ -2106,8 +2157,9 @@ impl App {
                 use_theme_colors,
             } => {
                 let ids = items.iter().map(ToString::to_string).collect::<Vec<_>>();
-                let items_edit = codex_config::edit::status_line_items_edit(&ids);
-                let colors_edit = codex_config::edit::status_line_use_colors_edit(use_theme_colors);
+                let items_edit = crate::legacy_core::config::edit::status_line_items_edit(&ids);
+                let colors_edit =
+                    crate::legacy_core::config::edit::status_line_use_colors_edit(use_theme_colors);
                 let apply_result = ConfigEditsBuilder::new(&self.config.codex_home)
                     .with_edits([items_edit, colors_edit])
                     .apply()
@@ -2135,12 +2187,20 @@ impl App {
                 self.chat_widget.set_status_line_git_summary(cwd, summary);
                 self.refresh_status_line();
             }
+            AppEvent::StatusLineWorkspaceHeadlineUpdated { request_id, result } => {
+                if self
+                    .chat_widget
+                    .set_status_line_workspace_headline(request_id, result)
+                {
+                    tui.frame_requester().schedule_frame();
+                }
+            }
             AppEvent::StatusLineSetupCancelled => {
                 self.chat_widget.cancel_status_line_setup();
             }
             AppEvent::TerminalTitleSetup { items } => {
                 let ids = items.iter().map(ToString::to_string).collect::<Vec<_>>();
-                let edit = codex_config::edit::terminal_title_items_edit(&ids);
+                let edit = crate::legacy_core::config::edit::terminal_title_items_edit(&ids);
                 let apply_result = ConfigEditsBuilder::new(&self.config.codex_home)
                     .with_edits([edit])
                     .apply()
@@ -2166,7 +2226,7 @@ impl App {
                 self.chat_widget.cancel_terminal_title_setup();
             }
             AppEvent::SyntaxThemeSelected { name } => {
-                let edit = codex_config::edit::syntax_theme_edit(&name);
+                let edit = crate::legacy_core::config::edit::syntax_theme_edit(&name);
                 let apply_result = ConfigEditsBuilder::new(&self.config.codex_home)
                     .with_edits([edit])
                     .apply()
@@ -2201,7 +2261,8 @@ impl App {
                 tui.frame_requester().schedule_frame();
             }
             AppEvent::PersistActionPromptMode { mode_token } => {
-                let edit = codex_config::edit::action_optimization_mode_edit(&mode_token);
+                let edit =
+                    crate::legacy_core::config::edit::action_optimization_mode_edit(&mode_token);
                 match ConfigEditsBuilder::new(&self.config.codex_home)
                     .with_edits([edit])
                     .apply()
@@ -2222,7 +2283,8 @@ impl App {
                 }
             }
             AppEvent::PersistActionPromptVariant { variant } => {
-                let edit = codex_config::edit::action_optimization_variant_edit(&variant);
+                let edit =
+                    crate::legacy_core::config::edit::action_optimization_variant_edit(&variant);
                 match ConfigEditsBuilder::new(&self.config.codex_home)
                     .with_edits([edit])
                     .apply()
@@ -2244,7 +2306,7 @@ impl App {
                 }
             }
             AppEvent::PersistActionPromptCustomText { custom_text } => {
-                let edit = codex_config::edit::action_optimization_custom_text_edit(
+                let edit = crate::legacy_core::config::edit::action_optimization_custom_text_edit(
                     custom_text.as_deref(),
                 );
                 match ConfigEditsBuilder::new(&self.config.codex_home)
@@ -2265,7 +2327,8 @@ impl App {
                 }
             }
             AppEvent::PersistBatchPromptMode { mode_token } => {
-                let edit = codex_config::edit::batch_mini_programming_mode_edit(&mode_token);
+                let edit =
+                    crate::legacy_core::config::edit::batch_mini_programming_mode_edit(&mode_token);
                 match ConfigEditsBuilder::new(&self.config.codex_home)
                     .with_edits([edit])
                     .apply()
@@ -2286,7 +2349,8 @@ impl App {
                 }
             }
             AppEvent::PersistBatchPromptVariant { variant } => {
-                let edit = codex_config::edit::batch_mini_programming_variant_edit(&variant);
+                let edit =
+                    crate::legacy_core::config::edit::batch_mini_programming_variant_edit(&variant);
                 match ConfigEditsBuilder::new(&self.config.codex_home)
                     .with_edits([edit])
                     .apply()
@@ -2308,9 +2372,10 @@ impl App {
                 }
             }
             AppEvent::PersistBatchPromptCustomText { custom_text } => {
-                let edit = codex_config::edit::batch_mini_programming_custom_text_edit(
-                    custom_text.as_deref(),
-                );
+                let edit =
+                    crate::legacy_core::config::edit::batch_mini_programming_custom_text_edit(
+                        custom_text.as_deref(),
+                    );
                 match ConfigEditsBuilder::new(&self.config.codex_home)
                     .with_edits([edit])
                     .apply()
@@ -2329,7 +2394,9 @@ impl App {
                 }
             }
             AppEvent::PersistDelegatePromptEnabled { enabled } => {
-                let edit = codex_config::edit::multi_agent_v2_usage_hint_enabled_edit(enabled);
+                let edit = crate::legacy_core::config::edit::multi_agent_v2_usage_hint_enabled_edit(
+                    enabled,
+                );
                 match ConfigEditsBuilder::new(&self.config.codex_home)
                     .with_edits([edit])
                     .apply()
@@ -2347,7 +2414,7 @@ impl App {
                 }
             }
             AppEvent::PersistDelegatePromptK { k } => {
-                let edit = codex_config::edit::multi_agent_v2_delegation_k_edit(k);
+                let edit = crate::legacy_core::config::edit::multi_agent_v2_delegation_k_edit(k);
                 match ConfigEditsBuilder::new(&self.config.codex_home)
                     .with_edits([edit])
                     .apply()
@@ -2365,7 +2432,9 @@ impl App {
             }
             AppEvent::PersistDelegatePromptRootText { text } => {
                 let edit =
-                    codex_config::edit::multi_agent_v2_root_usage_hint_text_edit(text.as_deref());
+                    crate::legacy_core::config::edit::multi_agent_v2_root_usage_hint_text_edit(
+                        text.as_deref(),
+                    );
                 match ConfigEditsBuilder::new(&self.config.codex_home)
                     .with_edits([edit])
                     .apply()
@@ -2383,9 +2452,10 @@ impl App {
                 }
             }
             AppEvent::PersistDelegatePromptSubText { text } => {
-                let edit = codex_config::edit::multi_agent_v2_subagent_usage_hint_text_edit(
-                    text.as_deref(),
-                );
+                let edit =
+                    crate::legacy_core::config::edit::multi_agent_v2_subagent_usage_hint_text_edit(
+                        text.as_deref(),
+                    );
                 match ConfigEditsBuilder::new(&self.config.codex_home)
                     .with_edits([edit])
                     .apply()
@@ -2403,7 +2473,7 @@ impl App {
                 }
             }
             AppEvent::PersistAutoCompactEnabled { enabled } => {
-                let edit = codex_config::edit::auto_compact_enabled_edit(enabled);
+                let edit = crate::legacy_core::config::edit::auto_compact_enabled_edit(enabled);
                 match ConfigEditsBuilder::new(&self.config.codex_home)
                     .with_edits([edit])
                     .apply()
@@ -2421,7 +2491,7 @@ impl App {
                 }
             }
             AppEvent::PersistAutoCompactPercent { percent } => {
-                let edit = codex_config::edit::model_compact_percentage_edit(percent);
+                let edit = crate::legacy_core::config::edit::model_compact_percentage_edit(percent);
                 match ConfigEditsBuilder::new(&self.config.codex_home)
                     .with_edits([edit])
                     .apply()
@@ -2439,7 +2509,7 @@ impl App {
                 }
             }
             AppEvent::PersistAutoCompactPrompt { prompt } => {
-                let edit = codex_config::edit::compact_prompt_edit(prompt.as_deref());
+                let edit = crate::legacy_core::config::edit::compact_prompt_edit(prompt.as_deref());
                 match ConfigEditsBuilder::new(&self.config.codex_home)
                     .with_edits([edit])
                     .apply()
@@ -2462,7 +2532,7 @@ impl App {
                     PromptReductionModeToml::Conservative => "conservative",
                     PromptReductionModeToml::RecencyWeighted => "recency_weighted",
                 };
-                let edit = codex_config::edit::ConfigEdit::SetPath {
+                let edit = crate::legacy_core::config::edit::ConfigEdit::SetPath {
                     segments: vec!["prompt_reduction_mode".to_string()],
                     value: toml_edit::value(mode_str),
                 };
@@ -2640,7 +2710,8 @@ impl App {
             }
         };
 
-        let edit = codex_config::edit::keymap_bindings_edit(&context, &action, &bindings);
+        let edit =
+            crate::legacy_core::config::edit::keymap_bindings_edit(&context, &action, &bindings);
         match ConfigEditsBuilder::new(&self.config.codex_home)
             .with_edits([edit])
             .apply()
@@ -2690,7 +2761,7 @@ impl App {
             }
         };
 
-        let edit = codex_config::edit::keymap_binding_clear_edit(&context, &action);
+        let edit = crate::legacy_core::config::edit::keymap_binding_clear_edit(&context, &action);
         match ConfigEditsBuilder::new(&self.config.codex_home)
             .with_edits([edit])
             .apply()

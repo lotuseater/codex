@@ -70,7 +70,8 @@ pub(crate) fn cwd(invocation: &ToolInvocation) -> AbsolutePathBuf {
             })
             .map_or_else(
                 || invocation.turn.cwd.clone(),
-                |workdir| invocation.turn.resolve_path(Some(workdir)),
+                #[allow(deprecated)]
+                |workdir| invocation.turn.cwd.join(workdir),
             ),
         ToolPayload::ToolSearch { .. } | ToolPayload::Custom { .. } => invocation.turn.cwd.clone(),
     }

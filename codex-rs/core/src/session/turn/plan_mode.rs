@@ -255,6 +255,7 @@ pub(crate) fn realtime_text_for_event(msg: &EventMsg) -> Option<String> {
         | EventMsg::CollabRestartBegin(_)
         | EventMsg::CollabRestartEnd(_)
         | EventMsg::SubAgentActivity(_)
+        | EventMsg::SafetyBuffering(_)
         | EventMsg::ThreadSettingsApplied(_) => None,
     }
 }

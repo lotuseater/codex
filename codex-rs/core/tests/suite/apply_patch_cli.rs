@@ -1,10 +1,11 @@
-#![allow(clippy::expect_used)]
-#![allow(dead_code)]
-
 use anyhow::Result;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
-use codex_core_test_runtime::test_codex::TestCodexHarness;
+use core_test_support::responses::ev_apply_patch_custom_tool_call;
+use core_test_support::responses::ev_apply_patch_shell_command_call_via_heredoc;
+use core_test_support::responses::ev_shell_command_call;
+use core_test_support::test_codex::ApplyPatchModelOutput;
+use pretty_assertions::assert_eq;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicI32;
@@ -26,11 +27,37 @@ use codex_protocol::permissions::FileSystemSandboxPolicy;
 use codex_protocol::permissions::FileSystemSpecialPath;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_protocol::protocol::AskForApproval;
+use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::SandboxPolicy;
+use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::user_input::UserInput;
+#[cfg(target_os = "linux")]
+use codex_sandboxing::landlock::CODEX_LINUX_SANDBOX_ARG0;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
+use core_test_support::PathBufExt;
+use core_test_support::assert_regex_match;
+use core_test_support::responses::ev_assistant_message;
+use core_test_support::responses::ev_completed;
+use core_test_support::responses::ev_function_call;
+use core_test_support::responses::ev_response_created;
+use core_test_support::responses::ev_shell_command_call_with_args;
+use core_test_support::responses::mount_sse_sequence;
+use core_test_support::responses::sse;
+use core_test_support::responses::start_mock_server;
+use core_test_support::skip_if_no_network;
+use core_test_support::skip_if_no_remote_env;
+use core_test_support::skip_if_remote;
+use core_test_support::skip_if_target_windows;
+use core_test_support::skip_if_wine_exec;
+use core_test_support::test_codex::TestCodexBuilder;
+use core_test_support::test_codex::TestCodexHarness;
+use core_test_support::test_codex::local;
+use core_test_support::test_codex::test_codex;
+use core_test_support::test_codex::turn_permission_fields;
+use core_test_support::wait_for_event;
+use core_test_support::wait_for_event_with_timeout;
 use serde_json::json;
 use wiremock::Mock;
 use wiremock::Respond;
@@ -38,7 +65,20 @@ use wiremock::ResponseTemplate;
 use wiremock::matchers::method;
 use wiremock::matchers::path_regex;
 
-pub(crate) async fn submit_without_wait(harness: &TestCodexHarness, prompt: &str) -> Result<()> {
+pub async fn apply_patch_harness() -> Result<TestCodexHarness> {
+    apply_patch_harness_with(|builder| builder).await
+}
+
+async fn apply_patch_harness_with(
+    configure: impl FnOnce(TestCodexBuilder) -> TestCodexBuilder,
+) -> Result<TestCodexHarness> {
+    let builder = configure(test_codex());
+    // Box harness construction so apply_patch_cli tests do not inline the
+    // full test-thread startup path into each test future.
+    Box::pin(TestCodexHarness::with_auto_env_builder(builder)).await
+}
+
+async fn submit_without_wait(harness: &TestCodexHarness, prompt: &str) -> Result<()> {
     submit_without_wait_with_turn_permissions(
         harness,
         prompt,
@@ -48,7 +88,7 @@ pub(crate) async fn submit_without_wait(harness: &TestCodexHarness, prompt: &str
     .await
 }
 
-pub(crate) async fn submit_without_wait_with_turn_permissions(
+async fn submit_without_wait_with_turn_permissions(
     harness: &TestCodexHarness,
     prompt: &str,
     sandbox_policy: SandboxPolicy,
@@ -57,31 +97,34 @@ pub(crate) async fn submit_without_wait_with_turn_permissions(
     let test = harness.test();
     let session_model = test.session_configured.model.clone();
     test.codex
-        .submit(Op::UserTurn {
-            environments: None,
+        .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: prompt.into(),
                 text_elements: Vec::new(),
             }],
             final_output_json_schema: None,
-            cwd: harness.cwd().to_path_buf(),
-            approval_policy: AskForApproval::Never,
-            approvals_reviewer: None,
-            sandbox_policy,
-            permission_profile,
-            model: session_model,
-            effort: None,
-            summary: None,
-            service_tier: None,
-            context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Standard),
-            collaboration_mode: None,
-            personality: None,
+            responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                approval_policy: Some(AskForApproval::Never),
+                sandbox_policy: Some(sandbox_policy),
+                permission_profile,
+                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
+                    mode: codex_protocol::config_types::ModeKind::Default,
+                    settings: codex_protocol::config_types::Settings {
+                        model: session_model,
+                        reasoning_effort: None,
+                        developer_instructions: None,
+                    },
+                }),
+                ..Default::default()
+            },
         })
         .await?;
     Ok(())
 }
 
-pub(crate) fn restrictive_workspace_write_profile() -> PermissionProfile {
+fn restrictive_workspace_write_profile() -> PermissionProfile {
     PermissionProfile::workspace_write_with(
         &[],
         NetworkSandboxPolicy::Restricted,
@@ -90,9 +133,7 @@ pub(crate) fn restrictive_workspace_write_profile() -> PermissionProfile {
     )
 }
 
-pub(crate) fn workspace_write_with_read_only_root(
-    read_only_root: AbsolutePathBuf,
-) -> PermissionProfile {
+fn workspace_write_with_read_only_root(read_only_root: AbsolutePathBuf) -> PermissionProfile {
     let file_system_sandbox_policy = FileSystemSandboxPolicy::restricted(vec![
         FileSystemSandboxEntry {
             path: FileSystemPath::Path {
@@ -114,15 +155,13 @@ pub(crate) fn workspace_write_with_read_only_root(
 }
 
 #[cfg(unix)]
-pub(crate) fn workspace_write_with_unreadable_path(
-    unreadable_path: AbsolutePathBuf,
-) -> PermissionProfile {
+fn workspace_write_with_unreadable_path(unreadable_path: AbsolutePathBuf) -> PermissionProfile {
     let file_system_sandbox_policy = FileSystemSandboxPolicy::restricted(vec![
         FileSystemSandboxEntry {
             path: FileSystemPath::Path {
                 path: unreadable_path,
             },
-            access: FileSystemAccessMode::None,
+            access: FileSystemAccessMode::Deny,
         },
         FileSystemSandboxEntry {
             path: FileSystemPath::Special {
@@ -138,26 +177,17 @@ pub(crate) fn workspace_write_with_unreadable_path(
 }
 
 #[cfg(unix)]
-pub(crate) fn create_file_symlink(
-    source: &std::path::Path,
-    link: &std::path::Path,
-) -> std::io::Result<()> {
+fn create_file_symlink(source: &std::path::Path, link: &std::path::Path) -> std::io::Result<()> {
     std::os::unix::fs::symlink(source, link)
 }
 
 #[cfg(windows)]
-pub(crate) fn create_file_symlink(
-    source: &std::path::Path,
-    link: &std::path::Path,
-) -> std::io::Result<()> {
+fn create_file_symlink(source: &std::path::Path, link: &std::path::Path) -> std::io::Result<()> {
     std::os::windows::fs::symlink_file(source, link)
 }
 
 #[cfg(not(any(unix, windows)))]
-pub(crate) fn create_file_symlink(
-    _source: &std::path::Path,
-    _link: &std::path::Path,
-) -> std::io::Result<()> {
+fn create_file_symlink(_source: &std::path::Path, _link: &std::path::Path) -> std::io::Result<()> {
     Err(std::io::Error::new(
         std::io::ErrorKind::Unsupported,
         "file symlinks are unsupported on this platform",
@@ -619,6 +649,8 @@ async fn apply_patch_cli_delete_directory_reports_verification_error() -> Result
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn apply_patch_cli_rejects_path_traversal_outside_workspace() -> Result<()> {
+    // TODO(anp): Remove after apply_patch path handling supports target-native Windows paths.
+    skip_if_wine_exec!(Ok(()), "asserts POSIX path traversal behavior");
     skip_if_no_network!(Ok(()));
 
     let harness = apply_patch_harness().await?;
@@ -882,7 +914,7 @@ async fn apply_patch_cli_preserves_existing_hard_link_outside_workspace() -> Res
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn apply_patch_cli_rejects_move_path_traversal_outside_workspace() -> Result<()> {
     // TODO(anp): Remove after apply-patch fixtures use target-native paths.
-    skip_if_wine_exec!(Ok(()), "asserts POSIX workspace traversal behavior");
+    skip_if_target_windows!(Ok(()), "asserts POSIX workspace traversal behavior");
     skip_if_no_network!(Ok(()));
 
     let harness = apply_patch_harness().await?;
@@ -947,6 +979,8 @@ async fn apply_patch_cli_verification_failure_has_no_side_effects() -> Result<()
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn apply_patch_shell_command_heredoc_with_cd_updates_relative_workdir() -> Result<()> {
+    // TODO(anp): Remove after apply_patch shell fixtures use target-native commands.
+    skip_if_wine_exec!(Ok(()), "uses a POSIX shell heredoc and cd command");
     skip_if_no_network!(Ok(()));
 
     let harness = apply_patch_harness_with(|builder| builder.with_model("gpt-5.4")).await?;
@@ -1229,6 +1263,8 @@ async fn apply_patch_custom_tool_streaming_emits_updated_changes() -> Result<()>
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn apply_patch_shell_command_heredoc_with_cd_emits_turn_diff() -> Result<()> {
+    // TODO(anp): Remove after apply_patch shell fixtures use target-native commands.
+    skip_if_wine_exec!(Ok(()), "uses a POSIX shell heredoc and cd command");
     skip_if_no_network!(Ok(()));
 
     let harness = apply_patch_harness_with(|builder| builder.with_model("gpt-5.4")).await?;
@@ -1291,6 +1327,8 @@ async fn apply_patch_shell_command_heredoc_with_cd_emits_turn_diff() -> Result<(
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn apply_patch_turn_diff_paths_stay_repo_relative_when_session_cwd_is_nested() -> Result<()> {
+    // TODO(anp): Remove after apply_patch diff fixtures use target-native paths.
+    skip_if_wine_exec!(Ok(()), "asserts POSIX repository paths");
     skip_if_no_network!(Ok(()));
 
     let harness = apply_patch_harness_with(|builder| {
@@ -1300,7 +1338,7 @@ async fn apply_patch_turn_diff_paths_stay_repo_relative_when_session_cwd_is_nest
                 config.cwd = config.cwd.join("subdir");
             })
             .with_workspace_setup(|cwd, fs| async move {
-                let cwd_uri = PathUri::from_path(&cwd)?;
+                let cwd_uri = PathUri::from_host_native_path(&cwd)?;
                 fs.create_directory(
                     &cwd_uri,
                     CreateDirectoryOptions { recursive: true },
@@ -1308,8 +1346,8 @@ async fn apply_patch_turn_diff_paths_stay_repo_relative_when_session_cwd_is_nest
                 )
                 .await?;
                 let repo_root = cwd.parent().expect("nested cwd should have parent");
-                let git_uri = PathUri::from_path(repo_root.join(".git"))?;
-                let repo_file_uri = PathUri::from_path(repo_root.join("repo.txt"))?;
+                let git_uri = PathUri::from_host_native_path(repo_root.join(".git"))?;
+                let repo_file_uri = PathUri::from_host_native_path(repo_root.join("repo.txt"))?;
                 fs.write_file(
                     &git_uri,
                     b"gitdir: /tmp/fake-worktree\n".to_vec(),
@@ -1362,6 +1400,8 @@ async fn apply_patch_turn_diff_paths_stay_repo_relative_when_session_cwd_is_nest
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn apply_patch_shell_command_failure_propagates_error_and_skips_diff() -> Result<()> {
+    // TODO(anp): Remove after apply_patch shell fixtures use target-native commands.
+    skip_if_wine_exec!(Ok(()), "uses a POSIX shell heredoc");
     skip_if_no_network!(Ok(()));
 
     let harness = apply_patch_harness_with(|builder| builder.with_model("gpt-5.4")).await?;
@@ -1419,6 +1459,8 @@ async fn apply_patch_shell_command_failure_propagates_error_and_skips_diff() -> 
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn apply_patch_shell_accepts_lenient_heredoc_wrapped_patch() -> Result<()> {
+    // TODO(anp): Remove after apply_patch shell fixtures use target-native commands.
+    skip_if_wine_exec!(Ok(()), "uses a POSIX shell heredoc");
     skip_if_no_network!(Ok(()));
 
     let harness = apply_patch_harness().await?;
@@ -1539,14 +1581,12 @@ async fn apply_patch_emits_turn_diff_event_with_unified_diff() -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn apply_patch_turn_diff_tracks_local_and_remote_environment_paths() -> Result<()> {
     // TODO(anp): Remove after shared-cwd helpers use target-native paths.
-    skip_if_wine_exec!(
+    skip_if_target_windows!(
         Ok(()),
         "requires a cwd valid in local POSIX and remote Windows environments"
     );
     skip_if_no_network!(Ok(()));
-    let Some(_remote_env) = get_remote_test_env() else {
-        return Ok(());
-    };
+    skip_if_no_remote_env!(Ok(()));
 
     let server = start_mock_server().await;
     let mut builder = test_codex();
@@ -1557,7 +1597,7 @@ async fn apply_patch_turn_diff_tracks_local_and_remote_environment_paths() -> Re
         SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis()
     ))
     .abs();
-    let shared_cwd_uri = PathUri::from_path(&shared_cwd)?;
+    let shared_cwd_uri = PathUri::from_host_native_path(&shared_cwd)?;
     let _ = fs::remove_dir_all(shared_cwd.as_path());
     test.fs()
         .remove(
@@ -1660,7 +1700,7 @@ async fn apply_patch_turn_diff_tracks_local_and_remote_environment_paths() -> Re
     assert_eq!(
         test.fs()
             .read_file_text(
-                &PathUri::from_path(shared_cwd.join(file_name))?,
+                &PathUri::from_host_native_path(shared_cwd.join(file_name))?,
                 /*sandbox*/ None,
             )
             .await?,
@@ -1830,7 +1870,7 @@ async fn apply_patch_clears_aggregated_diff_after_inexact_delta() -> Result<()> 
 
     let harness = apply_patch_harness_with(|builder| {
         builder.with_workspace_setup(|cwd, fs| async move {
-            let binary_path_uri = PathUri::from_path(cwd.join("binary.dat"))?;
+            let binary_path_uri = PathUri::from_host_native_path(cwd.join("binary.dat"))?;
             fs.write_file(
                 &binary_path_uri,
                 vec![0xff, 0xfe, 0xfd],

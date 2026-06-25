@@ -5,10 +5,6 @@ use codex_core::CodexThread;
 use codex_core::compact::SUMMARIZATION_PROMPT;
 use codex_core::compact::SUMMARY_PREFIX;
 use codex_core::config::Config;
-pub use codex_test_support_context_fixtures::compact_fixtures::{
-    COMPACT_WARNING_MESSAGE, FIRST_REPLY, SUMMARY_TEXT, auto_summary, body_contains_text,
-    read_hook_inputs, write_matching_compact_hooks, write_unsupported_blocking_pre_compact_hook,
-};
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::ContextBudgetMode;
 use codex_protocol::config_types::ModeKind;
@@ -21,6 +17,14 @@ use codex_protocol::protocol::ItemCompletedEvent;
 use codex_protocol::protocol::ItemStartedEvent;
 use codex_protocol::protocol::Op;
 use codex_protocol::user_input::UserInput;
+pub use codex_test_support_context_fixtures::compact_fixtures::COMPACT_WARNING_MESSAGE;
+pub use codex_test_support_context_fixtures::compact_fixtures::FIRST_REPLY;
+pub use codex_test_support_context_fixtures::compact_fixtures::SUMMARY_TEXT;
+pub use codex_test_support_context_fixtures::compact_fixtures::auto_summary;
+pub use codex_test_support_context_fixtures::compact_fixtures::body_contains_text;
+pub use codex_test_support_context_fixtures::compact_fixtures::read_hook_inputs;
+pub use codex_test_support_context_fixtures::compact_fixtures::write_matching_compact_hooks;
+pub use codex_test_support_context_fixtures::compact_fixtures::write_unsupported_blocking_pre_compact_hook;
 
 use crate::test_codex::turn_permission_fields;
 

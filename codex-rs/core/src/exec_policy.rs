@@ -236,9 +236,10 @@ pub(crate) fn prompt_is_rejected_by_policy(
 ) -> Option<&'static str> {
     match approval_policy {
         AskForApproval::Never => Some(PROMPT_CONFLICT_REASON),
-        AskForApproval::OnFailure => None,
         AskForApproval::OnRequest => None,
         AskForApproval::UnlessTrusted => None,
+        // Deprecated variant: escalates to user like OnRequest.
+        AskForApproval::OnFailure => None,
         AskForApproval::Granular(granular_config) => {
             if prompt_is_rule {
                 if !granular_config.allows_rules_approval() {
@@ -756,15 +757,16 @@ pub(crate) fn render_decision_for_unmatched_command(
                     Decision::Forbidden
                 }
             }
-            AskForApproval::OnFailure
-            | AskForApproval::OnRequest
+            AskForApproval::OnRequest
             | AskForApproval::UnlessTrusted
-            | AskForApproval::Granular(_) => Decision::Prompt,
+            | AskForApproval::Granular(_)
+            // Deprecated: auto-approve but sandbox; escalate to user on failure — treat like OnRequest.
+            | AskForApproval::OnFailure => Decision::Prompt,
         };
     }
 
     match approval_policy {
-        AskForApproval::Never | AskForApproval::OnFailure => {
+        AskForApproval::Never => {
             // We allow the command to run, relying on the sandbox for
             // protection.
             Decision::Allow
@@ -808,6 +810,9 @@ pub(crate) fn render_decision_for_unmatched_command(
                 }
             }
         },
+        // Deprecated: auto-approve but run in sandbox; escalates to user on failure.
+        // Like Never: rely on sandbox for protection.
+        AskForApproval::OnFailure => Decision::Allow,
     }
 }
 

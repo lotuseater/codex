@@ -214,8 +214,7 @@ impl Approvable<ApplyPatchRequest> for ApplyPatchRuntime {
         match policy {
             AskForApproval::Never => false,
             AskForApproval::Granular(granular_config) => granular_config.allows_sandbox_approval(),
-            AskForApproval::OnFailure => true,
-            AskForApproval::OnRequest => true,
+            AskForApproval::OnRequest | AskForApproval::OnFailure => true,
             AskForApproval::UnlessTrusted => true,
         }
     }

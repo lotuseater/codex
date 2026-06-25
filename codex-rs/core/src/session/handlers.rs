@@ -174,7 +174,7 @@ async fn thread_settings_applied_event(sess: &Session) -> EventMsg {
         let state = sess.state.lock().await;
         state.session_configuration.thread_config_snapshot()
     };
-    let cwd = snapshot.cwd.clone();
+    let cwd = snapshot.environments.legacy_fallback_cwd.clone();
     EventMsg::ThreadSettingsApplied(ThreadSettingsAppliedEvent {
         thread_settings: ThreadSettingsSnapshot {
             model: snapshot.model,
@@ -253,7 +253,7 @@ pub(super) async fn user_input_or_turn_inner(
         })
         .await;
     }
-    sess.maybe_emit_unknown_model_warning_for_turn(current_context.as_ref())
+    sess.maybe_emit_model_warnings_for_turn(current_context.as_ref())
         .await;
     match sess
         .steer_input(
@@ -700,7 +700,7 @@ pub async fn review(
     review_request: ReviewRequest,
 ) {
     let turn_context = sess.new_default_turn_with_sub_id(sub_id.clone()).await;
-    sess.maybe_emit_unknown_model_warning_for_turn(turn_context.as_ref())
+    sess.maybe_emit_model_warnings_for_turn(turn_context.as_ref())
         .await;
     sess.refresh_mcp_servers_if_requested(&turn_context, Some(sess.mcp_elicitation_reviewer()))
         .await;

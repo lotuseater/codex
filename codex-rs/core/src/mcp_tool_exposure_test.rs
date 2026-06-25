@@ -262,7 +262,7 @@ enabled = true
 }
 
 #[tokio::test]
-async fn searches_large_effective_tool_sets() {
+async fn defers_effective_tool_sets_when_search_is_available() {
     let config = test_config().await;
     let tools_config = tools_config_for_mcp_tool_exposure(/*search_tool*/ true);
     let mcp_tools = numbered_mcp_tools(DIRECT_MCP_TOOL_EXPOSURE_THRESHOLD);
@@ -279,7 +279,7 @@ async fn searches_large_effective_tool_sets() {
     let deferred_tools = exposure
         .deferred_tools
         .as_ref()
-        .expect("large tool sets should be discoverable through tool_search");
+        .expect("MCP tools should be discoverable through tool_search");
     assert_eq!(tool_names(deferred_tools), tool_names(&mcp_tools));
 }
 

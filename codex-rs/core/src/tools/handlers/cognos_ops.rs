@@ -59,7 +59,11 @@ impl ToolExecutor<ToolInvocation> for CognosOpsHandler {
             PROBLEM_MEMORY_LOOKUP_TOOL_NAME => {
                 let args: codex_cognos_ops::ProblemMemoryLookupArgs =
                     parse_arguments(arguments.as_str())?;
-                let project_root = invocation.turn.resolve_path(args.project_root);
+                #[allow(deprecated)]
+                let project_root = args.project_root.map_or_else(
+                    || invocation.turn.cwd.clone(),
+                    |p| invocation.turn.cwd.join(p),
+                );
                 let memory_root = invocation.turn.config.codex_home.join("memories");
                 codex_cognos_ops::problem_memory_lookup(
                     project_root.as_path(),
@@ -72,7 +76,11 @@ impl ToolExecutor<ToolInvocation> for CognosOpsHandler {
             CODE_RELATION_SCOUT_TOOL_NAME => {
                 let args: codex_cognos_ops::CodeRelationScoutArgs =
                     parse_arguments(arguments.as_str())?;
-                let project_root = invocation.turn.resolve_path(args.project_root);
+                #[allow(deprecated)]
+                let project_root = args.project_root.map_or_else(
+                    || invocation.turn.cwd.clone(),
+                    |p| invocation.turn.cwd.join(p),
+                );
                 let prompt = args.prompt.unwrap_or_default();
                 let max_paths = args.max_paths.unwrap_or(16).clamp(1, 64);
                 let project_root_path = project_root.to_path_buf();
@@ -92,7 +100,11 @@ impl ToolExecutor<ToolInvocation> for CognosOpsHandler {
             OPERATION_CACHE_STATS_TOOL_NAME => {
                 let args: codex_cognos_ops::OperationCacheStatsArgs =
                     parse_arguments(arguments.as_str())?;
-                let project_root = invocation.turn.resolve_path(args.project_root);
+                #[allow(deprecated)]
+                let project_root = args.project_root.map_or_else(
+                    || invocation.turn.cwd.clone(),
+                    |p| invocation.turn.cwd.join(p),
+                );
                 codex_cognos_ops::operation_cache_stats(project_root.as_path())
             }
             EVIDENCE_FUSION_SUMMARY_TOOL_NAME => {

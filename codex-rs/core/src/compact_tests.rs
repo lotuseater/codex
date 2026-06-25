@@ -1,10 +1,12 @@
 use super::*;
+use crate::session::tests::build_world_state_from_turn_context;
 use codex_context_reduction::PRUNE_NUDGE_PROMPT;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::WireApi;
 use codex_protocol::models::DEFAULT_IMAGE_DETAIL;
-use codex_protocol::models::ResponseItemMetadata;
+use codex_protocol::models::InternalChatMessageMetadataPassthrough;
 use pretty_assertions::assert_eq;
+use std::sync::Arc;
 
 async fn process_compacted_history_with_test_session(
     compacted_history: Vec<ResponseItem>,
@@ -14,15 +16,16 @@ async fn process_compacted_history_with_test_session(
     session
         .set_previous_turn_settings(previous_turn_settings.cloned())
         .await;
-    let initial_context = session.build_initial_context(&turn_context).await;
-    let mut task_memory =
-        crate::task_memory::CompactionTaskMemory::from_history(&compacted_history);
-    let refreshed = crate::compact_remote::process_compacted_history(
+    let world_state = Arc::new(build_world_state_from_turn_context(&session, &turn_context).await);
+    let initial_context = session
+        .build_initial_context_with_world_state(&turn_context, world_state.as_ref())
+        .await;
+    let initial_context_injection = InitialContextInjection::BeforeLastUserMessage(world_state);
+    let (refreshed, _) = crate::compact_remote::process_compacted_history(
         &session,
         &turn_context,
         compacted_history,
-        InitialContextInjection::BeforeLastUserMessage,
-        &mut task_memory,
+        &initial_context_injection,
     )
     .await;
     (refreshed, initial_context)
@@ -62,14 +65,14 @@ fn user_message(text: &str) -> ResponseItem {
             text: text.to_string(),
         }],
         phase: None,
-        metadata: None,
+        internal_chat_message_metadata_passthrough: None,
     }
 }
 
 fn compacted_user_message(text: &str) -> CompactedUserMessage {
     CompactedUserMessage {
         message: text.to_string(),
-        metadata: None,
+        internal_chat_message_metadata_passthrough: None,
     }
 }
 
@@ -105,41 +108,6 @@ fn content_items_to_text_ignores_image_only_content() {
 }
 
 #[test]
-fn collect_user_messages_filters_task_memory_entries() {
-    let task_memory = crate::task_memory::build_task_memory_item(&[
-        ResponseItem::Message {
-            id: None,
-            role: "user".to_string(),
-            content: vec![ContentItem::InputText {
-                text: "Remember the active task".to_string(),
-            }],
-            phase: None,
-        },
-        ResponseItem::Message {
-            id: None,
-            role: "assistant".to_string(),
-            content: vec![ContentItem::OutputText {
-                text: "<proposed_plan>\n# Plan\n- remember\n</proposed_plan>".to_string(),
-            }],
-            phase: None,
-        },
-    ])
-    .expect("expected task memory item");
-    let real_user = ResponseItem::Message {
-        id: None,
-        role: "user".to_string(),
-        content: vec![ContentItem::InputText {
-            text: "real user message".to_string(),
-        }],
-        phase: None,
-    };
-
-    let collected = collect_user_messages(&[task_memory, real_user]);
-
-    assert_eq!(collected, vec!["real user message".to_string()]);
-}
-
-#[test]
 fn collect_user_messages_extracts_user_text_only() {
     let items = vec![
         ResponseItem::Message {
@@ -149,7 +117,7 @@ fn collect_user_messages_extracts_user_text_only() {
                 text: "ignored".to_string(),
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::Message {
             id: Some("user".to_string()),
@@ -158,7 +126,7 @@ fn collect_user_messages_extracts_user_text_only() {
                 text: "first".to_string(),
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::Other,
     ];
@@ -183,7 +151,7 @@ do things
                     .to_string(),
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::Message {
             id: None,
@@ -192,7 +160,7 @@ do things
                 text: "<ENVIRONMENT_CONTEXT>cwd=/tmp</ENVIRONMENT_CONTEXT>".to_string(),
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::Message {
             id: None,
@@ -201,7 +169,7 @@ do things
                 text: "real user message".to_string(),
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
     ];
 
@@ -296,15 +264,16 @@ fn build_token_limited_compacted_history_appends_summary_message() {
 }
 
 #[test]
-fn build_compacted_history_preserves_user_message_metadata() {
+fn build_compacted_history_preserves_user_message_passthrough_metadata() {
     let history = build_compacted_history(
         Vec::new(),
         &[CompactedUserMessage {
             message: "first user message".to_string(),
-            metadata: Some(ResponseItemMetadata {
-                turn_id: Some("turn-1".to_string()),
-                ..Default::default()
-            }),
+            internal_chat_message_metadata_passthrough: Some(
+                InternalChatMessageMetadataPassthrough {
+                    turn_id: Some("turn-1".to_string()),
+                },
+            ),
         }],
         "summary text",
     );
@@ -347,7 +316,7 @@ async fn process_compacted_history_replaces_developer_messages() {
                 text: "stale permissions".to_string(),
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::Message {
             id: None,
@@ -356,7 +325,7 @@ async fn process_compacted_history_replaces_developer_messages() {
                 text: "summary".to_string(),
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::Message {
             id: None,
@@ -365,7 +334,7 @@ async fn process_compacted_history_replaces_developer_messages() {
                 text: "stale personality".to_string(),
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
     ];
     let (refreshed, mut expected) = process_compacted_history_with_test_session(
@@ -380,7 +349,7 @@ async fn process_compacted_history_replaces_developer_messages() {
             text: "summary".to_string(),
         }],
         phase: None,
-        metadata: None,
+        internal_chat_message_metadata_passthrough: None,
     });
     assert_eq!(refreshed, expected);
 }
@@ -394,7 +363,7 @@ async fn process_compacted_history_reinjects_full_initial_context() {
             text: "summary".to_string(),
         }],
         phase: None,
-        metadata: None,
+        internal_chat_message_metadata_passthrough: None,
     }];
     let (refreshed, mut expected) = process_compacted_history_with_test_session(
         compacted_history,
@@ -408,98 +377,9 @@ async fn process_compacted_history_reinjects_full_initial_context() {
             text: "summary".to_string(),
         }],
         phase: None,
-        metadata: None,
+        internal_chat_message_metadata_passthrough: None,
     });
     assert_eq!(refreshed, expected);
-}
-
-#[tokio::test]
-async fn process_compacted_history_replaces_stale_task_memory_with_fresh_item() {
-    let stale = crate::task_memory::build_task_memory_item(&[
-        ResponseItem::Message {
-            id: None,
-            role: "user".to_string(),
-            content: vec![ContentItem::InputText {
-                text: "old request".to_string(),
-            }],
-            phase: None,
-        },
-        ResponseItem::Message {
-            id: None,
-            role: "assistant".to_string(),
-            content: vec![ContentItem::OutputText {
-                text: "<proposed_plan>\n# Old Plan\n- old\n</proposed_plan>".to_string(),
-            }],
-            phase: None,
-        },
-    ])
-    .expect("expected stale task memory");
-    let fresh = crate::task_memory::build_task_memory_item(&[
-        ResponseItem::Message {
-            id: None,
-            role: "user".to_string(),
-            content: vec![ContentItem::InputText {
-                text: "new request".to_string(),
-            }],
-            phase: None,
-        },
-        ResponseItem::Message {
-            id: None,
-            role: "assistant".to_string(),
-            content: vec![ContentItem::OutputText {
-                text: "<proposed_plan>\n# New Plan\n- new\n</proposed_plan>".to_string(),
-            }],
-            phase: None,
-        },
-    ])
-    .expect("expected fresh task memory");
-    let fresh_digest = crate::task_memory::task_memory_item_digest(&fresh);
-    let compacted_history = vec![
-        stale,
-        ResponseItem::Message {
-            id: None,
-            role: "user".to_string(),
-            content: vec![ContentItem::InputText {
-                text: "summary".to_string(),
-            }],
-            phase: None,
-        },
-    ];
-
-    let (refreshed, _initial_context) = process_compacted_history_with_test_session(
-        compacted_history,
-        /*previous_turn_settings*/ None,
-    )
-    .await;
-    assert!(
-        refreshed
-            .iter()
-            .all(|item| crate::task_memory::task_memory_item_digest(item).is_none())
-    );
-
-    let (session, turn_context) = crate::session::tests::make_session_and_context().await;
-    let mut task_memory =
-        crate::task_memory::CompactionTaskMemory::from_history(std::slice::from_ref(&fresh));
-    let refreshed = crate::compact_remote::process_compacted_history(
-        &session,
-        &turn_context,
-        vec![ResponseItem::Message {
-            id: None,
-            role: "user".to_string(),
-            content: vec![ContentItem::InputText {
-                text: "summary".to_string(),
-            }],
-            phase: None,
-        }],
-        InitialContextInjection::BeforeLastUserMessage,
-        &mut task_memory,
-    )
-    .await;
-    let digests = refreshed
-        .iter()
-        .filter_map(crate::task_memory::task_memory_item_digest)
-        .collect::<Vec<_>>();
-    assert_eq!(digests, vec![fresh_digest.expect("fresh digest")]);
 }
 
 #[tokio::test]
@@ -517,7 +397,7 @@ keep me updated
                     .to_string(),
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::Message {
             id: None,
@@ -530,7 +410,7 @@ keep me updated
                     .to_string(),
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::Message {
             id: None,
@@ -543,7 +423,7 @@ keep me updated
                     .to_string(),
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::Message {
             id: None,
@@ -552,7 +432,7 @@ keep me updated
                 text: "summary".to_string(),
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::Message {
             id: None,
@@ -561,7 +441,7 @@ keep me updated
                 text: "stale developer instructions".to_string(),
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
     ];
     let (refreshed, mut expected) = process_compacted_history_with_test_session(
@@ -576,7 +456,7 @@ keep me updated
             text: "summary".to_string(),
         }],
         phase: None,
-        metadata: None,
+        internal_chat_message_metadata_passthrough: None,
     });
     assert_eq!(refreshed, expected);
 }
@@ -616,7 +496,7 @@ async fn process_compacted_history_inserts_context_before_last_real_user_message
                 text: "older user".to_string(),
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::Message {
             id: None,
@@ -625,7 +505,7 @@ async fn process_compacted_history_inserts_context_before_last_real_user_message
                 text: format!("{SUMMARY_PREFIX}\nsummary text"),
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::Message {
             id: None,
@@ -634,7 +514,7 @@ async fn process_compacted_history_inserts_context_before_last_real_user_message
                 text: "latest user".to_string(),
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
     ];
 
@@ -651,7 +531,7 @@ async fn process_compacted_history_inserts_context_before_last_real_user_message
                 text: "older user".to_string(),
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::Message {
             id: None,
@@ -660,7 +540,7 @@ async fn process_compacted_history_inserts_context_before_last_real_user_message
                 text: format!("{SUMMARY_PREFIX}\nsummary text"),
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
     ];
     expected.extend(initial_context);
@@ -671,7 +551,7 @@ async fn process_compacted_history_inserts_context_before_last_real_user_message
             text: "latest user".to_string(),
         }],
         phase: None,
-        metadata: None,
+        internal_chat_message_metadata_passthrough: None,
     });
     assert_eq!(refreshed, expected);
 }
@@ -685,7 +565,7 @@ async fn process_compacted_history_reinjects_model_switch_message() {
             text: "summary".to_string(),
         }],
         phase: None,
-        metadata: None,
+        internal_chat_message_metadata_passthrough: None,
     }];
     let previous_turn_settings = PreviousTurnSettings {
         model: "previous-regular-model".to_string(),
@@ -716,7 +596,7 @@ async fn process_compacted_history_reinjects_model_switch_message() {
             text: "summary".to_string(),
         }],
         phase: None,
-        metadata: None,
+        internal_chat_message_metadata_passthrough: None,
     });
     assert_eq!(refreshed, expected);
 }
@@ -731,7 +611,7 @@ fn insert_initial_context_before_last_real_user_or_summary_keeps_summary_last() 
                 text: "older user".to_string(),
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::Message {
             id: None,
@@ -740,7 +620,7 @@ fn insert_initial_context_before_last_real_user_or_summary_keeps_summary_last() 
                 text: "latest user".to_string(),
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::Message {
             id: None,
@@ -749,7 +629,7 @@ fn insert_initial_context_before_last_real_user_or_summary_keeps_summary_last() 
                 text: format!("{SUMMARY_PREFIX}\nsummary text"),
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
     ];
     let initial_context = vec![ResponseItem::Message {
@@ -759,7 +639,7 @@ fn insert_initial_context_before_last_real_user_or_summary_keeps_summary_last() 
             text: "fresh permissions".to_string(),
         }],
         phase: None,
-        metadata: None,
+        internal_chat_message_metadata_passthrough: None,
     }];
 
     let refreshed =
@@ -772,7 +652,7 @@ fn insert_initial_context_before_last_real_user_or_summary_keeps_summary_last() 
                 text: "older user".to_string(),
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::Message {
             id: None,
@@ -781,7 +661,7 @@ fn insert_initial_context_before_last_real_user_or_summary_keeps_summary_last() 
                 text: "fresh permissions".to_string(),
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::Message {
             id: None,
@@ -790,7 +670,7 @@ fn insert_initial_context_before_last_real_user_or_summary_keeps_summary_last() 
                 text: "latest user".to_string(),
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::Message {
             id: None,
@@ -799,7 +679,7 @@ fn insert_initial_context_before_last_real_user_or_summary_keeps_summary_last() 
                 text: format!("{SUMMARY_PREFIX}\nsummary text"),
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
     ];
     assert_eq!(refreshed, expected);
@@ -810,7 +690,7 @@ fn insert_initial_context_before_last_real_user_or_summary_keeps_compaction_last
     let compacted_history = vec![ResponseItem::Compaction {
         id: None,
         encrypted_content: "encrypted".to_string(),
-        metadata: None,
+        internal_chat_message_metadata_passthrough: None,
     }];
     let initial_context = vec![ResponseItem::Message {
         id: None,
@@ -819,7 +699,7 @@ fn insert_initial_context_before_last_real_user_or_summary_keeps_compaction_last
             text: "fresh permissions".to_string(),
         }],
         phase: None,
-        metadata: None,
+        internal_chat_message_metadata_passthrough: None,
     }];
 
     let refreshed =
@@ -832,12 +712,12 @@ fn insert_initial_context_before_last_real_user_or_summary_keeps_compaction_last
                 text: "fresh permissions".to_string(),
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::Compaction {
             id: None,
             encrypted_content: "encrypted".to_string(),
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
     ];
     assert_eq!(refreshed, expected);

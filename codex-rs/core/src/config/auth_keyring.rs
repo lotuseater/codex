@@ -26,7 +26,6 @@ pub fn resolve_bootstrap_auth_keyring_backend_kind(
     let features = Features::from_sources(
         FeatureConfigSource {
             features: config_toml.features.as_ref(),
-            include_apply_patch_tool: None,
             experimental_use_unified_exec_tool: config_toml.experimental_use_unified_exec_tool,
         },
         FeatureConfigSource::default(),

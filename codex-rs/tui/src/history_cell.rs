@@ -29,7 +29,9 @@ fn mcp_server_display_config_from_config(
                 .map(codex_config::types::McpServerEnvVar::name)
                 .map(str::to_string)
                 .collect(),
-            cwd: cwd.clone(),
+            cwd: cwd
+                .as_ref()
+                .map(|cwd| std::path::PathBuf::from(cwd.as_str())),
         },
         codex_config::types::McpServerTransportConfig::StreamableHttp {
             url,

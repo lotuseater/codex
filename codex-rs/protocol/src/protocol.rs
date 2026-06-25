@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::time::Duration;
 
 use crate::AgentPath;
 use crate::ThreadId;
@@ -21,11 +22,12 @@ use crate::config_types::WindowsSandboxLevel;
 use crate::models::ActivePermissionProfile;
 use crate::models::AgentMessageInputContent;
 use crate::models::ContentItem;
+use crate::models::ImageDetail;
+use crate::models::InternalChatMessageMetadataPassthrough;
 use crate::models::MessagePhase;
 use crate::models::PermissionProfile;
 use crate::models::ResponseInputItem;
 use crate::models::ResponseItem;
-use crate::models::ResponseItemMetadata;
 use crate::models::SandboxEnforcement;
 use crate::models::WebSearchAction;
 use crate::num_format::format_with_separators;
@@ -157,8 +159,8 @@ pub use crate::permissions::NetworkSandboxPolicy;
 pub use crate::request_permissions::RequestPermissionsArgs;
 pub use crate::request_user_input::RequestUserInputEvent;
 
-/// Open/close tags for special user-input blocks. Used across crates to avoid
-/// duplicated hardcoded strings.
+/// Open/close tags for special context blocks. Used across crates to avoid duplicated hardcoded
+/// strings.
 pub const USER_INSTRUCTIONS_OPEN_TAG: &str = "<user_instructions>";
 pub const USER_INSTRUCTIONS_CLOSE_TAG: &str = "</user_instructions>";
 pub const ENVIRONMENT_CONTEXT_OPEN_TAG: &str = "<environment_context>";
@@ -175,6 +177,8 @@ pub const MULTI_AGENT_MODE_OPEN_TAG: &str = "<multi_agent_mode>";
 pub const MULTI_AGENT_MODE_CLOSE_TAG: &str = "</multi_agent_mode>";
 pub const REALTIME_CONVERSATION_OPEN_TAG: &str = "<realtime_conversation>";
 pub const REALTIME_CONVERSATION_CLOSE_TAG: &str = "</realtime_conversation>";
+pub const CONTEXT_WINDOW_OPEN_TAG: &str = "<context_window>";
+pub const CONTEXT_WINDOW_CLOSE_TAG: &str = "</context_window>";
 pub const USER_MESSAGE_BEGIN: &str = "## My request for Codex:";
 
 pub use codex_git_types::GitSha;
@@ -304,6 +308,9 @@ pub enum ThreadMemoryMode {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema, TS)]
 pub struct InterAgentCommunication {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub id: Option<String>,
     pub author: AgentPath,
     pub recipient: AgentPath,
     #[serde(default)]
@@ -314,7 +321,7 @@ pub struct InterAgentCommunication {
     pub encrypted_content: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
-    pub metadata: Option<ResponseItemMetadata>,
+    pub internal_chat_message_metadata_passthrough: Option<InternalChatMessageMetadataPassthrough>,
     pub trigger_turn: bool,
 }
 
@@ -327,12 +334,13 @@ impl InterAgentCommunication {
         trigger_turn: bool,
     ) -> Self {
         Self {
+            id: None,
             author,
             recipient,
             other_recipients,
             content,
             encrypted_content: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
             trigger_turn,
         }
     }
@@ -345,21 +353,32 @@ impl InterAgentCommunication {
         trigger_turn: bool,
     ) -> Self {
         Self {
+            id: None,
             author,
             recipient,
             other_recipients,
             content: String::new(),
             encrypted_content: Some(encrypted_content),
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
             trigger_turn,
         }
     }
 
+    pub fn set_turn_id_if_missing(&mut self, turn_id: &str) {
+        InternalChatMessageMetadataPassthrough::set_turn_id_if_missing(
+            &mut self.internal_chat_message_metadata_passthrough,
+            turn_id,
+        );
+    }
+
     pub fn to_response_input_item(&self) -> ResponseInputItem {
+        let mut communication = self.clone();
+        communication.id = None;
+        communication.internal_chat_message_metadata_passthrough = None;
         ResponseInputItem::Message {
             role: "assistant".to_string(),
             content: vec![ContentItem::OutputText {
-                text: serde_json::to_string(self).unwrap_or_default(),
+                text: serde_json::to_string(&communication).unwrap_or_default(),
             }],
             phase: Some(MessagePhase::Commentary),
         }
@@ -390,11 +409,13 @@ impl InterAgentCommunication {
             }],
         };
         ResponseItem::AgentMessage {
-            id: None,
+            id: self.id.clone(),
             author: self.author.to_string(),
             recipient: self.recipient.to_string(),
             content,
-            metadata: self.metadata.clone(),
+            internal_chat_message_metadata_passthrough: self
+                .internal_chat_message_metadata_passthrough
+                .clone(),
         }
     }
 
@@ -474,6 +495,7 @@ pub enum NonSteerableTurnKind {
 #[ts(rename_all = "snake_case")]
 pub enum CodexErrorInfo {
     ContextWindowExceeded,
+    SessionBudgetExceeded,
     UsageLimitExceeded,
     ServerOverloaded,
     CyberPolicy,
@@ -511,6 +533,7 @@ impl CodexErrorInfo {
         match self {
             Self::ThreadRollbackFailed | Self::ActiveTurnNotSteerable { .. } => false,
             Self::ContextWindowExceeded
+            | Self::SessionBudgetExceeded
             | Self::UsageLimitExceeded
             | Self::ServerOverloaded
             | Self::CyberPolicy
@@ -548,7 +571,7 @@ pub struct ThreadSettingsSnapshot {
     pub personality: Option<Personality>,
     pub collaboration_mode: CollaborationMode,
     #[serde(default)]
-    pub multi_agent_mode: Option<MultiAgentMode>,
+    pub multi_agent_mode: MultiAgentMode,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
@@ -658,6 +681,7 @@ fn multi_agent_version_from_items(
             RolloutItem::SessionMeta(_)
             | RolloutItem::ResponseItem(_)
             | RolloutItem::InterAgentCommunication(_)
+            | RolloutItem::InterAgentCommunicationMetadata { .. }
             | RolloutItem::Compacted(_)
             | RolloutItem::EventMsg(_) => None,
         })
@@ -825,22 +849,28 @@ mod tests {
 
     #[test]
     fn inter_agent_communication_response_input_item_preserves_commentary_phase() {
-        let communication = InterAgentCommunication {
+        let mut communication = InterAgentCommunication {
+            id: Some("amsg_1".to_string()),
             author: AgentPath::root(),
             recipient: AgentPath::root().join("reviewer").expect("recipient path"),
             other_recipients: vec![AgentPath::root().join("worker").expect("recipient path")],
             content: "review the diff".to_string(),
             encrypted_content: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
             trigger_turn: true,
         };
+        communication.set_turn_id_if_missing("turn-1");
+        let mut serialized_communication = communication.clone();
+        serialized_communication.id = None;
+        serialized_communication.internal_chat_message_metadata_passthrough = None;
 
         assert_eq!(
             communication.to_response_input_item(),
             ResponseInputItem::Message {
                 role: "assistant".to_string(),
                 content: vec![ContentItem::OutputText {
-                    text: serde_json::to_string(&communication).expect("serialize communication"),
+                    text: serde_json::to_string(&serialized_communication)
+                        .expect("serialize communication"),
                 }],
                 phase: Some(MessagePhase::Commentary),
             }
@@ -872,7 +902,7 @@ mod tests {
                         encrypted_content: "encrypted payload".to_string(),
                     },
                 ],
-                metadata: None,
+                internal_chat_message_metadata_passthrough: None,
             }
         );
     }
@@ -2041,10 +2071,25 @@ mod tests {
     }
 
     #[test]
+    fn turn_context_item_deserializes_legacy_on_failure_as_on_request() -> Result<()> {
+        let item: TurnContextItem = serde_json::from_value(json!({
+            "cwd": test_path_buf("/tmp"),
+            "approval_policy": "on-failure",
+            "sandbox_policy": { "type": "danger-full-access" },
+            "model": "gpt-5",
+            "summary": "auto",
+        }))?;
+
+        assert_eq!(item.approval_policy, AskForApproval::OnRequest);
+        Ok(())
+    }
+
+    #[test]
     fn multi_agent_version_uses_newest_present_session_meta_value() -> Result<()> {
         let thread_id = ThreadId::from_string("67e55044-10b1-426f-9247-bb680e5fe0c8")?;
         let older_meta = SessionMetaLine {
             meta: SessionMeta {
+                session_id: thread_id.into(),
                 id: thread_id,
                 multi_agent_version: Some(MultiAgentVersion::V2),
                 ..Default::default()
@@ -2053,6 +2098,7 @@ mod tests {
         };
         let newer_meta_without_version = SessionMetaLine {
             meta: SessionMeta {
+                session_id: thread_id.into(),
                 id: thread_id,
                 multi_agent_version: None,
                 ..Default::default()

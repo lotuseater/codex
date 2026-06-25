@@ -92,9 +92,9 @@ const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 pub async fn migrate_personality_if_needed(
     codex_home: &Path,
     config_toml: &ConfigToml,
-    thread_store: std::sync::Arc<dyn codex_thread_store_api::ThreadStore>,
+    state_db: Option<StateDbHandle>,
 ) -> IoResult<bool> {
-    let status = maybe_migrate_personality(codex_home, config_toml, thread_store).await?;
+    let status = maybe_migrate_personality(codex_home, config_toml, state_db).await?;
     match status {
         PersonalityMigrationStatus::Applied => Ok(true),
         PersonalityMigrationStatus::SkippedMarker

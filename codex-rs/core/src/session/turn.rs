@@ -55,6 +55,7 @@ use crate::session::first_moves::first_moves_context_for_fresh_turn;
 use crate::session::first_moves::merge_first_moves_context;
 use crate::session::first_moves::spawn_repo_context_scout_shadow_for_fresh_turn;
 use crate::session::session::Session;
+use crate::session::step_context::StepContext;
 use crate::session::turn_context::TurnContext;
 use crate::stream_events_utils::HandleOutputCtx;
 use crate::stream_events_utils::TurnItemContributorPolicy;
@@ -120,6 +121,7 @@ use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::PlanDeltaEvent;
 use codex_protocol::protocol::ReasoningContentDeltaEvent;
 use codex_protocol::protocol::ReasoningRawContentDeltaEvent;
+use codex_protocol::protocol::SafetyBufferingEvent;
 use codex_protocol::protocol::ThreadSource;
 use codex_protocol::protocol::TurnDiffEvent;
 use codex_protocol::protocol::WarningEvent;
@@ -221,9 +223,9 @@ pub(crate) async fn run_turn(
         client_session.reset_websocket_session();
     }
 
-    let skills_outcome = Some(turn_context.turn_skills.outcome.as_ref());
-
-    sess.record_context_updates_and_set_reference_context_item(turn_context.as_ref())
+    // Keep the exact model-visible state used by this turn and its inline compactions.
+    let mut world_state = sess
+        .record_context_updates_and_set_reference_context_item(turn_context.as_ref())
         .await;
 
     let Some((injection_items, explicitly_enabled_connectors)) =
@@ -349,6 +351,8 @@ pub(crate) async fn run_turn(
         )
         .await;
 
+        // Capture once so context, advertised tools, and tool calls share one request view.
+        let step_context = sess.capture_step_context(Arc::clone(&turn_context)).await;
         let sampling_request_result: CodexResult<_> = async {
             super::time_reminder::maybe_record_current_time_reminder(
                 sess.as_ref(),
@@ -356,6 +360,16 @@ pub(crate) async fn run_turn(
                 &window_id,
             )
             .await?;
+
+            if turn_context
+                .config
+                .features
+                .enabled(Feature::DeferredExecutor)
+            {
+                world_state = sess
+                    .record_step_environment_context_if_changed(&world_state, step_context.as_ref())
+                    .await;
+            }
 
             // Construct the input that we will send to the model.
             let sampling_request_input: Vec<ResponseItem> = async {
@@ -376,10 +390,9 @@ pub(crate) async fn run_turn(
                 window_id,
                 CodexResponsesRequestKind::Turn,
             );
-            let tokens_before_sampling = sess.get_total_token_usage().await;
-            let (sampling_request_output, sampling_request_input) = run_sampling_request(
+            run_sampling_request(
                 Arc::clone(&sess),
-                Arc::clone(&turn_context),
+                Arc::clone(&step_context),
                 Arc::clone(&turn_extension_data),
                 Arc::clone(&turn_diff_tracker),
                 &mut client_session,
@@ -389,17 +402,11 @@ pub(crate) async fn run_turn(
                 skills_outcome,
                 cancellation_token.child_token(),
             )
-            .await?;
-
-            Ok((
-                tokens_before_sampling,
-                sampling_request_output,
-                sampling_request_input,
-            ))
+            .await
         }
         .await;
         match sampling_request_result {
-            Ok((tokens_before_sampling, sampling_request_output, sampling_request_input)) => {
+            Ok((sampling_request_output, sampling_request_input)) => {
                 let SamplingRequestResult {
                     needs_follow_up: model_needs_follow_up,
                     last_agent_message: sampling_request_last_agent_message,
@@ -453,23 +460,29 @@ pub(crate) async fn run_turn(
                     "post sampling token usage"
                 );
 
-                let tokens_after_sampling = token_status.active_context_tokens;
-                super::token_budget::maybe_record_token_budget_remaining_context(
+                // The local `AutoCompactTokenStatus` does not carry a precomputed
+                // `tokens_until_compaction`, so derive it the same way
+                // `context_window_token_status` does: the smaller of the remaining
+                // auto-compact scope budget and the remaining full-context-window budget.
+                let scope_remaining = token_status
+                    .auto_compact_scope_limit
+                    .saturating_sub(token_status.auto_compact_scope_tokens)
+                    .max(0);
+                let full_remaining = token_status.full_context_window_limit.map(|limit| {
+                    limit
+                        .saturating_sub(token_status.active_context_tokens)
+                        .max(0)
+                });
+                let tokens_until_compaction = match full_remaining {
+                    Some(full_remaining) => Some(scope_remaining.min(full_remaining)),
+                    None => Some(scope_remaining),
+                };
+                super::token_budget::maybe_record(
                     sess.as_ref(),
                     turn_context.as_ref(),
-                    tokens_before_sampling,
-                    tokens_after_sampling,
+                    tokens_until_compaction,
                 )
                 .await;
-
-                let started_new_context_window = sess
-                    .maybe_start_new_context_window(turn_context.as_ref())
-                    .await
-                    .is_some();
-                if started_new_context_window && needs_follow_up {
-                    can_drain_pending_input = !model_needs_follow_up;
-                    continue;
-                }
 
                 // as long as compaction works well in getting us way below the token limit, we shouldn't worry about being in an infinite loop.
                 if let Some(reason) = compaction_reason {
@@ -477,7 +490,7 @@ pub(crate) async fn run_turn(
                         &sess,
                         &turn_context,
                         &mut client_session,
-                        InitialContextInjection::BeforeLastUserMessage,
+                        InitialContextInjection::BeforeLastUserMessage(Arc::clone(&world_state)),
                         reason,
                         CompactionPhase::MidTurn,
                     )
@@ -723,6 +736,7 @@ async fn build_skills_and_plugins(
         turn_context.model_info.slug.clone(),
         sess.thread_id.to_string(),
         turn_context.sub_id.clone(),
+        turn_context.originator.clone(),
     );
     let loaded_plugins = sess
         .services
@@ -836,13 +850,16 @@ async fn build_skills_and_plugins(
     sess.services
         .analytics_events_client
         .track_app_mentioned(tracking.clone(), mentioned_app_invocations);
-    for plugin in mentioned_plugins
-        .iter()
-        .filter_map(crate::plugins::PluginCapabilitySummary::telemetry_metadata)
-    {
-        sess.services
-            .analytics_events_client
-            .track_plugin_used(tracking.clone(), plugin);
+    for summary in &mentioned_plugins {
+        if let Some(plugin) = sess
+            .services
+            .plugins_manager
+            .telemetry_metadata_for_capability_summary(summary)
+        {
+            sess.services
+                .analytics_events_client
+                .track_plugin_used(tracking.clone(), plugin);
+        }
     }
 
     let mut injection_items: Vec<ResponseItem> = match injected_host_skill_prompts {
@@ -1286,14 +1303,28 @@ pub(crate) async fn run_auto_compact_with_prompt(
     reason: CompactionReason,
     phase: CompactionPhase,
 ) -> CodexResult<bool> {
+    // upstream: the TokenBudget feature routes compaction through the dedicated
+    // token-budget inline task, which forces a fresh context window instead of
+    // consuming a pending `new_context` tool request.
+    if turn_context.config.features.enabled(Feature::TokenBudget) {
+        crate::compact_token_budget::run_inline_auto_compact_task(
+            Arc::clone(sess),
+            Arc::clone(turn_context),
+            initial_context_injection,
+        )
+        .await?;
+        sess.record_compaction_finished_for_semantic_compact(Some(reason))
+            .await;
+        return Ok(true);
+    }
+
     send_auto_compact_notice(sess, turn_context, reason, phase).await;
     let should_use_remote_compact = prompt == AutoCompactPrompt::Configured
         && should_use_remote_compact_task(turn_context.provider.info());
-    let prompt = match prompt {
-        AutoCompactPrompt::Configured => turn_context.compact_prompt().to_string(),
-        AutoCompactPrompt::Text(prompt) => prompt.to_string(),
-    };
     if should_use_remote_compact {
+        // The merged remote-compact tasks take a `StepContext`; derive it from the
+        // turn context the fork seam threads through here.
+        let step_context = sess.capture_step_context(Arc::clone(turn_context)).await;
         if turn_context.features.enabled(Feature::RemoteCompactionV2) {
             emit_compact_metric(
                 &sess.services.session_telemetry,
@@ -1302,7 +1333,7 @@ pub(crate) async fn run_auto_compact_with_prompt(
             );
             run_inline_remote_auto_compact_task_v2(
                 Arc::clone(sess),
-                Arc::clone(turn_context),
+                step_context,
                 client_session,
                 initial_context_injection,
                 reason,
@@ -1320,7 +1351,7 @@ pub(crate) async fn run_auto_compact_with_prompt(
         );
         run_inline_remote_auto_compact_task(
             Arc::clone(sess),
-            Arc::clone(turn_context),
+            step_context,
             client_session.turn_state(),
             initial_context_injection,
             reason,
@@ -1336,7 +1367,6 @@ pub(crate) async fn run_auto_compact_with_prompt(
         run_inline_auto_compact_task(
             Arc::clone(sess),
             Arc::clone(turn_context),
-            prompt,
             initial_context_injection,
             reason,
             phase,
@@ -1525,14 +1555,14 @@ fn connector_inserted_in_messages(
 #[instrument(level = "trace",
     skip_all,
     fields(
-        turn_id = %turn_context.sub_id,
-        model = %turn_context.model_info.slug,
-        cwd = %turn_context.cwd.display()
+        turn_id = %step_context.turn.sub_id,
+        model = %step_context.turn.model_info.slug,
+        cwd = %step_context.turn.cwd.display()
     )
 )]
 async fn run_sampling_request(
     sess: Arc<Session>,
-    turn_context: Arc<TurnContext>,
+    step_context: Arc<StepContext>,
     turn_store: Arc<codex_extension_api::ExtensionData>,
     turn_diff_tracker: SharedTurnDiffTracker,
     client_session: &mut ModelClientSession,
@@ -1542,9 +1572,10 @@ async fn run_sampling_request(
     skills_outcome: Option<&SkillLoadOutcome>,
     cancellation_token: CancellationToken,
 ) -> CodexResult<(SamplingRequestResult, Vec<ResponseItem>)> {
+    let turn_context = Arc::clone(&step_context.turn);
     let router = built_tools(
         sess.as_ref(),
-        turn_context.as_ref(),
+        step_context.as_ref(),
         &input,
         explicitly_enabled_connectors,
         skills_outcome,
@@ -1557,12 +1588,12 @@ async fn run_sampling_request(
     let tool_runtime = ToolCallRuntime::new(
         Arc::clone(&router),
         Arc::clone(&sess),
-        Arc::clone(&turn_context),
+        Arc::clone(&step_context),
         Arc::clone(&turn_diff_tracker),
     );
     let _code_mode_worker = sess.services.code_mode_service.start_turn_worker(
         &sess,
-        &turn_context,
+        Arc::clone(&step_context),
         Arc::clone(&router),
         Arc::clone(&turn_diff_tracker),
     );
@@ -1658,19 +1689,20 @@ async fn run_sampling_request(
 #[instrument(level = "trace",
     skip_all,
     fields(
-        turn_id = %turn_context.sub_id,
-        model = %turn_context.model_info.slug,
-        apps_enabled = turn_context.apps_enabled()
+        turn_id = %step_context.turn.sub_id,
+        model = %step_context.turn.model_info.slug,
+        apps_enabled = step_context.turn.apps_enabled()
     )
 )]
 pub(crate) async fn built_tools(
     sess: &Session,
-    turn_context: &TurnContext,
+    step_context: &StepContext,
     input: &[ResponseItem],
     explicitly_enabled_connectors: &HashSet<String>,
     skills_outcome: Option<&SkillLoadOutcome>,
     cancellation_token: &CancellationToken,
 ) -> CodexResult<Arc<ToolRouter>> {
+    let turn_context = step_context.turn.as_ref();
     let mcp_connection_manager = sess.services.mcp_connection_manager.load_full();
     let has_mcp_servers = mcp_connection_manager.has_servers();
     let all_mcp_tools = mcp_connection_manager
@@ -1809,8 +1841,8 @@ pub(crate) async fn built_tools(
     );
     let mcp_tools = has_mcp_servers.then_some(mcp_tool_exposure.direct_tools);
     let deferred_mcp_tools = mcp_tool_exposure.deferred_tools;
-    Ok(Arc::new(ToolRouter::from_turn_context(
-        turn_context,
+    Ok(Arc::new(ToolRouter::from_context(
+        step_context,
         ToolRouterParams {
             mcp_tools,
             deferred_mcp_tools,
@@ -1828,12 +1860,26 @@ struct SamplingRequestResult {
     last_agent_message: Option<String>,
 }
 
-// fork-local: plan-mode streaming state and helpers were extracted into the
-// `plan_mode` submodule (see `use plan_mode::*` above). Upstream still defines
-// these inline; we intentionally keep the fork's empty side here to avoid
-// duplicate definitions. Upstream's newer plan-mode refactor
-// (finalize_non_tool_response_item / turn_store / SubAgentActivity arm) must be
-// ported into session/turn/plan_mode.rs by that file's owner.
+// fork-local: plan-mode streaming state and helpers live in the `plan_mode`
+// submodule (`pub(crate) mod plan_mode;` + `use plan_mode::*` above), which is
+// the fork's authoritative home for this code. Upstream instead defines the
+// same state/structs/impls and helper fns inline here; we intentionally keep
+// the fork's empty side and DROP upstream's inline block to avoid duplicate
+// definitions colliding with the `use plan_mode::*` glob.
+//
+// plan_mode.rs is a COMPLETE extraction: it provides ProposedPlanItemState /
+// PlanModeStreamState / AssistantMessageStreamParsers (+ their impls), the
+// helpers (handle_plan_segments / maybe_complete_plan_item_from_message /
+// emit_agent_message_in_plan_mode / emit_turn_item_in_plan_mode /
+// maybe_emit_pending_agent_message_start), AND the four `pub(super)` free fns
+// this file's body calls (emit_streamed_assistant_text_delta,
+// flush_assistant_text_segments_for_item, flush_assistant_text_segments_all,
+// handle_assistant_item_done_in_plan_mode) — all reachable here via the glob.
+//
+// NOTE for plan_mode.rs's owner: upstream's newer plan-mode refactor
+// (finalize_non_tool_response_item / turn_store / SubAgentActivity arm) is NOT
+// present in plan_mode.rs and should be ported into it if that behavior is
+// wanted; it was intentionally not carried over inline here.
 
 #[instrument(level = "trace", skip_all)]
 async fn drain_in_flight(
@@ -2016,7 +2062,8 @@ async fn try_run_sampling_request(
                     }
                     ResponseItem::Reasoning { .. } => true,
                     ResponseItem::AgentMessage { .. } => false,
-                    ResponseItem::LocalShellCall { .. }
+                    ResponseItem::AdditionalTools { .. }
+                    | ResponseItem::LocalShellCall { .. }
                     | ResponseItem::FunctionCall { .. }
                     | ResponseItem::ToolSearchCall { .. }
                     | ResponseItem::FunctionCallOutput { .. }
@@ -2146,6 +2193,19 @@ async fn try_run_sampling_request(
             ResponseEvent::TurnModerationMetadata(metadata) => {
                 sess.emit_turn_moderation_metadata(&turn_context, metadata)
                     .await;
+            }
+            ResponseEvent::SafetyBuffering(buffering) => {
+                sess.send_event(
+                    &turn_context,
+                    EventMsg::SafetyBuffering(SafetyBufferingEvent {
+                        model: turn_context.model_info.slug.clone(),
+                        use_cases: buffering.use_cases,
+                        reasons: buffering.reasons,
+                        show_buffering_ui: buffering.show_buffering_ui,
+                        faster_model: buffering.faster_model,
+                    }),
+                )
+                .await;
             }
             ResponseEvent::ServerReasoningIncluded(included) => {
                 sess.set_server_reasoning_included(included).await;

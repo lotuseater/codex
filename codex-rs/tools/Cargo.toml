@@ -8,11 +8,11 @@ version.workspace = true
 workspace = true
 
 [dependencies]
+codex-agent-policy = { workspace = true }
 codex-app-catalog-types = { workspace = true }
 codex-app-server-protocol = { workspace = true }
-codex-agent-policy = { workspace = true }
 codex-code-mode = { workspace = true }
-codex-code-mode-spec = { workspace = true }
+codex-connectors = { workspace = true }
 codex-features = { workspace = true }
 codex-file-system = { workspace = true }
 codex-protocol = { workspace = true }
@@ -32,6 +32,7 @@ rmcp = { workspace = true, default-features = false, features = [
 ] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+thiserror = { workspace = true }
 tracing = { workspace = true }
 urlencoding = { workspace = true }
 

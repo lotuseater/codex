@@ -49,6 +49,9 @@ pub enum EventMsg {
     /// Backend moderation metadata intended for first-party turn presentation.
     TurnModerationMetadata(TurnModerationMetadataEvent),
 
+    /// Backend indicates that response output is waiting on a safety review.
+    SafetyBuffering(SafetyBufferingEvent),
+
     /// Conversation history was compacted (either automatically or manually).
     ContextCompacted(ContextCompactedEvent),
 

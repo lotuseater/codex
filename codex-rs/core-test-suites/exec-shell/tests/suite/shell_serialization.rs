@@ -1,26 +1,26 @@
 #![cfg(not(target_os = "windows"))]
 
 use anyhow::Result;
-use codex_core_test_runtime::assert_regex_match;
-use codex_core_test_runtime::responses::ev_assistant_message;
-use codex_core_test_runtime::responses::ev_completed;
-use codex_core_test_runtime::responses::ev_function_call;
-use codex_core_test_runtime::responses::ev_response_created;
-use codex_core_test_runtime::responses::mount_sse_sequence;
-use codex_core_test_runtime::responses::sse;
-use codex_core_test_runtime::responses::start_mock_server;
-use codex_core_test_runtime::skip_if_no_network;
-use codex_core_test_runtime::test_codex::ApplyPatchModelOutput;
-use codex_core_test_runtime::test_codex::test_codex;
 use codex_protocol::models::PermissionProfile;
+use core_test_support::assert_regex_match;
+use core_test_support::responses::ev_assistant_message;
+use core_test_support::responses::ev_completed;
+use core_test_support::responses::ev_function_call;
+use core_test_support::responses::ev_response_created;
+use core_test_support::responses::mount_sse_sequence;
+use core_test_support::responses::sse;
+use core_test_support::responses::start_mock_server;
+use core_test_support::skip_if_no_network;
+use core_test_support::skip_if_target_windows;
+use core_test_support::test_codex::test_codex;
 use pretty_assertions::assert_eq;
 use regex_lite::Regex;
 use serde_json::Value;
 use serde_json::json;
 use std::fs;
 
-use super::apply_patch_harness::apply_patch_harness;
-use super::apply_patch_harness::mount_apply_patch;
+use crate::suite::apply_patch_cli::apply_patch_harness;
+use crate::suite::apply_patch_cli::mount_apply_patch;
 
 const FIXTURE_JSON: &str = r#"{
     "description": "This is an example JSON file.",
@@ -162,14 +162,7 @@ async fn apply_patch_custom_tool_call_creates_file() -> Result<()> {
     let patch = format!(
         "*** Begin Patch\n*** Add File: {file_name}\n+custom tool content\n*** End Patch\n"
     );
-    mount_apply_patch(
-        &harness,
-        call_id,
-        &patch,
-        "apply_patch done",
-        ApplyPatchModelOutput::Freeform,
-    )
-    .await;
+    mount_apply_patch(&harness, call_id, &patch, "apply_patch done").await;
 
     harness
         .test()
@@ -212,14 +205,7 @@ async fn apply_patch_custom_tool_call_updates_existing_file() -> Result<()> {
     let patch = format!(
         "*** Begin Patch\n*** Update File: {file_name}\n@@\n-before\n+after\n*** End Patch\n"
     );
-    mount_apply_patch(
-        &harness,
-        call_id,
-        &patch,
-        "apply_patch update done",
-        ApplyPatchModelOutput::Freeform,
-    )
-    .await;
+    mount_apply_patch(&harness, call_id, &patch, "apply_patch update done").await;
 
     harness
         .test()
@@ -250,7 +236,7 @@ M {file_name}
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn apply_patch_custom_tool_call_reports_failure_output() -> Result<()> {
     // TODO(anp): Remove after apply-patch assertions use target-native paths.
-    skip_if_wine_exec!(Ok(()), "asserts POSIX apply_patch failure text");
+    skip_if_target_windows!(Ok(()), "asserts POSIX apply_patch failure text");
     skip_if_no_network!(Ok(()));
 
     let harness = apply_patch_harness().await?;
@@ -260,14 +246,7 @@ async fn apply_patch_custom_tool_call_reports_failure_output() -> Result<()> {
     let patch = format!(
         "*** Begin Patch\n*** Update File: {missing_file}\n@@\n-before\n+after\n*** End Patch\n"
     );
-    mount_apply_patch(
-        &harness,
-        call_id,
-        &patch,
-        "apply_patch failure done",
-        ApplyPatchModelOutput::Freeform,
-    )
-    .await;
+    mount_apply_patch(&harness, call_id, &patch, "apply_patch failure done").await;
 
     harness
         .test()

@@ -6,9 +6,10 @@ use std::time::Duration;
 use std::time::Instant;
 
 use async_channel::unbounded;
-pub use codex_app_catalog_types::AppBranding;
-pub use codex_app_catalog_types::AppInfo;
-pub use codex_app_catalog_types::AppMetadata;
+use codex_app_catalog_types as app_catalog;
+pub use codex_connectors::AppBranding;
+pub use codex_connectors::AppInfo;
+pub use codex_connectors::AppMetadata;
 use codex_connectors::ConnectorDirectoryCacheContext;
 use codex_connectors::ConnectorDirectoryCacheKey;
 use codex_connectors::app_is_enabled;
@@ -16,9 +17,7 @@ use codex_connectors::apps_config_from_layer_stack;
 use codex_exec_server::EnvironmentManager;
 use codex_exec_server::ExecServerRuntimePaths;
 use codex_protocol::models::PermissionProfile;
-use codex_tool_registry_api::DiscoverableTool;
-use rmcp::model::ToolAnnotations;
-use serde::Deserialize;
+use codex_tools::DiscoverableTool;
 use tokio_util::sync::CancellationToken;
 use tracing::instrument;
 use tracing::warn;
@@ -42,7 +41,6 @@ use codex_mcp::ToolPluginProvenance;
 use codex_mcp::codex_apps_tools_cache_key;
 use codex_mcp::compute_auth_statuses;
 use codex_mcp::effective_mcp_servers;
-use codex_mcp::host_owned_codex_apps_enabled;
 use codex_mcp::tool_plugin_provenance;
 
 const CONNECTORS_READY_TIMEOUT_ON_EMPTY_TOOLS: Duration = Duration::from_secs(30);
@@ -116,7 +114,7 @@ pub(crate) async fn list_tool_suggest_discoverable_tools_with_auth(
             &connector_ids,
         )
         .into_iter()
-        .map(DiscoverableTool::from);
+        .map(|a| DiscoverableTool::from(connector_app_info_to_catalog(a)));
     let discoverable_plugins = list_tool_suggest_discoverable_plugins(
         config,
         plugins_manager,
@@ -242,7 +240,6 @@ pub async fn list_accessible_connectors_from_mcp_tools_with_mcp_manager(
 
     let mut mcp_servers = effective_mcp_servers(&mcp_config, auth.as_ref());
     mcp_servers.retain(|name, _| name == CODEX_APPS_MCP_SERVER_NAME);
-    let host_owned_codex_apps_enabled = host_owned_codex_apps_enabled(&mcp_config, auth.as_ref());
     if mcp_servers.is_empty() {
         return Ok(AccessibleConnectorsStatus {
             connectors: Vec::new(),
@@ -277,7 +274,6 @@ pub async fn list_accessible_connectors_from_mcp_tools_with_mcp_manager(
         McpRuntimeContext::new(environment_manager, config.cwd.to_path_buf()),
         config.codex_home.to_path_buf(),
         codex_apps_tools_cache_key(auth.as_ref()),
-        host_owned_codex_apps_enabled,
         mcp_config.prefix_mcp_tool_names,
         mcp_config.client_elicitation_capability,
         /*supports_openai_form_elicitation*/ false,
@@ -579,6 +575,65 @@ pub(crate) fn mcp_approvals_reviewer(
     }
 
     config.approvals_reviewer
+}
+
+/// Convert a `codex_connectors::AppInfo` (connector-domain type) into the
+/// `codex_app_catalog_types::AppInfo` that `DiscoverableTool::from` expects.
+/// Both types are structurally identical; this bridges the crate boundary.
+fn connector_app_info_to_catalog(info: AppInfo) -> app_catalog::AppInfo {
+    fn branding(b: codex_connectors::AppBranding) -> app_catalog::AppBranding {
+        app_catalog::AppBranding {
+            category: b.category,
+            developer: b.developer,
+            website: b.website,
+            privacy_policy: b.privacy_policy,
+            terms_of_service: b.terms_of_service,
+            is_discoverable_app: b.is_discoverable_app,
+        }
+    }
+    fn review(r: codex_connectors::AppReview) -> app_catalog::AppReview {
+        app_catalog::AppReview { status: r.status }
+    }
+    fn screenshot(s: codex_connectors::AppScreenshot) -> app_catalog::AppScreenshot {
+        app_catalog::AppScreenshot {
+            url: s.url,
+            file_id: s.file_id,
+            user_prompt: s.user_prompt,
+        }
+    }
+    fn metadata(m: codex_connectors::AppMetadata) -> app_catalog::AppMetadata {
+        app_catalog::AppMetadata {
+            review: m.review.map(review),
+            categories: m.categories,
+            sub_categories: m.sub_categories,
+            seo_description: m.seo_description,
+            screenshots: m
+                .screenshots
+                .map(|ss| ss.into_iter().map(screenshot).collect()),
+            developer: m.developer,
+            version: m.version,
+            version_id: m.version_id,
+            version_notes: m.version_notes,
+            first_party_type: m.first_party_type,
+            first_party_requires_install: m.first_party_requires_install,
+            show_in_composer_when_unlinked: m.show_in_composer_when_unlinked,
+        }
+    }
+    app_catalog::AppInfo {
+        id: info.id,
+        name: info.name,
+        description: info.description,
+        logo_url: info.logo_url,
+        logo_url_dark: info.logo_url_dark,
+        distribution_channel: info.distribution_channel,
+        branding: info.branding.map(branding),
+        app_metadata: info.app_metadata.map(metadata),
+        labels: info.labels,
+        install_url: info.install_url,
+        is_accessible: info.is_accessible,
+        is_enabled: info.is_enabled,
+        plugin_display_names: info.plugin_display_names,
+    }
 }
 
 #[cfg(test)]

@@ -7,6 +7,8 @@ If you want Codex in your code editor (VS Code, Cursor, Windsurf), <a href="http
 </br>If you want the desktop app experience, run <code>codex app</code> or visit <a href="https://chatgpt.com/codex?app-landing-page=true">the Codex App page</a>.
 </br>If you are looking for the <em>cloud-based agent</em> from OpenAI, <strong>Codex Web</strong>, go to <a href="https://chatgpt.com/codex">chatgpt.com/codex</a>.</p>
 
+See FEATURES.md for the catalog of fork-specific features and their tests.
+
 ---
 
 ## Quickstart

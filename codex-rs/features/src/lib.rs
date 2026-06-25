@@ -3,6 +3,10 @@
 //! This crate defines the feature registry plus the logic used to resolve an
 //! effective feature set from config-like inputs.
 
+use codex_otel::SessionTelemetry;
+use codex_protocol::protocol::Event;
+use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::WarningEvent;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
@@ -22,6 +26,7 @@ pub use feature_configs::NetworkProxyModeToml;
 pub use feature_configs::NetworkProxyUnixSocketPermissionToml;
 use feature_configs::RemovedAppsMcpPathOverrideConfigToml;
 pub use feature_configs::RolloutBudgetConfigToml;
+pub use feature_configs::TokenBudgetConfigToml;
 use legacy::LegacyFeatureToggles;
 pub use legacy::legacy_feature_keys;
 
@@ -76,9 +81,6 @@ impl Stage {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Feature {
     // Stable.
-    /// Removed compatibility flag retained as a no-op so old configs can
-    /// still parse `undo`.
-    GhostCommit,
     /// Enable the default shell tool.
     ShellTool,
     /// Enable Claude-style lifecycle hooks loaded from hooks.json files.
@@ -87,14 +89,10 @@ pub enum Feature {
     SecretAuthStorage,
 
     // Experimental
-    /// Removed compatibility flag for the deleted JavaScript REPL feature.
-    JsRepl,
     /// Enable JavaScript code mode backed by the in-process V8 runtime.
     CodeMode,
     /// Restrict model-visible tools to code mode entrypoints (`exec`, `wait`).
     CodeModeOnly,
-    /// Removed compatibility flag for the deleted JavaScript REPL tool-only mode.
-    JsReplToolsOnly,
     /// Use the single unified PTY-backed exec tool.
     UnifiedExec,
     /// Route shell tool execution through the zsh exec bridge.
@@ -109,8 +107,6 @@ pub enum Feature {
     TerminalResizeReflow,
     /// Add terminal-specific visualization guidance to TUI developer instructions.
     TerminalVisualizationInstructions,
-    /// Include the freeform apply_patch tool.
-    ApplyPatchFreeform,
     /// Stream structured progress while apply_patch input is being generated.
     ApplyPatchStreamingEvents,
     /// Allow exec tools to request additional permissions while staying sandboxed.
@@ -124,39 +120,22 @@ pub enum Feature {
     WebSearchCached,
     /// Expose the extension-backed standalone web search tool.
     StandaloneWebSearch,
-    /// Legacy search-tool feature flag kept for backward compatibility.
-    SearchTool,
-    /// Removed legacy Linux bubblewrap opt-in flag retained as a no-op so old
-    /// wrappers and config can still parse it.
-    UseLinuxSandboxBwrap,
     /// Use the legacy Landlock Linux sandbox fallback instead of the default
     /// bubblewrap pipeline.
     UseLegacyLandlock,
-    /// Allow the model to request approval and propose exec rules.
-    RequestRule,
-    /// Enable Windows sandbox (restricted token) on Windows.
-    WindowsSandbox,
-    /// Use the elevated Windows sandbox pipeline (setup + runner).
-    WindowsSandboxElevated,
-    /// Legacy remote models flag kept for backward compatibility.
-    RemoteModels,
     /// Experimental shell snapshotting.
     ShellSnapshot,
-    /// Removed legacy git commit attribution guidance flag.
-    CodexGitCommit,
     /// Allow turns to start while selected executors are still starting.
     DeferredExecutor,
     /// Enable runtime metrics snapshots via a manual reader.
     RuntimeMetrics,
-    /// Persist rollout metadata to a local SQLite database.
-    Sqlite,
     /// Enable startup memory extraction and file-backed memory consolidation.
     MemoryTool,
     /// Compress cold local thread-store rollout files.
     LocalThreadStoreCompression,
     /// Enable the Chronicle sidecar for passive screen-context memories.
     Chronicle,
-    /// Append additional AGENTS.md guidance to user instructions.
+    /// Enable hierarchical AGENTS.md guidance for child agents (fork feature).
     ChildAgentsMd,
     /// Compress request bodies (zstd) when sending streaming requests to codex-backend.
     EnableRequestCompression,
@@ -168,7 +147,7 @@ pub enum Feature {
     Collab,
     /// Enable task-path-based multi-agent routing.
     MultiAgentV2,
-    /// Enable per-turn multi-agent mode selection.
+    /// Removed compatibility flag retained as a no-op.
     MultiAgentMode,
     /// Enable CSV-backed agent job tools.
     SpawnCsv,
@@ -178,14 +157,12 @@ pub enum Feature {
     EnableMcpApps,
     /// Removed compatibility flag for the legacy Apps MCP path override.
     AppsMcpPathOverride,
-    /// Enable the tool_search tool for apps.
+    /// Removed compatibility flag retained as a no-op now that tool_search is always enabled.
     ToolSearch,
-    /// Always defer MCP tools behind tool_search instead of exposing small sets directly.
+    /// Removed compatibility flag. MCP tools are always deferred when tool_search is available.
     ToolSearchAlwaysDeferMcpTools,
     /// Expose MCP model-visible namespaces without the legacy `mcp__` prefix.
     NonPrefixedMcpToolNames,
-    /// Removed compatibility flag for the deleted unavailable-tool placeholder backfill.
-    UnavailableDummyTools,
     /// Enable discoverable tool suggestions for apps.
     ToolSuggest,
     /// Enable plugins.
@@ -200,6 +177,10 @@ pub enum Feature {
     ///
     /// Requirements-only gate: this should be set from requirements, not user config.
     BrowserUse,
+    /// Allow Browser Use integration to access the full Chrome DevTools Protocol surface.
+    ///
+    /// Requirements-only gate: this should be set from requirements, not user config.
+    BrowserUseFullCdpAccess,
     /// Allow Browser Use integration with external browsers.
     ///
     /// Requirements-only gate: this should be set from requirements, not user config.
@@ -218,19 +199,16 @@ pub enum Feature {
     ImageGeneration,
     /// Replace hosted image generation with the standalone image-generation extension.
     ImageGenExt,
-    /// Resize all inline data-URL images before recording them in history.
+    /// Removed compatibility flag for always-on centralized image preparation.
     ResizeAllImages,
     /// Generate Responses API item IDs for client-created history items.
     ItemIds,
     /// Allow prompting and installing missing MCP dependencies.
     SkillMcpDependencyInstall,
-    /// Prompt for missing skill env var dependencies.
+    /// Removed compatibility flag for deleted skill env var dependency prompting.
     SkillEnvVarDependencyPrompt,
     /// Enable the unified mention popup used by default in the TUI.
     MentionsV2,
-    /// Steer feature flag - when enabled, Enter submits immediately instead of queuing.
-    /// Kept for config backward compatibility; behavior is always steer-enabled.
-    Steer,
     /// Allow request_user_input in Default collaboration mode.
     DefaultModeRequestUserInput,
     /// Enable automatic review for approval prompts.
@@ -245,9 +223,6 @@ pub enum Feature {
     CurrentTimeReminder,
     /// Expose an input-interruptible sleep tool.
     SleepTool,
-    /// Enable collaboration modes (Plan, Default).
-    /// Kept for config backward compatibility; behavior is always collaboration-modes-enabled.
-    CollaborationModes,
     /// Route MCP tool approval prompts through the MCP elicitation request path.
     ToolCallMcpElicitation,
     /// Prompt Codex Apps connector auth failures through MCP URL elicitations.
@@ -260,6 +235,50 @@ pub enum Feature {
     FastMode,
     /// Enable experimental realtime voice conversation mode in the TUI.
     RealtimeConversation,
+    /// Prevent idle system sleep while a turn is actively running.
+    PreventIdleSleep,
+    /// Enable remote compaction v2 over the normal Responses API.
+    RemoteCompactionV2,
+    /// Use Agent Identity for ChatGPT-authenticated sessions.
+    UseAgentIdentity,
+    /// Enable workspace dependency support.
+    WorkspaceDependencies,
+
+    // Removed
+    /// Removed compatibility flag retained as a no-op so old configs can
+    /// still parse `undo`.
+    GhostCommit,
+    /// Removed compatibility flag for the deleted JavaScript REPL feature.
+    JsRepl,
+    /// Removed compatibility flag for the deleted JavaScript REPL tool-only mode.
+    JsReplToolsOnly,
+    /// Legacy search-tool feature flag kept for backward compatibility.
+    SearchTool,
+    /// Removed legacy Linux bubblewrap opt-in flag retained as a no-op so old
+    /// wrappers and config can still parse it.
+    UseLinuxSandboxBwrap,
+    /// Allow the model to request approval and propose exec rules.
+    RequestRule,
+    /// Enable Windows sandbox (restricted token) on Windows.
+    WindowsSandbox,
+    /// Use the elevated Windows sandbox pipeline (setup + runner).
+    WindowsSandboxElevated,
+    /// Legacy remote models flag kept for backward compatibility.
+    RemoteModels,
+    /// Removed legacy git commit attribution guidance flag.
+    CodexGitCommit,
+    /// Persist rollout metadata to a local SQLite database.
+    Sqlite,
+    /// Removed compatibility flag for the deleted apply_patch fallback feature.
+    ApplyPatchFreeform,
+    /// Removed compatibility flag for the deleted unavailable-tool placeholder backfill.
+    UnavailableDummyTools,
+    /// Steer feature flag - when enabled, Enter submits immediately instead of queuing.
+    /// Kept for config backward compatibility; behavior is always steer-enabled.
+    Steer,
+    /// Enable collaboration modes (Plan, Default).
+    /// Kept for config backward compatibility; behavior is always collaboration-modes-enabled.
+    CollaborationModes,
     /// Removed compatibility flag for the deleted remote control feature.
     RemoteControl,
     /// Removed compatibility flag retained as a no-op so old wrappers can
@@ -267,8 +286,6 @@ pub enum Feature {
     ImageDetailOriginal,
     /// Removed compatibility flag. The TUI now always uses the app-server implementation.
     TuiAppServer,
-    /// Prevent idle system sleep while a turn is actively running.
-    PreventIdleSleep,
     /// Removed compatibility flag retained as a no-op now that workspace owner
     /// usage nudges are always enabled.
     WorkspaceOwnerUsageNudge,
@@ -276,14 +293,6 @@ pub enum Feature {
     ResponsesWebsockets,
     /// Legacy rollout flag for Responses API WebSocket transport v2 experiments.
     ResponsesWebsocketsV2,
-    /// Send `response.processed` over Responses API websockets after a turn response is recorded.
-    ResponsesWebsocketResponseProcessed,
-    /// Enable remote compaction v2 over the normal Responses API.
-    RemoteCompactionV2,
-    /// Use Agent Identity for ChatGPT-authenticated sessions.
-    UseAgentIdentity,
-    /// Enable workspace dependency support.
-    WorkspaceDependencies,
 
     // ---- fork-local features (keep grouped to avoid upstream merge conflicts) ----
     // New fork-specific variants go in THIS block, at the end of the enum, so that
@@ -347,7 +356,6 @@ pub struct FeatureOverrides {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FeatureConfigSource<'a> {
     pub features: Option<&'a FeaturesToml>,
-    pub include_apply_patch_tool: Option<bool>,
     pub experimental_use_unified_exec_tool: Option<bool>,
 }
 
@@ -430,14 +438,22 @@ impl Features {
         self.legacy_usages.iter()
     }
 
-    pub fn metric_states(&self) -> impl Iterator<Item = (&'static str, bool)> + '_ {
-        FEATURES.iter().filter_map(|feature| {
+    pub fn emit_metrics(&self, otel: &SessionTelemetry) {
+        for feature in FEATURES {
             if matches!(feature.stage, Stage::Removed) {
-                return None;
+                continue;
             }
-            let enabled = self.enabled(feature.id);
-            (enabled != feature.default_enabled).then_some((feature.key, enabled))
-        })
+            if self.enabled(feature.id) != feature.default_enabled {
+                otel.counter(
+                    "codex.feature.state",
+                    /*inc*/ 1,
+                    &[
+                        ("feature", feature.key),
+                        ("value", &self.enabled(feature.id).to_string()),
+                    ],
+                );
+            }
+        }
     }
 
     /// Apply a table of key -> bool toggles (e.g. from TOML).
@@ -474,10 +490,10 @@ impl Features {
                 "apply_patch_freeform" => {
                     continue;
                 }
-                "tool_search" | "apps_mcp_path_override" => {
+                "tool_search" | "tool_search_always_defer_mcp_tools" | "apps_mcp_path_override" => {
                     continue;
                 }
-                "image_detail_original" => {
+                "image_detail_original" | "resize_all_images" => {
                     continue;
                 }
                 "plugin_hooks" => {
@@ -527,8 +543,8 @@ impl Features {
 
         for source in [base, profile] {
             LegacyFeatureToggles {
-                include_apply_patch_tool: source.include_apply_patch_tool,
                 experimental_use_unified_exec_tool: source.experimental_use_unified_exec_tool,
+                include_apply_patch_tool: None,
             }
             .apply(&mut features);
 
@@ -641,6 +657,8 @@ pub struct FeaturesToml {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub multi_agent_v2: Option<FeatureToml<MultiAgentV2ConfigToml>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_budget: Option<FeatureToml<TokenBudgetConfigToml>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rollout_budget: Option<FeatureToml<RolloutBudgetConfigToml>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_time_reminder: Option<FeatureToml<CurrentTimeReminderConfigToml>>,
@@ -676,6 +694,9 @@ impl FeaturesToml {
         if let Some(enabled) = self.multi_agent_v2.as_ref().and_then(FeatureToml::enabled) {
             entries.insert(Feature::MultiAgentV2.key().to_string(), enabled);
         }
+        if let Some(enabled) = self.token_budget.as_ref().and_then(FeatureToml::enabled) {
+            entries.insert(Feature::TokenBudget.key().to_string(), enabled);
+        }
         if let Some(enabled) = self.rollout_budget.as_ref().and_then(FeatureToml::enabled) {
             entries.insert(Feature::RolloutBudget.key().to_string(), enabled);
         }
@@ -697,6 +718,7 @@ impl FeaturesToml {
         let Self {
             code_mode,
             multi_agent_v2,
+            token_budget,
             rollout_budget,
             current_time_reminder,
             removed_apps_mcp_path_override: _,
@@ -712,6 +734,8 @@ impl FeaturesToml {
                 materialize_resolved_feature_enabled(code_mode, enabled);
             } else if spec.id == Feature::MultiAgentV2 {
                 materialize_resolved_feature_enabled(multi_agent_v2, enabled);
+            } else if spec.id == Feature::TokenBudget {
+                materialize_resolved_feature_enabled(token_budget, enabled);
             } else if spec.id == Feature::RolloutBudget {
                 materialize_resolved_feature_enabled(rollout_budget, enabled);
             } else if spec.id == Feature::CurrentTimeReminder {
@@ -938,8 +962,8 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::ApplyPatchFreeform,
         key: "apply_patch_freeform",
-        stage: Stage::Stable,
-        default_enabled: true,
+        stage: Stage::Removed,
+        default_enabled: false,
     },
     FeatureSpec {
         id: Feature::ApplyPatchStreamingEvents,
@@ -1032,13 +1056,13 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::MultiAgentV2,
         key: "multi_agent_v2",
-        stage: Stage::Stable,
-        default_enabled: true,
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
     },
     FeatureSpec {
         id: Feature::MultiAgentMode,
         key: "multi_agent_mode",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Removed,
         default_enabled: false,
     },
     FeatureSpec {
@@ -1068,13 +1092,13 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::ToolSearch,
         key: "tool_search",
-        stage: Stage::Stable,
-        default_enabled: true,
+        stage: Stage::Removed,
+        default_enabled: false,
     },
     FeatureSpec {
         id: Feature::ToolSearchAlwaysDeferMcpTools,
         key: "tool_search_always_defer_mcp_tools",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Removed,
         default_enabled: true,
     },
     FeatureSpec {
@@ -1116,6 +1140,12 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::BrowserUse,
         key: "browser_use",
+        stage: Stage::Stable,
+        default_enabled: true,
+    },
+    FeatureSpec {
+        id: Feature::BrowserUseFullCdpAccess,
+        key: "browser_use_full_cdp_access",
         stage: Stage::Stable,
         default_enabled: true,
     },
@@ -1164,8 +1194,8 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::ResizeAllImages,
         key: "resize_all_images",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
+        stage: Stage::Removed,
+        default_enabled: true,
     },
     FeatureSpec {
         id: Feature::ItemIds,
@@ -1182,7 +1212,7 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::SkillEnvVarDependencyPrompt,
         key: "skill_env_var_dependency_prompt",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Removed,
         default_enabled: false,
     },
     FeatureSpec {
@@ -1359,14 +1389,11 @@ pub const FEATURES: &[FeatureSpec] = &[
         stage: Stage::Stable,
         default_enabled: true,
     },
-    // ---- fork-local features (keep grouped to avoid upstream merge conflicts) ----
-    // Mirrors the trailing fork-local block in the `Feature` enum above. New
-    // fork-specific FeatureSpec entries go HERE so upstream additions append in
-    // their own positions and do not textually collide with ours.
+    // ---- fork-local features ----
     FeatureSpec {
         id: Feature::SemanticAutoCompact,
         key: "semantic_auto_compact",
-        stage: Stage::Stable,
+        stage: Stage::UnderDevelopment,
         default_enabled: true,
     },
     FeatureSpec {
@@ -1396,12 +1423,12 @@ pub const FEATURES: &[FeatureSpec] = &[
     // ---- end fork-local features ----
 ];
 
-pub fn unstable_features_warning_message(
+pub fn unstable_features_warning_event(
     effective_features: Option<&Table>,
     suppress_unstable_features_warning: bool,
     features: &Features,
     config_path: &str,
-) -> Option<String> {
+) -> Option<Event> {
     if suppress_unstable_features_warning {
         return None;
     }
@@ -1436,9 +1463,13 @@ pub fn unstable_features_warning_message(
 
     under_development_feature_keys.sort();
     let under_development_feature_keys = under_development_feature_keys.join(", ");
-    Some(format!(
+    let message = format!(
         "Under-development features enabled: {under_development_feature_keys}. Under-development features are incomplete and may behave unpredictably. To suppress this warning, set `suppress_unstable_features_warning = true` in {config_path}."
-    ))
+    );
+    Some(Event {
+        id: String::new(),
+        msg: EventMsg::Warning(WarningEvent { message }),
+    })
 }
 
 #[cfg(test)]

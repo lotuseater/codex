@@ -12,16 +12,12 @@ use crate::ToolHandlerKind;
 use crate::ToolName;
 use crate::ToolRegistryPlan;
 use crate::ToolRegistryPlanParams;
-use crate::ToolSearchSource;
-use crate::ToolSearchSourceInfo;
 use crate::ToolSpec;
 use crate::ToolsConfig;
 use crate::ViewImageToolOptions;
 use crate::WebSearchToolOptions;
 use crate::coalesce_loadable_tool_specs;
 use crate::collect_code_mode_exec_prompt_tool_definitions;
-use crate::collect_request_plugin_install_entries;
-use crate::collect_tool_search_source_infos;
 use crate::create_apply_patch_freeform_tool;
 use crate::create_apply_patch_json_tool;
 use crate::create_close_agent_tool_v1;
@@ -44,7 +40,6 @@ use crate::create_read_mcp_resource_tool;
 use crate::create_repo_context_scout_tool;
 use crate::create_report_agent_job_result_tool;
 use crate::create_request_permissions_tool;
-use crate::create_request_plugin_install_tool;
 use crate::create_request_user_input_tool;
 use crate::create_restart_agent_tool;
 use crate::create_resume_agent_tool;
@@ -57,7 +52,6 @@ use crate::create_spawn_agent_tool_v1;
 use crate::create_spawn_agent_tool_v2;
 use crate::create_spawn_agents_on_csv_tool;
 use crate::create_test_sync_tool;
-use crate::create_tool_search_tool;
 use crate::create_update_goal_tool;
 use crate::create_update_plan_tool;
 use crate::create_view_image_tool;
@@ -78,6 +72,10 @@ use codex_protocol::dynamic_tools::DynamicToolNamespaceTool;
 use codex_protocol::dynamic_tools::DynamicToolSpec;
 use codex_protocol::openai_models::ApplyPatchToolType;
 use codex_protocol::openai_models::ConfigShellToolType;
+use codex_tool_registry_api::ToolSearchSourceInfo;
+use codex_tool_registry_api::collect_request_plugin_install_entries;
+use codex_tool_registry_api::create_request_plugin_install_tool;
+use codex_tool_registry_api::create_tool_search_tool;
 use std::collections::BTreeMap;
 
 pub fn build_tool_registry_plan(
@@ -304,19 +302,41 @@ pub fn build_tool_registry_plan(
     } else {
         None
     };
+    let tool_search_available = config.search_tool
+        && (deferred_mcp_tools_for_search.is_some() || !deferred_dynamic_tools.is_empty());
 
-    if config.search_tool
-        && (deferred_mcp_tools_for_search.is_some() || !deferred_dynamic_tools.is_empty())
-    {
+    if tool_search_available {
         let mut search_source_infos = deferred_mcp_tools_for_search
             .map(|deferred_mcp_tools| {
-                collect_tool_search_source_infos(deferred_mcp_tools.iter().map(|tool| {
-                    ToolSearchSource {
-                        server_name: tool.server_name,
-                        connector_name: tool.connector_name,
-                        description: tool.description,
-                    }
-                }))
+                deferred_mcp_tools
+                    .iter()
+                    .filter_map(|tool| {
+                        if let Some(name) = tool
+                            .connector_name
+                            .map(str::trim)
+                            .filter(|connector_name| !connector_name.is_empty())
+                        {
+                            return Some(ToolSearchSourceInfo {
+                                name: name.to_string(),
+                                description: tool
+                                    .description
+                                    .map(str::trim)
+                                    .filter(|description| !description.is_empty())
+                                    .map(str::to_string),
+                            });
+                        }
+
+                        let name = tool.server_name.trim();
+                        if name.is_empty() {
+                            return None;
+                        }
+
+                        Some(ToolSearchSourceInfo {
+                            name: name.to_string(),
+                            description: None,
+                        })
+                    })
+                    .collect::<Vec<_>>()
             })
             .unwrap_or_default();
 
@@ -346,9 +366,10 @@ pub fn build_tool_registry_plan(
             params.discoverable_tools.filter(|tools| !tools.is_empty())
     {
         plan.push_spec(
-            create_request_plugin_install_tool(&collect_request_plugin_install_entries(
-                discoverable_tools,
-            )),
+            create_request_plugin_install_tool(
+                &collect_request_plugin_install_entries(discoverable_tools),
+                tool_search_available,
+            ),
             /*supports_parallel_tool_calls*/ true,
             /*code_mode_enabled*/ false,
         );

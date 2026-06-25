@@ -1309,7 +1309,7 @@ impl Session {
         let turn_context = self
             .new_default_turn_with_sub_id(uuid::Uuid::new_v4().to_string())
             .await;
-        self.maybe_emit_unknown_model_warning_for_turn(turn_context.as_ref())
+        self.maybe_emit_model_warnings_for_turn(turn_context.as_ref())
             .await;
         let still_reserved = {
             let active_turn = self.active_turn.lock().await;

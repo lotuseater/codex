@@ -7,17 +7,18 @@ pub const DEFAULT_PLAN_TOKEN_ECONOMY_PROMPT_TEXT: &str = "Consider whether the c
 
 pub const MAIN_AGENT_PLAN_DELEGATION_PROMPT: &str = concat!(
     "Every main-agent task plan prompt, including update_plan calls outside Plan mode, must inject a delegation decision: state what to delegate to subagents or external worker sessions when delegation is useful, or state that the work stays local and why. ",
-    "Include an Agent ROI Estimate: new_agent_cost=3, reuse_cost=1, parallel_gain=0-3, context_gain=0-3, repeat_gain=0-4, loop_followup_gain=0-3, risk_penalty=0-3, net = gains + loop_followup_gain - cost - risk. In loop mode, automatic continuation normally adds loop_followup_gain=2, or 3 when a relevant idle/reusable agent or repeated operations are likely. Treat ROI as a practicality guardrail, and use the Plan-token-economy default as the spawn gate: Default K={k}; spawn or reuse only when net >= 2, no hard keep-local rule applies, the subtask has a bounded contract, and the estimated subtask cost is >= 25000 tokens unless the user supplies a different threshold. ",
+    "Include an Agent ROI Estimate: new_agent_cost=3, reuse_cost=1, parallel_gain=0-3, context_gain=0-3, repeat_gain=0-4, loop_followup_gain=0-3, risk_penalty=0-3, net = gains + loop_followup_gain - cost - risk. In loop mode, automatic continuation normally adds loop_followup_gain=2, or 3 when a relevant idle/reusable agent or repeated operations are likely. Treat ROI as a practicality guardrail, and use the Plan-token-economy default as the spawn gate: Default K=26000; spawn or reuse only when net >= 2, no hard keep-local rule applies, the subtask has a bounded contract, and the estimated subtask cost is >= 26000 tokens unless the user supplies a different threshold. ",
     "On a first task plan, when loop mode is planning a continuation, or when context drift or context compactions are likely, root should coordinate instead of doing implementation/testing/verification itself: consider reusing or creating at least one persistent highest-capability worker only when it materially reduces total work or preserves context, no suitable worker is already active, no hard keep-local rule applies, and the plan-token/ROI thresholds are met. ",
     "Delegate most bounded implementation/testing work to compact-handoff workers; if independent parallel work exists, split it into more workers. The root should wait or sleep about 5 minutes between checks while workers run, then inspect short handoffs and send follow-ups, redirects, or verification requests. ",
     "Strongly prefer separate non-interactive Codex exec worker sessions in separate PowerShell terminals/processes for external work; use tool-spawned in-session agents only when external sessions are unavailable, and use interactive Codex sessions only when live steering or visible course correction is specifically needed. For external worker sessions, avoid machine-specific script paths; use portable PowerShell such as `Start-Process powershell` to create prompt and handoff files, then launch each worker in its own PowerShell terminal from the workspace. ",
-    "Prefer the highest-capability available model and reasoning effort for worker sessions that change code, tests, prompts, or verification behavior; lower model or effort only for simple, bounded, low-risk subtasks. Carry the Plan-token-economy default (Default K={k}) into delegated prompts. Recursively delegate from child agents for bounded child subtasks estimated at >= 25000 tokens when the Agent ROI Estimate threshold is met, using the same model and reasoning effort, ownership, verification, and concise handoffs. ",
+    "Prefer the highest-capability available model and reasoning effort for worker sessions that change code, tests, prompts, or verification behavior; lower model or effort only for simple, bounded, low-risk subtasks. Carry the Plan-token-economy default (Default K=26000) into delegated prompts. Recursively delegate from child agents for bounded child subtasks estimated at >= 26000 tokens when the Agent ROI Estimate threshold is met, using the same model and reasoning effort, ownership, verification, and concise handoffs. ",
     "Keep root focused on overall context, ownership boundaries, integration, verification, and follow-ups. Ask subagents for a short summary or short result only when the main agent needs that handoff to integrate, verify, or review their work."
 );
 
 /// Same body as [`default_multi_agent_v2_root_usage_hint_text`] but with an
 /// explicit `k` so callers can vary the delegation threshold at runtime.
 pub fn default_multi_agent_v2_root_usage_hint_text_with_k(k: usize) -> String {
+    let delegation = DEFAULT_PLAN_TOKEN_ECONOMY_PROMPT_TEXT.replace("[K]", &k.to_string());
     format!(
         concat!(
             r#"MultiAgentV2 planning mode is enabled.
@@ -37,7 +38,7 @@ When assigning worker sessions, prefer the highest-capability available model an
 
 For interactive sessions, avoid machine-specific script paths; create prompt and handoff files, then use portable PowerShell such as a visible `Start-Process powershell` launch from the workspace. Prefer tool-spawned agents for ordinary bounded tasks; reserve interactive sessions for work that needs live steering or visible course correction.
 
-Plan-token-economy default (recursive_roi_gate; Default K={k}): Consider whether the current task can be decomposed into subtasks efficiently. If so, decompose it, make a mini-plan, and estimate the token cost of each subtask. Delegate a subtask only when expected cost is at least [K] tokens and delegation has positive ROI after coordination overhead. Use the same model and reasoning effort as yourself for delegated agents. Keep yourself primarily as planner, coordinator, and reviewer. Prefer bounded sequential delegation when a child may recursively subdivide work. Do not check worker sessions too often; sleep roughly 1-5 minutes between useful checks while workers are doing useful work.
+Plan-token-economy default (recursive_roi_gate; Default K={k}): Consider whether the current task can be decomposed into subtasks efficiently. If so, decompose it, make a mini-plan, and estimate the token cost of each subtask. Delegate a subtask only when expected cost is at least {k} tokens and delegation has positive ROI after coordination overhead. Use the same model and reasoning effort as yourself for delegated agents. Keep yourself primarily as planner, coordinator, and reviewer. Prefer bounded sequential delegation when a child may recursively subdivide work. Do not check worker sessions too often; sleep roughly 1-5 minutes between useful checks while workers are doing useful work.
 
 Recursive subagent delegation is threshold-gated by the plan-token-economy default: authorize child agents only when the child subtask estimate is >= {k} tokens and keep delegated work bounded by ownership, verification, and concise handoffs.
 
@@ -78,7 +79,7 @@ Oversee agents actively: call list_agents before spawning related follow-up work
             "\n\n",
             "{delegation} K = {k}",
         ),
-        delegation = DEFAULT_PLAN_TOKEN_ECONOMY_PROMPT_TEXT,
+        delegation = delegation,
         k = k,
     )
 }
@@ -86,6 +87,7 @@ Oversee agents actively: call list_agents before spawning related follow-up work
 /// Same body as [`default_multi_agent_v2_subagent_usage_hint_text`] but with an
 /// explicit `k` so callers can vary the delegation threshold at runtime.
 pub fn default_multi_agent_v2_subagent_usage_hint_text_with_k(k: usize) -> String {
+    let delegation = DEFAULT_PLAN_TOKEN_ECONOMY_PROMPT_TEXT.replace("[K]", &k.to_string());
     format!(
         concat!(
             r#"MultiAgentV2 worker mode is enabled.
@@ -108,7 +110,7 @@ Do not perform git commit/push/tag/rebase/merge, deploy promotion, or wrapper pr
             "Plan-token-economy default (recursive_roi_gate). ",
             "{delegation} K = {k}",
         ),
-        delegation = DEFAULT_PLAN_TOKEN_ECONOMY_PROMPT_TEXT,
+        delegation = delegation,
         k = k,
     )
 }

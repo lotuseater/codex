@@ -166,7 +166,7 @@ impl RecordingThread {
             metadata: params.metadata,
             dynamic_tools: Vec::new(),
             patch: ThreadMetadataPatch::default(),
-            history: params.history.unwrap_or_default(),
+            history: params.history.map(|h| (*h).clone()).unwrap_or_default(),
             archived_at: None,
             created_at: now,
             updated_at: now,
@@ -255,7 +255,7 @@ impl ThreadStore for RecordingThreadStore {
                     thread.rollout_path = params.rollout_path;
                 }
                 if let Some(history) = params.history {
-                    thread.history = history;
+                    thread.history = (*history).clone();
                 }
                 thread.metadata = params.metadata;
                 thread.updated_at = Utc::now();

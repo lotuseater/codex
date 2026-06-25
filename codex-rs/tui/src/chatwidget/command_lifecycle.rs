@@ -5,6 +5,7 @@
 
 use super::*;
 use crate::exec_command::split_command_string;
+use codex_protocol::protocol::ExecCommandSource;
 
 impl ChatWidget {
     pub(super) fn flush_unified_exec_wait_streak(&mut self) {

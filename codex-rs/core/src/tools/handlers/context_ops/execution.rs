@@ -189,6 +189,9 @@ async fn run_remote_command(
             tty: false,
             pipe_stdin: false,
             arg0: None,
+            sandbox: None,
+            enforce_managed_network: false,
+            managed_network: None,
         })
         .await
         .map_err(|err| {

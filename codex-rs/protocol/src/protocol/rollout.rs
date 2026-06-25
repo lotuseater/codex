@@ -1,5 +1,6 @@
 use std::ops::Mul;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -7,6 +8,7 @@ use serde::Serialize;
 use serde_json::Value;
 use ts_rs::TS;
 
+use crate::SessionId;
 use crate::ThreadId;
 use crate::config_types::CollaborationMode;
 use crate::config_types::MultiAgentMode;
@@ -27,7 +29,7 @@ use super::*;
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct ResumedHistory {
     pub conversation_id: ThreadId,
-    pub history: Vec<RolloutItem>,
+    pub history: Arc<Vec<RolloutItem>>,
     pub rollout_path: Option<PathBuf>,
 }
 
@@ -67,7 +69,7 @@ impl InitialHistory {
     pub fn session_cwd(&self) -> Option<PathBuf> {
         match self {
             InitialHistory::New | InitialHistory::Cleared => None,
-            InitialHistory::Resumed(resumed) => session_cwd_from_items(&resumed.history),
+            InitialHistory::Resumed(resumed) => session_cwd_from_items(resumed.history.as_slice()),
             InitialHistory::Forked(items) => session_cwd_from_items(items),
         }
     }
@@ -75,7 +77,7 @@ impl InitialHistory {
     pub fn get_rollout_items(&self) -> Vec<RolloutItem> {
         match self {
             InitialHistory::New | InitialHistory::Cleared => Vec::new(),
-            InitialHistory::Resumed(resumed) => resumed.history.clone(),
+            InitialHistory::Resumed(resumed) => (*resumed.history).clone(),
             InitialHistory::Forked(items) => items.clone(),
         }
     }
@@ -153,9 +155,10 @@ impl InitialHistory {
     pub fn get_multi_agent_version(&self) -> Option<MultiAgentVersion> {
         match self {
             InitialHistory::New | InitialHistory::Cleared => None,
-            InitialHistory::Resumed(resumed) => {
-                multi_agent_version_from_items(&resumed.history, Some(resumed.conversation_id))
-            }
+            InitialHistory::Resumed(resumed) => multi_agent_version_from_items(
+                resumed.history.as_slice(),
+                Some(resumed.conversation_id),
+            ),
             InitialHistory::Forked(items) => {
                 multi_agent_version_from_items(items, /*thread_id*/ None)
             }
@@ -169,7 +172,7 @@ impl InitialHistory {
     pub fn get_latest_effective_multi_agent_mode(&self) -> Option<MultiAgentMode> {
         let items: &[RolloutItem] = match self {
             InitialHistory::New | InitialHistory::Cleared => return None,
-            InitialHistory::Resumed(resumed) => &resumed.history,
+            InitialHistory::Resumed(resumed) => resumed.history.as_slice(),
             InitialHistory::Forked(items) => items,
         };
         items.iter().rev().find_map(|item| match item {
@@ -215,6 +218,7 @@ fn multi_agent_version_from_items(
             RolloutItem::SessionMeta(_)
             | RolloutItem::ResponseItem(_)
             | RolloutItem::InterAgentCommunication(_)
+            | RolloutItem::InterAgentCommunicationMetadata { .. }
             | RolloutItem::Compacted(_)
             | RolloutItem::EventMsg(_) => None,
         })
@@ -235,6 +239,7 @@ fn session_cwd_from_items(items: &[RolloutItem]) -> Option<PathBuf> {
 /// and should be used when there is no config override.
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, TS)]
 pub struct SessionMeta {
+    pub session_id: SessionId,
     pub id: ThreadId,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub forked_from_id: Option<ThreadId>,
@@ -273,12 +278,17 @@ pub struct SessionMeta {
     pub memory_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub multi_agent_version: Option<MultiAgentVersion>,
+    /// Initial context-window identity for consumers that tail rollout JSONL before compaction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<SessionContextWindow>,
 }
 
 impl Default for SessionMeta {
     fn default() -> Self {
+        let id = ThreadId::default();
         SessionMeta {
-            id: ThreadId::default(),
+            session_id: id.into(),
+            id,
             forked_from_id: None,
             parent_thread_id: None,
             timestamp: String::new(),
@@ -295,7 +305,24 @@ impl Default for SessionMeta {
             dynamic_tools: None,
             memory_mode: None,
             multi_agent_version: None,
+            context_window: None,
         }
+    }
+}
+
+/// Identity of the model context window in effect at session creation.
+///
+/// Persisted in [`SessionMeta`] so consumers that tail rollout JSONL before any
+/// compaction occurs can correlate items with the initial context window.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema, TS)]
+pub struct SessionContextWindow {
+    /// UUIDv7 identity of this context window.
+    pub window_id: String,
+}
+
+impl SessionContextWindow {
+    pub fn new(window_id: String) -> Self {
+        Self { window_id }
     }
 }
 
@@ -314,6 +341,10 @@ pub enum RolloutItem {
     ResponseItem(ResponseItem),
     /// Durable delivery metadata reconstructed as a model-visible `agent_message`.
     InterAgentCommunication(InterAgentCommunication),
+    /// Local delivery metadata that is not part of the Responses API item.
+    InterAgentCommunicationMetadata {
+        trigger_turn: bool,
+    },
     Compacted(CompactedItem),
     TurnContext(TurnContextItem),
     EventMsg(EventMsg),
@@ -329,6 +360,12 @@ pub struct CompactedItem {
     /// Monotonic position of this context window within the thread.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window_number: Option<u64>,
+    /// UUIDv7 identity of the first context window in this thread's window chain.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_window_id: Option<String>,
+    /// UUIDv7 identity of the context window immediately before this one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_window_id: Option<String>,
     /// UUIDv7 identity of this context window.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window_id: Option<String>,
@@ -343,7 +380,7 @@ impl From<CompactedItem> for ResponseItem {
                 text: value.message,
             }],
             phase: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         }
     }
 }

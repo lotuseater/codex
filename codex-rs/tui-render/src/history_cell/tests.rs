@@ -4,30 +4,43 @@ use super::*;
 use crate::exec_cell::CommandOutput;
 use crate::exec_cell::ExecCall;
 use crate::exec_cell::ExecCell;
+use crate::legacy_core::config::Config;
+use crate::legacy_core::config::ConfigBuilder;
 use crate::session_state::ThreadSessionState;
 use crate::wrapping::word_wrap_lines;
+use codex_app_server_protocol::AskForApproval;
+use codex_app_server_protocol::McpAuthStatus;
 use codex_config::types::McpServerConfig;
-use codex_permission_types::ManagedFileSystemPermissions;
-use codex_permission_types::NetworkSandboxPolicy;
+use codex_otel::RuntimeMetricTotals;
+use codex_otel::RuntimeMetricsSummary;
 use codex_protocol::ThreadId;
+use codex_protocol::account::PlanType;
+use codex_protocol::error::UnexpectedResponseError;
 use codex_protocol::parse_command::ParsedCommand;
-use codex_protocol::protocol::AskForApproval;
-use codex_protocol::protocol::ExecCommandSource;
-use codex_protocol::protocol::McpAuthStatus;
-use codex_runtime_metrics_types::RuntimeMetricTotals;
-use codex_runtime_metrics_types::RuntimeMetricsSummary;
 use dirs::home_dir;
 use pretty_assertions::assert_eq;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
+use reqwest::StatusCode;
 use serde_json::json;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use codex_app_server_protocol::CommandExecutionSource as ExecCommandSource;
 use codex_protocol::mcp::CallToolResult;
 use codex_protocol::mcp::Tool;
+use rmcp::model::Content;
 
 const SMALL_PNG_BASE64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
+async fn test_config() -> Config {
+    let codex_home = std::env::temp_dir();
+    ConfigBuilder::default()
+        .codex_home(codex_home.clone())
+        .build()
+        .await
+        .expect("config")
+}
+
 fn test_cwd() -> PathBuf {
     // These tests only need a stable absolute cwd; using temp_dir() avoids baking Unix- or
     // Windows-specific root semantics into the fixtures.
@@ -57,35 +70,81 @@ fn stdio_server_config(
     args: Vec<&str>,
     env: Option<HashMap<String, String>>,
     env_vars: Vec<&str>,
-) -> McpServerDisplayConfig {
-    McpServerDisplayConfig {
-        transport: McpServerDisplayTransport::Stdio {
-            command: command.to_string(),
-            args: args.into_iter().map(str::to_string).collect(),
-            env,
-            env_vars: env_vars.into_iter().map(str::to_string).collect(),
-            cwd: None,
-        },
-        enabled: true,
-        disabled_reason: None,
+) -> McpServerConfig {
+    let mut table = toml::Table::new();
+    table.insert(
+        "command".to_string(),
+        toml::Value::String(command.to_string()),
+    );
+    if !args.is_empty() {
+        table.insert(
+            "args".to_string(),
+            toml::Value::Array(
+                args.into_iter()
+                    .map(|arg| toml::Value::String(arg.to_string()))
+                    .collect(),
+            ),
+        );
     }
+    if let Some(env) = env {
+        table.insert("env".to_string(), string_map_to_toml_value(env));
+    }
+    if !env_vars.is_empty() {
+        table.insert(
+            "env_vars".to_string(),
+            toml::Value::Array(
+                env_vars
+                    .into_iter()
+                    .map(|name| toml::Value::String(name.to_string()))
+                    .collect(),
+            ),
+        );
+    }
+
+    toml::Value::Table(table)
+        .try_into()
+        .expect("test stdio MCP config should deserialize")
 }
 
 fn streamable_http_server_config(
     url: &str,
-    _bearer_token_env_var: Option<&str>,
+    bearer_token_env_var: Option<&str>,
     http_headers: Option<HashMap<String, String>>,
     env_http_headers: Option<HashMap<String, String>>,
-) -> McpServerDisplayConfig {
-    McpServerDisplayConfig {
-        transport: McpServerDisplayTransport::StreamableHttp {
-            url: url.to_string(),
-            http_headers,
-            env_http_headers,
-        },
-        enabled: true,
-        disabled_reason: None,
+) -> McpServerConfig {
+    let mut table = toml::Table::new();
+    table.insert("url".to_string(), toml::Value::String(url.to_string()));
+    if let Some(bearer_token_env_var) = bearer_token_env_var {
+        table.insert(
+            "bearer_token_env_var".to_string(),
+            toml::Value::String(bearer_token_env_var.to_string()),
+        );
     }
+    if let Some(http_headers) = http_headers {
+        table.insert(
+            "http_headers".to_string(),
+            string_map_to_toml_value(http_headers),
+        );
+    }
+    if let Some(env_http_headers) = env_http_headers {
+        table.insert(
+            "env_http_headers".to_string(),
+            string_map_to_toml_value(env_http_headers),
+        );
+    }
+
+    toml::Value::Table(table)
+        .try_into()
+        .expect("test streamable_http MCP config should deserialize")
+}
+
+fn string_map_to_toml_value(entries: HashMap<String, String>) -> toml::Value {
+    toml::Value::Table(
+        entries
+            .into_iter()
+            .map(|(key, value)| (key, toml::Value::String(value)))
+            .collect(),
+    )
 }
 
 fn render_lines(lines: &[Line<'static>]) -> Vec<String> {
@@ -114,18 +173,12 @@ fn assert_unstyled_lines(lines: &[Line<'static>]) {
 }
 
 fn image_block(data: &str) -> serde_json::Value {
-    serde_json::json!({
-        "type": "image",
-        "data": data,
-        "mimeType": "image/png",
-    })
+    serde_json::to_value(Content::image(data.to_string(), "image/png"))
+        .expect("image content should serialize")
 }
 
 fn text_block(text: &str) -> serde_json::Value {
-    serde_json::json!({
-        "type": "text",
-        "text": text,
-    })
+    serde_json::to_value(Content::text(text)).expect("text content should serialize")
 }
 
 fn resource_link_block(
@@ -134,13 +187,17 @@ fn resource_link_block(
     title: Option<&str>,
     description: Option<&str>,
 ) -> serde_json::Value {
-    serde_json::json!({
-        "type": "resource_link",
-        "uri": uri,
-        "name": name,
-        "title": title,
-        "description": description,
-    })
+    serde_json::to_value(Content::resource_link(rmcp::model::RawResource {
+        uri: uri.to_string(),
+        name: name.to_string(),
+        title: title.map(str::to_string),
+        description: description.map(str::to_string),
+        mime_type: None,
+        size: None,
+        icons: None,
+        meta: None,
+    }))
+    .expect("resource link content should serialize")
 }
 
 #[test]
@@ -544,16 +601,16 @@ fn ps_output_empty_snapshot() {
     insta::assert_snapshot!(rendered);
 }
 
-#[test]
-fn session_info_uses_availability_nux_tooltip_override() {
-    let cwd = test_cwd();
+#[tokio::test]
+async fn session_info_uses_availability_nux_tooltip_override() {
+    let config = test_config().await;
     let cell = new_session_info(
-        &cwd,
-        /*show_tooltips*/ true,
+        &config,
         "gpt-5",
         &session_configured_event("gpt-5"),
         /*is_first_event*/ false,
         Some("Model just became available".to_string()),
+        Some(PlanType::Free),
         /*show_fast_status*/ false,
     );
 
@@ -561,20 +618,21 @@ fn session_info_uses_availability_nux_tooltip_override() {
     assert!(rendered.contains("Model just became available"));
 }
 
-#[test]
+#[tokio::test]
 #[cfg_attr(
     target_os = "windows",
     ignore = "snapshot path rendering differs on Windows"
 )]
-fn session_info_availability_nux_tooltip_snapshot() {
-    let cwd = test_path_buf("/tmp/project").abs();
+async fn session_info_availability_nux_tooltip_snapshot() {
+    let mut config = test_config().await;
+    config.cwd = test_path_buf("/tmp/project").abs();
     let cell = new_session_info(
-        &cwd,
-        /*show_tooltips*/ true,
+        &config,
         "gpt-5",
         &session_configured_event("gpt-5"),
         /*is_first_event*/ false,
         Some("Model just became available".to_string()),
+        Some(PlanType::Free),
         /*show_fast_status*/ false,
     );
 
@@ -582,16 +640,16 @@ fn session_info_availability_nux_tooltip_snapshot() {
     insta::assert_snapshot!(rendered);
 }
 
-#[test]
-fn session_info_first_event_suppresses_tooltips_and_nux() {
-    let cwd = test_cwd();
+#[tokio::test]
+async fn session_info_first_event_suppresses_tooltips_and_nux() {
+    let config = test_config().await;
     let cell = new_session_info(
-        &cwd,
-        /*show_tooltips*/ true,
+        &config,
         "gpt-5",
         &session_configured_event("gpt-5"),
         /*is_first_event*/ true,
         Some("Model just became available".to_string()),
+        Some(PlanType::Free),
         /*show_fast_status*/ false,
     );
 
@@ -600,16 +658,17 @@ fn session_info_first_event_suppresses_tooltips_and_nux() {
     assert!(rendered.contains("To get started"));
 }
 
-#[test]
-fn session_info_hides_tooltips_when_disabled() {
-    let cwd = test_cwd();
+#[tokio::test]
+async fn session_info_hides_tooltips_when_disabled() {
+    let mut config = test_config().await;
+    config.show_tooltips = false;
     let cell = new_session_info(
-        &cwd,
-        /*show_tooltips*/ false,
+        &config,
         "gpt-5",
         &session_configured_event("gpt-5"),
         /*is_first_event*/ false,
         Some("Model just became available".to_string()),
+        Some(PlanType::Free),
         /*show_fast_status*/ false,
     );
 
@@ -696,11 +755,37 @@ fn error_event_oversized_input_snapshot() {
 }
 
 #[test]
-fn mcp_tools_output_masks_sensitive_values() {
+fn error_event_bedrock_expired_signature_snapshot() {
+    let error = UnexpectedResponseError {
+        status: StatusCode::UNAUTHORIZED,
+        body: "Signature expired: 20260609T133205Z is now earlier than 20260614T062525Z \
+(20260614T063025Z - 5 min.)"
+            .to_string(),
+        user_message: Some(
+            "Amazon Bedrock rejected the request because its AWS signature has expired. \
+Refresh your AWS credentials and retry. If `AWS_BEARER_TOKEN_BEDROCK` is set, update or \
+unset it, then restart Codex"
+                .to_string(),
+        ),
+        url: Some("https://bedrock-mantle.us-east-2.api.aws/openai/v1/responses".to_string()),
+        cf_ray: None,
+        request_id: None,
+        identity_authorization_error: None,
+        identity_error_code: None,
+    };
+    let cell = new_error_event(error.to_string());
+    let rendered = render_lines(&cell.display_lines(/*width*/ 100)).join("\n");
+
+    insta::assert_snapshot!(rendered);
+}
+
+#[tokio::test]
+async fn mcp_tools_output_masks_sensitive_values() {
+    let mut config = test_config().await;
     let mut env = HashMap::new();
     env.insert("TOKEN".to_string(), "secret".to_string());
     let stdio_config = stdio_server_config("docs-server", vec![], Some(env), vec!["APP_TOKEN"]);
-    let mut servers = HashMap::new();
+    let mut servers = config.mcp_servers.get().clone();
     servers.insert("docs".to_string(), stdio_config);
 
     let mut headers = HashMap::new();
@@ -714,6 +799,10 @@ fn mcp_tools_output_masks_sensitive_values() {
         Some(env_headers),
     );
     servers.insert("http".to_string(), http_config);
+    config
+        .mcp_servers
+        .set(servers)
+        .expect("test mcp servers should accept any configuration");
 
     let mut tools: HashMap<String, Tool> = HashMap::new();
     tools.insert(
@@ -745,7 +834,7 @@ fn mcp_tools_output_masks_sensitive_values() {
 
     let auth_statuses: HashMap<String, McpAuthStatus> = HashMap::new();
     let cell = new_mcp_tools_output(
-        &servers,
+        &config,
         tools,
         HashMap::new(),
         HashMap::new(),
@@ -756,13 +845,19 @@ fn mcp_tools_output_masks_sensitive_values() {
     insta::assert_snapshot!(rendered);
 }
 
-#[test]
-fn mcp_tools_output_lists_tools_for_hyphenated_server_names() {
-    let mut servers = HashMap::new();
+#[tokio::test]
+async fn mcp_tools_output_lists_tools_for_hyphenated_server_names() {
+    let mut config = test_config().await;
+    let mut servers = config.mcp_servers.get().clone();
     servers.insert(
         "some-server".to_string(),
         stdio_server_config("docs-server", vec!["--stdio"], /*env*/ None, vec![]),
     );
+    config
+        .mcp_servers
+        .set(servers)
+        .expect("test mcp servers should accept any configuration");
+
     let tools = HashMap::from([(
         "mcp__some_server__lookup".to_string(),
         Tool {
@@ -779,7 +874,7 @@ fn mcp_tools_output_lists_tools_for_hyphenated_server_names() {
 
     let auth_statuses: HashMap<String, McpAuthStatus> = HashMap::new();
     let cell = new_mcp_tools_output(
-        &servers,
+        &config,
         tools,
         HashMap::new(),
         HashMap::new(),
@@ -792,12 +887,6 @@ fn mcp_tools_output_lists_tools_for_hyphenated_server_names() {
 
 #[test]
 fn mcp_tools_output_from_statuses_renders_status_only_servers() {
-    let mut plugin_docs =
-        stdio_server_config("docs-server", vec!["--stdio"], /*env*/ None, vec![]);
-    plugin_docs.enabled = false;
-    plugin_docs.disabled_reason = Some("unknown".to_string());
-    let servers = HashMap::from([("plugin_docs".to_string(), plugin_docs)]);
-
     let statuses = vec![McpServerStatus {
         name: "plugin_docs".to_string(),
         server_info: None,
@@ -816,14 +905,11 @@ fn mcp_tools_output_from_statuses_renders_status_only_servers() {
         )]),
         resources: Vec::new(),
         resource_templates: Vec::new(),
-        auth_status: McpAuthStatus::Unsupported,
+        auth_status: codex_app_server_protocol::McpAuthStatus::Unsupported,
     }];
 
-    let cell = new_mcp_tools_output_from_statuses(
-        &servers,
-        &statuses,
-        McpServerStatusDetail::ToolsAndAuthOnly,
-    );
+    let cell =
+        new_mcp_tools_output_from_statuses(&statuses, McpServerStatusDetail::ToolsAndAuthOnly);
     let rendered = render_lines(&cell.display_lines(/*width*/ 120)).join("\n");
 
     insta::assert_snapshot!(rendered);
@@ -831,10 +917,6 @@ fn mcp_tools_output_from_statuses_renders_status_only_servers() {
 
 #[test]
 fn mcp_tools_output_from_statuses_renders_verbose_inventory() {
-    let plugin_docs =
-        stdio_server_config("docs-server", vec!["--stdio"], /*env*/ None, vec![]);
-    let servers = HashMap::from([("plugin_docs".to_string(), plugin_docs)]);
-
     let statuses = vec![McpServerStatus {
         name: "plugin_docs".to_string(),
         server_info: None,
@@ -870,10 +952,10 @@ fn mcp_tools_output_from_statuses_renders_verbose_inventory() {
             description: None,
             mime_type: None,
         }],
-        auth_status: McpAuthStatus::Unsupported,
+        auth_status: codex_app_server_protocol::McpAuthStatus::Unsupported,
     }];
 
-    let cell = new_mcp_tools_output_from_statuses(&servers, &statuses, McpServerStatusDetail::Full);
+    let cell = new_mcp_tools_output_from_statuses(&statuses, McpServerStatusDetail::Full);
     let rendered = render_lines(&cell.display_lines(/*width*/ 120)).join("\n");
 
     insta::assert_snapshot!(rendered);
@@ -1460,25 +1542,6 @@ fn session_header_hides_fast_status_when_disabled() {
 }
 
 #[test]
-fn session_header_shows_local_fork_version_label() {
-    let cell = SessionHeaderHistoryCell::new(
-        "gpt-4o".to_string(),
-        /*reasoning_effort*/ None,
-        /*show_fast_status*/ false,
-        std::env::temp_dir(),
-        "test",
-    );
-
-    let lines = render_lines(&cell.display_lines(/*width*/ 80));
-    let title_line = lines
-        .iter()
-        .find(|line| line.contains("OpenAI Codex"))
-        .expect("title line");
-
-    assert!(title_line.contains("local"));
-}
-
-#[test]
 #[cfg_attr(
     target_os = "windows",
     ignore = "snapshot path rendering differs on Windows"
@@ -1499,7 +1562,7 @@ fn session_header_indicates_yolo_mode() {
 
 #[test]
 fn yolo_mode_includes_managed_full_access_profiles() {
-    let permission_profile = PermissionProfile::Managed {
+    let permission_profile: PermissionProfile = PermissionProfile::Managed {
         network: NetworkSandboxPolicy::Enabled,
         file_system: ManagedFileSystemPermissions::Unrestricted,
     };
@@ -1512,7 +1575,7 @@ fn yolo_mode_includes_managed_full_access_profiles() {
 
 #[test]
 fn yolo_mode_excludes_external_sandbox_profiles() {
-    let permission_profile = PermissionProfile::External {
+    let permission_profile: PermissionProfile = PermissionProfile::External {
         network: NetworkSandboxPolicy::Enabled,
     };
 
@@ -2234,8 +2297,11 @@ fn reasoning_summary_block_returns_reasoning_cell_when_feature_disabled() {
     assert_eq!(rendered, vec!["• Detailed reasoning goes here."]);
 }
 
-#[test]
-fn reasoning_summary_block_respects_config_overrides() {
+#[tokio::test]
+async fn reasoning_summary_block_respects_config_overrides() {
+    let mut config = test_config().await;
+    config.model = Some("gpt-3.5-turbo".to_string());
+    config.model_supports_reasoning_summaries = Some(true);
     let cell = new_reasoning_summary_block(
         "**High level reasoning**\n\nDetailed reasoning goes here.".to_string(),
         &test_cwd(),

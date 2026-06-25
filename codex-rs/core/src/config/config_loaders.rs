@@ -113,6 +113,7 @@ impl Config {
             network: network_requirements,
             filesystem: filesystem_requirements,
             guardian_policy_config_source: _,
+            marketplaces: _,
         } = config_layer_stack.requirements().clone();
 
         let mut startup_warnings = config_layer_stack
@@ -205,12 +206,10 @@ impl Config {
         let configured_features = Features::from_sources(
             FeatureConfigSource {
                 features: cfg.features.as_ref(),
-                include_apply_patch_tool: None,
                 experimental_use_unified_exec_tool: cfg.experimental_use_unified_exec_tool,
             },
             FeatureConfigSource {
                 features: config_profile.features.as_ref(),
-                include_apply_patch_tool: None,
                 experimental_use_unified_exec_tool: config_profile
                     .experimental_use_unified_exec_tool,
             },
@@ -422,7 +421,6 @@ impl Config {
                     effective_permission_selection.profiles.as_ref(),
                     default_permissions,
                     builtin_workspace_write_settings,
-                    resolved_cwd.as_path(),
                     &mut startup_warnings,
                 )?;
             let mut configured_workspace_roots = compile_permission_profile_workspace_roots(
@@ -624,6 +622,7 @@ impl Config {
         let code_mode = resolve_code_mode_config(&cfg);
         let multi_agent_v2 = resolve_multi_agent_v2_config(&cfg, &config_profile);
         let rollout_budget = resolve_rollout_budget_config(&cfg, &features)?;
+        let token_budget = resolve_token_budget_config(&cfg, &features)?;
         let current_time_reminder = resolve_current_time_reminder_config(&cfg, &features)?;
         let apps_mcp_path_override = if features.enabled(Feature::AppsMcpPathOverride) {
             apps_mcp_path_override_toml_config(cfg.features.as_ref())
@@ -789,15 +788,18 @@ impl Config {
         let include_apply_patch_tool_flag = features.enabled(Feature::ApplyPatchFreeform);
         let use_experimental_unified_exec_tool = features.enabled(Feature::UnifiedExec);
 
-        let forced_chatgpt_workspace_id =
-            cfg.forced_chatgpt_workspace_id.as_ref().and_then(|value| {
-                let trimmed = value.trim();
-                if trimmed.is_empty() {
-                    None
-                } else {
-                    Some(trimmed.to_string())
-                }
-            });
+        let forced_chatgpt_workspace_id = cfg
+            .forced_chatgpt_workspace_id
+            .clone()
+            .map(codex_config::config_toml::ForcedChatgptWorkspaceIds::into_vec)
+            .map(|values| {
+                values
+                    .into_iter()
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty())
+                    .collect::<Vec<_>>()
+            })
+            .filter(|values| !values.is_empty());
 
         let forced_login_method = cfg.forced_login_method;
         let desktop_automation =
@@ -1264,6 +1266,7 @@ impl Config {
             ghost_snapshot,
             multi_agent_v2,
             rollout_budget,
+            token_budget,
             current_time_reminder,
             desktop_automation,
             first_moves,

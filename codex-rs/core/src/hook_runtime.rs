@@ -707,6 +707,7 @@ fn hook_run_analytics_payload(
                 .turn_id
                 .clone()
                 .unwrap_or_else(|| turn_context.sub_id.clone()),
+            turn_context.originator.clone(),
         ),
         HookRunFact {
             event_name: completed.run.event_name,
@@ -761,9 +762,12 @@ fn hook_permission_mode(turn_context: &TurnContext) -> String {
     match turn_context.approval_policy.value() {
         AskForApproval::Never => "bypassPermissions",
         AskForApproval::UnlessTrusted
-        | AskForApproval::OnFailure
         | AskForApproval::OnRequest
-        | AskForApproval::Granular(_) => "default",
+        | AskForApproval::Granular(_)
+        // Deprecated: auto-approve but sandbox; use default hook permission mode.
+        | AskForApproval::OnFailure => {
+            "default"
+        }
     }
     .to_string()
 }

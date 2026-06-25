@@ -3,8 +3,8 @@
 //! The dispatch and the feature-config helpers are moved verbatim from `main.rs`.
 //! Behavior, validation order, and output are unchanged.
 
-use codex_config::edit::ConfigEditsBuilder;
 use codex_core::config::ConfigBuilder;
+use codex_core::config::edit::ConfigEditsBuilder;
 use codex_core::config::find_codex_home;
 use codex_features::FEATURES;
 use codex_features::Stage;

@@ -132,7 +132,8 @@ fn strip_image_details(items: &mut [ResponseItem]) {
                     }
                 }
             }
-            ResponseItem::Reasoning { .. }
+            ResponseItem::AdditionalTools { .. }
+            | ResponseItem::Reasoning { .. }
             | ResponseItem::AgentMessage { .. }
             | ResponseItem::LocalShellCall { .. }
             | ResponseItem::FunctionCall { .. }
@@ -195,7 +196,8 @@ fn reserialize_shell_outputs(items: &mut [ResponseItem]) {
             call_id,
             name,
             input: _,
-            metadata: _,
+            internal_chat_message_metadata_passthrough: _,
+            ..
         } => {
             if name == "apply_patch" {
                 shell_call_ids.insert(call_id.clone());

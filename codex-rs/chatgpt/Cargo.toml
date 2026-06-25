@@ -10,7 +10,6 @@ workspace = true
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
-codex-app-catalog-types = { workspace = true }
 codex-connectors = { workspace = true }
 codex-core = { workspace = true }
 codex-git-utils = { workspace = true }
@@ -19,7 +18,7 @@ codex-model-provider = { workspace = true }
 codex-plugin = { workspace = true }
 codex-utils-cli = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-tokio = { workspace = true, features = ["macros"] }
+tokio = { workspace = true, features = ["full"] }
 
 [dev-dependencies]
 codex-utils-cargo-bin = { workspace = true }

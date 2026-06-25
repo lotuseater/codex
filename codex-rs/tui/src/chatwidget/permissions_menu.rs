@@ -1,9 +1,8 @@
 use super::*;
+use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
 
 impl ChatWidget {
     pub(super) fn open_permission_profiles_popup(&mut self) {
-        // Previously used to mark configured custom profiles as current; the
-        // custom-profile list was dropped (see below), leaving only built-ins.
         let _active_profile_id = self
             .config
             .permissions
@@ -50,7 +49,7 @@ impl ChatWidget {
         }
         items.push(self.builtin_permission_mode_selection_item(
             full_access,
-            ":danger-no-sandbox",
+            BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS,
             full_access.description.to_string(),
             AskForApproval::from(full_access.approval),
             ApprovalsReviewer::User,
@@ -62,12 +61,6 @@ impl ChatWidget {
             AskForApproval::from(read_only.approval),
             ApprovalsReviewer::User,
         ));
-        // The fork appended user-configured (named) permission profiles here,
-        // sourced from `Config::custom_permission_profiles`. That field was
-        // dropped from `Config` upstream and there is no surviving runtime
-        // source for the custom-profile summaries, so only the built-in
-        // profiles above are listed. (See the build-fix handoff: custom-profile
-        // rows in this picker are the one behavior dropped by this merge.)
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
             title: Some("Update Model Permissions".to_string()),
@@ -128,16 +121,18 @@ impl ChatWidget {
                 .err()
                 .map(|err| err.to_string())
                 .or_else(|| {
-                    // `Permissions::can_set_permission_profile` was removed
-                    // upstream; the constraint check now lives on the inner
-                    // `Constrained<PermissionProfile>` as `can_set`, matching
-                    // the `approval_policy.can_set(..)` call above.
                     self.config
                         .permissions
                         .permission_profile
                         .can_set(&preset.permission_profile)
                         .err()
                         .map(|err| err.to_string())
+                })
+                .or_else(|| {
+                    (!self
+                        .config
+                        .is_permission_profile_allowed(id, &preset.permission_profile))
+                    .then(|| "Disabled by requirements.".to_string())
                 }),
             ..Default::default()
         }
@@ -148,6 +143,7 @@ impl ChatWidget {
         id: &str,
         description: &str,
         active_profile_id: Option<&str>,
+        allowed: bool,
     ) -> SelectionItem {
         let id_for_action = id.to_string();
         let selection = PermissionProfileSelection {
@@ -162,6 +158,7 @@ impl ChatWidget {
             is_current: active_profile_id == Some(id),
             actions: Self::permission_profile_selection_actions(selection),
             dismiss_on_select: true,
+            disabled_reason: (!allowed).then(|| "Disabled by requirements.".to_string()),
             ..Default::default()
         }
     }

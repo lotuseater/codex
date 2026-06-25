@@ -19,7 +19,7 @@ codex-aws-auth = { workspace = true }
 codex-client = { workspace = true }
 codex-feedback = { workspace = true }
 codex-login = { workspace = true }
-codex-model-provider-info = { workspace = true, features = ["runtime"] }
+codex-model-provider-info = { workspace = true }
 codex-models-manager = { workspace = true }
 codex-otel = { workspace = true }
 codex-protocol = { workspace = true }

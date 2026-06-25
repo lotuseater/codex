@@ -10,6 +10,7 @@ use crate::session::blackboard::new_blackboard_session;
 use crate::shell_snapshot::ShellSnapshot;
 use crate::skills::SkillError;
 use crate::state::ActiveTurn;
+use crate::state::AutoCompactWindowIds;
 use codex_extension_api::ExtensionDataInit;
 use codex_protocol::SessionId;
 use codex_protocol::config_types::ContextBudgetMode;
@@ -95,7 +96,7 @@ pub(crate) struct SessionConfiguration {
     pub(super) provider: ModelProviderInfo,
 
     pub(super) collaboration_mode: CollaborationMode,
-    pub(super) multi_agent_mode: Option<MultiAgentMode>,
+    pub(super) multi_agent_mode: MultiAgentMode,
     pub(super) model_reasoning_summary: Option<ReasoningSummaryConfig>,
     pub(super) service_tier: Option<String>,
     pub(super) context_budget_mode: ContextBudgetMode,
@@ -165,6 +166,8 @@ pub(crate) struct SessionConfiguration {
     pub(super) parent_thread_id: Option<ThreadId>,
     /// Optional analytics source classification for this thread.
     pub(super) thread_source: Option<ThreadSource>,
+    /// Effective originator used for this thread's Responses requests and analytics events.
+    pub(super) originator: String,
     pub(super) dynamic_tools: Vec<DynamicToolSpec>,
     pub(super) user_shell_override: Option<shell::Shell>,
 }
@@ -215,7 +218,7 @@ impl SessionConfiguration {
             approvals_reviewer: self.approvals_reviewer,
             permission_profile: self.permission_profile(),
             active_permission_profile: self.active_permission_profile(),
-            cwd: self.cwd().clone(),
+            environments: TurnEnvironmentSelections::new(self.cwd().clone(), Vec::new()),
             workspace_roots: self.workspace_roots.clone(),
             profile_workspace_roots: self.profile_workspace_roots.clone(),
             ephemeral: self.original_config_do_not_use.ephemeral,
@@ -228,6 +231,7 @@ impl SessionConfiguration {
             forked_from_thread_id: self.forked_from_thread_id,
             parent_thread_id: self.parent_thread_id,
             thread_source: self.thread_source.clone(),
+            originator: self.originator.clone(),
         }
     }
 
@@ -261,7 +265,7 @@ impl SessionConfiguration {
             next_configuration.collaboration_mode = collaboration_mode;
         }
         if let Some(multi_agent_mode) = updates.multi_agent_mode {
-            next_configuration.multi_agent_mode = Some(multi_agent_mode);
+            next_configuration.multi_agent_mode = multi_agent_mode;
         }
         if let Some(summary) = updates.reasoning_summary {
             next_configuration.model_reasoning_summary = Some(summary);
@@ -536,10 +540,9 @@ impl Session {
         format!("{thread_id}:{window_number}")
     }
 
-    pub(crate) async fn advance_auto_compact_window(&self) -> (u64, String) {
+    pub(crate) async fn advance_auto_compact_window(&self) -> (u64, AutoCompactWindowIds) {
         let mut state = self.state.lock().await;
-        let (window_number, window_id) = state.advance_auto_compact_window();
-        (window_number, window_id.to_string())
+        state.advance_auto_compact_window()
     }
 
     pub(crate) async fn request_new_context_window(&self) {
@@ -573,9 +576,13 @@ impl Session {
     ) -> Option<u64> {
         let window = {
             let mut state = self.state.lock().await;
-            state.start_new_context_window_if_requested()
+            if state.take_new_context_window_request() {
+                Some(state.start_new_context_window())
+            } else {
+                None
+            }
         };
-        let (window_number, window_id) = window?;
+        let (window_number, window_ids) = window?;
         let context_items = self.build_initial_context(turn_context).await;
         let turn_context_item = turn_context.to_turn_context_item();
         let replacement_history = context_items;
@@ -588,7 +595,9 @@ impl Session {
                 message: String::new(),
                 replacement_history: Some(replacement_history),
                 window_number: Some(window_number),
-                window_id: Some(window_id.to_string()),
+                first_window_id: Some(window_ids.first_window_id.to_string()),
+                previous_window_id: window_ids.previous_window_id.map(|id| id.to_string()),
+                window_id: Some(window_ids.window_id.to_string()),
             }),
             RolloutItem::TurnContext(turn_context_item),
         ])
@@ -599,6 +608,11 @@ impl Session {
         }
         self.recompute_token_usage(turn_context).await;
         Some(window_number)
+    }
+
+    pub(crate) async fn originator(&self) -> String {
+        let state = self.state.lock().await;
+        state.session_configuration.originator.clone()
     }
 
     #[instrument(name = "session_init", level = "info", skip_all)]
@@ -655,6 +669,36 @@ impl Session {
             }
             InitialHistory::Resumed(resumed_history) => resumed_history.conversation_id,
         };
+        let resumed_session_id = match &initial_history {
+            InitialHistory::Resumed(resumed) => {
+                resumed.history.iter().find_map(|item| match item {
+                    RolloutItem::SessionMeta(meta_line) => Some(meta_line.meta.session_id),
+                    _ => None,
+                })
+            }
+            InitialHistory::New | InitialHistory::Cleared | InitialHistory::Forked(_) => None,
+        };
+        // Legacy subagent rollouts synthesize session_id from their own thread id.
+        let resumed_session_id = resumed_session_id.filter(|session_id| {
+            !session_configuration.session_source.is_non_root_agent()
+                || *session_id != SessionId::from(thread_id)
+        });
+        let session_id = resumed_session_id.unwrap_or_else(|| {
+            if session_configuration.session_source.is_non_root_agent() {
+                agent_control.session_id()
+            } else {
+                SessionId::from(thread_id)
+            }
+        });
+        let initial_auto_compact_window_ids = AutoCompactWindowIds::new_initial();
+        let agent_control = agent_control.with_session_id(
+            session_id,
+            config
+                .effective_agent_max_threads(MultiAgentVersion::V2)
+                .ok()
+                .flatten()
+                .unwrap_or(usize::MAX),
+        );
         let time_provider = crate::current_time::resolve_time_provider(
             config.current_time_reminder.as_ref(),
             external_time_provider,
@@ -679,17 +723,22 @@ impl Session {
                             .create(
                                 Arc::clone(&thread_store),
                                 CreateThreadParams {
+                                    session_id,
                                     thread_id,
                                     extra_config: config.extra_config.clone(),
                                     forked_from_id,
                                     parent_thread_id,
                                     source: session_source,
                                     thread_source: session_configuration.thread_source.clone(),
+                                    originator: session_configuration.originator.clone(),
                                     base_instructions: BaseInstructions {
                                         text: session_configuration.base_instructions.clone(),
                                     },
                                     dynamic_tools: session_configuration.dynamic_tools.clone(),
                                     multi_agent_version: initial_multi_agent_version,
+                                    initial_window_id: initial_auto_compact_window_ids
+                                        .window_id
+                                        .to_string(),
                                     metadata: ThreadPersistenceMetadata {
                                         cwd: Some(config.cwd.to_path_buf()),
                                         model_provider: config.model_provider_id.clone(),
@@ -855,7 +904,7 @@ impl Session {
                 });
             }
             let config_path = config.codex_home.join(CONFIG_TOML_FILE);
-            if let Some(message) = unstable_features_warning_message(
+            if let Some(event) = unstable_features_warning_event(
                 config
                     .config_layer_stack
                     .effective_config()
@@ -865,25 +914,13 @@ impl Session {
                 &config.features,
                 &config_path.display().to_string(),
             ) {
-                post_session_configured_events.push(Event {
-                    id: String::new(),
-                    msg: EventMsg::Warning(WarningEvent { message }),
-                });
+                post_session_configured_events.push(event);
             }
-            if config.permissions.approval_policy.value() == AskForApproval::OnFailure {
-                post_session_configured_events.push(Event {
-                    id: "".to_owned(),
-                    msg: EventMsg::Warning(WarningEvent {
-                        message: "`on-failure` approval policy is deprecated and will be removed in a future release. Use `on-request` for interactive approvals or `never` for non-interactive runs.".to_string(),
-                    }),
-                });
-            }
-
             let auth = auth.as_ref();
             let auth_mode = auth.map(CodexAuth::auth_mode).map(TelemetryAuthMode::from);
             let account_id = auth.and_then(CodexAuth::get_account_id);
             let account_email = auth.and_then(CodexAuth::get_account_email);
-            let originator = originator().value;
+            let originator = session_configuration.originator.clone();
             let terminal_type = user_agent();
             let session_model = session_configuration.collaboration_mode.model().to_string();
             let auth_env_telemetry = collect_auth_env_telemetry(
@@ -917,11 +954,12 @@ impl Session {
                 model: Some(session_model.clone()),
                 slug: Some(session_model),
             };
-            for (feature, enabled) in config.features.metric_states() {
+            for spec in FEATURES {
+                let enabled = config.features.get().enabled(spec.id);
                 session_telemetry.counter(
                     "codex.feature.state",
                     /*inc*/ 1,
-                    &[("feature", feature), ("value", &enabled.to_string())],
+                    &[("feature", spec.key), ("value", &enabled.to_string())],
                 );
             }
             session_telemetry.counter(
@@ -1028,7 +1066,10 @@ impl Session {
             session_configuration.thread_name = thread_name.clone();
             validate_config_lock_if_configured(&session_configuration).await?;
             export_config_lock_if_configured(&session_configuration, thread_id).await?;
-            let state = SessionState::new(session_configuration.clone());
+            let state = SessionState::new_with_auto_compact_window_ids(
+                session_configuration.clone(),
+                initial_auto_compact_window_ids,
+            );
             let managed_network_requirements_configured = config
                 .config_layer_stack
                 .requirements_toml()
@@ -1111,19 +1152,6 @@ impl Session {
                     Box::new(codex_analytics::CustomFactReducer::default()),
                 )
             });
-            let session_id = if session_configuration.session_source.is_non_root_agent() {
-                agent_control.session_id()
-            } else {
-                SessionId::from(thread_id)
-            };
-            let agent_control = agent_control.with_session_id(
-                session_id,
-                config
-                    .effective_agent_max_threads(MultiAgentVersion::V2)
-                    .ok()
-                    .flatten()
-                    .unwrap_or(usize::MAX),
-            );
             // Keep one stable manager handle for the session so extension resource clients
             // automatically observe the manager installed at startup and on later refreshes.
             let mcp_connection_manager = Arc::new(arc_swap::ArcSwap::from_pointee(
@@ -1216,6 +1244,7 @@ impl Session {
                     thread_id,
                     session_configuration.provider.clone(),
                     session_configuration.session_source.clone(),
+                    session_configuration.originator.clone(),
                     config.model_verbosity,
                     config.features.enabled(Feature::EnableRequestCompression),
                     config.features.enabled(Feature::RuntimeMetrics),
@@ -1306,9 +1335,6 @@ impl Session {
                 sess.send_event_raw(event).await;
             }
 
-            let host_owned_codex_apps_enabled = config
-                .features
-                .apps_enabled_for_auth(auth.as_ref().is_some_and(|auth| auth.uses_codex_backend()));
             let client_elicitation_capability = if config.features.enabled(Feature::AuthElicitation) {
                 ElicitationCapability {
                     form: Some(FormElicitationCapability::default()),
@@ -1351,7 +1377,6 @@ impl Session {
                 mcp_runtime_context,
                 config.codex_home.to_path_buf(),
                 codex_apps_tools_cache_key(auth),
-                host_owned_codex_apps_enabled,
                 config.prefix_mcp_tool_names(),
                 client_elicitation_capability,
                 sess.services
@@ -1385,7 +1410,6 @@ impl Session {
                 let mut state = sess.state.lock().await;
                 state.queue_pending_session_start_source(session_start_source);
             }
-
             Ok(sess)
         }
         .await;

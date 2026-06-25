@@ -211,16 +211,18 @@ impl Session {
             );
         }
         if turn_context.config.include_environment_context {
-            let shell = self.user_shell();
             let subagents = self
                 .services
                 .agent_control
                 .format_environment_context_subagents(self.thread_id)
                 .await;
             contextual_user_sections.push(
-                crate::context::EnvironmentContext::from_turn_context(turn_context, shell.as_ref())
-                    .with_subagents(subagents)
-                    .render(),
+                crate::context::world_state::EnvironmentsState::from_turn_context_with_environments(
+                    turn_context,
+                    &turn_context.environments,
+                )
+                .with_subagents(subagents)
+                .render(),
             );
         }
 

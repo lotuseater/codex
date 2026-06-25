@@ -1,9 +1,5 @@
 use super::*;
-use crate::app_catalog_protocol::app_infos_to_v2;
-use codex_app_catalog_types::AppInfo;
-use codex_app_server_protocol::AppListUpdatedNotification;
-use codex_app_server_protocol::AppsListParams;
-use codex_app_server_protocol::AppsListResponse;
+use crate::app_info::app_info_to_api;
 use codex_core::connectors::AccessibleConnectorsStatus;
 
 pub(crate) struct AppsRequestProcessor {
@@ -59,7 +55,14 @@ impl AppsRequestProcessor {
             None
         };
         let fallback_cwd = match thread.as_ref() {
-            Some(thread) => Some(thread.config_snapshot().await.cwd.to_path_buf()),
+            Some(thread) => Some(
+                thread
+                    .config_snapshot()
+                    .await
+                    .environments
+                    .legacy_fallback_cwd
+                    .to_path_buf(),
+            ),
             None => None,
         };
         let mut config = self.load_latest_config(fallback_cwd).await?;
@@ -402,7 +405,11 @@ fn paginate_apps(
 
     let effective_limit = limit.unwrap_or(total as u32).max(1) as usize;
     let end = start.saturating_add(effective_limit).min(total);
-    let data = app_infos_to_v2(connectors[start..end].to_vec());
+    let data = connectors[start..end]
+        .iter()
+        .cloned()
+        .map(app_info_to_api)
+        .collect();
     let next_cursor = if end < total {
         Some(end.to_string())
     } else {
@@ -416,11 +423,10 @@ async fn send_app_list_updated_notification(
     outgoing: &Arc<OutgoingMessageSender>,
     data: Vec<AppInfo>,
 ) {
+    let data = data.into_iter().map(app_info_to_api).collect();
     outgoing
         .send_server_notification(ServerNotification::AppListUpdated(
-            AppListUpdatedNotification {
-                data: app_infos_to_v2(data),
-            },
+            AppListUpdatedNotification { data },
         ))
         .await;
 }

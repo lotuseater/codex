@@ -2,16 +2,6 @@
 #![allow(clippy::unwrap_used)]
 
 use anyhow::Result;
-use codex_core_test_runtime::responses::ev_assistant_message;
-use codex_core_test_runtime::responses::ev_completed;
-use codex_core_test_runtime::responses::ev_response_created;
-use codex_core_test_runtime::responses::mount_sse_once;
-use codex_core_test_runtime::responses::sse;
-use codex_core_test_runtime::responses::start_mock_server;
-use codex_core_test_runtime::skip_if_no_network;
-use codex_core_test_runtime::skip_if_wine_exec;
-use codex_core_test_runtime::test_codex::test_codex;
-use codex_core_test_runtime::test_codex::turn_permission_fields;
 use codex_exec_server::CreateDirectoryOptions;
 use codex_exec_server::ExecutorFileSystem;
 use codex_protocol::models::PermissionProfile;
@@ -20,6 +10,17 @@ use codex_protocol::protocol::Op;
 use codex_protocol::user_input::UserInput;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
+use core_test_support::responses::ev_assistant_message;
+use core_test_support::responses::ev_completed;
+use core_test_support::responses::ev_response_created;
+use core_test_support::responses::mount_sse_once;
+use core_test_support::responses::sse;
+use core_test_support::responses::start_mock_server;
+use core_test_support::skip_if_no_network;
+use core_test_support::skip_if_target_windows;
+use core_test_support::test_codex::local_selections;
+use core_test_support::test_codex::test_codex;
+use core_test_support::test_codex::turn_permission_fields;
 use std::sync::Arc;
 
 async fn write_repo_skill(
@@ -30,7 +31,7 @@ async fn write_repo_skill(
     body: &str,
 ) -> Result<()> {
     let skill_dir = cwd.join(".agents").join("skills").join(name);
-    let skill_dir_uri = PathUri::from_path(&skill_dir)?;
+    let skill_dir_uri = PathUri::from_host_native_path(&skill_dir)?;
     fs.create_directory(
         &skill_dir_uri,
         CreateDirectoryOptions { recursive: true },
@@ -39,7 +40,7 @@ async fn write_repo_skill(
     .await?;
     let contents = format!("---\nname: {name}\ndescription: {description}\n---\n\n{body}\n");
     let path = skill_dir.join("SKILL.md");
-    let path_uri = PathUri::from_path(&path)?;
+    let path_uri = PathUri::from_host_native_path(&path)?;
     fs.write_file(&path_uri, contents.into_bytes(), /*sandbox*/ None)
         .await?;
     Ok(())
@@ -48,7 +49,7 @@ async fn write_repo_skill(
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn user_turn_includes_skill_instructions() -> Result<()> {
     // TODO(anp): Remove after skill-path helpers use target-native paths.
-    skip_if_wine_exec!(Ok(()), "requires native cross-OS skill paths");
+    skip_if_target_windows!(Ok(()), "requires native cross-OS skill paths");
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
@@ -56,7 +57,7 @@ async fn user_turn_includes_skill_instructions() -> Result<()> {
     let mut builder = test_codex().with_workspace_setup(move |cwd, fs| async move {
         write_repo_skill(cwd, fs, "demo", "demo skill", skill_body).await
     });
-    let test = builder.build_remote_aware(&server).await?;
+    let test = builder.build_with_auto_env(&server).await?;
 
     let skill_path = test
         .config
@@ -80,8 +81,7 @@ async fn user_turn_includes_skill_instructions() -> Result<()> {
     let (sandbox_policy, permission_profile) =
         turn_permission_fields(PermissionProfile::Disabled, test.config.cwd.as_path());
     test.codex
-        .submit(Op::UserTurn {
-            environments: None,
+        .submit(Op::UserInput {
             items: vec![
                 UserInput::Text {
                     text: "please use $demo".to_string(),
@@ -93,22 +93,27 @@ async fn user_turn_includes_skill_instructions() -> Result<()> {
                 },
             ],
             final_output_json_schema: None,
-            cwd: test.config.cwd.to_path_buf(),
-            approval_policy: AskForApproval::Never,
-            approvals_reviewer: None,
-            sandbox_policy,
-            permission_profile,
-            model: session_model,
-            effort: None,
-            summary: None,
-            service_tier: None,
-            context_budget_mode: Some(codex_protocol::config_types::ContextBudgetMode::Standard),
-            collaboration_mode: None,
-            personality: None,
+            responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                environments: Some(local_selections(test.config.cwd.clone())),
+                approval_policy: Some(AskForApproval::Never),
+                sandbox_policy: Some(sandbox_policy),
+                permission_profile,
+                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
+                    mode: codex_protocol::config_types::ModeKind::Default,
+                    settings: codex_protocol::config_types::Settings {
+                        model: session_model,
+                        reasoning_effort: None,
+                        developer_instructions: None,
+                    },
+                }),
+                ..Default::default()
+            },
         })
         .await?;
 
-    codex_core_test_runtime::wait_for_event(test.codex.as_ref(), |event| {
+    core_test_support::wait_for_event(test.codex.as_ref(), |event| {
         matches!(event, codex_protocol::protocol::EventMsg::TurnComplete(_))
     })
     .await;

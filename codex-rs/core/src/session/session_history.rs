@@ -229,18 +229,43 @@ impl Session {
     pub(crate) async fn record_context_updates_and_set_reference_context_item(
         &self,
         turn_context: &TurnContext,
-    ) {
+    ) -> Arc<WorldState> {
         let reference_context_item = {
             let state = self.state.lock().await;
             state.reference_context_item()
         };
         let should_inject_full_context = reference_context_item.is_none();
+        // Build the exact model-visible world state for this turn so callers (run_turn and its
+        // inline compactions) can reuse it; mirror upstream's threading while keeping the fork's
+        // rollout persistence below.
+        let world_state = Arc::new(
+            self.build_world_state_for_environments(turn_context, &turn_context.environments)
+                .await,
+        );
         let context_items = if should_inject_full_context {
-            self.build_initial_context(turn_context).await
-        } else {
-            // Steady-state path: append only context diffs to minimize token overhead.
-            self.build_settings_update_items(reference_context_item.as_ref(), turn_context)
+            let context_items = self
+                .build_initial_context_with_world_state(turn_context, world_state.as_ref())
+                .await;
+            self.state
+                .lock()
                 .await
+                .history
+                .set_world_state_baseline(Arc::clone(&world_state));
+            context_items
+        } else {
+            // Steady-state path: append only context diffs to minimize token overhead, then fold
+            // in the world-state diff items against the live baseline.
+            let mut context_items = self
+                .build_settings_update_items(reference_context_item.as_ref(), turn_context)
+                .await;
+            let world_state_items = {
+                let mut state = self.state.lock().await;
+                crate::context_manager::updates::merge_contextual_fragments(
+                    state.history.update_world_state(Arc::clone(&world_state)),
+                )
+            };
+            context_items.extend(world_state_items);
+            context_items
         };
         let turn_context_item = turn_context.to_turn_context_item();
         if !context_items.is_empty() {
@@ -256,6 +281,7 @@ impl Session {
         // context items. This keeps later runtime diffing aligned with the current turn state.
         let mut state = self.state.lock().await;
         state.set_reference_context_item(Some(turn_context_item));
+        world_state
     }
 
     pub(crate) async fn update_token_usage_info(
