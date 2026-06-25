@@ -247,6 +247,7 @@ pub(crate) mod time_reminder;
 mod token_budget;
 pub(crate) mod turn;
 pub(crate) mod turn_context;
+pub(crate) mod usage_hint_reminder;
 // upstream-added split modules (files exist on disk; consumed by sibling modules)
 mod code_mode_warning;
 pub(crate) mod context_window;

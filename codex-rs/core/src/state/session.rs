@@ -15,6 +15,7 @@ use super::auto_compact_window::AutoCompactWindowSnapshot;
 use crate::context_manager::ContextManager;
 use crate::session::session::SessionConfiguration;
 use crate::session::time_reminder::CurrentTimeReminderState;
+use crate::session::usage_hint_reminder::UsageHintReminderState;
 use crate::session_startup_prewarm::SessionStartupPrewarmHandle;
 use crate::task_memory::TaskMemoryThrottleState;
 use codex_context_reduction::SemanticCompactDecision;
@@ -46,6 +47,7 @@ pub(crate) struct SessionState {
     /// Startup prewarmed session prepared during session initialization.
     pub(crate) startup_prewarm: Option<SessionStartupPrewarmHandle>,
     pub(crate) current_time_reminder: CurrentTimeReminderState,
+    pub(crate) usage_hint_reminder: UsageHintReminderState,
     pub(crate) active_connector_selection: HashSet<String>,
     pub(crate) pending_session_start_sources: VecDeque<codex_hooks::SessionStartSource>,
     semantic_compact_state: SemanticCompactState,
@@ -91,6 +93,7 @@ impl SessionState {
             auto_compact_window: AutoCompactWindow::new_with_ids(auto_compact_window_ids),
             startup_prewarm: None,
             current_time_reminder: CurrentTimeReminderState::default(),
+            usage_hint_reminder: UsageHintReminderState::default(),
             active_connector_selection: HashSet::new(),
             pending_session_start_sources: VecDeque::new(),
             semantic_compact_state: SemanticCompactState::default(),

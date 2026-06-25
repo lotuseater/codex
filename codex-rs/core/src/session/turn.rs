@@ -360,6 +360,12 @@ pub(crate) async fn run_turn(
                 &window_id,
             )
             .await?;
+            super::usage_hint_reminder::maybe_record_usage_hint_reminder(
+                sess.as_ref(),
+                turn_context.as_ref(),
+                &window_id,
+            )
+            .await?;
 
             if turn_context
                 .config

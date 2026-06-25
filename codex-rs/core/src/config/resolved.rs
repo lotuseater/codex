@@ -194,6 +194,11 @@ pub(crate) fn resolve_multi_agent_v2_config(
         root_agent_usage_hint_text,
         subagent_usage_hint_text,
         plan_token_economy_delegation_k,
+        // Cadence + interval are resolved from the default (mechanism is
+        // decoupled and default-off; no TOML surface is read here, mirroring
+        // `tool_namespace`). The default cadence is InitialContext, a no-op.
+        usage_hint_cadence: default.usage_hint_cadence,
+        usage_hint_reminder_interval: default.usage_hint_reminder_interval,
         hide_spawn_agent_metadata,
         non_code_mode_only,
         tool_namespace: default.tool_namespace.clone(),

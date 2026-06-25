@@ -213,6 +213,7 @@ pub use config_types::RolloutBudgetConfig;
 pub use config_types::TerminalResizeReflowConfig;
 pub use config_types::TerminalResizeReflowMaxRows;
 pub use config_types::ThreadStoreConfig;
+pub use config_types::UsageHintCadence;
 pub(crate) use context_budget::resolve_context_budget_mode;
 pub use managed_features::ManagedFeatures;
 pub use network_proxy_spec::NetworkProxySpec;

@@ -29,6 +29,29 @@ pub enum ThreadStoreConfig {
     InMemory { id: String },
 }
 
+/// Cadence for re-surfacing the multi-agent delegation usage hint within a turn.
+///
+/// Mirrors the derive/`#[default]` style of [`ThreadStoreConfig`]. Note that the
+/// resolved config enums in this module are serialize-only (the raw TOML enums
+/// live in `codex_features`); this enum derives `Serialize` because its owner
+/// [`MultiAgentV2Config`] derives `Serialize`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageHintCadence {
+    /// Today's behavior: surface the hint only via the initial-context /
+    /// compaction / plan-entry paths; never re-inject per model request.
+    #[default]
+    InitialContext,
+    /// Surface the hint on plan-entry paths (no per-request re-injection in the
+    /// turn loop). Reserved for plan-scoped delivery.
+    Plan,
+    /// Re-inject the hint once every `usage_hint_reminder_interval` model
+    /// requests within a turn.
+    EveryN,
+    /// Re-inject the hint on every model request within a turn.
+    Always,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MultiAgentV2Config {
     pub max_concurrent_threads_per_session: usize,
@@ -48,6 +71,17 @@ pub struct MultiAgentV2Config {
     /// Minimum estimated token cost for a subtask before delegation is allowed.
     /// Used by the plan-token-economy prompt injection. Default: 26 000.
     pub plan_token_economy_delegation_k: usize,
+    /// Cadence governing whether the multi-agent delegation usage hint may be
+    /// re-injected within a single long turn (decoupled mechanism mirroring the
+    /// current-time reminder). Default [`UsageHintCadence::InitialContext`]
+    /// preserves today's behavior: the hint is surfaced only by the
+    /// initial-context / compaction / plan-entry paths, never re-injected
+    /// per-model-request.
+    pub usage_hint_cadence: UsageHintCadence,
+    /// When [`usage_hint_cadence`] is [`UsageHintCadence::EveryN`], the number of
+    /// model requests between usage-hint re-injections. Ignored by the other
+    /// cadences. Default: 5.
+    pub usage_hint_reminder_interval: u64,
     pub hide_spawn_agent_metadata: bool,
     pub non_code_mode_only: bool,
     /// Optional namespace under which multi-agent v2 spawn tools are exposed
@@ -88,6 +122,10 @@ impl Default for MultiAgentV2Config {
             subagent_usage_hint_text: None,
             plan_token_economy_delegation_k:
                 crate::agent::policy::DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K,
+            // Default cadence preserves today's behavior (no per-request
+            // re-injection); flipping this is a separate, later decision.
+            usage_hint_cadence: UsageHintCadence::InitialContext,
+            usage_hint_reminder_interval: 5,
             hide_spawn_agent_metadata: false,
             non_code_mode_only: false,
             tool_namespace: None,
