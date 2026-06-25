@@ -239,6 +239,10 @@ fn session_cwd_from_items(items: &[RolloutItem]) -> Option<PathBuf> {
 /// and should be used when there is no config override.
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, TS)]
 pub struct SessionMeta {
+    /// Legacy rollouts written before the session/thread identity split omit
+    /// `session_id`. Default it (historically it mirrored `id`) so those older
+    /// sessions remain resumable instead of failing the metadata read.
+    #[serde(default)]
     pub session_id: SessionId,
     pub id: ThreadId,
     #[serde(skip_serializing_if = "Option::is_none")]
