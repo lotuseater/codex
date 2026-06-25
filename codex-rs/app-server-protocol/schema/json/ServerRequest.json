@@ -27,7 +27,7 @@
         "read": {
           "description": "This will be removed in favor of `entries`.",
           "items": {
-            "$ref": "#/definitions/LegacyAppPathString"
+            "$ref": "#/definitions/AbsolutePathBuf"
           },
           "type": [
             "array",
@@ -37,7 +37,7 @@
         "write": {
           "description": "This will be removed in favor of `entries`.",
           "items": {
-            "$ref": "#/definitions/LegacyAppPathString"
+            "$ref": "#/definitions/AbsolutePathBuf"
           },
           "type": [
             "array",
@@ -448,6 +448,17 @@
       ],
       "type": "object"
     },
+    "CurrentTimeReadParams": {
+      "properties": {
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "type": "object"
+    },
     "DynamicToolCallParams": {
       "properties": {
         "arguments": true,
@@ -649,7 +660,7 @@
         {
           "properties": {
             "path": {
-              "$ref": "#/definitions/LegacyAppPathString"
+              "$ref": "#/definitions/AbsolutePathBuf"
             },
             "type": {
               "enum": [
@@ -1993,6 +2004,31 @@
         "params"
       ],
       "title": "Attestation/generateRequest",
+      "type": "object"
+    },
+    {
+      "description": "Read the current time from an external clock owned by the client.",
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "currentTime/read"
+          ],
+          "title": "CurrentTime/readRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/CurrentTimeReadParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "CurrentTime/readRequest",
       "type": "object"
     },
     {

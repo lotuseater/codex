@@ -47,6 +47,13 @@
           "type": "string"
         },
         {
+          "description": "DEPRECATED: run commands inside a sandbox; escalate to the user only on failure. Prefer `OnRequest` for interactive runs or `Never` for non-interactive runs.",
+          "enum": [
+            "on-failure"
+          ],
+          "type": "string"
+        },
+        {
           "additionalProperties": false,
           "properties": {
             "granular": {
@@ -148,7 +155,7 @@
       "type": "string"
     },
     "MultiAgentMode": {
-      "description": "Controls whether the model receives multi-agent delegation instructions and, when it does, whether it should only spawn sub-agents after an explicit user request or may delegate proactively when doing so would help. `none` leaves the multi-agent tools available without injecting delegation instructions.",
+      "description": "Controls whether the model receives multi-agent delegation instructions and, when it does, whether it should only spawn sub-agents after an explicit user request or may delegate proactively when doing so would help. `none` leaves the multi-agent tools available without injecting delegation instructions.\n\nProtocol-only: not present in `codex_config_types`.",
       "enum": [
         "none",
         "explicitRequestOnly",

@@ -7,5 +7,7 @@
  * when it does, whether it should only spawn sub-agents after an explicit user
  * request or may delegate proactively when doing so would help. `none` leaves
  * the multi-agent tools available without injecting delegation instructions.
+ *
+ * Protocol-only: not present in `codex_config_types`.
  */
 export type MultiAgentMode = "none" | "explicitRequestOnly" | "proactive";

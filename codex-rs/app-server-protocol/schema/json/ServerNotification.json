@@ -138,7 +138,7 @@
         "read": {
           "description": "This will be removed in favor of `entries`.",
           "items": {
-            "$ref": "#/definitions/LegacyAppPathString"
+            "$ref": "#/definitions/AbsolutePathBuf"
           },
           "type": [
             "array",
@@ -148,7 +148,7 @@
         "write": {
           "description": "This will be removed in favor of `entries`.",
           "items": {
-            "$ref": "#/definitions/LegacyAppPathString"
+            "$ref": "#/definitions/AbsolutePathBuf"
           },
           "type": [
             "array",
@@ -191,6 +191,9 @@
         "turnId"
       ],
       "type": "object"
+    },
+    "AgentPath": {
+      "type": "string"
     },
     "AppBranding": {
       "description": "EXPERIMENTAL - app metadata returned by app-list APIs.",
@@ -480,6 +483,13 @@
             "untrusted",
             "on-request",
             "never"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "DEPRECATED: run commands inside a sandbox; escalate to the user only on failure. Prefer `OnRequest` for interactive runs or `Never` for non-interactive runs.",
+          "enum": [
+            "on-failure"
           ],
           "type": "string"
         },
@@ -1373,7 +1383,7 @@
         {
           "properties": {
             "path": {
-              "$ref": "#/definitions/LegacyAppPathString"
+              "$ref": "#/definitions/AbsolutePathBuf"
             },
             "type": {
               "enum": [
@@ -2686,7 +2696,7 @@
       "type": "object"
     },
     "MultiAgentMode": {
-      "description": "Controls whether the model receives multi-agent delegation instructions and, when it does, whether it should only spawn sub-agents after an explicit user request or may delegate proactively when doing so would help. `none` leaves the multi-agent tools available without injecting delegation instructions.",
+      "description": "Controls whether the model receives multi-agent delegation instructions and, when it does, whether it should only spawn sub-agents after an explicit user request or may delegate proactively when doing so would help. `none` leaves the multi-agent tools available without injecting delegation instructions.\n\nProtocol-only: not present in `codex_config_types`.",
       "enum": [
         "none",
         "explicitRequestOnly",
@@ -3549,19 +3559,6 @@
         {
           "additionalProperties": false,
           "properties": {
-            "other": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "other"
-          ],
-          "title": "OtherSubAgentSource",
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "properties": {
             "thread_spawn": {
               "properties": {
                 "agent_nickname": {
@@ -3572,11 +3569,15 @@
                   ]
                 },
                 "agent_path": {
-                  "default": null,
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/AgentPath"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
                 },
                 "agent_role": {
                   "default": null,
@@ -3590,7 +3591,7 @@
                   "type": "integer"
                 },
                 "parent_thread_id": {
-                  "type": "string"
+                  "$ref": "#/definitions/ThreadId"
                 }
               },
               "required": [
@@ -3604,6 +3605,19 @@
             "thread_spawn"
           ],
           "title": "ThreadSpawnSubAgentSource",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "other": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "other"
+          ],
+          "title": "OtherSubAgentSource",
           "type": "object"
         }
       ]
@@ -3982,6 +3996,9 @@
         "threadId"
       ],
       "type": "object"
+    },
+    "ThreadId": {
+      "type": "string"
     },
     "ThreadItem": {
       "oneOf": [

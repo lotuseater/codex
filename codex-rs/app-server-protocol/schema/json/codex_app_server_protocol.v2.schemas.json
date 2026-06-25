@@ -307,7 +307,7 @@
         "read": {
           "description": "This will be removed in favor of `entries`.",
           "items": {
-            "$ref": "#/definitions/LegacyAppPathString"
+            "$ref": "#/definitions/AbsolutePathBuf"
           },
           "type": [
             "array",
@@ -317,7 +317,7 @@
         "write": {
           "description": "This will be removed in favor of `entries`.",
           "items": {
-            "$ref": "#/definitions/LegacyAppPathString"
+            "$ref": "#/definitions/AbsolutePathBuf"
           },
           "type": [
             "array",
@@ -1023,6 +1023,13 @@
             "untrusted",
             "on-request",
             "never"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "DEPRECATED: run commands inside a sandbox; escalate to the user only on failure. Prefer `OnRequest` for interactive runs or `Never` for non-interactive runs.",
+          "enum": [
+            "on-failure"
           ],
           "type": "string"
         },
@@ -5888,7 +5895,7 @@
         {
           "properties": {
             "path": {
-              "$ref": "#/definitions/LegacyAppPathString"
+              "$ref": "#/definitions/AbsolutePathBuf"
             },
             "type": {
               "enum": [
@@ -9231,7 +9238,7 @@
       "type": "object"
     },
     "MultiAgentMode": {
-      "description": "Controls whether the model receives multi-agent delegation instructions and, when it does, whether it should only spawn sub-agents after an explicit user request or may delegate proactively when doing so would help. `none` leaves the multi-agent tools available without injecting delegation instructions.",
+      "description": "Controls whether the model receives multi-agent delegation instructions and, when it does, whether it should only spawn sub-agents after an explicit user request or may delegate proactively when doing so would help. `none` leaves the multi-agent tools available without injecting delegation instructions.\n\nProtocol-only: not present in `codex_config_types`.",
       "enum": [
         "none",
         "explicitRequestOnly",
@@ -12043,22 +12050,6 @@
         },
         {
           "properties": {
-            "type": {
-              "enum": [
-                "compaction_trigger"
-              ],
-              "title": "CompactionTriggerResponseItemType",
-              "type": "string"
-            }
-          },
-          "required": [
-            "type"
-          ],
-          "title": "CompactionTriggerResponseItem",
-          "type": "object"
-        },
-        {
-          "properties": {
             "encrypted_content": {
               "type": "string"
             },
@@ -14569,19 +14560,6 @@
         {
           "additionalProperties": false,
           "properties": {
-            "other": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "other"
-          ],
-          "title": "OtherSubAgentSource",
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "properties": {
             "thread_spawn": {
               "properties": {
                 "agent_nickname": {
@@ -14592,11 +14570,15 @@
                   ]
                 },
                 "agent_path": {
-                  "default": null,
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/AgentPath"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
                 },
                 "agent_role": {
                   "default": null,
@@ -14610,7 +14592,7 @@
                   "type": "integer"
                 },
                 "parent_thread_id": {
-                  "type": "string"
+                  "$ref": "#/definitions/ThreadId"
                 }
               },
               "required": [
@@ -14624,6 +14606,19 @@
             "thread_spawn"
           ],
           "title": "ThreadSpawnSubAgentSource",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "other": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "other"
+          ],
+          "title": "OtherSubAgentSource",
           "type": "object"
         }
       ]
@@ -14941,6 +14936,52 @@
         "threadId"
       ],
       "title": "ThreadArchivedNotification",
+      "type": "object"
+    },
+    "ThreadBackgroundTerminal": {
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "cpuPercent": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cwd": {
+          "$ref": "#/definitions/AbsolutePathBuf"
+        },
+        "itemId": {
+          "type": "string"
+        },
+        "osPid": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "processId": {
+          "type": "string"
+        },
+        "rssKb": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "command",
+        "cwd",
+        "itemId",
+        "processId"
+      ],
       "type": "object"
     },
     "ThreadClosedNotification": {
@@ -15380,6 +15421,9 @@
       ],
       "title": "ThreadGoalUpdatedNotification",
       "type": "object"
+    },
+    "ThreadId": {
+      "type": "string"
     },
     "ThreadInjectItemsParams": {
       "$schema": "http://json-schema.org/draft-07/schema#",

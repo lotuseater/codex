@@ -6,6 +6,56 @@
       "description": "A path that is guaranteed to be absolute and normalized (though it is not guaranteed to be canonicalized or exist on the filesystem).\n\nIMPORTANT: When deserializing an `AbsolutePathBuf`, a base path must be set using [AbsolutePathBufGuard::new]. If no base path is set, the deserialization will fail unless the path being deserialized is already absolute.",
       "type": "string"
     },
+    "ActionOptimizationInstructionsModeToml": {
+      "enum": [
+        "off",
+        "plan",
+        "first_turn",
+        "tool_turn",
+        "always"
+      ],
+      "type": "string"
+    },
+    "ActionOptimizationInstructionsToml": {
+      "additionalProperties": false,
+      "properties": {
+        "custom_text": {
+          "description": "Optional custom prompt body. When set and non-empty it overrides `variant`, persisting a user-defined variant across sessions.",
+          "type": "string"
+        },
+        "max_tokens": {
+          "description": "Maximum approximate tokens rendered in the prompt body. Defaults to 120.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "mode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ActionOptimizationInstructionsModeToml"
+            }
+          ],
+          "description": "Run mode: off, plan, first_turn, tool_turn, or always. Defaults to off."
+        },
+        "variant": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ActionOptimizationInstructionsVariantToml"
+            }
+          ],
+          "description": "Prompt variant. Defaults to action_route_selection."
+        }
+      },
+      "type": "object"
+    },
+    "ActionOptimizationInstructionsVariantToml": {
+      "enum": [
+        "action_route_selection",
+        "routing",
+        "verbose"
+      ],
+      "type": "string"
+    },
     "AgentRoleToml": {
       "additionalProperties": false,
       "properties": {
@@ -253,6 +303,13 @@
           "type": "string"
         },
         {
+          "description": "DEPRECATED: *All* commands are auto‑approved, but they are expected to run inside a sandbox where network access is disabled and writes are confined to a specific set of paths. If the command fails, it will be escalated to the user to approve execution without a sandbox. Prefer `OnRequest` for interactive runs or `Never` for non-interactive runs.",
+          "enum": [
+            "on-failure"
+          ],
+          "type": "string"
+        },
+        {
           "description": "The model decides when to ask the user for approval.",
           "enum": [
             "on-request"
@@ -314,30 +371,119 @@
         }
       ]
     },
-    "AutoCompactTokenLimitScope": {
-      "description": "Selects which part of the active context is charged against `model_auto_compact_token_limit`.",
-      "oneOf": [
-        {
-          "description": "Count the full active context against the limit.",
-          "enum": [
-            "total"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "Count sampled output and later growth after the carried window prefix.",
-          "enum": [
-            "body_after_prefix"
-          ],
-          "type": "string"
-        }
-      ]
-    },
     "AutoReviewToml": {
       "properties": {
         "policy": {
           "description": "Additional policy instructions inserted into the guardian prompt.",
           "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "BatchMiniProgrammingInstructionsModeToml": {
+      "enum": [
+        "off",
+        "always"
+      ],
+      "type": "string"
+    },
+    "BatchMiniProgrammingInstructionsToml": {
+      "additionalProperties": false,
+      "properties": {
+        "custom_text": {
+          "description": "Optional custom prompt body. When set and non-empty it overrides `variant`, persisting a user-defined variant across sessions.",
+          "type": "string"
+        },
+        "mode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/BatchMiniProgrammingInstructionsModeToml"
+            }
+          ],
+          "description": "Run mode: off or always. Defaults to off."
+        },
+        "variant": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/BatchMiniProgrammingInstructionsVariantToml"
+            }
+          ],
+          "description": "Prompt variant. Defaults to current."
+        }
+      },
+      "type": "object"
+    },
+    "BatchMiniProgrammingInstructionsVariantToml": {
+      "enum": [
+        "current",
+        "aggressive",
+        "compact"
+      ],
+      "type": "string"
+    },
+    "BlackboardToml": {
+      "additionalProperties": false,
+      "description": "Repo-local coordination blackboard settings loaded from config.toml.",
+      "properties": {
+        "enabled": {
+          "description": "When `false`, disables repo blackboard coordination.",
+          "type": "boolean"
+        },
+        "global_index_path": {
+          "description": "Codex-home-relative path for the cross-repo session index.",
+          "type": "string"
+        },
+        "heartbeat_interval_seconds": {
+          "description": "Heartbeat interval for refreshing this session's repo leases.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_entry_chars": {
+          "description": "Maximum characters mirrored from one user/assistant message.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_file_bytes": {
+          "description": "Maximum blackboard file size before cleanup is attempted.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_injected_bytes": {
+          "description": "Maximum bytes injected into model context for one blackboard update.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_joined_repos": {
+          "description": "Maximum number of repos a session can join at once.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "path": {
+          "description": "Repo-relative path for the ignored blackboard file.",
+          "type": "string"
+        },
+        "poll_interval_ms": {
+          "description": "Poll interval for detecting updates from other sessions.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "recent_window_seconds": {
+          "description": "Window for surfacing recent external updates.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "stale_after_seconds": {
+          "description": "Lease and stale-lock timeout.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
         }
       },
       "type": "object"
@@ -388,8 +534,22 @@
         "approvals_reviewer": {
           "$ref": "#/definitions/ApprovalsReviewer"
         },
+        "apps_mcp_product_sku": {
+          "type": "string"
+        },
         "chatgpt_base_url": {
           "type": "string"
+        },
+        "context_budget_mode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ContextBudgetMode"
+            }
+          ],
+          "description": "Controls local context-budget behavior for new turns."
+        },
+        "desktop_automation": {
+          "$ref": "#/definitions/DesktopAutomationToml"
         },
         "experimental_compact_prompt_file": {
           "$ref": "#/definitions/AbsolutePathBuf"
@@ -442,6 +602,9 @@
             "browser_use_full_cdp_access": {
               "type": "boolean"
             },
+            "child_agents_md": {
+              "type": "boolean"
+            },
             "chronicle": {
               "type": "boolean"
             },
@@ -467,6 +630,15 @@
               "type": "boolean"
             },
             "connectors": {
+              "type": "boolean"
+            },
+            "context_ops": {
+              "type": "boolean"
+            },
+            "context_ops_replace": {
+              "type": "boolean"
+            },
+            "context_ops_shadow": {
               "type": "boolean"
             },
             "current_time_reminder": {
@@ -628,6 +800,12 @@
             "secret_auth_storage": {
               "type": "boolean"
             },
+            "semantic_auto_compact": {
+              "type": "boolean"
+            },
+            "semantic_checkpoint_git_sync": {
+              "type": "boolean"
+            },
             "shell_snapshot": {
               "type": "boolean"
             },
@@ -721,6 +899,9 @@
           },
           "type": "object"
         },
+        "first_moves": {
+          "$ref": "#/definitions/FirstMovesToml"
+        },
         "include_apps_instructions": {
           "type": "boolean"
         },
@@ -774,6 +955,9 @@
         "plan_mode_reasoning_effort": {
           "$ref": "#/definitions/ReasoningEffort"
         },
+        "repo_context_scout": {
+          "$ref": "#/definitions/RepoContextScoutToml"
+        },
         "sandbox_mode": {
           "$ref": "#/definitions/SandboxMode"
         },
@@ -803,9 +987,24 @@
             }
           ],
           "default": null
+        },
+        "zsh_path": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/AbsolutePathBuf"
+            }
+          ],
+          "description": "Optional absolute path to patched zsh used by zsh-exec-bridge-backed shell execution."
         }
       },
       "type": "object"
+    },
+    "ContextBudgetMode": {
+      "enum": [
+        "standard",
+        "slow"
+      ],
+      "type": "string"
     },
     "CurrentTimeReminderConfigToml": {
       "additionalProperties": false,
@@ -866,6 +1065,28 @@
       "properties": {
         "config_lockfile": {
           "$ref": "#/definitions/DebugConfigLockToml"
+        }
+      },
+      "type": "object"
+    },
+    "DesktopAutomationToml": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_input": {
+          "description": "Enables tools that send clicks or keys. Defaults to true.",
+          "type": "boolean"
+        },
+        "enabled": {
+          "description": "Enables the built-in native DAB tool family. Defaults to true on Windows.",
+          "type": "boolean"
+        },
+        "prefer_app_harness": {
+          "description": "Prefer app-native harnesses before generic DAB. Defaults to true.",
+          "type": "boolean"
+        },
+        "proactive": {
+          "description": "Enables proactive visual automation guidance and context. Defaults to true.",
+          "type": "boolean"
         }
       },
       "type": "object"
@@ -984,23 +1205,14 @@
       "type": "object"
     },
     "FileSystemAccessMode": {
-      "description": "Access mode for a filesystem entry.\n\nWhen two equally specific entries target the same path, we compare these by conflict precedence rather than by capability breadth: `deny` beats `write`, and `write` beats `read`.",
-      "oneOf": [
-        {
-          "enum": [
-            "read",
-            "write"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "`none` is a legacy input alias retained temporarily for compatibility.",
-          "enum": [
-            "deny"
-          ],
-          "type": "string"
-        }
-      ]
+      "description": "Access mode for a filesystem entry.\n\nWhen two equally specific entries target the same path, we compare these by conflict precedence rather than by capability breadth: `none` beats `write`, and `write` beats `read`.",
+      "enum": [
+        "read",
+        "write",
+        "deny",
+        "none"
+      ],
+      "type": "string"
     },
     "FilesystemPermissionToml": {
       "anyOf": [
@@ -1022,6 +1234,98 @@
           "format": "uint",
           "minimum": 1.0,
           "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "FirstMovesModeToml": {
+      "enum": [
+        "auto",
+        "suggest_only",
+        "prewarm",
+        "off"
+      ],
+      "type": "string"
+    },
+    "FirstMovesPrewarmToml": {
+      "enum": [
+        "off",
+        "high_confidence_only"
+      ],
+      "type": "string"
+    },
+    "FirstMovesToml": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "description": "Enable native first-moves prediction. Defaults to true.",
+          "type": "boolean"
+        },
+        "inject_context": {
+          "description": "Inject ranked opening reads/searches into the first model turn. Defaults to true.",
+          "type": "boolean"
+        },
+        "max_candidates": {
+          "description": "Maximum candidates returned by the predictor and tool. Defaults to 14.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_context_moves": {
+          "description": "Maximum candidates included in first-turn context. Defaults to 8.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_prewarm_files": {
+          "description": "Maximum files whose excerpts are embedded in first-turn context. Defaults to 2.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_read_bytes": {
+          "description": "Maximum bytes read from a prewarmed file excerpt. Defaults to 8192.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_scan_depth": {
+          "description": "Maximum directory depth scanned during prediction. Defaults to 6.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_scan_files": {
+          "description": "Maximum repo files scanned during prediction. Defaults to 2000.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "min_context_score": {
+          "description": "Minimum score for first-turn context inclusion. Defaults to 0.55.",
+          "format": "double",
+          "type": "number"
+        },
+        "min_prewarm_score": {
+          "description": "Minimum score for excerpt prewarm. Defaults to 0.82.",
+          "format": "double",
+          "type": "number"
+        },
+        "mode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/FirstMovesModeToml"
+            }
+          ],
+          "description": "Run mode: auto, suggest_only, prewarm, or off. Defaults to auto."
+        },
+        "prewarm": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/FirstMovesPrewarmToml"
+            }
+          ],
+          "description": "Prewarm strategy for high-confidence file reads. Defaults to high_confidence_only."
         }
       },
       "type": "object"
@@ -1491,6 +1795,21 @@
           "format": "int64",
           "type": "integer"
         },
+        "project_problem_context": {
+          "description": "Inject project/problem memory hints when they match the current turn.",
+          "type": "boolean"
+        },
+        "project_problem_index": {
+          "description": "Write project/problem JSONL indexes during Phase 2.",
+          "type": "boolean"
+        },
+        "project_problem_max_matches": {
+          "description": "Maximum project/problem matches to inject or return by default.",
+          "format": "uint",
+          "maximum": 20.0,
+          "minimum": 1.0,
+          "type": "integer"
+        },
         "use_memories": {
           "description": "When `false`, skip injecting memory usage instructions into developer prompts.",
           "type": "boolean"
@@ -1708,6 +2027,12 @@
         "non_code_mode_only": {
           "type": "boolean"
         },
+        "plan_token_economy_delegation_k": {
+          "description": "Minimum estimated token cost for a subtask before delegation is allowed. Used by the plan-token-economy prompt injection. Defaults to 26 000.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
         "root_agent_usage_hint_text": {
           "type": "string"
         },
@@ -1741,6 +2066,7 @@
       "type": "object"
     },
     "NetworkMitmActionToml": {
+      "additionalProperties": false,
       "properties": {
         "inject_request_headers": {
           "default": [],
@@ -1763,12 +2089,15 @@
       "additionalProperties": false,
       "properties": {
         "action": {
+          "default": [],
           "items": {
             "type": "string"
           },
           "type": "array"
         },
-        "body": true,
+        "body": {
+          "default": null
+        },
         "headers": {
           "additionalProperties": {
             "items": {
@@ -1780,15 +2109,18 @@
           "type": "object"
         },
         "host": {
+          "default": "",
           "type": "string"
         },
         "methods": {
+          "default": [],
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "path_prefixes": {
+          "default": [],
           "items": {
             "type": "string"
           },
@@ -1805,15 +2137,10 @@
           "type": "object"
         }
       },
-      "required": [
-        "action",
-        "host",
-        "methods",
-        "path_prefixes"
-      ],
       "type": "object"
     },
     "NetworkMitmInjectedHeaderToml": {
+      "additionalProperties": false,
       "properties": {
         "name": {
           "default": "",
@@ -2415,6 +2742,85 @@
       },
       "type": "object"
     },
+    "PromptReductionModeToml": {
+      "oneOf": [
+        {
+          "enum": [
+            "off",
+            "conservative"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Graduated recency-weighted reduction: fully preserve the newest items, apply lighter reduction to the recent window, standard reduction to the mid band, and aggressive reduction to older items.",
+          "enum": [
+            "recency_weighted"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "PromptReductionTuning": {
+      "description": "Per-mode tuning knobs for the recency-weighted prompt reducer. All fields are optional; absent values fall back to the per-mode defaults built into the reducer crate.",
+      "properties": {
+        "disabled_categories": {
+          "default": null,
+          "description": "Category names that are never reduced, regardless of tier. Use the canonical snake_case names reported by S-algo.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "mid_window_items": {
+          "default": null,
+          "description": "Number of slots in the mid-tier (standard reduction, all categories).",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "min_reduce_chars": {
+          "default": null,
+          "description": "Global override for the minimum character count before reduction is attempted on a candidate (base threshold, before tier multipliers).",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "min_saved_tokens": {
+          "default": null,
+          "description": "Global override for the minimum token saving required to accept a reduction (base threshold, before tier multipliers).",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "old_excerpt_mult": {
+          "default": null,
+          "description": "Excerpt length multiplier for the oldest tier: values below 1.0 keep shorter excerpts for old items.",
+          "format": "float",
+          "type": "number"
+        },
+        "old_threshold_mult": {
+          "default": null,
+          "description": "Threshold multiplier for the oldest tier: values below 1.0 make reduction more aggressive (lower min_reduce_chars / min_saved_tokens).",
+          "format": "float",
+          "type": "number"
+        },
+        "preserve_recent_items": {
+          "default": null,
+          "description": "Number of the most-recent text slots to fully preserve (no reduction).",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "recent_window_items": {
+          "default": null,
+          "description": "Number of slots in the recent-only tier (light reduction, recent categories only).",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "RawMcpServerConfig": {
       "additionalProperties": false,
       "description": "Raw MCP config shape used for deserialization and supported-field JSON Schema generation.\n\nFields that are accepted only to produce targeted validation errors should be skipped in the generated schema.\n\nKeep `TryFrom<RawMcpServerConfig> for McpServerConfig` exhaustively destructuring this struct so new TOML fields cannot be added here without updating the validation/mapping logic that produces [`McpServerConfig`].",
@@ -2634,8 +3040,15 @@
       "type": "string"
     },
     "ReasoningEffort": {
-      "description": "A non-empty reasoning effort value advertised by the model.",
-      "minLength": 1,
+      "description": "See https://platform.openai.com/docs/guides/reasoning?api-mode=responses#get-started-with-reasoning",
+      "enum": [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
       "type": "string"
     },
     "ReasoningSummary": {
@@ -2657,6 +3070,58 @@
           "type": "string"
         }
       ]
+    },
+    "RepoContextScoutModeToml": {
+      "enum": [
+        "off",
+        "shadow",
+        "tool"
+      ],
+      "type": "string"
+    },
+    "RepoContextScoutToml": {
+      "additionalProperties": false,
+      "properties": {
+        "max_anchors_per_file": {
+          "description": "Maximum anchors extracted from one file. Defaults to 24.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_candidates": {
+          "description": "Maximum ranked file candidates. Defaults to 12.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_file_bytes": {
+          "description": "Maximum bytes read from one file while extracting anchors. Defaults to 131072.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_files": {
+          "description": "Maximum files indexed. Defaults to 5000.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_output_tokens": {
+          "description": "Maximum approximate tokens in a scout packet. Defaults to 1200.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "mode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/RepoContextScoutModeToml"
+            }
+          ],
+          "description": "Run mode: off, shadow, or tool. Defaults to shadow in this fork."
+        }
+      },
+      "type": "object"
     },
     "RolloutBudgetConfigToml": {
       "additionalProperties": false,
@@ -4541,6 +5006,14 @@
   },
   "description": "Base config deserialized from ~/.codex/config.toml.",
   "properties": {
+    "action_optimization_instructions": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/ActionOptimizationInstructionsToml"
+        }
+      ],
+      "description": "Disabled-by-default action-route optimization instructions."
+    },
     "agents": {
       "allOf": [
         {
@@ -4588,7 +5061,7 @@
       "description": "Settings for app-specific controls."
     },
     "apps_mcp_product_sku": {
-      "description": "Optional product SKU forwarded on host-owned Codex Apps MCP requests.",
+      "description": "Optional product SKU forwarded to the host-owned apps MCP server.",
       "type": "string"
     },
     "audio": {
@@ -4599,6 +5072,10 @@
       ],
       "default": null,
       "description": "Machine-local realtime audio device preferences used by realtime voice."
+    },
+    "auto_compact_enabled": {
+      "description": "Whether semantic / early-pressure auto-compaction is active. When `false`, only the hard `ContextLimit` safety-net compaction fires. Defaults to `true` when omitted.",
+      "type": "boolean"
     },
     "auto_review": {
       "allOf": [
@@ -4614,6 +5091,22 @@
       "format": "uint64",
       "minimum": 0.0,
       "type": "integer"
+    },
+    "batch_mini_programming_instructions": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/BatchMiniProgrammingInstructionsToml"
+        }
+      ],
+      "description": "Disabled-by-default workflow_batch usage guidance."
+    },
+    "blackboard": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/BlackboardToml"
+        }
+      ],
+      "description": "Repo-local blackboard coordination settings."
     },
     "chatgpt_base_url": {
       "description": "Base URL for requests to ChatGPT (as opposed to the OpenAI API).",
@@ -4636,6 +5129,14 @@
       "description": "Compact prompt used for history compaction.",
       "type": "string"
     },
+    "context_budget_mode": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/ContextBudgetMode"
+        }
+      ],
+      "description": "Controls local context-budget behavior for new turns."
+    },
     "debug": {
       "allOf": [
         {
@@ -4648,11 +5149,14 @@
       "description": "Default permissions profile to apply. Names starting with `:` refer to built-in profiles; other names are resolved from the `[permissions]` table.",
       "type": "string"
     },
-    "desktop": {
-      "additionalProperties": true,
+    "desktop_automation": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/DesktopAutomationToml"
+        }
+      ],
       "default": null,
-      "description": "Opaque desktop settings stored alongside the rest of config.toml.",
-      "type": "object"
+      "description": "Built-in Windows desktop automation and harness detection settings."
     },
     "developer_instructions": {
       "default": null,
@@ -4750,6 +5254,9 @@
         "browser_use_full_cdp_access": {
           "type": "boolean"
         },
+        "child_agents_md": {
+          "type": "boolean"
+        },
         "chronicle": {
           "type": "boolean"
         },
@@ -4775,6 +5282,15 @@
           "type": "boolean"
         },
         "connectors": {
+          "type": "boolean"
+        },
+        "context_ops": {
+          "type": "boolean"
+        },
+        "context_ops_replace": {
+          "type": "boolean"
+        },
+        "context_ops_shadow": {
           "type": "boolean"
         },
         "current_time_reminder": {
@@ -4936,6 +5452,12 @@
         "secret_auth_storage": {
           "type": "boolean"
         },
+        "semantic_auto_compact": {
+          "type": "boolean"
+        },
+        "semantic_checkpoint_git_sync": {
+          "type": "boolean"
+        },
         "shell_snapshot": {
           "type": "boolean"
         },
@@ -5045,6 +5567,15 @@
       ],
       "description": "Optional URI-based file opener. If set, citations to files in the model output will be hyperlinked using the specified URI scheme."
     },
+    "first_moves": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/FirstMovesToml"
+        }
+      ],
+      "default": null,
+      "description": "Native first-turn repo navigation predictor settings."
+    },
     "forced_chatgpt_workspace_id": {
       "allOf": [
         {
@@ -5123,7 +5654,7 @@
           "$ref": "#/definitions/AbsolutePathBuf"
         }
       ],
-      "description": "Directory where Codex writes log files. Setting this value explicitly also enables the TUI text log in this directory. Defaults to `$CODEX_HOME/log`."
+      "description": "Directory where Codex writes log files, for example `codex-tui.log`. Defaults to `$CODEX_HOME/log`."
     },
     "marketplaces": {
       "additionalProperties": {
@@ -5177,14 +5708,6 @@
       "format": "int64",
       "type": "integer"
     },
-    "model_auto_compact_token_limit_scope": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/AutoCompactTokenLimitScope"
-        }
-      ],
-      "description": "Controls whether the auto-compaction limit applies to the full context or only to tokens after the carried prefix in the current compaction window."
-    },
     "model_catalog_json": {
       "allOf": [
         {
@@ -5192,6 +5715,11 @@
         }
       ],
       "description": "Optional path to a JSON model catalog (applied on startup only). Per-thread `config` overrides are accepted but do not reapply this (no-ops)."
+    },
+    "model_compact_percentage": {
+      "description": "Percentage of the auto-compaction token limit that triggers early context-pressure compaction. Defaults to 24 when omitted. Set to 0 to disable early context-pressure compaction.",
+      "format": "int64",
+      "type": "integer"
     },
     "model_context_window": {
       "description": "Size of the context window for the model, in tokens.",
@@ -5345,6 +5873,22 @@
       },
       "type": "object"
     },
+    "prompt_reduction": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/PromptReductionTuning"
+        }
+      ],
+      "description": "Optional tuning knobs for the prompt reducer. Absent fields fall back to per-mode defaults. Only meaningful when `prompt_reduction_mode` is `recency_weighted` (or `conservative` for threshold overrides)."
+    },
+    "prompt_reduction_mode": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/PromptReductionModeToml"
+        }
+      ],
+      "description": "Prompt-clone reduction mode. Defaults to recency_weighted when omitted."
+    },
     "realtime": {
       "allOf": [
         {
@@ -5353,6 +5897,15 @@
       ],
       "default": null,
       "description": "Experimental / do not use. Realtime websocket session selection. `version` controls v1/v2 and `type` controls conversational/transcription."
+    },
+    "repo_context_scout": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/RepoContextScoutToml"
+        }
+      ],
+      "default": null,
+      "description": "Durable repo context scout settings."
     },
     "review_model": {
       "description": "Review model override used by the `/review` feature.",
@@ -5463,6 +6016,18 @@
       ],
       "default": null,
       "description": "Windows-specific configuration."
+    },
+    "windows_wsl_setup_acknowledged": {
+      "description": "Tracks whether the Windows onboarding screen has been acknowledged.",
+      "type": "boolean"
+    },
+    "zsh_path": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/AbsolutePathBuf"
+        }
+      ],
+      "description": "Optional absolute path to patched zsh used by zsh-exec-bridge-backed shell execution."
     }
   },
   "title": "ConfigToml",

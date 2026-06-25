@@ -18,12 +18,43 @@
         "id": {
           "description": "Identifier from `default_permissions` or the implicit built-in default, such as `:workspace` or a user-defined `[permissions.<id>]` profile.",
           "type": "string"
+        },
+        "modifications": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/ActivePermissionProfileModification"
+          },
+          "type": "array"
         }
       },
       "required": [
         "id"
       ],
       "type": "object"
+    },
+    "ActivePermissionProfileModification": {
+      "oneOf": [
+        {
+          "properties": {
+            "path": {
+              "$ref": "#/definitions/AbsolutePathBuf"
+            },
+            "type": {
+              "enum": [
+                "additionalWritableRoot"
+              ],
+              "title": "AdditionalWritableRootActivePermissionProfileModificationType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "type"
+          ],
+          "title": "AdditionalWritableRootActivePermissionProfileModification",
+          "type": "object"
+        }
+      ]
     },
     "AgentPath": {
       "type": "string"
@@ -44,6 +75,13 @@
             "untrusted",
             "on-request",
             "never"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "DEPRECATED: run commands inside a sandbox; escalate to the user only on failure. Prefer `OnRequest` for interactive runs or `Never` for non-interactive runs.",
+          "enum": [
+            "on-failure"
           ],
           "type": "string"
         },
@@ -278,7 +316,9 @@
         "sendInput",
         "resumeAgent",
         "wait",
-        "closeAgent"
+        "closeAgent",
+        "compactAgent",
+        "restartAgent"
       ],
       "type": "string"
     },
@@ -663,7 +703,7 @@
       ]
     },
     "MultiAgentMode": {
-      "description": "Controls whether the model receives multi-agent delegation instructions and, when it does, whether it should only spawn sub-agents after an explicit user request or may delegate proactively when doing so would help. `none` leaves the multi-agent tools available without injecting delegation instructions.",
+      "description": "Controls whether the model receives multi-agent delegation instructions and, when it does, whether it should only spawn sub-agents after an explicit user request or may delegate proactively when doing so would help. `none` leaves the multi-agent tools available without injecting delegation instructions.\n\nProtocol-only: not present in `codex_config_types`.",
       "enum": [
         "none",
         "explicitRequestOnly",
@@ -753,9 +793,106 @@
       ]
     },
     "ReasoningEffort": {
-      "description": "A non-empty reasoning effort value advertised by the model.",
-      "minLength": 1,
+      "description": "See https://platform.openai.com/docs/guides/reasoning?api-mode=responses#get-started-with-reasoning",
+      "enum": [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
       "type": "string"
+    },
+    "ReviewCodeLocation": {
+      "properties": {
+        "absoluteFilePath": {
+          "type": "string"
+        },
+        "lineRange": {
+          "$ref": "#/definitions/ReviewLineRange"
+        }
+      },
+      "required": [
+        "absoluteFilePath",
+        "lineRange"
+      ],
+      "type": "object"
+    },
+    "ReviewFinding": {
+      "properties": {
+        "body": {
+          "type": "string"
+        },
+        "codeLocation": {
+          "$ref": "#/definitions/ReviewCodeLocation"
+        },
+        "confidenceScore": {
+          "format": "float",
+          "type": "number"
+        },
+        "priority": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "body",
+        "codeLocation",
+        "confidenceScore",
+        "priority",
+        "title"
+      ],
+      "type": "object"
+    },
+    "ReviewLineRange": {
+      "properties": {
+        "end": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "start": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "end",
+        "start"
+      ],
+      "type": "object"
+    },
+    "ReviewOutput": {
+      "properties": {
+        "findings": {
+          "items": {
+            "$ref": "#/definitions/ReviewFinding"
+          },
+          "type": "array"
+        },
+        "overallConfidenceScore": {
+          "format": "float",
+          "type": "number"
+        },
+        "overallCorrectness": {
+          "type": "string"
+        },
+        "overallExplanation": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "findings",
+        "overallConfidenceScore",
+        "overallCorrectness",
+        "overallExplanation"
+      ],
+      "type": "object"
     },
     "SandboxPolicy": {
       "oneOf": [
@@ -1875,6 +2012,16 @@
             },
             "review": {
               "type": "string"
+            },
+            "reviewOutput": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ReviewOutput"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "type": {
               "enum": [
