@@ -1,3 +1,4 @@
 date,upstream_tip,commits_behind,conflicts,content_conflicts,modify_delete,slices,buildfix_waves,wallclock_min,result,notes
 2026-06-05,479a14cf59,85,117,100,17,17,,,,"DU=11 UD=6 resolved pre-resolver; 100 UU via 17 Opus slices"
 2026-06-10,51b3cd51f6,81,117,100,17,17,8,829,success,"waves 4-11 (78 errors, Fable workers); legacy_core dedup; schema regen; build killed once by session restart (+~150 min); deployed 16:48"
+2026-06-24,c14623d04c,145,145,131,14,4,6,300,merged+built,"Cycle-6 CONVERGE-EXCEPT-FEATURES; 34 KEEP/111 CONVERGE; 11/11 features 0 regressions; deployed codex-custom-20260625-101701; wallclock ~approx multi-session; metrics hand-appended (no preflight seed)"
