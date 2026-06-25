@@ -781,12 +781,24 @@ mod tests {
                 .contains("net = gains + loop_followup_gain - cost - risk")
         );
         assert!(MAIN_AGENT_PLAN_DELEGATION_PROMPT.contains("spawn or reuse only when net >= 2"));
+        // The static const must NOT hardcode a specific K value: the live threshold is
+        // surfaced only via the dynamic usage hint, so the const defers to it instead of
+        // baking in a number that disagrees with a user-configured `/delegate-prompt k <n>`.
+        assert!(!MAIN_AGENT_PLAN_DELEGATION_PROMPT.contains("26000"));
+        assert!(
+            MAIN_AGENT_PLAN_DELEGATION_PROMPT
+                .contains("the configured K threshold (surfaced in the usage hint)")
+        );
         // Use function calls — these are generated strings, not consts.
         let root_hint = default_multi_agent_v2_root_usage_hint_text();
         let sub_hint = default_multi_agent_v2_subagent_usage_hint_text();
-        assert!(root_hint.contains(DEFAULT_PLAN_TOKEN_ECONOMY_PROMPT_TEXT));
+        // The generated hints substitute the `[K]` placeholder with the live K, so the
+        // expected delegation body is the const with `[K]` replaced by the default K.
+        let expected_delegation = DEFAULT_PLAN_TOKEN_ECONOMY_PROMPT_TEXT
+            .replace("[K]", &DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K.to_string());
+        assert!(root_hint.contains(expected_delegation.as_str()));
         assert!(root_hint.contains(DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K_PROMPT_TEXT));
-        assert!(sub_hint.contains(DEFAULT_PLAN_TOKEN_ECONOMY_PROMPT_TEXT));
+        assert!(sub_hint.contains(expected_delegation.as_str()));
         assert!(sub_hint.contains(DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K_PROMPT_TEXT));
         assert_eq!(DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K, 26_000);
         assert!(root_hint.contains("Every main-agent task plan prompt"));
@@ -808,7 +820,8 @@ mod tests {
         assert!(sub_hint.contains("A short summary or short result is optional"));
         assert!(sub_hint.contains("Plan-token-economy default (recursive_roi_gate)"));
         assert!(
-            sub_hint.contains("Delegate a subtask only when expected cost is at least [K] tokens")
+            sub_hint
+                .contains("Delegate a subtask only when expected cost is at least 26000 tokens")
         );
     }
 
