@@ -74,6 +74,20 @@ impl UsageHintReminderState {
 
         reminder_is_due
     }
+
+    /// Undo the counter advance performed by a `true` result from
+    /// [`Self::take_reminder_due`] when the hint turned out to be unavailable
+    /// (the fetch returned `None`), so the cadence is treated as *not*
+    /// delivered. For the `EveryN` cadence `take_reminder_due` zeroes the
+    /// counter on the firing request; rewinding it to `interval - 1` makes the
+    /// next model request re-check (and fire as soon as a hint is available)
+    /// instead of waiting another full interval. `last_window_id` is left as-is
+    /// because the window has not changed. Harmless for `Always` (which ignores
+    /// the counter).
+    fn rewind_after_undelivered(&mut self, reminder_interval: u64) {
+        let interval = reminder_interval.max(1);
+        self.model_requests_since_delivery = interval.saturating_sub(1);
+    }
 }
 
 /// Per-model-request hook mirroring
@@ -108,19 +122,39 @@ pub(super) async fn maybe_record_usage_hint_reminder(
         return Ok(());
     }
 
-    // TODO(usage-hint-cadence): wire the actual hint text in here. The text is
-    // built by `super::multi_agents::usage_hint_text(turn_context,
-    // &turn_context.session_source)` (which itself falls back to
-    // `codex_agent_policy::default_multi_agent_v2_root_usage_hint_text_with_k` /
-    // `..._subagent_..._with_k`). Once wired, record it as a contextual user
-    // fragment via `sess.record_conversation_items(...)`, mirroring how
-    // `maybe_record_current_time_reminder` records `CurrentTimeReminder`.
-    //
-    // The cadence STATE + gate above is the deliverable for this change; the
-    // text-injection seam is intentionally left as a marked TODO so the default
-    // (InitialContext) remains a verified behavioral no-op and the build stays
-    // green without taking a position on the exact re-injection payload.
-    let _ = (sess, turn_context);
+    // Fetch the configured root/subagent usage hint exactly the way the
+    // initial-context site does (`multi_agents::usage_hint_text(turn_context,
+    // &turn_context.session_source)`). That accessor re-applies the V2 +
+    // `usage_hint_enabled` gating and the `plan_token_economy_delegation_k`
+    // fallback to the policy defaults, and returns `None` when the hint is
+    // disabled / empty for this source (e.g. internal sessions). When it is
+    // `None` there is nothing to re-inject, so record nothing and treat this as
+    // not-delivered: rewind the cadence counter so the next model request
+    // re-checks immediately instead of waiting another full interval.
+    let Some(usage_hint_text) =
+        super::multi_agents::usage_hint_text(turn_context, &turn_context.session_source)
+    else {
+        let mut state = sess.state.lock().await;
+        state
+            .usage_hint_reminder
+            .rewind_after_undelivered(reminder_interval);
+        return Ok(());
+    };
+
+    // Build the same developer-update item the existing initial-context /
+    // plan-entry sites build for the usage hint, then record it for the next
+    // model request via the same `record_conversation_items` call that
+    // `maybe_record_current_time_reminder` uses for `CurrentTimeReminder`. The
+    // cadence state was already advanced (counter reset + `last_window_id` set)
+    // by `take_reminder_due` above, so on a successful delivery no further state
+    // update is needed and the hint fires again after `reminder_interval`
+    // model requests.
+    if let Some(usage_hint_message) =
+        crate::context_manager::updates::build_developer_update_item(vec![usage_hint_text])
+    {
+        sess.record_conversation_items(turn_context, std::slice::from_ref(&usage_hint_message))
+            .await;
+    }
 
     Ok(())
 }
