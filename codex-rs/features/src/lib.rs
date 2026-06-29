@@ -27,6 +27,7 @@ pub use feature_configs::NetworkProxyUnixSocketPermissionToml;
 use feature_configs::RemovedAppsMcpPathOverrideConfigToml;
 pub use feature_configs::RolloutBudgetConfigToml;
 pub use feature_configs::TokenBudgetConfigToml;
+pub use feature_configs::UsageHintCadenceToml;
 use legacy::LegacyFeatureToggles;
 pub use legacy::legacy_feature_keys;
 

@@ -128,6 +128,18 @@ pub(crate) fn resolve_web_search_config(config_toml: &ConfigToml) -> Option<WebS
         .map(Into::into)
 }
 
+/// Map the raw TOML cadence enum onto the resolved [`UsageHintCadence`].
+/// Exhaustive (no catch-all) so a newly added cadence variant fails to compile
+/// here until it is mapped, rather than being silently dropped.
+fn resolve_usage_hint_cadence(raw: UsageHintCadenceToml) -> UsageHintCadence {
+    match raw {
+        UsageHintCadenceToml::InitialContext => UsageHintCadence::InitialContext,
+        UsageHintCadenceToml::Plan => UsageHintCadence::Plan,
+        UsageHintCadenceToml::EveryN => UsageHintCadence::EveryN,
+        UsageHintCadenceToml::Always => UsageHintCadence::Always,
+    }
+}
+
 pub(crate) fn resolve_multi_agent_v2_config(
     config_toml: &ConfigToml,
     config_profile: &ConfigProfile,
@@ -175,6 +187,15 @@ pub(crate) fn resolve_multi_agent_v2_config(
         .and_then(|config| config.plan_token_economy_delegation_k)
         .or_else(|| base.and_then(|config| config.plan_token_economy_delegation_k))
         .unwrap_or(default.plan_token_economy_delegation_k);
+    let usage_hint_cadence = profile
+        .and_then(|config| config.usage_hint_cadence)
+        .or_else(|| base.and_then(|config| config.usage_hint_cadence))
+        .map(resolve_usage_hint_cadence)
+        .unwrap_or(default.usage_hint_cadence);
+    let usage_hint_reminder_interval = profile
+        .and_then(|config| config.usage_hint_reminder_interval)
+        .or_else(|| base.and_then(|config| config.usage_hint_reminder_interval))
+        .unwrap_or(default.usage_hint_reminder_interval);
     let hide_spawn_agent_metadata = profile
         .and_then(|config| config.hide_spawn_agent_metadata)
         .or_else(|| base.and_then(|config| config.hide_spawn_agent_metadata))
@@ -194,11 +215,12 @@ pub(crate) fn resolve_multi_agent_v2_config(
         root_agent_usage_hint_text,
         subagent_usage_hint_text,
         plan_token_economy_delegation_k,
-        // Cadence + interval are resolved from the default (mechanism is
-        // decoupled and default-off; no TOML surface is read here, mirroring
-        // `tool_namespace`). The default cadence is InitialContext, a no-op.
-        usage_hint_cadence: default.usage_hint_cadence,
-        usage_hint_reminder_interval: default.usage_hint_reminder_interval,
+        // Cadence + interval are resolved from `features.multi_agent_v2` TOML
+        // (profile over base over struct default). When the keys are absent the
+        // default cadence is InitialContext (a per-request no-op) and the default
+        // interval is 5, preserving today's behavior.
+        usage_hint_cadence,
+        usage_hint_reminder_interval,
         hide_spawn_agent_metadata,
         non_code_mode_only,
         tool_namespace: default.tool_namespace.clone(),

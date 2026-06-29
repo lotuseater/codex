@@ -87,6 +87,7 @@ use codex_features::MultiAgentV2ConfigToml;
 use codex_features::NetworkProxyConfigToml;
 use codex_features::RolloutBudgetConfigToml;
 use codex_features::TokenBudgetConfigToml;
+use codex_features::UsageHintCadenceToml;
 use codex_first_moves::FirstMovesConfig;
 use codex_first_moves::FirstMovesMode;
 use codex_first_moves::FirstMovesPrewarm;

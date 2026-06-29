@@ -29,6 +29,26 @@ impl FeatureConfig for CodeModeConfigToml {
     }
 }
 
+/// Raw TOML mirror of the resolved `UsageHintCadence`
+/// (`codex_core::config::UsageHintCadence`, which is serialize-only). This is the
+/// deserialize-able counterpart read from `features.multi_agent_v2`; it is mapped
+/// onto the resolved enum in `resolve_multi_agent_v2_config`. Mirrors the
+/// derive/`rename_all` style of [`CurrentTimeSource`].
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageHintCadenceToml {
+    /// Today's behavior: surface the hint only via the initial-context /
+    /// compaction / plan-entry paths; never re-inject per model request.
+    #[default]
+    InitialContext,
+    /// Plan-entry paths only (no per-request re-injection within the turn loop).
+    Plan,
+    /// Re-inject once every `usage_hint_reminder_interval` model requests.
+    EveryN,
+    /// Re-inject on every model request within a turn.
+    Always,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MultiAgentV2ConfigToml {
@@ -59,6 +79,17 @@ pub struct MultiAgentV2ConfigToml {
     /// Used by the plan-token-economy prompt injection. Defaults to 26 000.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plan_token_economy_delegation_k: Option<usize>,
+    /// Cadence governing whether the multi-agent delegation usage hint may be
+    /// re-injected within a single long turn. Mirrors the resolved
+    /// `UsageHintCadence`. Absent (or `initial_context`) preserves today's
+    /// behavior: no per-model-request re-injection.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage_hint_cadence: Option<UsageHintCadenceToml>,
+    /// When `usage_hint_cadence` is `every_n`, the number of model requests
+    /// between usage-hint re-injections. Ignored by the other cadences.
+    /// Defaults to 5.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage_hint_reminder_interval: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(length(min = 1, max = 64), regex(pattern = r"^[a-zA-Z0-9_-]+$"))]
     pub tool_namespace: Option<String>,
