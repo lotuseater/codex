@@ -67,9 +67,12 @@ fn multi_agent_v2_default_hints_gate_exploration_with_first_moves() {
             .contains(codex_agent_policy::DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K_PROMPT_TEXT)
     );
     assert!(subagent_hint.contains("same model and reasoning effort"));
-    assert!(
-        subagent_hint.contains("Delegate a subtask only when expected cost is at least [K] tokens")
-    );
+    // The `[K]` placeholder is substituted with the live K, so assert the
+    // resolved form (mirrors codex_agent_policy's own green test) rather than
+    // the obsolete unsubstituted `[K]` prose.
+    assert!(subagent_hint.contains(&format!(
+        "Delegate a subtask only when expected cost is at least {k} tokens"
+    )));
     assert!(subagent_hint.contains("A short summary or short result is optional"));
     assert!(subagent_hint.contains("configured tools, skills, MCP/app surfaces"));
 }
