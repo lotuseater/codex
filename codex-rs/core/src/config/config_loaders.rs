@@ -621,6 +621,9 @@ impl Config {
         let experimental_request_user_input_enabled = true;
         let code_mode = resolve_code_mode_config(&cfg);
         let multi_agent_v2 = resolve_multi_agent_v2_config(&cfg, &config_profile);
+        // fork-local: stream-resilience uses struct defaults only (no TOML
+        // surface), mirroring the usage-hint cadence wiring.
+        let stream_resilience = StreamResilienceConfig::default();
         let rollout_budget = resolve_rollout_budget_config(&cfg, &features)?;
         let token_budget = resolve_token_budget_config(&cfg, &features)?;
         let current_time_reminder = resolve_current_time_reminder_config(&cfg, &features)?;
@@ -1265,6 +1268,7 @@ impl Config {
             background_terminal_max_timeout,
             ghost_snapshot,
             multi_agent_v2,
+            stream_resilience,
             rollout_budget,
             token_budget,
             current_time_reminder,

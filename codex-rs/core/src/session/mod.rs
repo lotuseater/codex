@@ -243,6 +243,7 @@ mod session_lifecycle;
 mod session_mailbox;
 mod session_network_proxy;
 mod session_settings;
+pub(crate) mod stream_resilience;
 pub(crate) mod time_reminder;
 mod token_budget;
 pub(crate) mod turn;

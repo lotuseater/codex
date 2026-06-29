@@ -211,6 +211,7 @@ pub use config_types::DesktopAutomationConfig;
 pub use config_types::GhostSnapshotConfig;
 pub use config_types::MultiAgentV2Config;
 pub use config_types::RolloutBudgetConfig;
+pub use config_types::StreamResilienceConfig;
 pub use config_types::TerminalResizeReflowConfig;
 pub use config_types::TerminalResizeReflowMaxRows;
 pub use config_types::ThreadStoreConfig;

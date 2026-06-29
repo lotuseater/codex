@@ -133,6 +133,36 @@ impl Default for MultiAgentV2Config {
     }
 }
 
+/// Resolved stream-resilience (extended auto-retry) configuration.
+///
+/// Fork-owned. Governs the bounded extended-retry that re-enters the turn loop
+/// after the built-in per-stream retries (`stream_max_retries`, ~6s total) are
+/// exhausted on a transient `CodexErr::Stream` disconnect, giving connectivity a
+/// longer window to recover before the turn is surfaced as an error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct StreamResilienceConfig {
+    /// Master switch (default `true`). When enabled, a transient stream
+    /// disconnect that survives the built-in retries triggers up to
+    /// `max_extended_waits` additional long-interval retries before the turn
+    /// fails.
+    pub auto_retry_enabled: bool,
+    /// Number of extended waits attempted beyond the built-in stream retries.
+    /// Default `3`.
+    pub max_extended_waits: u64,
+    /// Delay, in seconds, of each extended wait. Default `60`.
+    pub extended_wait_secs: u64,
+}
+
+impl Default for StreamResilienceConfig {
+    fn default() -> Self {
+        Self {
+            auto_retry_enabled: true,
+            max_extended_waits: 3,
+            extended_wait_secs: 60,
+        }
+    }
+}
+
 /// Resolved shared rollout token-budget configuration.
 ///
 /// This is the resolved counterpart of [`codex_features::RolloutBudgetConfigToml`]:

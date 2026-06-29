@@ -47,6 +47,7 @@ use codex_core_api::RealtimeAudioConfig;
 use codex_core_api::RealtimeConfig;
 use codex_core_api::SessionPickerViewMode;
 use codex_core_api::SessionSource;
+use codex_core_api::StreamResilienceConfig;
 use codex_core_api::TerminalResizeReflowConfig;
 use codex_core_api::ThreadManager;
 use codex_core_api::ThreadStoreConfig;
@@ -313,6 +314,7 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         background_terminal_max_timeout: 300_000,
         ghost_snapshot: GhostSnapshotConfig::default(),
         multi_agent_v2: MultiAgentV2Config::default(),
+        stream_resilience: StreamResilienceConfig::default(),
         token_budget: None,
         rollout_budget: None,
         current_time_reminder: None,

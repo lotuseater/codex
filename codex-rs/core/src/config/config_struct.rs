@@ -456,6 +456,10 @@ pub struct Config {
     /// Settings specific to the task-path-based multi-agent tool surface.
     pub multi_agent_v2: MultiAgentV2Config,
 
+    /// Fork-owned stream-resilience (extended auto-retry) settings. Always
+    /// present; defaults to enabled with a bounded extended-retry budget.
+    pub stream_resilience: StreamResilienceConfig,
+
     /// Resolved shared rollout token-budget configuration, when the
     /// `rollout_budget` feature is enabled.
     pub rollout_budget: Option<RolloutBudgetConfig>,

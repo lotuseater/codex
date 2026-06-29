@@ -317,6 +317,10 @@ pub(crate) async fn run_turn(
     // 1. At the start of a turn, so the fresh turn input in `input` gets sampled first.
     // 2. After auto-compact, when model/tool continuation needs to resume before any steer.
 
+    // fork-local: bounded extended-retry budget for transient stream
+    // disconnects (see session::stream_resilience). Persists across turn-loop
+    // re-entries within ONE submission; resets on the next fresh `run_turn`.
+    let mut extended_retries: u64 = 0;
     loop {
         if run_pending_session_start_hooks(&sess, &turn_context).await {
             break;
@@ -413,6 +417,10 @@ pub(crate) async fn run_turn(
         .await;
         match sampling_request_result {
             Ok((sampling_request_output, sampling_request_input)) => {
+                // fork-local: a successful sampling means connectivity is back;
+                // give any later disconnect in this submission a fresh extended
+                // retry budget.
+                extended_retries = 0;
                 let SamplingRequestResult {
                     needs_follow_up: model_needs_follow_up,
                     last_agent_message: sampling_request_last_agent_message,
@@ -624,6 +632,24 @@ pub(crate) async fn run_turn(
             }
             Err(e) => {
                 info!("Turn error: {e:#}");
+                // fork-local: bounded extended auto-retry for transient stream
+                // disconnects after the built-in stream retries are exhausted.
+                // Checked before the terminal error emit so a successful recovery
+                // never surfaces an error to the user. Returns false (fall through
+                // to emit-and-break) for any non-stream error, when disabled, when
+                // the budget is spent, or on user cancellation.
+                if super::stream_resilience::maybe_continue_after_disconnect(
+                    &e,
+                    &turn_context.config.stream_resilience,
+                    sess.as_ref(),
+                    turn_context.as_ref(),
+                    &cancellation_token,
+                    &mut extended_retries,
+                )
+                .await
+                {
+                    continue;
+                }
                 let error = e.to_codex_protocol_error();
                 sess.emit_turn_error_lifecycle(turn_context.as_ref(), error.clone())
                     .await;
