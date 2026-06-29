@@ -3,6 +3,7 @@ mod plan_prompt;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
 
+pub use plan_prompt::AUTO_COORDINATOR_FRAMING_TEXT;
 pub use plan_prompt::DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K;
 pub use plan_prompt::DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K_PROMPT_TEXT;
 pub use plan_prompt::DEFAULT_PLAN_TOKEN_ECONOMY_PROMPT_TEXT;
@@ -236,6 +237,105 @@ pub fn evaluate_spawn_policy(input: SpawnPolicyInput<'_>) -> Result<(), SpawnPol
     }
 
     Ok(())
+}
+
+const DECOMPOSABLE_BUILD_VERBS: &[&str] = &[
+    "build",
+    "implement",
+    "create",
+    "write",
+    "add",
+    "refactor",
+    "port",
+    "design",
+];
+
+const DECOMPOSABLE_SCOPE_NOUNS: &[&str] = &[
+    "modules",
+    "files",
+    "components",
+    "features",
+    "endpoints",
+    "functions",
+    "classes",
+    "tests",
+    "services",
+    "lanes",
+    "parts",
+    "steps",
+];
+
+const DECOMPOSABLE_SMALL_COUNTS: &[&str] = &[
+    "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "two", "three", "four", "five",
+    "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
+];
+
+/// Coarse, intentionally CONSERVATIVE gate for whether a task prompt looks worth
+/// decomposing and delegating. Requires BOTH a length floor and at least one
+/// decomposition signal, so long monolithic prose and short one-liners both return
+/// `false`. False negatives are preferred over forcing delegation on small work,
+/// which costs roughly 3-6x the tokens. Pure and cheap: no I/O and no model call.
+pub fn task_looks_decomposable(prompt: &str) -> bool {
+    // Cheapest gate first: a decomposable task is long-ish (~100+ words). Bail
+    // before allocating the lowercased copy when the prompt is clearly too small.
+    if prompt.chars().count() < 600 {
+        return false;
+    }
+
+    let lowercased = prompt.to_ascii_lowercase();
+
+    let enumerated_lines = lowercased.lines().any(|line| {
+        let line = line.trim_start();
+        line.starts_with("- ") || line.starts_with("* ") || starts_with_ordered_list_marker(line)
+    });
+    let comma_and_enumeration = prompt.matches(", ").count() >= 2 && lowercased.contains(" and ");
+    let enumeration = enumerated_lines || comma_and_enumeration;
+
+    let multi_deliverable = contains_any(&lowercased, DECOMPOSABLE_BUILD_VERBS)
+        && contains_any(&lowercased, DECOMPOSABLE_SCOPE_NOUNS);
+
+    let explicit_multiplicity = has_explicit_multiplicity(&lowercased);
+
+    enumeration || multi_deliverable || explicit_multiplicity
+}
+
+/// True when a trimmed line opens with an ordered-list marker: one or more ASCII
+/// digits immediately followed by `.` or `)` (e.g. `1.` or `12)`).
+fn starts_with_ordered_list_marker(line: &str) -> bool {
+    let digit_count = line.chars().take_while(char::is_ascii_digit).count();
+    if digit_count == 0 {
+        return false;
+    }
+    let rest = &line[digit_count..];
+    rest.starts_with('.') || rest.starts_with(')')
+}
+
+/// True when the (already lowercased) prompt names an explicit small multiplicity
+/// of deliverables: a small count (2..=12) directly before a plural scope noun, or
+/// one of `each`/`several`/`multiple` within a few words of a plural scope noun.
+fn has_explicit_multiplicity(lowercased: &str) -> bool {
+    let words: Vec<&str> = lowercased
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .collect();
+
+    words.iter().enumerate().any(|(idx, &word)| {
+        if DECOMPOSABLE_SMALL_COUNTS.contains(&word) {
+            // A small count must sit directly before a plural scope noun.
+            words
+                .get(idx + 1)
+                .is_some_and(|next| DECOMPOSABLE_SCOPE_NOUNS.contains(next))
+        } else if matches!(word, "each" | "several" | "multiple") {
+            // A quantifier may sit a few words away from the scope noun.
+            words
+                .iter()
+                .skip(idx + 1)
+                .take(3)
+                .any(|next| DECOMPOSABLE_SCOPE_NOUNS.contains(next))
+        } else {
+            false
+        }
+    })
 }
 
 pub fn is_continuation_message(message: &str) -> bool {
@@ -823,6 +923,48 @@ mod tests {
             sub_hint
                 .contains("Delegate a subtask only when expected cost is at least 26000 tokens")
         );
+    }
+
+    #[test]
+    fn task_looks_decomposable_true_for_long_multi_deliverable_prompt() {
+        let prompt = "Build a small terminal game with separate modules for rendering, input handling, physics simulation, a level loader, and a score system. The renderer draws the playfield to the terminal every frame, the input layer maps keypresses to high-level actions, the physics module advances positions and resolves collisions between bodies, the level loader parses level definitions from disk, and the score system tracks points across runs while persisting a high-score table between sessions so returning players can compare their results over time and chase a personal best on the leaderboard screen. Keep the modules cleanly separated so each one can be developed and tested independently.";
+        // Comfortably past the length floor, so the decomposition signal decides.
+        assert!(prompt.chars().count() >= 600);
+        assert!(task_looks_decomposable(prompt));
+    }
+
+    #[test]
+    fn task_looks_decomposable_true_for_long_enumerated_list() {
+        let prompt = "Please work through the following items for the new operator dashboard before the demo:\n1. Wire up the authentication flow so the session token is refreshed before it expires.\n2. Replace the placeholder charts with the live metrics feed coming from the reporting backend.\n3. Add a compact settings panel where the operator can pick their preferred refresh interval.\n4. Cover the happy path with an end-to-end smoke check that loads the page and asserts the header renders.\nEach item is fairly self-contained, so feel free to sequence them in whatever order is the most efficient for you, and ping me once the first couple are merged so we can review them before the stakeholder demo.";
+        // An ordered list is an enumeration signal even without scope-noun verbs.
+        assert!(prompt.chars().count() >= 600);
+        assert!(task_looks_decomposable(prompt));
+    }
+
+    #[test]
+    fn task_looks_decomposable_false_for_short_prompt() {
+        let prompt = "Fix this typo in the readme.";
+        // Below the length floor: bail before scanning for any signal.
+        assert!(prompt.chars().count() < 600);
+        assert!(!task_looks_decomposable(prompt));
+    }
+
+    #[test]
+    fn task_looks_decomposable_false_for_long_monolithic_prose() {
+        let prompt = "The login routine occasionally hangs for a few seconds when the upstream cache is cold, because it waits on a single blocking lookup that never times out. When the cache is warm the very same routine returns almost instantly, so the slowdown stays invisible during ordinary day-to-day usage. The problem only surfaces on the very first request after a long idle period, which makes it genuinely hard to reproduce in a quick manual check at your desk. Please look into why that one blocking lookup lacks a timeout, describe in plain prose what you actually find, then spell out the smallest possible change that would let the routine fail fast rather than stalling the whole page for whoever happens to arrive first after a quiet night.";
+        // Long enough, but a single monolithic ask carries no decomposition signal.
+        assert!(prompt.chars().count() >= 600);
+        assert!(!task_looks_decomposable(prompt));
+    }
+
+    #[test]
+    fn task_looks_decomposable_false_for_signal_rich_but_short_prompt() {
+        let prompt =
+            "Build three modules: a parser, a renderer, and a scheduler, each with its own tests.";
+        // Has signal words ("three modules", "each ... tests") but is under the
+        // length floor, so the conservative gate still returns false.
+        assert!(prompt.chars().count() < 600);
+        assert!(!task_looks_decomposable(prompt));
     }
 
     #[test]

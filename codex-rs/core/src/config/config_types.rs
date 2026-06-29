@@ -52,6 +52,28 @@ pub enum UsageHintCadence {
     Always,
 }
 
+/// Whether the auto-coordinator framing is injected at the start of a fresh,
+/// decomposable user turn.
+///
+/// Mirrors the derive/`#[default]` style of [`UsageHintCadence`]; serialize-only
+/// (the raw TOML enum lives in `codex_features::AutoCoordinatorModeToml`). The
+/// default [`AutoCoordinatorMode::Auto`] injects only when the local
+/// decomposability heuristic fires, so a stray injection on small work is
+/// harmless.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AutoCoordinatorMode {
+    /// Never inject the coordinator framing.
+    Off,
+    /// Inject only when the local decomposability heuristic
+    /// ([`codex_agent_policy::task_looks_decomposable`]) judges the task worth
+    /// decomposing. Conservative: small or monolithic tasks are left untouched.
+    #[default]
+    Auto,
+    /// Inject whenever multi-agent V2 is enabled, regardless of the heuristic.
+    Always,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MultiAgentV2Config {
     pub max_concurrent_threads_per_session: usize,
@@ -82,6 +104,12 @@ pub struct MultiAgentV2Config {
     /// model requests between usage-hint re-injections. Ignored by the other
     /// cadences. Default: 5.
     pub usage_hint_reminder_interval: u64,
+    /// Governs automatic injection of the coordinator framing at the start of a
+    /// fresh, decomposable user turn (see [`AutoCoordinatorMode`]). Default
+    /// [`AutoCoordinatorMode::Auto`] injects only when the local heuristic judges
+    /// the task decomposable. Gated by the same multi-agent V2 enable as the
+    /// usage hint.
+    pub auto_coordinator: AutoCoordinatorMode,
     pub hide_spawn_agent_metadata: bool,
     pub non_code_mode_only: bool,
     /// Optional namespace under which multi-agent v2 spawn tools are exposed
@@ -126,10 +154,79 @@ impl Default for MultiAgentV2Config {
             // re-injection); flipping this is a separate, later decision.
             usage_hint_cadence: UsageHintCadence::InitialContext,
             usage_hint_reminder_interval: 5,
+            // Default Auto: inject the coordinator framing only when the local
+            // decomposability heuristic fires (conservative, beneficial-only).
+            auto_coordinator: AutoCoordinatorMode::Auto,
             hide_spawn_agent_metadata: false,
             non_code_mode_only: false,
             tool_namespace: None,
         }
+    }
+}
+
+/// Pure gate over the resolved [`AutoCoordinatorMode`] plus the user prompt.
+///
+/// Exhaustive (no catch-all) so a newly added mode variant fails to compile here
+/// until it is handled. `Auto` defers to the decomposability heuristic, which is
+/// owned by `codex-agent-policy` so the policy stays independently testable.
+fn auto_coordinator_should_inject(mode: AutoCoordinatorMode, prompt: &str) -> bool {
+    match mode {
+        AutoCoordinatorMode::Off => false,
+        AutoCoordinatorMode::Always => true,
+        AutoCoordinatorMode::Auto => codex_agent_policy::task_looks_decomposable(prompt),
+    }
+}
+
+impl MultiAgentV2Config {
+    /// Whether the auto-coordinator framing should be injected for `prompt`,
+    /// given this config's [`AutoCoordinatorMode`]. The caller owns the
+    /// multi-agent V2 enable gate (mirroring the usage-hint seam); this method
+    /// only evaluates the mode plus heuristic.
+    pub fn should_inject_auto_coordinator(&self, prompt: &str) -> bool {
+        auto_coordinator_should_inject(self.auto_coordinator, prompt)
+    }
+}
+
+#[cfg(test)]
+mod auto_coordinator_tests {
+    use super::*;
+
+    #[test]
+    fn auto_coordinator_mode_defaults_to_auto() {
+        assert_eq!(AutoCoordinatorMode::default(), AutoCoordinatorMode::Auto);
+        assert_eq!(
+            MultiAgentV2Config::default().auto_coordinator,
+            AutoCoordinatorMode::Auto
+        );
+    }
+
+    #[test]
+    fn auto_coordinator_gate_honors_mode_and_heuristic() {
+        // Long, clearly multi-deliverable prompt: passes the agent-policy
+        // decomposability heuristic (length floor + enumeration + build/plural
+        // signals). Kept as one literal so rustfmt leaves it untouched.
+        let decomposable = "Build a multi-module game engine. Implement several independent components, each owning its own files so the work can be split across multiple parallel workers:\n- a rendering module that draws sprites and text to the screen\n- an input module that maps keyboard and gamepad events to actions\n- a physics module that integrates velocities and resolves collisions\n- a level loader that parses map files and instantiates entities\n- a score system that tracks points, high scores, and persistence\n- an audio module that mixes sound effects and background music\nEach component is a separate file and can be developed and tested in isolation, then integrated together at the end. Add unit tests for every module and verify the whole engine runs.";
+        let trivial = "fix this typo";
+
+        // Off never injects, even for a decomposable task.
+        assert!(!auto_coordinator_should_inject(
+            AutoCoordinatorMode::Off,
+            decomposable
+        ));
+        // Always injects, even for a trivial task.
+        assert!(auto_coordinator_should_inject(
+            AutoCoordinatorMode::Always,
+            trivial
+        ));
+        // Auto defers to the decomposability heuristic.
+        assert!(auto_coordinator_should_inject(
+            AutoCoordinatorMode::Auto,
+            decomposable
+        ));
+        assert!(!auto_coordinator_should_inject(
+            AutoCoordinatorMode::Auto,
+            trivial
+        ));
     }
 }
 

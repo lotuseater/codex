@@ -1,5 +1,8 @@
 use super::*;
 
+use super::config_types::AutoCoordinatorMode;
+use codex_features::AutoCoordinatorModeToml;
+
 pub(crate) fn resolve_tool_suggest_config(
     config_toml: &ConfigToml,
     config_layer_stack: &ConfigLayerStack,
@@ -140,6 +143,18 @@ fn resolve_usage_hint_cadence(raw: UsageHintCadenceToml) -> UsageHintCadence {
     }
 }
 
+/// Map the raw TOML auto-coordinator mode onto the resolved
+/// [`AutoCoordinatorMode`]. Exhaustive (no catch-all) so a newly added mode
+/// variant fails to compile here until it is mapped, mirroring
+/// [`resolve_usage_hint_cadence`].
+fn resolve_auto_coordinator(raw: AutoCoordinatorModeToml) -> AutoCoordinatorMode {
+    match raw {
+        AutoCoordinatorModeToml::Off => AutoCoordinatorMode::Off,
+        AutoCoordinatorModeToml::Auto => AutoCoordinatorMode::Auto,
+        AutoCoordinatorModeToml::Always => AutoCoordinatorMode::Always,
+    }
+}
+
 pub(crate) fn resolve_multi_agent_v2_config(
     config_toml: &ConfigToml,
     config_profile: &ConfigProfile,
@@ -196,6 +211,11 @@ pub(crate) fn resolve_multi_agent_v2_config(
         .and_then(|config| config.usage_hint_reminder_interval)
         .or_else(|| base.and_then(|config| config.usage_hint_reminder_interval))
         .unwrap_or(default.usage_hint_reminder_interval);
+    let auto_coordinator = profile
+        .and_then(|config| config.auto_coordinator)
+        .or_else(|| base.and_then(|config| config.auto_coordinator))
+        .map(resolve_auto_coordinator)
+        .unwrap_or(default.auto_coordinator);
     let hide_spawn_agent_metadata = profile
         .and_then(|config| config.hide_spawn_agent_metadata)
         .or_else(|| base.and_then(|config| config.hide_spawn_agent_metadata))
@@ -221,6 +241,7 @@ pub(crate) fn resolve_multi_agent_v2_config(
         // interval is 5, preserving today's behavior.
         usage_hint_cadence,
         usage_hint_reminder_interval,
+        auto_coordinator,
         hide_spawn_agent_metadata,
         non_code_mode_only,
         tool_namespace: default.tool_namespace.clone(),

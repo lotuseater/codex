@@ -118,6 +118,7 @@ use codex_protocol::protocol::AgentReasoningSectionBreakEvent;
 use codex_protocol::protocol::CodexErrorInfo;
 use codex_protocol::protocol::ErrorEvent;
 use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::MultiAgentVersion;
 use codex_protocol::protocol::PlanDeltaEvent;
 use codex_protocol::protocol::ReasoningContentDeltaEvent;
 use codex_protocol::protocol::ReasoningRawContentDeltaEvent;
@@ -261,6 +262,18 @@ pub(crate) async fn run_turn(
         );
         if let Some(blackboard_context) = blackboard_context {
             additional_contexts.push(blackboard_context);
+        }
+        // fork-local: at the start of a fresh, decomposable user turn, inject the
+        // auto-coordinator framing TASK-ADJACENT (folded into the user turn at
+        // run_hooks_and_record_inputs below), gated by multi-agent V2 + the
+        // resolved AutoCoordinatorMode. Text + heuristic live in codex-agent-policy.
+        if turn_context.multi_agent_version == MultiAgentVersion::V2
+            && turn_context
+                .config
+                .multi_agent_v2
+                .should_inject_auto_coordinator(prompt.as_str())
+        {
+            additional_contexts.push(codex_agent_policy::AUTO_COORDINATOR_FRAMING_TEXT.to_string());
         }
     }
     let initial_input_outcome = run_hooks_and_record_inputs(

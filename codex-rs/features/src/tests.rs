@@ -633,11 +633,42 @@ non_code_mode_only = true
             usage_hint_text: Some("Custom delegation guidance.".to_string()),
             root_agent_usage_hint_text: Some("Root guidance.".to_string()),
             subagent_usage_hint_text: Some("Subagent guidance.".to_string()),
+            plan_token_economy_delegation_k: None,
+            usage_hint_cadence: None,
+            usage_hint_reminder_interval: None,
+            auto_coordinator: None,
             tool_namespace: Some("agents".to_string()),
             hide_spawn_agent_metadata: Some(true),
             non_code_mode_only: Some(true),
         }))
     );
+}
+
+#[test]
+fn multi_agent_v2_auto_coordinator_parses_modes() {
+    fn parse(src: &str) -> Option<crate::AutoCoordinatorModeToml> {
+        let features: FeaturesToml =
+            toml::from_str(src).expect("features table should deserialize");
+        match features.multi_agent_v2 {
+            Some(FeatureToml::Config(config)) => config.auto_coordinator,
+            _ => None,
+        }
+    }
+
+    assert_eq!(
+        parse("[multi_agent_v2]\nauto_coordinator = \"always\"\n"),
+        Some(crate::AutoCoordinatorModeToml::Always)
+    );
+    assert_eq!(
+        parse("[multi_agent_v2]\nauto_coordinator = \"auto\"\n"),
+        Some(crate::AutoCoordinatorModeToml::Auto)
+    );
+    assert_eq!(
+        parse("[multi_agent_v2]\nauto_coordinator = \"off\"\n"),
+        Some(crate::AutoCoordinatorModeToml::Off)
+    );
+    // Absent key resolves to None; the resolver then applies the Auto default.
+    assert_eq!(parse("[multi_agent_v2]\nenabled = true\n"), None);
 }
 
 #[test]

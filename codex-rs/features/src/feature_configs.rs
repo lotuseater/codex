@@ -49,6 +49,25 @@ pub enum UsageHintCadenceToml {
     Always,
 }
 
+/// Raw TOML mirror of the resolved `AutoCoordinatorMode`
+/// (`codex_core::config::AutoCoordinatorMode`, which is serialize-only). The
+/// deserialize-able counterpart read from `features.multi_agent_v2.auto_coordinator`;
+/// it is mapped onto the resolved enum in `resolve_multi_agent_v2_config`. Mirrors
+/// the derive/`rename_all` style of [`UsageHintCadenceToml`]; parses
+/// `off` / `auto` / `always`.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AutoCoordinatorModeToml {
+    /// Never inject the auto-coordinator framing.
+    Off,
+    /// Inject only when the local decomposability heuristic judges the task
+    /// worth decomposing.
+    #[default]
+    Auto,
+    /// Inject whenever multi-agent V2 is enabled.
+    Always,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MultiAgentV2ConfigToml {
@@ -90,6 +109,13 @@ pub struct MultiAgentV2ConfigToml {
     /// Defaults to 5.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub usage_hint_reminder_interval: Option<u64>,
+    /// Governs automatic injection of the coordinator framing at the start of a
+    /// fresh, decomposable user turn. Mirrors the resolved `AutoCoordinatorMode`:
+    /// `off` never injects, `auto` (default) injects only when the local
+    /// decomposability heuristic fires, `always` injects whenever multi-agent V2
+    /// is enabled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_coordinator: Option<AutoCoordinatorModeToml>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(length(min = 1, max = 64), regex(pattern = r"^[a-zA-Z0-9_-]+$"))]
     pub tool_namespace: Option<String>,

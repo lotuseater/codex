@@ -15,6 +15,19 @@ pub const MAIN_AGENT_PLAN_DELEGATION_PROMPT: &str = concat!(
     "Keep root focused on overall context, ownership boundaries, integration, verification, and follow-ups. Ask subagents for a short summary or short result only when the main agent needs that handoff to integrate, verify, or review their work."
 );
 
+/// Auto-coordinator framing injected task-adjacent (folded into the user's first
+/// task turn) on decomposable turns, so the model plans, delegates, and integrates
+/// the work instead of implementing it serially.
+pub const AUTO_COORDINATOR_FRAMING_TEXT: &str = concat!(
+    "You are operating as a COORDINATOR for the task above. ",
+    "If — and only if — you can name at least two INDEPENDENT, file-disjoint subtasks each worth roughly 5k+ tokens of work, do NOT implement them yourself: act as a coordinator in three phases. ",
+    "(1) PLAN: emit an explicit decomposition — for each subtask an id, a one-line title, the file(s) it owns, and the worker assigned. ",
+    "(2) DELEGATE: spawn ONE worker per subtask, in PARALLEL with overlapping lifetimes — use your spawn-agent capability, or if none is available launch one non-interactive `codex exec` worker process per subtask; do not spawn one, wait, then spawn the next. ",
+    "(3) INTEGRATE: wire the workers' files together, resolve interface mismatches, write only the small glue, and VERIFY it runs. ",
+    "While coordinating, implementing a subtask body yourself is forbidden — plan, spawn, wait, assemble. ",
+    "If the task is small or cannot be split into 2+ independent lanes, ignore this and just do it directly.",
+);
+
 /// Same body as [`default_multi_agent_v2_root_usage_hint_text`] but with an
 /// explicit `k` so callers can vary the delegation threshold at runtime.
 pub fn default_multi_agent_v2_root_usage_hint_text_with_k(k: usize) -> String {

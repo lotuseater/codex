@@ -16,6 +16,7 @@ use toml::Table;
 
 mod feature_configs;
 mod legacy;
+pub use feature_configs::AutoCoordinatorModeToml;
 pub use feature_configs::CodeModeConfigToml;
 pub use feature_configs::CurrentTimeReminderConfigToml;
 pub use feature_configs::CurrentTimeSource;
@@ -1394,7 +1395,7 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::SemanticAutoCompact,
         key: "semantic_auto_compact",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Stable,
         default_enabled: true,
     },
     FeatureSpec {
@@ -1412,13 +1413,13 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::ContextOpsShadow,
         key: "context_ops_shadow",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Stable,
         default_enabled: true,
     },
     FeatureSpec {
         id: Feature::ContextOpsReplace,
         key: "context_ops_replace",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Stable,
         default_enabled: true,
     },
     // ---- end fork-local features ----
