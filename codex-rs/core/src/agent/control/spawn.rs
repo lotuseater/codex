@@ -89,12 +89,13 @@ fn keep_forked_rollout_item(item: &RolloutItem, preserve_reference_context_item:
 }
 
 fn is_multi_agent_v2_usage_hint_message(item: &ResponseItem, usage_hint_texts: &[String]) -> bool {
-    let ResponseItem::Message { role, content, .. } = item else {
+    // Match on the hint TEXT regardless of role: the delegation usage hint may now be
+    // delivered on the user channel (obeyed) rather than the developer channel, and in
+    // either case it must be stripped from forked-subagent history so it is not
+    // duplicated into every child.
+    let ResponseItem::Message { content, .. } = item else {
         return false;
     };
-    if role != "developer" {
-        return false;
-    }
     let [ContentItem::InputText { text }] = content.as_slice() else {
         return false;
     };

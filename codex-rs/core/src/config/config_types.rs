@@ -74,6 +74,28 @@ pub enum AutoCoordinatorMode {
     Always,
 }
 
+/// Role under which the delegation nudges (the auto-coordinator framing and the
+/// multi-agent usage hint) are delivered to the model. Delivered as `user`-role
+/// messages they are obeyed; delivered as `developer`-role messages (the legacy
+/// path) they are discounted by the model.
+///
+/// Mirrors the derive/`#[default]` style of [`AutoCoordinatorMode`]; serialize-only
+/// (the raw TOML enum lives in `codex_features::DelegationInjectionRoleToml`). The
+/// default [`DelegationInjectionRole::User`] delivers the nudges as user-role so
+/// the model obeys them; `Developer` preserves the prior behavior for
+/// control/rollback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DelegationInjectionRole {
+    /// Deliver the delegation nudges as `user`-role messages, which the model
+    /// obeys. Default.
+    #[default]
+    User,
+    /// Deliver the delegation nudges as `developer`-role messages (the prior
+    /// behavior, discounted by the model). Retained for control/rollback.
+    Developer,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MultiAgentV2Config {
     pub max_concurrent_threads_per_session: usize,
@@ -110,6 +132,12 @@ pub struct MultiAgentV2Config {
     /// the task decomposable. Gated by the same multi-agent V2 enable as the
     /// usage hint.
     pub auto_coordinator: AutoCoordinatorMode,
+    /// Role under which the delegation nudges (auto-coordinator framing and the
+    /// usage hint) are injected to the model (see [`DelegationInjectionRole`]).
+    /// Default [`DelegationInjectionRole::User`] delivers them as user-role
+    /// messages so the model acts on them; `Developer` preserves the prior
+    /// developer-role path for control/rollback.
+    pub delegation_injection_role: DelegationInjectionRole,
     pub hide_spawn_agent_metadata: bool,
     pub non_code_mode_only: bool,
     /// Optional namespace under which multi-agent v2 spawn tools are exposed
@@ -157,6 +185,9 @@ impl Default for MultiAgentV2Config {
             // Default Auto: inject the coordinator framing only when the local
             // decomposability heuristic fires (conservative, beneficial-only).
             auto_coordinator: AutoCoordinatorMode::Auto,
+            // Default User: deliver the delegation nudges as user-role messages
+            // so the model acts on them (developer-role is the legacy path).
+            delegation_injection_role: DelegationInjectionRole::User,
             hide_spawn_agent_metadata: false,
             non_code_mode_only: false,
             tool_namespace: None,
@@ -184,6 +215,25 @@ impl MultiAgentV2Config {
     /// only evaluates the mode plus heuristic.
     pub fn should_inject_auto_coordinator(&self, prompt: &str) -> bool {
         auto_coordinator_should_inject(self.auto_coordinator, prompt)
+    }
+
+    /// Whether auto-coordination is active (mode is not `Off`). A fresh root
+    /// session consults this to start in `Proactive` multi-agent mode instead of
+    /// the default `ExplicitRequestOnly` suppressor, so unprompted delegation is
+    /// permitted whenever auto-coordination is enabled. Distinct from
+    /// [`Self::should_inject_auto_coordinator`], which additionally consults the
+    /// per-prompt decomposability heuristic under `Auto`.
+    pub fn auto_coordinator_active(&self) -> bool {
+        self.auto_coordinator != AutoCoordinatorMode::Off
+    }
+
+    /// Whether the delegation nudges should be delivered to the model as
+    /// `user`-role messages (obeyed) rather than `developer`-role messages
+    /// (discounted). This is the seam consumed by the injection path: `true`
+    /// selects the user-role delivery, `false` keeps the prior developer-role
+    /// delivery unchanged (control/rollback).
+    pub fn inject_delegation_as_user(&self) -> bool {
+        self.delegation_injection_role == DelegationInjectionRole::User
     }
 }
 

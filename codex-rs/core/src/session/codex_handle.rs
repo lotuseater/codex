@@ -304,10 +304,22 @@ impl Codex {
             collaboration_mode: collaboration_mode.clone(),
             // Upstream made `SessionConfiguration.multi_agent_mode` a non-optional
             // `MultiAgentMode`; the fork's spawn arg is still `Option` (absent on
-            // most spawn paths). Map `None` to the enum default
-            // (`ExplicitRequestOnly`) so the stored thread mode matches upstream's
-            // convention without dropping any caller-provided mode.
-            multi_agent_mode: multi_agent_mode.unwrap_or_default(),
+            // most spawn paths). A caller-provided `Some(..)` is always honored. For
+            // a fresh session (`None`): a fresh ROOT session with auto-coordination
+            // enabled (`auto_coordinator != Off`) starts in `Proactive` so its
+            // instruction supersedes the default `ExplicitRequestOnly` suppressor and
+            // unprompted delegation is permitted; every other case keeps the upstream
+            // default (`ExplicitRequestOnly`). Non-root agents inherit via `Some(..)`,
+            // so the `is_non_root_agent` guard is belt-and-suspenders.
+            multi_agent_mode: multi_agent_mode.unwrap_or_else(|| {
+                if !session_source.is_non_root_agent()
+                    && config.multi_agent_v2.auto_coordinator_active()
+                {
+                    MultiAgentMode::Proactive
+                } else {
+                    MultiAgentMode::ExplicitRequestOnly
+                }
+            }),
             model_reasoning_summary: config.model_reasoning_summary,
             service_tier,
             context_budget_mode: config.context_budget_mode,

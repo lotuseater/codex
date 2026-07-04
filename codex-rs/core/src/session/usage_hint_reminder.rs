@@ -149,9 +149,12 @@ pub(super) async fn maybe_record_usage_hint_reminder(
     // by `take_reminder_due` above, so on a successful delivery no further state
     // update is needed and the hint fires again after `reminder_interval`
     // model requests.
-    if let Some(usage_hint_message) =
+    let usage_hint_message = if multi_agent_v2.inject_delegation_as_user() {
+        crate::context_manager::updates::build_contextual_user_message(vec![usage_hint_text])
+    } else {
         crate::context_manager::updates::build_developer_update_item(vec![usage_hint_text])
-    {
+    };
+    if let Some(usage_hint_message) = usage_hint_message {
         sess.record_conversation_items(turn_context, std::slice::from_ref(&usage_hint_message))
             .await;
     }

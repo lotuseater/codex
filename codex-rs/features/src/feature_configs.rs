@@ -68,6 +68,25 @@ pub enum AutoCoordinatorModeToml {
     Always,
 }
 
+/// Raw TOML mirror of the resolved `DelegationInjectionRole`
+/// (`codex_core::config::DelegationInjectionRole`, which is serialize-only). The
+/// deserialize-able counterpart read from
+/// `features.multi_agent_v2.delegation_injection_role`; it is mapped onto the
+/// resolved enum in `resolve_multi_agent_v2_config`. Mirrors the
+/// derive/`rename_all` style of [`AutoCoordinatorModeToml`]; parses
+/// `user` / `developer`.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DelegationInjectionRoleToml {
+    /// Deliver the delegation nudges as `user`-role messages (obeyed by the
+    /// model).
+    #[default]
+    User,
+    /// Deliver the delegation nudges as `developer`-role messages (the prior
+    /// behavior, discounted by the model).
+    Developer,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MultiAgentV2ConfigToml {
@@ -116,6 +135,13 @@ pub struct MultiAgentV2ConfigToml {
     /// is enabled.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_coordinator: Option<AutoCoordinatorModeToml>,
+    /// Role under which the delegation nudges (auto-coordinator framing and the
+    /// usage hint) are injected to the model. Mirrors the resolved
+    /// `DelegationInjectionRole`: `user` (default) delivers them as user-role
+    /// messages so the model acts on them; `developer` preserves the prior
+    /// developer-role path for control/rollback.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delegation_injection_role: Option<DelegationInjectionRoleToml>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(length(min = 1, max = 64), regex(pattern = r"^[a-zA-Z0-9_-]+$"))]
     pub tool_namespace: Option<String>,

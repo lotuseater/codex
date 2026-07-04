@@ -1,7 +1,9 @@
 use super::*;
 
 use super::config_types::AutoCoordinatorMode;
+use super::config_types::DelegationInjectionRole;
 use codex_features::AutoCoordinatorModeToml;
+use codex_features::DelegationInjectionRoleToml;
 
 pub(crate) fn resolve_tool_suggest_config(
     config_toml: &ConfigToml,
@@ -155,6 +157,18 @@ fn resolve_auto_coordinator(raw: AutoCoordinatorModeToml) -> AutoCoordinatorMode
     }
 }
 
+/// Map the raw TOML delegation-injection role onto the resolved
+/// [`DelegationInjectionRole`]. Exhaustive (no catch-all) so a newly added
+/// variant fails to compile here until it is mapped, mirroring
+/// [`resolve_auto_coordinator`]. A `None` at the call site defaults to
+/// [`DelegationInjectionRole::User`].
+fn resolve_delegation_injection_role(raw: DelegationInjectionRoleToml) -> DelegationInjectionRole {
+    match raw {
+        DelegationInjectionRoleToml::User => DelegationInjectionRole::User,
+        DelegationInjectionRoleToml::Developer => DelegationInjectionRole::Developer,
+    }
+}
+
 pub(crate) fn resolve_multi_agent_v2_config(
     config_toml: &ConfigToml,
     config_profile: &ConfigProfile,
@@ -216,6 +230,11 @@ pub(crate) fn resolve_multi_agent_v2_config(
         .or_else(|| base.and_then(|config| config.auto_coordinator))
         .map(resolve_auto_coordinator)
         .unwrap_or(default.auto_coordinator);
+    let delegation_injection_role = profile
+        .and_then(|config| config.delegation_injection_role)
+        .or_else(|| base.and_then(|config| config.delegation_injection_role))
+        .map(resolve_delegation_injection_role)
+        .unwrap_or(default.delegation_injection_role);
     let hide_spawn_agent_metadata = profile
         .and_then(|config| config.hide_spawn_agent_metadata)
         .or_else(|| base.and_then(|config| config.hide_spawn_agent_metadata))
@@ -242,6 +261,7 @@ pub(crate) fn resolve_multi_agent_v2_config(
         usage_hint_cadence,
         usage_hint_reminder_interval,
         auto_coordinator,
+        delegation_injection_role,
         hide_spawn_agent_metadata,
         non_code_mode_only,
         tool_namespace: default.tool_namespace.clone(),

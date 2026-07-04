@@ -181,7 +181,7 @@ pub(crate) async fn run_turn(
     sess: Arc<Session>,
     turn_context: Arc<TurnContext>,
     turn_extension_data: Arc<codex_extension_api::ExtensionData>,
-    input: Vec<TurnInput>,
+    mut input: Vec<TurnInput>,
     prewarmed_client_session: Option<ModelClientSession>,
     cancellation_token: CancellationToken,
 ) -> CodexResult<Option<String>> {
@@ -273,7 +273,28 @@ pub(crate) async fn run_turn(
                 .multi_agent_v2
                 .should_inject_auto_coordinator(prompt.as_str())
         {
-            additional_contexts.push(codex_agent_policy::AUTO_COORDINATOR_FRAMING_TEXT.to_string());
+            if turn_context
+                .config
+                .multi_agent_v2
+                .inject_delegation_as_user()
+            {
+                // User channel: fuse the framing into the SAME role:"user" prompt so
+                // the model obeys it (a developer-role message is discounted). Append
+                // it as a trailing text block on the user turn's content vec, recorded
+                // as one user message by run_hooks_and_record_inputs below.
+                if let Some(content) = input.iter_mut().rev().find_map(|item| match item {
+                    TurnInput::UserInput { content, .. } => Some(content),
+                    _ => None,
+                }) {
+                    content.push(UserInput::Text {
+                        text: codex_agent_policy::AUTO_COORDINATOR_FRAMING_TEXT.to_string(),
+                        text_elements: Vec::new(),
+                    });
+                }
+            } else {
+                additional_contexts
+                    .push(codex_agent_policy::AUTO_COORDINATOR_FRAMING_TEXT.to_string());
+            }
         }
     }
     let initial_input_outcome = run_hooks_and_record_inputs(

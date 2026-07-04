@@ -637,6 +637,7 @@ non_code_mode_only = true
             usage_hint_cadence: None,
             usage_hint_reminder_interval: None,
             auto_coordinator: None,
+            delegation_injection_role: None,
             tool_namespace: Some("agents".to_string()),
             hide_spawn_agent_metadata: Some(true),
             non_code_mode_only: Some(true),

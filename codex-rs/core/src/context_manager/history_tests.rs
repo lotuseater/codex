@@ -394,6 +394,48 @@ fn for_prompt_preserves_inter_agent_assistant_messages() {
 }
 
 #[test]
+fn for_prompt_preserves_auto_coordinator_framing_as_user_text() {
+    // Slice B fuses the auto-coordinator framing into the SAME role:"user" turn by
+    // appending a `UserInput::Text` onto the user item's content vec (see
+    // `session::turn::run_turn`). Prove the verbatim framing then reaches the model
+    // request (`for_prompt`) as user-role text, unfiltered -- a zero-quota proof that
+    // the delegation nudge is delivered on the obeyed channel, not discounted as a
+    // developer message.
+    let user_turn = vec![
+        codex_protocol::user_input::UserInput::Text {
+            text: "refactor the parser and add tests".to_string(),
+            text_elements: Vec::new(),
+        },
+        codex_protocol::user_input::UserInput::Text {
+            text: codex_agent_policy::AUTO_COORDINATOR_FRAMING_TEXT.to_string(),
+            text_elements: Vec::new(),
+        },
+    ];
+    // Same conversion the turn loop uses to record a user turn into history.
+    let user_item = ResponseItem::from(codex_protocol::models::ResponseInputItem::from(user_turn));
+    let history = create_history_with_items(vec![user_item]);
+
+    let prompt = history.for_prompt(&default_input_modalities());
+
+    let framing_reached_user_role = prompt.iter().any(|item| {
+        matches!(
+            item,
+            ResponseItem::Message { role, content, .. }
+                if role == "user"
+                    && content.iter().any(|c| matches!(
+                        c,
+                        ContentItem::InputText { text }
+                            if text.as_str() == codex_agent_policy::AUTO_COORDINATOR_FRAMING_TEXT
+                    ))
+        )
+    });
+    assert!(
+        framing_reached_user_role,
+        "auto-coordinator framing must reach the model request as verbatim user-role text"
+    );
+}
+
+#[test]
 fn drop_last_n_user_turns_treats_inter_agent_assistant_messages_as_instruction_turns() {
     let first_turn = user_input_text_msg("first");
     let first_reply = assistant_msg("done");
