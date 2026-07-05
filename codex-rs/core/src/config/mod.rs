@@ -205,6 +205,7 @@ pub use config_struct::BatchMiniProgrammingInstructionsVariant;
 pub use config_struct::CodeModeConfig;
 pub use config_struct::Config;
 pub use config_types::AgentRoleConfig;
+pub use config_types::AutoCoordinatorMode;
 pub use config_types::ConfigOverrides;
 pub use config_types::CurrentTimeReminderConfig;
 pub use config_types::DesktopAutomationConfig;

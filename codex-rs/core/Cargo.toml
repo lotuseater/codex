@@ -245,6 +245,10 @@ path = "tests/namespace_alias_request.rs"
 name = "window_headers"
 path = "tests/window_headers.rs"
 
+[[test]]
+name = "multi_agent_mode"
+path = "tests/multi_agent_mode.rs"
+
 [lints]
 workspace = true
 

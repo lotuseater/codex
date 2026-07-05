@@ -2098,6 +2098,77 @@ fn resolve_multi_agent_version_handles_unset_and_legacy_history() {
     );
 }
 
+#[test]
+fn upgrade_resumed_multi_agent_version_upgrades_only_resumed_v1_under_v2_config() {
+    let thread_id = ThreadId::default();
+    let resumed = || {
+        InitialHistory::Resumed(ResumedHistory {
+            conversation_id: thread_id,
+            history: Arc::new(Vec::new()),
+            rollout_path: None,
+        })
+    };
+
+    // Resumed V1 under a V2-enabling config upgrades to V2.
+    assert_eq!(
+        upgrade_resumed_multi_agent_version(
+            &resumed(),
+            Some(MultiAgentVersion::V1),
+            MultiAgentVersion::V2,
+        ),
+        Some(MultiAgentVersion::V2)
+    );
+    // Forked V1 under a V2-enabling config upgrades to V2.
+    assert_eq!(
+        upgrade_resumed_multi_agent_version(
+            &InitialHistory::Forked(Vec::new()),
+            Some(MultiAgentVersion::V1),
+            MultiAgentVersion::V2,
+        ),
+        Some(MultiAgentVersion::V2)
+    );
+    // Persisted V2 is never downgraded, whatever the current config resolves to.
+    assert_eq!(
+        upgrade_resumed_multi_agent_version(
+            &resumed(),
+            Some(MultiAgentVersion::V2),
+            MultiAgentVersion::V1,
+        ),
+        Some(MultiAgentVersion::V2)
+    );
+    // `Disabled` is never touched.
+    assert_eq!(
+        upgrade_resumed_multi_agent_version(
+            &resumed(),
+            Some(MultiAgentVersion::Disabled),
+            MultiAgentVersion::V2,
+        ),
+        Some(MultiAgentVersion::Disabled)
+    );
+    // No upgrade when the current config does not enable V2 (still V1).
+    assert_eq!(
+        upgrade_resumed_multi_agent_version(
+            &resumed(),
+            Some(MultiAgentVersion::V1),
+            MultiAgentVersion::V1,
+        ),
+        Some(MultiAgentVersion::V1)
+    );
+    // Fresh sessions are returned exactly as resolved (no resume upgrade).
+    assert_eq!(
+        upgrade_resumed_multi_agent_version(&InitialHistory::New, None, MultiAgentVersion::V2),
+        None
+    );
+    assert_eq!(
+        upgrade_resumed_multi_agent_version(
+            &InitialHistory::Cleared,
+            Some(MultiAgentVersion::V1),
+            MultiAgentVersion::V2,
+        ),
+        Some(MultiAgentVersion::V1)
+    );
+}
+
 #[tokio::test]
 async fn record_initial_history_new_defers_initial_context_until_first_turn() {
     let (session, _turn_context) = make_session_and_context().await;

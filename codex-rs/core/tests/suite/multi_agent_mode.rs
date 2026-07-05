@@ -1,8 +1,10 @@
 use anyhow::Result;
+use codex_core::config::AutoCoordinatorMode;
 use codex_features::Feature;
 use codex_protocol::config_types::MultiAgentMode;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::MULTI_AGENT_MODE_OPEN_TAG;
+use codex_protocol::protocol::MultiAgentVersion;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::user_input::UserInput;
@@ -43,6 +45,7 @@ async fn submit_turn(
 ) -> Result<()> {
     codex
         .submit(Op::UserInput {
+            environments: None,
             items: vec![UserInput::Text {
                 text: prompt.to_string(),
                 text_elements: Vec::new(),
@@ -332,6 +335,111 @@ async fn resume_compares_against_previous_effective_multi_agent_mode() -> Result
             count_containing(&texts, PROACTIVE_TEXT),
         ),
         (1, 0, 1)
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn resume_upgrades_multi_agent_version_to_v2_when_config_enables_v2() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let _responses = mount_sse_once(
+        &server,
+        sse(vec![ev_response_created("resp-1"), ev_completed("resp-1")]),
+    )
+    .await;
+    // Initial session runs under multi-agent V1 (Collab enabled, V2 disabled), so
+    // its persisted history resolves to V1 on resume.
+    let initial = test_codex()
+        .with_config(|config| {
+            config
+                .features
+                .enable(Feature::Collab)
+                .expect("test config should allow feature update");
+        })
+        .build(&server)
+        .await?;
+    let home = initial.home.clone();
+    let rollout_path = initial
+        .session_configured
+        .rollout_path
+        .clone()
+        .expect("rollout path");
+    submit_turn(&initial.codex, "before resume", /*mode*/ None).await?;
+    drop(initial);
+
+    // Resume under a config that enables multi-agent V2. The restored/defaulted V1
+    // session must be upgraded to V2 so it honors the current V2 tool surface;
+    // without the upgrade the pre-set OnceLock would lock the resumed session to V1.
+    let mut resume_builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::MultiAgentV2)
+            .expect("test config should allow feature update");
+    });
+    let resumed = resume_builder.resume(&server, home, rollout_path).await?;
+
+    assert_eq!(
+        resumed.codex.multi_agent_version(),
+        Some(MultiAgentVersion::V2)
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn resume_flips_root_explicit_request_only_to_proactive_when_auto_coordinator_active()
+-> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let _responses = mount_sse_once(
+        &server,
+        sse(vec![ev_response_created("resp-1"), ev_completed("resp-1")]),
+    )
+    .await;
+    // Initial root session: multi-agent V2 with auto-coordination OFF, so the fresh
+    // root starts (and persists) `ExplicitRequestOnly`.
+    let initial = test_codex()
+        .with_config(|config| {
+            config
+                .features
+                .enable(Feature::MultiAgentV2)
+                .expect("test config should allow feature update");
+            config.multi_agent_v2.auto_coordinator = AutoCoordinatorMode::Off;
+        })
+        .build(&server)
+        .await?;
+    assert_eq!(
+        initial.codex.config_snapshot().await.multi_agent_mode,
+        MultiAgentMode::ExplicitRequestOnly
+    );
+    let home = initial.home.clone();
+    let rollout_path = initial
+        .session_configured
+        .rollout_path
+        .clone()
+        .expect("rollout path");
+    submit_turn(&initial.codex, "before resume", /*mode*/ None).await?;
+    drop(initial);
+
+    // Resume the ROOT with auto-coordination enabled: the restored
+    // `ExplicitRequestOnly` is promoted to `Proactive` so the resumed root may
+    // delegate without an explicit request.
+    let mut resume_builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::MultiAgentV2)
+            .expect("test config should allow feature update");
+        config.multi_agent_v2.auto_coordinator = AutoCoordinatorMode::Always;
+    });
+    let resumed = resume_builder.resume(&server, home, rollout_path).await?;
+
+    assert_eq!(
+        resumed.codex.config_snapshot().await.multi_agent_mode,
+        MultiAgentMode::Proactive
     );
 
     Ok(())

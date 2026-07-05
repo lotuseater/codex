@@ -608,7 +608,7 @@ impl TestCodexBuilder {
             user_instructions_provider,
             /*analytics_events_client*/ None,
             thread_store,
-            Arc::new(codex_thread_store_api::UnsupportedLiveThreadFactory::new()),
+            Arc::new(codex_thread_store::StoreLiveThreadFactory::new()),
             state_db.clone(),
             installation_id,
             /*attestation_provider*/ None,

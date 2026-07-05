@@ -1069,5 +1069,34 @@ pub(crate) fn resolve_multi_agent_version(
         })
 }
 
+/// Upgrade a resumed/forked session's resolved multi-agent version to V2 when the
+/// CURRENT config enables V2 but the restored (or legacy-defaulted) version is V1.
+///
+/// Upgrade-only and idempotent: a resumed session that persisted or defaulted to V1
+/// is promoted to V2 so it honors the currently-enabled V2 tool surface, but a
+/// persisted V2 is never downgraded, `Disabled` is never touched, and a fresh
+/// session (`New`/`Cleared`) is returned exactly as [`resolve_multi_agent_version`]
+/// produced it (fresh sessions already consult the config at spawn time). A
+/// never-delegated V1 session carries no V2-incompatible sub-agent state, so the
+/// promotion is safe. Exhaustive over [`InitialHistory`] so a new variant must be
+/// classified here at compile time.
+pub(crate) fn upgrade_resumed_multi_agent_version(
+    conversation_history: &InitialHistory,
+    resolved_multi_agent_version: Option<MultiAgentVersion>,
+    config_multi_agent_version: MultiAgentVersion,
+) -> Option<MultiAgentVersion> {
+    let is_resume = match conversation_history {
+        InitialHistory::New | InitialHistory::Cleared => false,
+        InitialHistory::Resumed(_) | InitialHistory::Forked(_) => true,
+    };
+    if is_resume
+        && resolved_multi_agent_version == Some(MultiAgentVersion::V1)
+        && config_multi_agent_version == MultiAgentVersion::V2
+    {
+        return Some(MultiAgentVersion::V2);
+    }
+    resolved_multi_agent_version
+}
+
 #[cfg(test)]
 pub(crate) mod tests;

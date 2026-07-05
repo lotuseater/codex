@@ -297,29 +297,51 @@ impl Codex {
             &conversation_history,
             inherited_multi_agent_version,
         );
-        let multi_agent_mode = initial_multi_agent_mode;
+        // On resume, honor the CURRENT config's multi-agent version: a session that
+        // persisted (or legacy-defaulted) to V1 is upgraded to V2 when this config
+        // enables V2, so a resumed thread gets the V2 tool surface. Upgrade-only:
+        // persisted V2 is never downgraded and fresh sessions are left unchanged.
+        let multi_agent_version = crate::session::upgrade_resumed_multi_agent_version(
+            &conversation_history,
+            multi_agent_version,
+            config.multi_agent_version_from_features(),
+        );
+        // Mirror the fresh-root Proactive flip for a resumed ROOT session: when
+        // auto-coordination is enabled, a RESTORED `ExplicitRequestOnly` (which
+        // cannot be distinguished from a legacy default) is promoted to `Proactive`
+        // so the resumed root may delegate without an explicit request. A
+        // caller-provided `Some(Proactive | None)`, and every fresh-session case
+        // (including a fresh root that explicitly chose `ExplicitRequestOnly`), are
+        // left unchanged.
+        let is_resume = matches!(
+            conversation_history,
+            InitialHistory::Resumed(_) | InitialHistory::Forked(_)
+        );
+        let multi_agent_mode = match initial_multi_agent_mode {
+            Some(MultiAgentMode::ExplicitRequestOnly)
+                if is_resume
+                    && !session_source.is_non_root_agent()
+                    && config.multi_agent_v2.auto_coordinator_active() =>
+            {
+                MultiAgentMode::Proactive
+            }
+            Some(mode) => mode,
+            None if !session_source.is_non_root_agent()
+                && config.multi_agent_v2.auto_coordinator_active() =>
+            {
+                MultiAgentMode::Proactive
+            }
+            None => MultiAgentMode::ExplicitRequestOnly,
+        };
 
         let session_configuration = SessionConfiguration {
             provider: config.model_provider.clone(),
             collaboration_mode: collaboration_mode.clone(),
-            // Upstream made `SessionConfiguration.multi_agent_mode` a non-optional
-            // `MultiAgentMode`; the fork's spawn arg is still `Option` (absent on
-            // most spawn paths). A caller-provided `Some(..)` is always honored. For
-            // a fresh session (`None`): a fresh ROOT session with auto-coordination
-            // enabled (`auto_coordinator != Off`) starts in `Proactive` so its
-            // instruction supersedes the default `ExplicitRequestOnly` suppressor and
-            // unprompted delegation is permitted; every other case keeps the upstream
-            // default (`ExplicitRequestOnly`). Non-root agents inherit via `Some(..)`,
-            // so the `is_non_root_agent` guard is belt-and-suspenders.
-            multi_agent_mode: multi_agent_mode.unwrap_or_else(|| {
-                if !session_source.is_non_root_agent()
-                    && config.multi_agent_v2.auto_coordinator_active()
-                {
-                    MultiAgentMode::Proactive
-                } else {
-                    MultiAgentMode::ExplicitRequestOnly
-                }
-            }),
+            // `multi_agent_mode` is resolved above: a caller-provided mode is honored
+            // (with the resumed-root `ExplicitRequestOnly` -> `Proactive` flip), and a
+            // fresh root with auto-coordination enabled starts `Proactive`; every
+            // other case keeps the upstream default (`ExplicitRequestOnly`).
+            multi_agent_mode,
             model_reasoning_summary: config.model_reasoning_summary,
             service_tier,
             context_budget_mode: config.context_budget_mode,
