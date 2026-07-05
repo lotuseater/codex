@@ -28,12 +28,7 @@ async fn residency_slot_reservation_unloads_oldest_idle_v2_agent() {
     let temp_home = tempfile::tempdir().expect("create temp home");
     config.codex_home = temp_home.path().to_path_buf().try_into().unwrap();
     config.cwd = temp_home.path().to_path_buf().try_into().unwrap();
-    let manager = ThreadManager::with_models_provider_and_home_for_tests(
-        CodexAuth::from_api_key("dummy"),
-        config.model_provider.clone(),
-        config.codex_home.to_path_buf(),
-        Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
-    );
+    let manager = v2_thread_manager(&config);
     let root = manager
         .start_thread(config.clone())
         .await
@@ -74,12 +69,7 @@ async fn interrupted_v2_agent_is_lost_after_residency_eviction() {
     let temp_home = tempfile::tempdir().expect("create temp home");
     config.codex_home = temp_home.path().to_path_buf().try_into().unwrap();
     config.cwd = temp_home.path().to_path_buf().try_into().unwrap();
-    let manager = ThreadManager::with_models_provider_and_home_for_tests(
-        CodexAuth::from_api_key("dummy"),
-        config.model_provider.clone(),
-        config.codex_home.to_path_buf(),
-        Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
-    );
+    let manager = v2_thread_manager(&config);
     let root = manager
         .start_thread(config.clone())
         .await
@@ -148,12 +138,7 @@ async fn abandoned_pending_init_v2_agent_is_reclaimed_by_residency_eviction() {
     let temp_home = tempfile::tempdir().expect("create temp home");
     config.codex_home = temp_home.path().to_path_buf().try_into().unwrap();
     config.cwd = temp_home.path().to_path_buf().try_into().unwrap();
-    let manager = ThreadManager::with_models_provider_and_home_for_tests(
-        CodexAuth::from_api_key("dummy"),
-        config.model_provider.clone(),
-        config.codex_home.to_path_buf(),
-        Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
-    );
+    let manager = v2_thread_manager(&config);
     let root = manager
         .start_thread(config.clone())
         .await
@@ -215,12 +200,7 @@ async fn fresh_pending_init_v2_agent_is_protected_within_grace() {
     let temp_home = tempfile::tempdir().expect("create temp home");
     config.codex_home = temp_home.path().to_path_buf().try_into().unwrap();
     config.cwd = temp_home.path().to_path_buf().try_into().unwrap();
-    let manager = ThreadManager::with_models_provider_and_home_for_tests(
-        CodexAuth::from_api_key("dummy"),
-        config.model_provider.clone(),
-        config.codex_home.to_path_buf(),
-        Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
-    );
+    let manager = v2_thread_manager(&config);
     let root = manager
         .start_thread(config.clone())
         .await
@@ -268,6 +248,30 @@ async fn fresh_pending_init_v2_agent_is_protected_within_grace() {
         "the protected agent should remain PendingInit and alive",
     );
     assert!(manager.get_thread(root.thread_id).await.is_ok());
+}
+
+/// Build a `ThreadManager` wired with a real `StoreLiveThreadFactory` so `start_thread`
+/// (and the V2 sub-agent spawns below) can create live threads under
+/// `Feature::MultiAgentV2`. The shared `with_models_provider_*_for_tests` constructors
+/// hardcode `UnsupportedLiveThreadFactory`, which rejects live-thread creation; this
+/// mirrors the production wiring in app-server `message_processor.rs` with test-only
+/// inputs, changing only the live-thread factory relative to those constructors.
+fn v2_thread_manager(config: &Config) -> ThreadManager {
+    ThreadManager::new(
+        config,
+        crate::test_support::auth_manager_from_auth(CodexAuth::from_api_key("dummy")),
+        SessionSource::Exec,
+        Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
+        codex_extension_api::empty_extension_registry(),
+        Arc::new(crate::test_support::EmptyUserInstructionsProvider),
+        /*analytics_events_client*/ None,
+        crate::thread_manager::thread_store_from_config(config, /*state_db*/ None),
+        Arc::new(codex_thread_store::StoreLiveThreadFactory::new()),
+        /*state_db*/ None,
+        "11111111-1111-4111-8111-111111111111".to_string(),
+        /*attestation_provider*/ None,
+        /*external_time_provider*/ None,
+    )
 }
 
 async fn spawn_v2_subagent(

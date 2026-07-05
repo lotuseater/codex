@@ -61,6 +61,16 @@ pub(super) struct V2ResidencySlot {
     active: bool,
 }
 
+impl std::fmt::Debug for V2ResidencySlot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Manual impl: `residency` wraps a Mutex and need not be Debug; the
+        // reservation state is what callers/tests inspect (e.g. expect_err).
+        f.debug_struct("V2ResidencySlot")
+            .field("active", &self.active)
+            .finish_non_exhaustive()
+    }
+}
+
 impl V2ResidencySlot {
     pub(super) fn commit(mut self, thread_id: ThreadId) {
         self.residency.commit_slot(thread_id);
