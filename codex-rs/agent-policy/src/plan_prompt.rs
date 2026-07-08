@@ -22,7 +22,7 @@ pub const AUTO_COORDINATOR_FRAMING_TEXT: &str = concat!(
     "You are operating as a COORDINATOR for the task above. ",
     "If — and only if — you can name at least two INDEPENDENT, file-disjoint subtasks each worth roughly 5k+ tokens of work, do NOT implement them yourself: act as a coordinator in three phases. ",
     "(1) PLAN: emit an explicit decomposition — for each subtask an id, a one-line title, the file(s) it owns, and the worker assigned. ",
-    "(2) DELEGATE: spawn ONE worker per subtask, in PARALLEL with overlapping lifetimes — use your spawn-agent capability, or if none is available launch one non-interactive `codex exec` worker process per subtask; do not spawn one, wait, then spawn the next. ",
+    "(2) DELEGATE: spawn ONE worker per subtask, in PARALLEL with overlapping lifetimes — strongly prefer launching each as a separate non-interactive `codex exec` worker in its own PowerShell terminal/process: it parallelizes better and keeps each worker's output out of this session. Use your in-session spawn-agent capability only when external sessions are unavailable. Do not spawn one, wait, then spawn the next. ",
     "(3) INTEGRATE: wire the workers' files together, resolve interface mismatches, write only the small glue, and VERIFY it runs. ",
     "While coordinating, implementing a subtask body yourself is forbidden — plan, spawn, wait, assemble. ",
     "If the task is small or cannot be split into 2+ independent lanes, ignore this and just do it directly.",
