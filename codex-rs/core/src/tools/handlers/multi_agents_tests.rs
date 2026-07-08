@@ -426,7 +426,7 @@ async fn multi_agent_v2_spawn_fork_turns_all_rejects_agent_type_override() {
 }
 
 #[tokio::test]
-async fn multi_agent_v2_spawn_defaults_to_full_fork_and_rejects_child_model_overrides() {
+async fn multi_agent_v2_spawn_defaults_to_clean_and_allows_child_model_overrides() {
     let (mut session, mut turn) = make_session_and_context().await;
     let manager = thread_manager();
     let root = manager
@@ -442,27 +442,30 @@ async fn multi_agent_v2_spawn_defaults_to_full_fork_and_rejects_child_model_over
         .expect("test config should allow feature update");
     set_turn_config(&mut turn, config);
 
-    let err = SpawnAgentHandlerV2::default()
+    // Omitting `fork_turns` now defaults to a clean, self-contained spawn (no
+    // full-history fork), so a child model/reasoning_effort override is applied
+    // instead of being rejected.
+    let output = SpawnAgentHandlerV2::default()
         .handle(invocation(
             Arc::new(session),
             Arc::new(turn),
             "spawn_agent",
             function_payload(json!({
                 "message": "inspect this repo",
-                "task_name": "fork_context_v2",
+                "task_name": "clean_spawn_v2",
                 "model": "gpt-5-child-override",
                 "reasoning_effort": "low"
             })),
         ))
         .await
-        .err()
-        .expect("default full fork should reject child model overrides");
+        .expect(
+            "omitting fork_turns should spawn a clean agent that accepts child model overrides",
+        );
 
-    assert_eq!(
-        err,
-            FunctionCallError::RespondToModel(
-            "Full-history forked agents inherit the parent agent type, model, and reasoning effort; omit agent_type, model, and reasoning_effort, or spawn without a full-history fork.".to_string(),
-        )
+    let (content, _) = expect_text_output(output);
+    assert!(
+        content.contains("clean_spawn_v2"),
+        "spawn result should reference the new clean task name: {content}"
     );
 }
 

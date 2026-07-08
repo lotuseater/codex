@@ -611,7 +611,7 @@ fn spawn_agent_common_properties_v2(agent_type_description: &str) -> BTreeMap<St
         (
             "fork_turns".to_string(),
             JsonSchema::string(Some(
-                "Optional number of turns to fork. Defaults to `all`. Use `none`, `all`, or a positive integer string such as `3` to fork only the most recent turns."
+                "Optional history-fork mode. Defaults to `none`. `none` spawns a clean, self-contained agent with no parent history: prefer it - it saves context and tokens, and it lets you set a child `model`/`reasoning_effort`; put any context the child needs directly in `message`. `all` forks your full conversation history (many more tokens; use only when the child genuinely needs it), and a full-history fork inherits your agent_type, model, and reasoning_effort - it cannot override them. A positive integer string such as `3` forks only the most recent N turns."
                     .to_string(),
             )),
         ),
@@ -723,7 +723,7 @@ Only call this tool for a concrete, bounded subtask that can run independently a
 It will be able to send you and other running agents messages, and its final answer will be provided to you when it finishes.
 The new agent's canonical task name will be provided to it along with the message.
 
-Note that passing `fork_turns="none"` will not pass any surrounding context to the spawned subagent, which may cause the agent to lack the context it needs to complete its task, whereas `fork_turns="all"` will provide the subagent with all surrounding context."#
+Prefer clean, self-contained spawns: omit `fork_turns` (it defaults to `none`) and put everything the subagent needs directly in its `message`. This keeps the child's context small, saves tokens, and lets you set a child `model` or `reasoning_effort`. Only pass `fork_turns="all"` when the subagent genuinely needs your full conversation history: a full-history fork copies all surrounding context (many more tokens) and inherits your agent_type, model, and reasoning_effort, so it cannot override them."#
     );
 
     if let Some(usage_hint_text) = usage_hint_text {
