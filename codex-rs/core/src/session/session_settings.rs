@@ -334,10 +334,13 @@ impl Session {
             && previous_mode != Some(ModeKind::Plan)
             && let Some(usage_hint_text) =
                 multi_agents::usage_hint_text(current_context, &current_context.session_source)
-            && let Some(usage_hint_message) =
-                crate::context_manager::updates::build_developer_update_item(vec![
-                    usage_hint_text.to_string(),
-                ])
+            // fork-local: route the plan-mode hint through the shared builder so
+            // it honors the configured delegation injection role (user-role
+            // fragment by default, developer fallback).
+            && let Some(usage_hint_message) = multi_agents::build_usage_hint_item(
+                &current_context.config.multi_agent_v2,
+                vec![usage_hint_text],
+            )
         {
             items.push(usage_hint_message);
         }

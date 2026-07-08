@@ -242,13 +242,21 @@ impl Session {
                 items.push(developer_message);
             }
         }
-        if let Some(usage_hint_text) = multi_agent_v2_usage_hint_text
-            && let Some(usage_hint_message) =
-                crate::context_manager::updates::build_developer_update_item(vec![
-                    usage_hint_text.to_string(),
-                ])
-        {
-            items.push(usage_hint_message);
+        if let Some(usage_hint_text) = multi_agent_v2_usage_hint_text {
+            // fork-local: deliver the delegation usage hint on the configured
+            // channel (user-role fragment by default, developer fallback) and,
+            // when auto-coordination is on, keep the coordinator framing STICKY
+            // by re-delivering it with every rebuilt initial context (fresh
+            // sessions and every compaction rebuild).
+            let mut sections = vec![usage_hint_text];
+            if turn_context.config.multi_agent_v2.auto_coordinator_active() {
+                sections.push(codex_agent_policy::AUTO_COORDINATOR_FRAMING_TEXT.to_string());
+            }
+            if let Some(usage_hint_message) =
+                multi_agents::build_usage_hint_item(&turn_context.config.multi_agent_v2, sections)
+            {
+                items.push(usage_hint_message);
+            }
         }
         if let Some(contextual_user_message) =
             crate::context_manager::updates::build_contextual_user_message(contextual_user_sections)

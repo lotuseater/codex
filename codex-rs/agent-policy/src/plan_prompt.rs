@@ -7,7 +7,7 @@ pub const DEFAULT_PLAN_TOKEN_ECONOMY_PROMPT_TEXT: &str = "Consider whether the c
 
 pub const MAIN_AGENT_PLAN_DELEGATION_PROMPT: &str = concat!(
     "Every main-agent task plan prompt, including update_plan calls outside Plan mode, must inject a delegation decision: state what to delegate to subagents or external worker sessions when delegation is useful, or state that the work stays local and why. ",
-    "Include an Agent ROI Estimate: new_agent_cost=3, reuse_cost=1, parallel_gain=0-3, context_gain=0-3, repeat_gain=0-4, loop_followup_gain=0-3, risk_penalty=0-3, net = gains + loop_followup_gain - cost - risk. In loop mode, automatic continuation normally adds loop_followup_gain=2, or 3 when a relevant idle/reusable agent or repeated operations are likely. Treat ROI as a practicality guardrail, and use the Plan-token-economy default as the spawn gate: spawn or reuse only when net >= 2, no hard keep-local rule applies, the subtask has a bounded contract, and the estimated subtask cost clears the configured K threshold (surfaced in the usage hint) unless the user supplies a different threshold. ",
+    "Include an Agent ROI Estimate: new_agent_cost=2, reuse_cost=1, parallel_gain=0-3, context_gain=0-3, repeat_gain=0-4, loop_followup_gain=0-3, risk_penalty=0-3, net = (parallel_gain + context_gain + repeat_gain + loop_followup_gain) - cost - risk_penalty. In loop mode, automatic continuation normally adds loop_followup_gain=2, or 3 when a relevant idle/reusable agent or repeated operations are likely. Treat ROI as a pro-delegation default, with the Plan-token-economy K as the cost floor: spawn or reuse when net >= 1, the subtask has a bounded contract, and the estimated subtask cost clears the configured K threshold (surfaced in the usage hint) unless the user supplies a different threshold. At net >= 1 delegation is the DEFAULT: keep work local only when you can name the hard keep-local rule that applies (finalization or irreversible actions, sub-K trivia, or a single-file critical-path blocker). An automatic continuation - a 'go on' loop crank, a self-prompt, or a post-compaction resume - is a normal delegation moment: re-run this estimate then, exactly as you would for a fresh user prompt. ",
     "On a first task plan, when loop mode is planning a continuation, or when context drift or context compactions are likely, root should coordinate instead of doing implementation/testing/verification itself: consider reusing or creating at least one persistent highest-capability worker only when it materially reduces total work or preserves context, no suitable worker is already active, no hard keep-local rule applies, and the plan-token/ROI thresholds are met. ",
     "Delegate most bounded implementation/testing work to compact-handoff workers; if independent parallel work exists, split it into more workers. The root should wait or sleep about 5 minutes between checks while workers run, then inspect short handoffs and send follow-ups, redirects, or verification requests. ",
     "Strongly prefer separate non-interactive Codex exec worker sessions in separate PowerShell terminals/processes for external work; use tool-spawned in-session agents only when external sessions are unavailable, and use interactive Codex sessions only when live steering or visible course correction is specifically needed. For external worker sessions, avoid machine-specific script paths; use portable PowerShell such as `Start-Process powershell` to create prompt and handoff files, then launch each worker in its own PowerShell terminal from the workspace. ",
@@ -42,7 +42,7 @@ Every plan must include an explicit `Agent ROI Estimate`, `Delegation`, or `Work
 
 Every main-agent task plan prompt, including update_plan calls outside Plan mode, must inject a delegation decision: state what to delegate to subagents or external worker sessions when delegation is useful, or state that the work stays local and why. On a first task plan, when loop mode is planning a continuation, or when context drift or context compactions are likely, root should coordinate instead of doing implementation/testing/verification itself: reuse or create at least one persistent highest-capability worker when no suitable worker is already active, no hard keep-local rule applies, and the Agent ROI Estimate threshold is met. Delegate most bounded implementation/testing work to compact-handoff workers; if independent parallel work exists, split it into more workers. Strongly prefer separate non-interactive Codex exec worker sessions in separate PowerShell terminals/processes for external work; use tool-spawned in-session agents only when external sessions are unavailable, and use interactive Codex sessions only when live steering or visible course correction is specifically needed. Keep root focused on overall context, ownership boundaries, integration, verification, and follow-ups. Ask subagents for a short summary or short result only when the main agent needs that handoff to integrate, verify, or review their work.
 
-On a first task plan, or when loop mode is planning a continuation, use the Agent ROI Estimate to decide whether to reuse or create helpers. Reuse existing suitable helpers first when net >= 2 and keep useful helpers around while follow-up work is likely. Create new helpers only for concrete, bounded work that materially advances the task; state any local-only exception explicitly.
+On a first task plan, or when loop mode is planning a continuation, use the Agent ROI Estimate to decide whether to reuse or create helpers. Reuse existing suitable helpers first when net >= 1 and keep useful helpers around while follow-up work is likely. Create new helpers only for concrete, bounded work that materially advances the task; state any local-only exception explicitly.
 
 For tasks complex enough to require planning, broad refactors, or work likely to exceed the root context budget, treat the root thread as an overseer: root should coordinate instead of doing implementation/testing/verification itself. Reuse or create at least one highest-capability worker when no suitable worker is already active and no hard keep-local rule applies; if independent parallel work exists, split it into more workers. Delegate most implementation/testing/verification to compact-handoff workers, read only concise handoffs, wait or sleep about 5 minutes between checks when workers are running, then send follow-up instructions, redirects, or verification requests before the next wave.
 
@@ -57,7 +57,7 @@ Recursive subagent delegation is threshold-gated by the plan-token-economy defau
 
 If ROI/helper guidance and the plan-token-economy default differ, the plan-token threshold is authoritative by default: do not spawn or reuse child agents for subtasks estimated below the active K threshold unless the user explicitly supplies a different delegation rule.
 
-Use this compact ROI rubric in plans before spawning: new_agent_cost=3 for fresh child context/coordination/review overhead; reuse_cost=1 when an existing relevant agent can continue; parallel_gain=0-3 for non-overlapping work; context_gain=0-3 for keeping broad/repetitive context out of root; repeat_gain=0-4 for many similar operations, expected follow-ups, or useful loaded context; loop_followup_gain=0-3 where loop off is 0, automatic continuation is normally 2, and loop mode with a relevant idle/reusable agent or repeated operations is 3; risk_penalty=0-3 for merge conflicts, unclear ownership, weak model risk, or high review burden. Compute `net = parallel_gain + context_gain + repeat_gain + loop_followup_gain - cost - risk_penalty`. Spawn or reuse only when net >= 2, no hard keep-local rule applies, and the subtask has a bounded contract. Prefer reuse when reuse_cost makes net positive but new_agent_cost would not.
+Use this compact ROI rubric in plans before spawning: new_agent_cost=2 for fresh child context/coordination/review overhead; reuse_cost=1 when an existing relevant agent can continue; parallel_gain=0-3 for non-overlapping work; context_gain=0-3 for keeping broad/repetitive context out of root; repeat_gain=0-4 for many similar operations, expected follow-ups, or useful loaded context; loop_followup_gain=0-3 where loop off is 0, automatic continuation is normally 2, and loop mode with a relevant idle/reusable agent or repeated operations is 3; risk_penalty=0-3 for merge conflicts, unclear ownership, weak model risk, or high review burden. Compute `net = parallel_gain + context_gain + repeat_gain + loop_followup_gain - cost - risk_penalty`. Spawn or reuse when net >= 1 and the subtask has a bounded contract; at net >= 1 delegation is the default, and keeping the work local requires naming the hard keep-local rule that applies. Prefer reuse when reuse_cost makes net positive but new_agent_cost would not.
 
 When loop mode is active and an automatic continuation such as `go on` is planning the next iteration, assume follow-ups are likely. Plan what work to give any idle relevant agent before spawning a replacement, and after plan self-review produces the revised or final plan, the implementation prompt may be accepted automatically unless a blocker or user-choice prompt remains.
 
@@ -138,4 +138,32 @@ pub fn default_multi_agent_v2_root_usage_hint_text() -> String {
 /// the compiled-in default K.
 pub fn default_multi_agent_v2_subagent_usage_hint_text() -> String {
     default_multi_agent_v2_subagent_usage_hint_text_with_k(DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K)
+}
+
+/// Stable opening token of the compact mid-loop delegation reminder; used by tests
+/// and the forked-child strip filter.
+pub const MULTI_AGENT_V2_DELEGATION_REMINDER_MARKER: &str = "Delegation check:";
+
+/// Compact reminder re-injected on the EveryN/Always usage-hint cadence. Kept short
+/// on purpose: the full rubric already rides the update_plan tool description and the
+/// initial context; this keeps the delegation default alive across hours-long
+/// autonomous stretches without re-sending the full hint.
+pub fn multi_agent_v2_delegation_reminder_text_with_k(k: usize) -> String {
+    format!(
+        concat!(
+            "Delegation check: you are mid-task, possibly hours into an autonomous run. ",
+            "Before the next work item, re-run the Agent ROI Estimate from your plan rubric ",
+            "(new_agent_cost=2, reuse_cost=1, gains 0-4 each; net >= 1 means delegate by default). ",
+            "If two or more file-disjoint subtasks each worth roughly {k}+ tokens exist, spawn or reuse ",
+            "workers in PARALLEL now and coordinate instead of implementing serially; otherwise continue ",
+            "and state in your plan why the work stays local. Automatic continuations - 'go on' loop ",
+            "cranks, self-prompts, and post-compaction resumes - count as fresh delegation moments."
+        ),
+        k = k,
+    )
+}
+
+/// Thin wrapper - compiled-in default K.
+pub fn multi_agent_v2_delegation_reminder_text() -> String {
+    multi_agent_v2_delegation_reminder_text_with_k(DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K)
 }

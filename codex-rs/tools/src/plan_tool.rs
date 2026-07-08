@@ -90,16 +90,13 @@ mod tests {
                 .contains(&["even one", " worker", " is useful"].concat())
         );
         assert!(tool.description.contains("Agent ROI Estimate"));
-        assert!(tool.description.contains("new_agent_cost=3"));
+        assert!(tool.description.contains("new_agent_cost=2"));
         assert!(tool.description.contains("reuse_cost=1"));
-        assert!(
-            tool.description
-                .contains("net = gains + loop_followup_gain - cost - risk")
-        );
-        assert!(
-            tool.description
-                .contains("Spawn or reuse only when net >= 2")
-        );
+        assert!(tool.description.contains(
+            "net = (parallel_gain + context_gain + repeat_gain + loop_followup_gain) - cost - risk_penalty"
+        ));
+        assert!(tool.description.contains("spawn or reuse when net >= 1"));
+        assert!(tool.description.contains("delegation is the DEFAULT"));
         assert!(
             tool.description
                 .contains("Delegate most bounded implementation/testing work")
@@ -121,7 +118,10 @@ mod tests {
             tool.description
                 .contains("highest-capability available model and reasoning effort")
         );
-        assert!(tool.description.contains("prevent recursive delegation"));
+        assert!(
+            tool.description
+                .contains("Recursively delegate from child agents")
+        );
         assert!(tool.description.contains("portable PowerShell"));
         assert!(tool.description.contains("Start-Process powershell"));
     }

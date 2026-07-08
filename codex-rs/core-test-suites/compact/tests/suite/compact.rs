@@ -1,4 +1,32 @@
 #![allow(clippy::expect_used)]
+use anyhow::Result;
+use anyhow::anyhow;
+use codex_core::config::AutoCoordinatorMode;
+use codex_core::config::UsageHintCadence;
+use codex_core_test_runtime::compact_fixtures::COMPACT_WARNING_MESSAGE;
+use codex_core_test_runtime::compact_fixtures::FIRST_REPLY;
+use codex_core_test_runtime::compact_fixtures::SUMMARY_TEXT;
+use codex_core_test_runtime::compact_fixtures::assert_compaction_uses_turn_lifecycle_id;
+use codex_core_test_runtime::compact_fixtures::assert_pre_sampling_switch_compaction_requests;
+use codex_core_test_runtime::compact_fixtures::auto_summary;
+use codex_core_test_runtime::compact_fixtures::body_contains_compaction_prompt;
+use codex_core_test_runtime::compact_fixtures::body_contains_compaction_summary_prefix;
+use codex_core_test_runtime::compact_fixtures::body_contains_text;
+use codex_core_test_runtime::compact_fixtures::compact_prompt;
+use codex_core_test_runtime::compact_fixtures::disabled_permission_plan_turn;
+use codex_core_test_runtime::compact_fixtures::disabled_permission_user_turn;
+use codex_core_test_runtime::compact_fixtures::read_hook_inputs;
+use codex_core_test_runtime::compact_fixtures::set_test_compact_prompt;
+use codex_core_test_runtime::compact_fixtures::summary_with_prefix;
+use codex_core_test_runtime::compact_fixtures::write_matching_compact_hooks;
+use codex_core_test_runtime::compact_fixtures::write_unsupported_blocking_pre_compact_hook;
+use codex_core_test_runtime::hooks::trust_discovered_hooks;
+use codex_core_test_runtime::responses::ev_reasoning_item;
+use codex_core_test_runtime::responses::mount_models_once;
+use codex_core_test_runtime::skip_if_no_network;
+use codex_core_test_runtime::test_codex::test_codex;
+use codex_core_test_runtime::wait_for_event;
+use codex_core_test_runtime::wait_for_event_match;
 use codex_features::Feature;
 use codex_login::CodexAuth;
 use codex_model_provider_info::ModelProviderInfo;
@@ -18,33 +46,9 @@ use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::RolloutLine;
 use codex_protocol::protocol::WarningEvent;
 use codex_protocol::user_input::UserInput;
-use codex_core_test_runtime::compact_fixtures::COMPACT_WARNING_MESSAGE;
-use codex_core_test_runtime::compact_fixtures::FIRST_REPLY;
-use codex_core_test_runtime::compact_fixtures::SUMMARY_TEXT;
-use codex_core_test_runtime::compact_fixtures::assert_compaction_uses_turn_lifecycle_id;
-use codex_core_test_runtime::compact_fixtures::assert_pre_sampling_switch_compaction_requests;
-use codex_core_test_runtime::compact_fixtures::auto_summary;
-use codex_core_test_runtime::compact_fixtures::body_contains_compaction_prompt;
-use codex_core_test_runtime::compact_fixtures::body_contains_compaction_summary_prefix;
-use codex_core_test_runtime::compact_fixtures::body_contains_text;
-use codex_core_test_runtime::compact_fixtures::compact_prompt;
-use codex_core_test_runtime::compact_fixtures::disabled_permission_plan_turn;
-use codex_core_test_runtime::compact_fixtures::disabled_permission_user_turn;
-use codex_core_test_runtime::compact_fixtures::read_hook_inputs;
-use codex_core_test_runtime::compact_fixtures::set_test_compact_prompt;
-use codex_core_test_runtime::compact_fixtures::summary_with_prefix;
-use codex_core_test_runtime::compact_fixtures::write_matching_compact_hooks;
-use codex_core_test_runtime::compact_fixtures::write_unsupported_blocking_pre_compact_hook;
 use codex_test_support_responses::context_snapshot;
 use codex_test_support_responses::context_snapshot::ContextSnapshotOptions;
 use codex_test_support_responses::context_snapshot::ContextSnapshotRenderMode;
-use codex_core_test_runtime::hooks::trust_discovered_hooks;
-use codex_core_test_runtime::responses::ev_reasoning_item;
-use codex_core_test_runtime::responses::mount_models_once;
-use codex_core_test_runtime::skip_if_no_network;
-use codex_core_test_runtime::test_codex::test_codex;
-use codex_core_test_runtime::wait_for_event;
-use codex_core_test_runtime::wait_for_event_match;
 
 use codex_core_test_runtime::responses::ev_assistant_message;
 use codex_core_test_runtime::responses::ev_completed;
@@ -63,6 +67,8 @@ use codex_core_test_runtime::responses::start_mock_server;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
 use serde_json::json;
+use std::fs;
+use std::path::Path;
 use std::path::PathBuf;
 use wiremock::MockServer;
 // --- Test helpers -----------------------------------------------------------
@@ -164,6 +170,8 @@ async fn manual_pre_compact_block_decision_does_not_block_compaction() {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await
         .expect("submit first user turn");
@@ -235,6 +243,8 @@ async fn compact_hooks_respect_matchers_and_post_runs_after_compaction() {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await
         .expect("submit first user turn");
@@ -303,6 +313,8 @@ async fn manual_compact_uses_custom_prompt() {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await
         .expect("submit first user turn");
@@ -447,6 +459,8 @@ async fn manual_compact_emits_context_compaction_items() {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await
         .unwrap();
@@ -539,6 +553,8 @@ async fn auto_compact_emits_context_compaction_items() {
                 }],
                 final_output_json_schema: None,
                 responsesapi_client_metadata: None,
+                additional_context: Default::default(),
+                thread_settings: Default::default(),
             })
             .await
             .unwrap();
@@ -618,6 +634,8 @@ async fn auto_compact_starts_after_turn_started() {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await
         .unwrap();
@@ -632,6 +650,8 @@ async fn auto_compact_starts_after_turn_started() {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await
         .unwrap();
@@ -646,6 +666,8 @@ async fn auto_compact_starts_after_turn_started() {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await
         .unwrap();
@@ -947,6 +969,8 @@ async fn auto_compact_persists_rollout_entries() {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await
         .unwrap();
@@ -961,6 +985,8 @@ async fn auto_compact_persists_rollout_entries() {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await
         .unwrap();
@@ -975,6 +1001,8 @@ async fn auto_compact_persists_rollout_entries() {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await
         .unwrap();
@@ -1062,6 +1090,8 @@ async fn manual_compact_retries_after_context_window_error() {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await
         .unwrap();
@@ -1163,6 +1193,8 @@ async fn manual_compact_non_context_failure_retries_then_emits_task_error() {
             }],
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
         })
         .await
         .expect("submit user input");
@@ -1248,6 +1280,8 @@ async fn auto_compact_allows_multiple_attempts_when_interleaved_with_other_turn_
                 }],
                 final_output_json_schema: None,
                 responsesapi_client_metadata: None,
+                additional_context: Default::default(),
+                thread_settings: Default::default(),
             })
             .await
             .unwrap();
@@ -1302,4 +1336,150 @@ async fn auto_compact_allows_multiple_attempts_when_interleaved_with_other_turn_
         body_contains_text(&request_bodies[4], compact_prompt()),
         "second auto compact request should include the summarization prompt"
     );
+}
+
+fn replacement_history_from_rollout(path: &Path) -> Result<Vec<Value>> {
+    let rollout_text = fs::read_to_string(path)?;
+    let mut replacement_history = None;
+    for line in rollout_text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+    {
+        let entry: RolloutLine = serde_json::from_str(line)?;
+        if let RolloutItem::Compacted(compacted) = entry.item
+            && let Some(items) = compacted.replacement_history
+        {
+            replacement_history = Some(
+                items
+                    .into_iter()
+                    .map(serde_json::to_value)
+                    .collect::<std::result::Result<Vec<_>, _>>()?,
+            );
+        }
+    }
+    replacement_history.ok_or_else(|| anyhow!("expected rollout replacement history"))
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn compacted_history_drops_delegation_reminder_fragments() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    // fork-local (Slice C): the delegation nudges — the fused auto-coordinator
+    // framing block, the usage-hint fragment, and the EveryN mid-loop delegation
+    // reminder fragment — are all live in pre-compaction history, but NONE of
+    // them may survive into the compacted replacement history: the rebuilt
+    // initial context re-delivers them fresh after every compaction instead.
+    const FRAMING_SNIPPET: &str = "You are operating as a COORDINATOR";
+    const REMINDER_MARKER: &str = "Delegation check:";
+    const HINT_FRAGMENT_SOURCE: &str = "multi_agent_usage_hint";
+    const FIRST_MSG: &str = "start the delegation task";
+    const SECOND_MSG: &str = "keep the delegation task going";
+
+    let server = start_mock_server().await;
+    let sse1 = sse(vec![
+        ev_assistant_message("m1", FIRST_REPLY),
+        ev_completed("r1"),
+    ]);
+    let sse2 = sse(vec![
+        ev_assistant_message("m2", "SECOND_DELEGATION_REPLY"),
+        ev_completed("r2"),
+    ]);
+    let sse3 = sse(vec![
+        ev_assistant_message("m3", SUMMARY_TEXT),
+        ev_completed("r3"),
+    ]);
+    let request_log = mount_sse_sequence(&server, vec![sse1, sse2, sse3]).await;
+
+    let model_provider = non_openai_model_provider(&server);
+    let mut builder = test_codex().with_config(move |config| {
+        // Route Op::Compact through the LOCAL compaction path so this test
+        // exercises the client-side `collect_user_messages` retention/drop logic
+        // it asserts on. The default provider advertises remote compaction
+        // (`supports_remote_compaction()`), which would send the compaction to
+        // the server-side v2 path and reject our plain assistant-message summary
+        // SSE ("remote compaction v2 expected exactly one compaction output
+        // item"). The sibling manual-compact tests use this same provider.
+        config.model_provider = model_provider;
+        config
+            .features
+            .enable(Feature::MultiAgentV2)
+            .expect("test config should allow feature update");
+        // Always-on coordinator framing plus a per-request delegation reminder
+        // so every delegation-nudge artifact is live in history before compaction.
+        config.multi_agent_v2.auto_coordinator = AutoCoordinatorMode::Always;
+        config.multi_agent_v2.usage_hint_cadence = UsageHintCadence::EveryN;
+        config.multi_agent_v2.usage_hint_reminder_interval = 1;
+        set_test_compact_prompt(config);
+    });
+    let test = builder.build(&server).await?;
+
+    test.submit_turn(FIRST_MSG).await?;
+    test.submit_turn(SECOND_MSG).await?;
+
+    // Positive control: the nudges are live in the pre-compaction request stream,
+    // so the absence assertions below are non-vacuous.
+    let requests = request_log.requests();
+    assert_eq!(
+        requests.len(),
+        2,
+        "expected two turn requests before compaction"
+    );
+    let body1 = requests[0].body_json().to_string();
+    assert!(
+        body1.contains(FRAMING_SNIPPET),
+        "auto-coordinator framing must be fused into the live turn"
+    );
+    assert!(
+        body1.contains(HINT_FRAGMENT_SOURCE),
+        "usage-hint fragment must ride the live turn"
+    );
+    let body2 = requests[1].body_json().to_string();
+    assert!(
+        body2.contains(REMINDER_MARKER),
+        "the EveryN delegation reminder must be live in history before compaction"
+    );
+
+    test.codex.submit(Op::Compact).await?;
+    // Local manual compaction emits the compaction `Warning` after it persists
+    // the `Compacted` rollout item (with its replacement history), then the
+    // turn's `TurnComplete`. Wait for the `Warning` first — the ordering every
+    // other manual-compact test in this suite relies on — so the rollout is
+    // fully written before we read it back.
+    wait_for_event(&test.codex, |event| matches!(event, EventMsg::Warning(_))).await;
+    wait_for_event(&test.codex, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+    test.codex.flush_rollout().await?;
+
+    // The compacted replacement history must retain the user's real messages but
+    // drop every delegation-nudge artifact: no fused framing block (stripped by
+    // `collect_user_messages`), no usage-hint/reminder fragments (excluded by
+    // compaction retention), and hence no reminder marker.
+    let rollout_path = test.codex.rollout_path().expect("rollout path");
+    let replacement_history = replacement_history_from_rollout(&rollout_path)?;
+    let replacement_text = serde_json::to_string(&replacement_history)?;
+    assert!(
+        replacement_text.contains(FIRST_MSG),
+        "compacted history must retain the first real user message"
+    );
+    assert!(
+        replacement_text.contains(SECOND_MSG),
+        "compacted history must retain the second real user message"
+    );
+    assert!(
+        !replacement_text.contains(FRAMING_SNIPPET),
+        "compacted history must drop the fused auto-coordinator framing block"
+    );
+    assert!(
+        !replacement_text.contains(REMINDER_MARKER),
+        "compacted history must drop the mid-loop delegation reminder fragment"
+    );
+    assert!(
+        !replacement_text.contains(HINT_FRAGMENT_SOURCE),
+        "compacted history must drop the usage-hint fragments"
+    );
+
+    Ok(())
 }

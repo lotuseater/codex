@@ -503,8 +503,16 @@ impl Session {
         self: &Arc<Self>,
         sub_id: String,
     ) {
+        // A spawned/forked child's first turn is woken through the inter-agent
+        // mailbox: `inter_agent_communication` enqueues into the session mailbox
+        // (`Session::enqueue_mailbox_communication` -> `mailbox_rx`) and then calls
+        // this scheduler. The production mailbox lives on the session, so the wake
+        // gate must consult it via `Self::has_trigger_turn_mailbox_items`. The
+        // `input_queue` mailbox is a separate store only populated by unit tests;
+        // it stays in the disjunction so those paths keep waking too.
         if !self.has_queued_response_items_for_next_turn().await
             && !self.input_queue.has_trigger_turn_mailbox_items().await
+            && !self.has_trigger_turn_mailbox_items().await
         {
             return;
         }

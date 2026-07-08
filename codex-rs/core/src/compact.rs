@@ -509,8 +509,18 @@ pub(crate) fn collect_user_messages(items: &[ResponseItem]) -> Vec<CompactedUser
     items
         .iter()
         .filter_map(|item| match crate::event_mapping::parse_turn_item(item) {
-            Some(TurnItem::UserMessage(user)) => {
-                if is_summary_message(&user.message()) {
+            Some(TurnItem::UserMessage(mut user)) => {
+                // fork-local: drop fused auto-coordinator framing blocks so the
+                // framing never re-enters compacted summaries; the rebuilt
+                // initial context re-delivers it after every compaction.
+                user.content.retain(|input| {
+                    !matches!(
+                        input,
+                        UserInput::Text { text, .. }
+                            if text == codex_agent_policy::AUTO_COORDINATOR_FRAMING_TEXT
+                    )
+                });
+                if user.content.is_empty() || is_summary_message(&user.message()) {
                     None
                 } else {
                     Some(CompactedUserMessage {

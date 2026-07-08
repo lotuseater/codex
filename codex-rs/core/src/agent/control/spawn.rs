@@ -1,5 +1,7 @@
 use super::residency::is_v2_resident_session_source;
 use super::*;
+use crate::context::ContextualUserFragment;
+use crate::context::InternalModelContextFragment;
 use codex_protocol::config_types::MultiAgentMode;
 use codex_state::DirectionalThreadSpawnEdgeStatus;
 
@@ -88,21 +90,62 @@ fn keep_forked_rollout_item(item: &RolloutItem, preserve_reference_context_item:
     }
 }
 
-fn is_multi_agent_v2_usage_hint_message(item: &ResponseItem, usage_hint_texts: &[String]) -> bool {
-    // Match on the hint TEXT regardless of role: the delegation usage hint may now be
-    // delivered on the user channel (obeyed) rather than the developer channel, and in
-    // either case it must be stripped from forked-subagent history so it is not
-    // duplicated into every child.
-    let ResponseItem::Message { content, .. } = item else {
-        return false;
-    };
-    let [ContentItem::InputText { text }] = content.as_slice() else {
-        return false;
-    };
-
-    usage_hint_texts
+/// True when `text` is delegation-nudge material that must not leak into a
+/// forked child's history: an exact match against a configured/generated usage
+/// hint or the auto-coordinator framing (the existing exact-equality arm), or a
+/// `<codex_internal_context ...>` fragment carrying nudge material — either
+/// the mid-loop cadence reminder (stable marker) or the initial-context hint
+/// item, whose wrapped body joins the hint with the coordinator framing and so
+/// matches no single filter text exactly.
+fn is_multi_agent_v2_usage_hint_text(text: &str, usage_hint_texts: &[String]) -> bool {
+    if usage_hint_texts
         .iter()
         .any(|usage_hint_text| usage_hint_text == text)
+    {
+        return true;
+    }
+    InternalModelContextFragment::matches_text(text)
+        && (text.contains(codex_agent_policy::MULTI_AGENT_V2_DELEGATION_REMINDER_MARKER)
+            || usage_hint_texts.iter().any(|usage_hint_text| {
+                !usage_hint_text.is_empty() && text.contains(usage_hint_text.as_str())
+            }))
+}
+
+/// `retain_mut` predicate stripping delegation usage hints from forked-child
+/// history. Matches on the hint TEXT regardless of role: the delegation nudges
+/// may be delivered on the user channel (obeyed) rather than the developer
+/// channel, and in either case they must be stripped from forked-subagent
+/// history so they are not duplicated into every child. When EVERY content
+/// block of a message matches, the whole message is dropped (the prior
+/// whole-message behavior); when only SOME blocks match (e.g. the
+/// auto-coordinator framing fused as a trailing block on a real user turn),
+/// just the matching blocks are stripped and the message is kept.
+fn retain_or_strip_multi_agent_v2_usage_hint_message(
+    item: &mut ResponseItem,
+    usage_hint_texts: &[String],
+) -> bool {
+    let ResponseItem::Message { content, .. } = item else {
+        return true;
+    };
+
+    let is_hint_block = |content_item: &ContentItem| match content_item {
+        ContentItem::InputText { text } => {
+            is_multi_agent_v2_usage_hint_text(text, usage_hint_texts)
+        }
+        _ => false,
+    };
+
+    let matching_blocks = content.iter().filter(|block| is_hint_block(block)).count();
+    if matching_blocks == 0 {
+        return true;
+    }
+    if matching_blocks == content.len() {
+        // Every block is hint material -- drop the whole message.
+        return false;
+    }
+    // Mixed message: strip only the hint blocks, keep the user's own content.
+    content.retain(|block| !is_hint_block(block));
+    true
 }
 
 fn append_multi_agent_v2_subagent_usage_hint(
@@ -306,7 +349,22 @@ impl AgentControl {
         let subagent_usage_hint_text = if multi_agent_version == MultiAgentVersion::V2
             && config.multi_agent_v2.usage_hint_enabled
         {
-            config.multi_agent_v2.subagent_usage_hint_text.clone()
+            match config.multi_agent_v2.subagent_usage_hint_text.clone() {
+                Some(text) => Some(text),
+                // A forked child inherits the parent's (filtered) rollout and does
+                // not rebuild fresh initial context, so the initial-context worker
+                // hint (`multi_agents::usage_hint_text`, which falls back to the
+                // generated default when unset) never fires for it. Mirror that
+                // fallback here so a forked worker still receives its role guidance.
+                // A non-forked worker already gets the hint from initial context, so
+                // only fall back when forking to avoid a double injection.
+                None if options.fork_mode.is_some() => Some(
+                    codex_agent_policy::default_multi_agent_v2_subagent_usage_hint_text_with_k(
+                        config.multi_agent_v2.plan_token_economy_delegation_k,
+                    ),
+                ),
+                None => None,
+            }
         } else {
             None
         };
@@ -492,55 +550,80 @@ impl AgentControl {
             forked_rollout_items =
                 truncate_rollout_to_last_n_fork_turns(&forked_rollout_items, *last_n_turns);
         }
-        let multi_agent_v2_usage_hint_texts_to_filter: Vec<String> =
-            if let Some(parent_thread) = parent_thread.as_ref() {
-                if multi_agent_version == MultiAgentVersion::V2 {
-                    let parent_config = parent_thread.codex.session.get_config().await;
-                    [
-                        parent_config
-                            .multi_agent_v2
-                            .root_agent_usage_hint_text
-                            .clone(),
-                        parent_config
-                            .multi_agent_v2
-                            .subagent_usage_hint_text
-                            .clone(),
-                    ]
-                    .into_iter()
-                    .flatten()
-                    .collect()
-                } else {
-                    Vec::new()
-                }
-            } else if multi_agent_version == MultiAgentVersion::V2 {
+        let multi_agent_v2_usage_hint_texts_to_filter: Vec<String> = if let Some(parent_thread) =
+            parent_thread.as_ref()
+        {
+            if multi_agent_version == MultiAgentVersion::V2 {
+                let parent_config = parent_thread.codex.session.get_config().await;
+                let parent_k = parent_config.multi_agent_v2.plan_token_economy_delegation_k;
                 [
-                    config.multi_agent_v2.root_agent_usage_hint_text.clone(),
-                    config.multi_agent_v2.subagent_usage_hint_text.clone(),
+                    parent_config
+                        .multi_agent_v2
+                        .root_agent_usage_hint_text
+                        .clone(),
+                    parent_config
+                        .multi_agent_v2
+                        .subagent_usage_hint_text
+                        .clone(),
+                    // When the overrides above are unset (the default), the
+                    // parent's history carries the GENERATED hint texts,
+                    // spliced with the parent's resolved K, and either
+                    // channel may also carry the auto-coordinator framing;
+                    // filter those too.
+                    Some(
+                        codex_agent_policy::default_multi_agent_v2_root_usage_hint_text_with_k(
+                            parent_k,
+                        ),
+                    ),
+                    Some(
+                        codex_agent_policy::default_multi_agent_v2_subagent_usage_hint_text_with_k(
+                            parent_k,
+                        ),
+                    ),
+                    Some(codex_agent_policy::AUTO_COORDINATOR_FRAMING_TEXT.to_string()),
                 ]
                 .into_iter()
                 .flatten()
                 .collect()
             } else {
                 Vec::new()
-            };
+            }
+        } else if multi_agent_version == MultiAgentVersion::V2 {
+            let k = config.multi_agent_v2.plan_token_economy_delegation_k;
+            [
+                config.multi_agent_v2.root_agent_usage_hint_text.clone(),
+                config.multi_agent_v2.subagent_usage_hint_text.clone(),
+                Some(codex_agent_policy::default_multi_agent_v2_root_usage_hint_text_with_k(k)),
+                Some(codex_agent_policy::default_multi_agent_v2_subagent_usage_hint_text_with_k(k)),
+                Some(codex_agent_policy::AUTO_COORDINATOR_FRAMING_TEXT.to_string()),
+            ]
+            .into_iter()
+            .flatten()
+            .collect()
+        } else {
+            Vec::new()
+        };
         let preserve_reference_context_item = matches!(fork_mode, SpawnAgentForkMode::FullHistory);
-        forked_rollout_items.retain(|item| {
-            keep_forked_rollout_item(item, preserve_reference_context_item)
-                && !matches!(
-                    item,
-                    RolloutItem::ResponseItem(response_item)
-                        if is_multi_agent_v2_usage_hint_message(
-                            response_item,
-                            &multi_agent_v2_usage_hint_texts_to_filter,
-                        )
-                )
+        forked_rollout_items.retain_mut(|item| {
+            if !keep_forked_rollout_item(item, preserve_reference_context_item) {
+                return false;
+            }
+            match item {
+                RolloutItem::ResponseItem(response_item) => {
+                    retain_or_strip_multi_agent_v2_usage_hint_message(
+                        response_item,
+                        &multi_agent_v2_usage_hint_texts_to_filter,
+                    )
+                }
+                _ => true,
+            }
         });
         for item in &mut forked_rollout_items {
             if let RolloutItem::Compacted(compacted) = item
                 && let Some(replacement_history) = compacted.replacement_history.as_mut()
             {
-                replacement_history.retain(|response_item| {
-                    !is_multi_agent_v2_usage_hint_message(
+                replacement_history.retain_mut(|response_item| {
+                    retain_or_strip_multi_agent_v2_usage_hint_message(
                         response_item,
                         &multi_agent_v2_usage_hint_texts_to_filter,
                     )

@@ -436,6 +436,49 @@ fn for_prompt_preserves_auto_coordinator_framing_as_user_text() {
 }
 
 #[test]
+fn for_prompt_preserves_internal_context_wrapped_usage_hint_as_user_role() {
+    // Slice C delivers the delegation usage hint as a hidden contextual-user
+    // fragment (source "multi_agent_usage_hint", see
+    // `session::multi_agents::build_usage_hint_item`). Prove the wrapped hint
+    // reaches the model request (`for_prompt`) exactly once as a user-role
+    // message that keeps its internal-context wrapper, so the nudge rides the
+    // obeyed user channel instead of the discounted developer channel.
+    let hint_body = "MultiAgentV2 planning mode is enabled.\n\nDelegate boldly.";
+    let fragment = crate::context::InternalModelContextFragment::new(
+        crate::context::InternalContextSource::from_static("multi_agent_usage_hint"),
+        hint_body.to_string(),
+    );
+    let usage_hint_item: ResponseItem = crate::context::ContextualUserFragment::into(fragment);
+    let history = create_history_with_items(vec![usage_hint_item]);
+
+    let prompt = history.for_prompt(&default_input_modalities());
+
+    let wrapped_hint_user_texts: Vec<&str> = prompt
+        .iter()
+        .filter_map(|item| match item {
+            ResponseItem::Message { role, content, .. } if role == "user" => Some(content),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(|content| match content {
+            ContentItem::InputText { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .filter(|text| text.contains(hint_body))
+        .collect();
+    assert_eq!(
+        wrapped_hint_user_texts.len(),
+        1,
+        "wrapped usage hint must reach the model request exactly once as user-role text"
+    );
+    assert!(
+        wrapped_hint_user_texts[0]
+            .contains("<codex_internal_context source=\"multi_agent_usage_hint\">"),
+        "usage hint must keep its internal-context fragment wrapper on the model request"
+    );
+}
+
+#[test]
 fn drop_last_n_user_turns_treats_inter_agent_assistant_messages_as_instruction_turns() {
     let first_turn = user_input_text_msg("first");
     let first_reply = assistant_msg("done");

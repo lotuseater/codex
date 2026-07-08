@@ -199,6 +199,35 @@ fn collect_user_messages_filters_legacy_warnings() {
 }
 
 #[test]
+fn collect_user_messages_skips_auto_coordinator_framing_blocks() {
+    // fork-local: a real user message fused with the auto-coordinator framing
+    // block (the drain-path shape) must survive compaction WITHOUT the framing,
+    // and a framing-only message must be dropped entirely.
+    let fused = ResponseItem::Message {
+        id: None,
+        role: "user".to_string(),
+        content: vec![
+            ContentItem::InputText {
+                text: "refactor the parser and add tests".to_string(),
+            },
+            ContentItem::InputText {
+                text: codex_agent_policy::AUTO_COORDINATOR_FRAMING_TEXT.to_string(),
+            },
+        ],
+        phase: None,
+        internal_chat_message_metadata_passthrough: None,
+    };
+    let framing_only = user_message(codex_agent_policy::AUTO_COORDINATOR_FRAMING_TEXT);
+
+    let collected = collect_user_messages(&[fused, framing_only]);
+
+    assert_eq!(
+        vec![compacted_user_message("refactor the parser and add tests")],
+        collected
+    );
+}
+
+#[test]
 fn build_token_limited_compacted_history_truncates_overlong_user_messages() {
     // Use a small truncation limit so the test remains fast while still validating
     // that oversized user content is truncated.

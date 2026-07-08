@@ -4,7 +4,11 @@
 //! `time_reminder` re-injects the current-time reminder on a wall-clock
 //! interval, this module gives the multi-agent delegation usage hint the
 //! *capability* to re-inject within a single long turn, on a cadence measured
-//! in model requests rather than seconds.
+//! in model requests rather than seconds. The re-injected content is the
+//! COMPACT delegation reminder
+//! (`codex_agent_policy::multi_agent_v2_delegation_reminder_text_with_k`), not
+//! the full usage hint: the full rubric already rides the plan-tool description
+//! and the initial context.
 //!
 //! IMPORTANT: the default cadence is [`UsageHintCadence::InitialContext`], which
 //! is a behavioral no-op here -- under the default the gate never fires from the
@@ -122,42 +126,95 @@ pub(super) async fn maybe_record_usage_hint_reminder(
         return Ok(());
     }
 
-    // Fetch the configured root/subagent usage hint exactly the way the
-    // initial-context site does (`multi_agents::usage_hint_text(turn_context,
-    // &turn_context.session_source)`). That accessor re-applies the V2 +
-    // `usage_hint_enabled` gating and the `plan_token_economy_delegation_k`
-    // fallback to the policy defaults, and returns `None` when the hint is
+    // Eligibility gate: consult the configured root/subagent usage hint exactly
+    // the way the initial-context site does (`multi_agents::usage_hint_text(
+    // turn_context, &turn_context.session_source)`). That accessor re-applies
+    // the V2 + `usage_hint_enabled` gating and returns `None` when the hint is
     // disabled / empty for this source (e.g. internal sessions). When it is
     // `None` there is nothing to re-inject, so record nothing and treat this as
     // not-delivered: rewind the cadence counter so the next model request
     // re-checks immediately instead of waiting another full interval.
-    let Some(usage_hint_text) =
-        super::multi_agents::usage_hint_text(turn_context, &turn_context.session_source)
-    else {
+    if super::multi_agents::usage_hint_text(turn_context, &turn_context.session_source).is_none() {
         let mut state = sess.state.lock().await;
         state
             .usage_hint_reminder
             .rewind_after_undelivered(reminder_interval);
         return Ok(());
-    };
+    }
 
-    // Build the same developer-update item the existing initial-context /
-    // plan-entry sites build for the usage hint, then record it for the next
-    // model request via the same `record_conversation_items` call that
-    // `maybe_record_current_time_reminder` uses for `CurrentTimeReminder`. The
-    // cadence state was already advanced (counter reset + `last_window_id` set)
-    // by `take_reminder_due` above, so on a successful delivery no further state
-    // update is needed and the hint fires again after `reminder_interval`
-    // model requests.
-    let usage_hint_message = if multi_agent_v2.inject_delegation_as_user() {
-        crate::context_manager::updates::build_contextual_user_message(vec![usage_hint_text])
-    } else {
-        crate::context_manager::updates::build_developer_update_item(vec![usage_hint_text])
-    };
+    // Deliver the COMPACT delegation reminder rather than re-sending the full
+    // usage hint: the full rubric already rides the plan-tool description and
+    // the initial context, so the mid-loop cadence only needs to keep the
+    // delegation default alive. K mirrors `multi_agents::usage_hint_text`'s
+    // resolution (the config field is already resolved to the policy default
+    // when unset). Record it for the next model request via the same
+    // `record_conversation_items` call that `maybe_record_current_time_reminder`
+    // uses for `CurrentTimeReminder`. The cadence state was already advanced
+    // (counter reset + `last_window_id` set) by `take_reminder_due` above, so on
+    // a successful delivery no further state update is needed and the reminder
+    // fires again after `reminder_interval` model requests.
+    let resolved_k = multi_agent_v2.plan_token_economy_delegation_k;
+    let reminder_text =
+        codex_agent_policy::multi_agent_v2_delegation_reminder_text_with_k(resolved_k);
+    let usage_hint_message =
+        super::multi_agents::build_usage_hint_item(multi_agent_v2, vec![reminder_text]);
     if let Some(usage_hint_message) = usage_hint_message {
         sess.record_conversation_items(turn_context, std::slice::from_ref(&usage_hint_message))
             .await;
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn take_reminder_due_initial_context_never_fires() {
+        let mut state = UsageHintReminderState::default();
+        for _ in 0..10 {
+            assert!(!state.take_reminder_due("window-1", UsageHintCadence::InitialContext, 1));
+        }
+        // `Plan` is the other per-request no-op cadence: only the existing
+        // initial-context / plan-entry paths may surface the hint.
+        for _ in 0..10 {
+            assert!(!state.take_reminder_due("window-1", UsageHintCadence::Plan, 1));
+        }
+    }
+
+    #[test]
+    fn take_reminder_due_every_n_fires_on_interval() {
+        let mut state = UsageHintReminderState::default();
+        let interval = 3;
+        for cycle in 0..2 {
+            assert!(
+                !state.take_reminder_due("window-1", UsageHintCadence::EveryN, interval),
+                "request 1 of cycle {cycle} must not fire"
+            );
+            assert!(
+                !state.take_reminder_due("window-1", UsageHintCadence::EveryN, interval),
+                "request 2 of cycle {cycle} must not fire"
+            );
+            assert!(
+                state.take_reminder_due("window-1", UsageHintCadence::EveryN, interval),
+                "request 3 of cycle {cycle} must fire"
+            );
+        }
+    }
+
+    #[test]
+    fn take_reminder_due_resets_on_window_change() {
+        let mut state = UsageHintReminderState::default();
+        let interval = 3;
+        assert!(!state.take_reminder_due("window-1", UsageHintCadence::EveryN, interval));
+        assert!(!state.take_reminder_due("window-1", UsageHintCadence::EveryN, interval));
+        // Two requests into window-1 the counter sits at 2. A window change
+        // (e.g. after auto-compaction) must restart the cadence from zero, so
+        // the first request in window-2 is 1-of-3 rather than the firing
+        // 3-of-3 it would be without the reset.
+        assert!(!state.take_reminder_due("window-2", UsageHintCadence::EveryN, interval));
+        assert!(!state.take_reminder_due("window-2", UsageHintCadence::EveryN, interval));
+        assert!(state.take_reminder_due("window-2", UsageHintCadence::EveryN, interval));
+    }
 }

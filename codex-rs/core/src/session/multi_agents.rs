@@ -1,6 +1,10 @@
 use crate::config::MultiAgentV2Config;
+use crate::context::ContextualUserFragment;
+use crate::context::InternalContextSource;
+use crate::context::InternalModelContextFragment;
 use crate::session::turn_context::TurnContext;
 use codex_protocol::config_types::MultiAgentMode;
+use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::MultiAgentVersion;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
@@ -37,6 +41,31 @@ pub(super) fn usage_hint_text(
             None => codex_agent_policy::default_multi_agent_v2_root_usage_hint_text_with_k(k),
         }),
         SessionSource::Internal(_) | SessionSource::SubAgent(_) => None,
+    }
+}
+
+/// Builds the delegation usage-hint history item on the configured channel:
+/// a hidden contextual-user fragment when `delegation_injection_role = "user"`
+/// (obeyed by the model, UI-hidden, dropped by compaction retention), otherwise
+/// the legacy developer-role update item.
+pub(crate) fn build_usage_hint_item(
+    multi_agent_v2: &MultiAgentV2Config,
+    sections: Vec<String>,
+) -> Option<ResponseItem> {
+    if sections.is_empty() {
+        return None;
+    }
+
+    if multi_agent_v2.inject_delegation_as_user() {
+        let text = sections.join("\n\n");
+        Some(ContextualUserFragment::into(
+            InternalModelContextFragment::new(
+                InternalContextSource::from_static("multi_agent_usage_hint"),
+                text,
+            ),
+        ))
+    } else {
+        crate::context_manager::updates::build_developer_update_item(sections)
     }
 }
 

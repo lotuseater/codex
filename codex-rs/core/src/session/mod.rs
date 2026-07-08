@@ -703,13 +703,22 @@ impl Session {
                 items.push(developer_message);
             }
         }
-        if let Some(usage_hint_text) = multi_agent_v2_usage_hint_text
-            && let Some(usage_hint_message) =
-                crate::context_manager::updates::build_developer_update_item(vec![
-                    usage_hint_text.to_string(),
-                ])
-        {
-            items.push(usage_hint_message);
+        if let Some(usage_hint_text) = multi_agent_v2_usage_hint_text {
+            // fork-local: deliver the delegation usage hint on the configured
+            // channel (user-role fragment by default, developer fallback) and,
+            // when auto-coordination is on, keep the coordinator framing STICKY
+            // across mid-turn compactions: this rebuild path feeds
+            // `build_compaction_initial_context`, so every compaction
+            // re-delivers the framing to the replacement history.
+            let mut sections = vec![usage_hint_text];
+            if turn_context.config.multi_agent_v2.auto_coordinator_active() {
+                sections.push(codex_agent_policy::AUTO_COORDINATOR_FRAMING_TEXT.to_string());
+            }
+            if let Some(usage_hint_message) =
+                multi_agents::build_usage_hint_item(&turn_context.config.multi_agent_v2, sections)
+            {
+                items.push(usage_hint_message);
+            }
         }
         match multi_agents::effective_multi_agent_mode(
             turn_context.multi_agent_version,

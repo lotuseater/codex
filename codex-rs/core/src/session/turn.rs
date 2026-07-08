@@ -263,40 +263,17 @@ pub(crate) async fn run_turn(
         if let Some(blackboard_context) = blackboard_context {
             additional_contexts.push(blackboard_context);
         }
-        // fork-local: at the start of a fresh, decomposable user turn, inject the
-        // auto-coordinator framing TASK-ADJACENT (folded into the user turn at
-        // run_hooks_and_record_inputs below), gated by multi-agent V2 + the
-        // resolved AutoCoordinatorMode. Text + heuristic live in codex-agent-policy.
-        if turn_context.multi_agent_version == MultiAgentVersion::V2
-            && turn_context
-                .config
-                .multi_agent_v2
-                .should_inject_auto_coordinator(prompt.as_str())
-        {
-            if turn_context
-                .config
-                .multi_agent_v2
-                .inject_delegation_as_user()
-            {
-                // User channel: fuse the framing into the SAME role:"user" prompt so
-                // the model obeys it (a developer-role message is discounted). Append
-                // it as a trailing text block on the user turn's content vec, recorded
-                // as one user message by run_hooks_and_record_inputs below.
-                if let Some(content) = input.iter_mut().rev().find_map(|item| match item {
-                    TurnInput::UserInput { content, .. } => Some(content),
-                    _ => None,
-                }) {
-                    content.push(UserInput::Text {
-                        text: codex_agent_policy::AUTO_COORDINATOR_FRAMING_TEXT.to_string(),
-                        text_elements: Vec::new(),
-                    });
-                }
-            } else {
-                additional_contexts
-                    .push(codex_agent_policy::AUTO_COORDINATOR_FRAMING_TEXT.to_string());
-            }
-        }
     }
+    // fork-local: at the start of a fresh, decomposable user turn, fuse the
+    // auto-coordinator framing TASK-ADJACENT (folded into the user turn at
+    // run_hooks_and_record_inputs below), gated by multi-agent V2 + the
+    // resolved AutoCoordinatorMode. Text + heuristic live in codex-agent-policy.
+    // When this turn has no initial user text (e.g. a goal-driven continuation),
+    // nothing fuses here and the pending-input drain in the loop below gets the
+    // chance instead; the shared bool bounds the framing to at most one copy per
+    // run_turn.
+    let mut framing_fused =
+        fuse_auto_coordinator_framing(&turn_context, &mut input, &mut additional_contexts);
     let initial_input_outcome = run_hooks_and_record_inputs(
         &sess,
         &turn_context,
@@ -363,16 +340,33 @@ pub(crate) async fn run_turn(
         // Note that pending_input would be something like a message the user
         // submitted through the UI while the model was running. Though the UI
         // may support this, the model might not.
-        let pending_input = if can_drain_pending_input {
+        let mut pending_input = if can_drain_pending_input {
             sess.get_pending_input().await
         } else {
             Vec::new()
         };
 
         if !pending_input.is_empty() {
-            let pending_input_outcome =
-                run_hooks_and_record_inputs(&sess, &turn_context, pending_input, true, Vec::new())
-                    .await;
+            // fork-local: steered/drained input is the only user text a long
+            // goal-driven turn ever sees, so it must get the same
+            // auto-coordinator framing chance as a fresh turn; the shared bool
+            // keeps the framing to at most one fused copy per run_turn.
+            let mut pending_contexts: Vec<String> = Vec::new();
+            if !framing_fused {
+                framing_fused = fuse_auto_coordinator_framing(
+                    &turn_context,
+                    &mut pending_input,
+                    &mut pending_contexts,
+                );
+            }
+            let pending_input_outcome = run_hooks_and_record_inputs(
+                &sess,
+                &turn_context,
+                pending_input,
+                true,
+                pending_contexts,
+            )
+            .await;
             if pending_input_outcome.blocked_without_accepted_input() {
                 if pending_input_outcome.requeued_input {
                     continue;
@@ -697,6 +691,57 @@ pub(crate) async fn run_turn(
     }
 
     Ok(last_agent_message)
+}
+
+/// fork-local: fuse the auto-coordinator framing into a turn's input, gated by
+/// multi-agent V2 + the resolved AutoCoordinatorMode heuristic over the input's
+/// user text. On the user channel the framing is appended as a trailing text
+/// block on the last user item (recorded as one user message by
+/// `run_hooks_and_record_inputs`); on the developer channel it is pushed onto
+/// `additional_contexts` instead. Returns `false` without side effects when the
+/// framing should not fire (no user text in `input`, non-V2 session,
+/// coordinator off, or a non-decomposable prompt under `Auto`); returns `true`
+/// when it fused, so `run_turn` can bound the framing to at most one copy per
+/// turn across the fresh-input and pending-drain call sites.
+fn fuse_auto_coordinator_framing(
+    turn_context: &TurnContext,
+    input: &mut [TurnInput],
+    additional_contexts: &mut Vec<String>,
+) -> bool {
+    let prompt = user_prompt_messages(input).join("\n");
+    if prompt.is_empty() {
+        return false;
+    }
+    if turn_context.multi_agent_version != MultiAgentVersion::V2
+        || !turn_context
+            .config
+            .multi_agent_v2
+            .should_inject_auto_coordinator(prompt.as_str())
+    {
+        return false;
+    }
+    if turn_context
+        .config
+        .multi_agent_v2
+        .inject_delegation_as_user()
+    {
+        // User channel: fuse the framing into the SAME role:"user" prompt so
+        // the model obeys it (a developer-role message is discounted). Append
+        // it as a trailing text block on the user turn's content vec, recorded
+        // as one user message by run_hooks_and_record_inputs.
+        if let Some(content) = input.iter_mut().rev().find_map(|item| match item {
+            TurnInput::UserInput { content, .. } => Some(content),
+            _ => None,
+        }) {
+            content.push(UserInput::Text {
+                text: codex_agent_policy::AUTO_COORDINATOR_FRAMING_TEXT.to_string(),
+                text_elements: Vec::new(),
+            });
+        }
+    } else {
+        additional_contexts.push(codex_agent_policy::AUTO_COORDINATOR_FRAMING_TEXT.to_string());
+    }
+    true
 }
 
 fn user_prompt_messages(input: &[TurnInput]) -> Vec<String> {

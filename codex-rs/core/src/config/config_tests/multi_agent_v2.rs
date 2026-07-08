@@ -38,7 +38,8 @@ fn multi_agent_v2_default_hints_gate_exploration_with_first_moves() {
     assert!(root_hint.contains("treat the root thread as an overseer"));
     assert!(root_hint.contains("Compact helpers after bulky reads"));
     assert!(root_hint.contains("short summary or short result only when the main agent needs"));
-    assert!(root_hint.contains("net >= 2"));
+    assert!(root_hint.contains("net >= 1"));
+    assert!(root_hint.contains("new_agent_cost=2"));
     assert!(root_hint.contains("reuse_cost=1"));
     assert!(root_hint.contains("loop_followup_gain=0-3"));
     assert!(root_hint.contains("automatic continuation is normally 2"));

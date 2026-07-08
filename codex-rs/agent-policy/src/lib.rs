@@ -8,15 +8,18 @@ pub use plan_prompt::DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K;
 pub use plan_prompt::DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K_PROMPT_TEXT;
 pub use plan_prompt::DEFAULT_PLAN_TOKEN_ECONOMY_PROMPT_TEXT;
 pub use plan_prompt::MAIN_AGENT_PLAN_DELEGATION_PROMPT;
+pub use plan_prompt::MULTI_AGENT_V2_DELEGATION_REMINDER_MARKER;
 pub use plan_prompt::default_multi_agent_v2_root_usage_hint_text;
 pub use plan_prompt::default_multi_agent_v2_root_usage_hint_text_with_k;
 pub use plan_prompt::default_multi_agent_v2_subagent_usage_hint_text;
 pub use plan_prompt::default_multi_agent_v2_subagent_usage_hint_text_with_k;
+pub use plan_prompt::multi_agent_v2_delegation_reminder_text;
+pub use plan_prompt::multi_agent_v2_delegation_reminder_text_with_k;
 
 pub const AUTO_LOOP_MULTI_OPTION_NOTE: &str =
     "Think on your own and choose what is best in long-term perspective";
 
-pub const AGENT_ROI_RUBRIC: &str = "new_agent_cost=3, reuse_cost=1, parallel_gain=0-3, context_gain=0-3, repeat_gain=0-4, loop_followup_gain=0-3, risk_penalty=0-3, net = parallel_gain + context_gain + repeat_gain + loop_followup_gain - cost - risk_penalty";
+pub const AGENT_ROI_RUBRIC: &str = "new_agent_cost=2, reuse_cost=1, parallel_gain=0-3, context_gain=0-3, repeat_gain=0-4, loop_followup_gain=0-3, risk_penalty=0-3, net = parallel_gain + context_gain + repeat_gain + loop_followup_gain - cost - risk_penalty";
 
 pub const MULTI_AGENT_V2_NESTED_SPAWN_REJECTION: &str = "Only the root agent can spawn MultiAgentV2 helpers; send a concise handoff to the root instead.";
 
@@ -109,7 +112,7 @@ impl AgentRoiEstimate {
     }
 
     pub const fn is_positive(self) -> bool {
-        self.net() >= 2
+        self.net() >= 1
     }
 }
 
@@ -161,10 +164,10 @@ impl SpawnPolicyRejection {
                 "spawn_agent blocked: this task looks like git finalization, deploy promotion, or wrapper promotion. Keep commit/push/tag/rebase/merge/deploy/promotion actions in the root agent after reviewing agent output; subagents may inspect git state but should not own irreversible finalization."
             }
             Self::ExactReadOnlyExplorerWithoutPositiveRoi => {
-                "spawn_agent blocked: this looks like simple bounded read-only exploration without a positive Agent ROI Estimate. Read exact files locally or reuse an existing relevant agent; retry with agent_type=\"helper\" or an existing agent only if WHY_AGENT / ROI shows net >= 2, a reuse check, expected repeated operations or context savings, and a token/time budget."
+                "spawn_agent blocked: this looks like simple bounded read-only exploration without a positive Agent ROI Estimate. Read exact files locally or reuse an existing relevant agent; retry with agent_type=\"helper\" or an existing agent only if WHY_AGENT / ROI shows net >= 1, a reuse check, expected repeated operations or context savings, and a token/time budget."
             }
             Self::ExplorationWithoutScoutOrRoi => {
-                "spawn_agent blocked: this looks like exploration/scouting without enough first_moves/context-scout evidence or positive Agent ROI justification. Run `first_moves_predict` locally first (or load it with `tool_search`), inspect the high-confidence candidates, then keep the work local if that is enough. If a separate helper/explorer is still useful, retry with `SCOUT_EVIDENCE` naming the completed scout, `WHY_AGENT / ROI` showing independent parallel value, reuse check, net >= 2, token/time budget or stop condition, and `FIRST_READS` starting from scout output or a strictly bounded exact file/diff/test list that avoids raw broad `rg`/`find` sweeps."
+                "spawn_agent blocked: this looks like exploration/scouting without enough first_moves/context-scout evidence or positive Agent ROI justification. Run `first_moves_predict` locally first (or load it with `tool_search`), inspect the high-confidence candidates, then keep the work local if that is enough. If a separate helper/explorer is still useful, retry with `SCOUT_EVIDENCE` naming the completed scout, `WHY_AGENT / ROI` showing independent parallel value, reuse check, net >= 1, token/time budget or stop condition, and `FIRST_READS` starting from scout output or a strictly bounded exact file/diff/test list that avoids raw broad `rg`/`find` sweeps."
             }
         }
     }
@@ -611,6 +614,7 @@ fn has_positive_roi_claim(section: &str) -> bool {
     contains_any(
         section,
         &[
+            "net >= 1",
             "net >= 2",
             "net=>2",
             "net positive",
@@ -620,16 +624,17 @@ fn has_positive_roi_claim(section: &str) -> bool {
     ) || contains_any(
         compact.as_str(),
         &[
-            "net>=2", "net=>2", "net=2", "net=+2", "net:+2", "net=3", "net=+3", "net:+3", "net=4",
-            "net=+4", "net:+4", "net=5", "net=+5", "net:+5", "net=6", "net=+6", "net:+6", "net=7",
-            "net=+7", "net:+7", "net=8", "net=+8", "net:+8", "net=9", "net=+9", "net:+9",
+            "net>=1", "net=1", "net=+1", "net:+1", "net>=2", "net=>2", "net=2", "net=+2", "net:+2",
+            "net=3", "net=+3", "net:+3", "net=4", "net=+4", "net:+4", "net=5", "net=+5", "net:+5",
+            "net=6", "net=+6", "net:+6", "net=7", "net=+7", "net:+7", "net=8", "net=+8", "net:+8",
+            "net=9", "net=+9", "net:+9",
         ],
     ) || (contains_any(section, &["net:", "net ="])
         && contains_any(
             section,
             &[
-                "+2", "+3", "+4", "+5", "+6", "+7", "+8", "+9", " 2", " 3", " 4", " 5", " 6", " 7",
-                " 8", " 9",
+                "+1", "+2", "+3", "+4", "+5", "+6", "+7", "+8", "+9", " 1", " 2", " 3", " 4", " 5",
+                " 6", " 7", " 8", " 9",
             ],
         ))
 }
@@ -811,7 +816,7 @@ mod tests {
         assert!(prompt.contains("list_agents"));
         assert!(prompt.contains("what to delegate to subagents"));
         assert!(prompt.contains("context drift or context compactions"));
-        assert!(prompt.contains("spawn or reuse only when net >= 2"));
+        assert!(prompt.contains("spawn or reuse when net >= 1"));
         assert!(
             prompt
                 .contains("coordinate instead of doing implementation/testing/verification itself")
@@ -819,9 +824,11 @@ mod tests {
         assert!(prompt.contains("at least one persistent highest-capability worker"));
         assert!(prompt.contains("Delegate most bounded implementation/testing work"));
         assert!(prompt.contains("Agent ROI Estimate"));
-        assert!(prompt.contains("new_agent_cost=3"));
+        assert!(prompt.contains("new_agent_cost=2"));
         assert!(prompt.contains("reuse_cost=1"));
-        assert!(prompt.contains("net = gains + loop_followup_gain - cost - risk"));
+        assert!(prompt.contains(
+            "net = (parallel_gain + context_gain + repeat_gain + loop_followup_gain) - cost - risk_penalty"
+        ));
         assert!(prompt.contains("interactive Codex sessions"));
         assert!(prompt.contains("separate non-interactive Codex exec worker sessions"));
         assert!(prompt.contains("in-session agents only when external sessions are unavailable"));
@@ -874,13 +881,13 @@ mod tests {
                 .contains("highest-capability available model and reasoning effort")
         );
         assert!(MAIN_AGENT_PLAN_DELEGATION_PROMPT.contains("Agent ROI Estimate"));
-        assert!(MAIN_AGENT_PLAN_DELEGATION_PROMPT.contains("new_agent_cost=3"));
+        assert!(MAIN_AGENT_PLAN_DELEGATION_PROMPT.contains("new_agent_cost=2"));
         assert!(MAIN_AGENT_PLAN_DELEGATION_PROMPT.contains("reuse_cost=1"));
-        assert!(
-            MAIN_AGENT_PLAN_DELEGATION_PROMPT
-                .contains("net = gains + loop_followup_gain - cost - risk")
-        );
-        assert!(MAIN_AGENT_PLAN_DELEGATION_PROMPT.contains("spawn or reuse only when net >= 2"));
+        assert!(MAIN_AGENT_PLAN_DELEGATION_PROMPT.contains(
+            "net = (parallel_gain + context_gain + repeat_gain + loop_followup_gain) - cost - risk_penalty"
+        ));
+        assert!(MAIN_AGENT_PLAN_DELEGATION_PROMPT.contains("spawn or reuse when net >= 1"));
+        assert!(MAIN_AGENT_PLAN_DELEGATION_PROMPT.contains("delegation is the DEFAULT"));
         // The static const must NOT hardcode a specific K value: the live threshold is
         // surfaced only via the dynamic usage hint, so the const defers to it instead of
         // baking in a number that disagrees with a user-configured `/delegate-prompt k <n>`.
@@ -923,6 +930,18 @@ mod tests {
             sub_hint
                 .contains("Delegate a subtask only when expected cost is at least 26000 tokens")
         );
+    }
+
+    #[test]
+    fn delegation_reminder_splices_k_and_marker() {
+        let reminder = multi_agent_v2_delegation_reminder_text_with_k(1234);
+        assert!(reminder.starts_with(MULTI_AGENT_V2_DELEGATION_REMINDER_MARKER));
+        assert!(reminder.contains("1234"));
+        assert!(reminder.contains("net >= 1 means delegate by default"));
+
+        let default_reminder = multi_agent_v2_delegation_reminder_text();
+        assert!(default_reminder.starts_with(MULTI_AGENT_V2_DELEGATION_REMINDER_MARKER));
+        assert!(default_reminder.contains(&DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K.to_string()));
     }
 
     #[test]
@@ -1060,6 +1079,54 @@ mod tests {
 
         assert_eq!(estimate.net(), 3);
         assert!(estimate.is_positive());
+    }
+
+    #[test]
+    fn is_positive_accepts_net_1() {
+        let net_one = AgentRoiEstimate {
+            parallel_gain: 2,
+            context_gain: 1,
+            repeat_gain: 0,
+            loop_followup_gain: 0,
+            cost: 2,
+            risk_penalty: 0,
+        };
+        assert_eq!(net_one.net(), 1);
+        assert!(net_one.is_positive());
+
+        let net_zero = AgentRoiEstimate {
+            parallel_gain: 1,
+            context_gain: 1,
+            repeat_gain: 0,
+            loop_followup_gain: 0,
+            cost: 2,
+            risk_penalty: 0,
+        };
+        assert_eq!(net_zero.net(), 0);
+        assert!(!net_zero.is_positive());
+    }
+
+    #[test]
+    fn roi_claim_accepts_net_1_forms() {
+        for section in [
+            "independent worker with net >= 1 and a 10k token budget",
+            "reuse plan with net>=1 and a bounded contract",
+            "net=1 after coordination overhead",
+            "net=+1 with parallel gain",
+            "net:+1 for this split",
+            "net: +1 with a stop condition",
+            "net = 1 with bounded ownership",
+        ] {
+            assert!(
+                has_positive_roi_claim(section),
+                "expected accept: {section}"
+            );
+        }
+        // Existing net >= 2 style claims must still be accepted.
+        assert!(has_positive_roi_claim(
+            "sidecar review with net >= 2 and a 10k token budget"
+        ));
+        assert!(has_positive_roi_claim("net=+3 and a 6k token budget"));
     }
 
     #[test]

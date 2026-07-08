@@ -8,17 +8,23 @@ use codex_protocol::protocol::MultiAgentVersion;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::user_input::UserInput;
+use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
+use core_test_support::responses::ev_function_call;
 use core_test_support::responses::ev_response_created;
 use core_test_support::responses::mount_sse_once;
+use core_test_support::responses::mount_sse_once_match;
 use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
 use core_test_support::test_codex::test_codex;
 use core_test_support::wait_for_event;
+use core_test_support::wait_for_event_with_timeout;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
+use serde_json::json;
+use std::time::Duration;
 
 const NO_SPAWN_TEXT: &str = "Do not spawn sub-agents unless the user explicitly asks for sub-agents, delegation, or parallel agent work.";
 const NO_MODE_TEXT: &str = "Multi-agent delegation mode instructions are inactive.";
@@ -36,6 +42,16 @@ fn developer_texts(input: &[Value]) -> Vec<&str> {
 
 fn count_containing(texts: &[&str], target: &str) -> usize {
     texts.iter().filter(|text| text.contains(target)).count()
+}
+
+fn user_texts(input: &[Value]) -> Vec<&str> {
+    input
+        .iter()
+        .filter(|item| item.get("role").and_then(Value::as_str) == Some("user"))
+        .filter_map(|item| item.get("content")?.as_array())
+        .flatten()
+        .filter_map(|content| content.get("text")?.as_str())
+        .collect()
 }
 
 async fn submit_turn(
@@ -86,6 +102,11 @@ async fn multi_agent_mode_is_sticky_and_emits_only_on_change() -> Result<()> {
                 .features
                 .enable(Feature::MultiAgentV2)
                 .expect("test config should allow feature update");
+            // The fresh-root auto-coordinator flip (codex_handle.rs) would start
+            // this session Proactive under the default AutoCoordinatorMode::Auto;
+            // pin it Off so this test keeps exercising the sticky/emit-on-change
+            // mechanics from the upstream default (ExplicitRequestOnly).
+            config.multi_agent_v2.auto_coordinator = AutoCoordinatorMode::Off;
         })
         .build(&server)
         .await?;
@@ -471,6 +492,389 @@ async fn multi_agent_mode_is_retained_without_multi_agent_v2() -> Result<()> {
             count_containing(&texts, PROACTIVE_TEXT),
         ),
         (0, 0)
+    );
+
+    Ok(())
+}
+
+fn request_body_contains(request: &wiremock::Request, text: &str) -> bool {
+    serde_json::from_slice::<Value>(&request.body).is_ok_and(|body| body.to_string().contains(text))
+}
+
+fn request_has_function_call_output(request: &wiremock::Request, call_id: &str) -> bool {
+    serde_json::from_slice::<Value>(&request.body).is_ok_and(|body| {
+        body.get("input")
+            .and_then(Value::as_array)
+            .is_some_and(|items| {
+                items.iter().any(|item| {
+                    item.get("type").and_then(Value::as_str) == Some("function_call_output")
+                        && item.get("call_id").and_then(Value::as_str) == Some(call_id)
+                })
+            })
+    })
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn usage_hint_rides_user_channel_when_role_user() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    const HINT_TEXT: &str = "Custom delegation hint: prefer parallel workers.";
+    const FRAGMENT_OPEN_TAG: &str = "<codex_internal_context source=\"multi_agent_usage_hint\">";
+
+    let server = start_mock_server().await;
+    let responses = mount_sse_once(
+        &server,
+        sse(vec![ev_response_created("resp-1"), ev_completed("resp-1")]),
+    )
+    .await;
+    let test = test_codex()
+        .with_config(|config| {
+            config
+                .features
+                .enable(Feature::MultiAgentV2)
+                .expect("test config should allow feature update");
+            // `delegation_injection_role` defaults to `user`; keep the
+            // auto-coordinator off so the usage hint is the only delegation
+            // nudge in flight.
+            config.multi_agent_v2.root_agent_usage_hint_text = Some(HINT_TEXT.to_string());
+            config.multi_agent_v2.auto_coordinator = AutoCoordinatorMode::Off;
+        })
+        .build(&server)
+        .await?;
+
+    submit_turn(&test.codex, "hello", None).await?;
+
+    let input = responses.single_request().input();
+    assert_eq!(
+        count_containing(&developer_texts(&input), HINT_TEXT),
+        0,
+        "usage hint must not ride the discounted developer channel"
+    );
+    let texts = user_texts(&input);
+    let hint_texts: Vec<&&str> = texts
+        .iter()
+        .filter(|text| text.contains(HINT_TEXT))
+        .collect();
+    assert_eq!(
+        hint_texts.len(),
+        1,
+        "usage hint must reach the model exactly once as user-role text"
+    );
+    assert!(
+        hint_texts[0].contains(FRAGMENT_OPEN_TAG),
+        "user-channel usage hint must stay wrapped in its internal-context fragment"
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pending_drain_receives_auto_coordinator_framing_once() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    const WAIT_CALL_ID: &str = "wait-call";
+    const STEER_PROMPT: &str = "steered mid-turn task";
+    const FRAMING_SNIPPET: &str = "You are operating as a COORDINATOR";
+    // 1x1 transparent PNG. An image-only initial turn carries no user text, so
+    // the fresh-input fusion site stays inert and the pending-input drain is
+    // the only site that can fuse the auto-coordinator framing.
+    const IMAGE_DATA_URL: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+    let server = start_mock_server().await;
+    let request_log = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_response_created("resp-1"),
+                ev_function_call(
+                    WAIT_CALL_ID,
+                    "wait_agent",
+                    // Generous tool deadline: a working steer-wake returns
+                    // immediately; only genuine wake failures run this out.
+                    r#"{"timeout_ms":60000}"#,
+                ),
+                ev_completed("resp-1"),
+            ]),
+            sse(vec![
+                ev_response_created("resp-2"),
+                ev_assistant_message("m-2", "done"),
+                ev_completed("resp-2"),
+            ]),
+        ],
+    )
+    .await;
+    let test = test_codex()
+        .with_model("gpt-5.4")
+        .with_config(|config| {
+            config
+                .features
+                .enable(Feature::Collab)
+                .expect("test config should allow feature update");
+            config
+                .features
+                .enable(Feature::MultiAgentV2)
+                .expect("test config should allow feature update");
+            config.multi_agent_v2.auto_coordinator = AutoCoordinatorMode::Always;
+            // Silence the initial-context usage hint so the framing fused on
+            // the drained input is the only delegation text in the exchange.
+            config.multi_agent_v2.usage_hint_enabled = false;
+        })
+        .build(&server)
+        .await?;
+
+    test.codex
+        .submit(Op::UserInput {
+            environments: None,
+            items: vec![UserInput::Image {
+                image_url: IMAGE_DATA_URL.to_string(),
+                detail: None,
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: ThreadSettingsOverrides::default(),
+        })
+        .await?;
+    // The image-only initial turn must reach the wait_agent park before we
+    // steer the human follow-up; a park here (not a pass) is the real failure.
+    wait_for_event_with_timeout(
+        &test.codex,
+        |event| matches!(event, EventMsg::CollabWaitingBegin(_)),
+        Duration::from_secs(30),
+    )
+    .await;
+
+    test.codex
+        .steer_input(
+            vec![UserInput::Text {
+                text: STEER_PROMPT.to_string(),
+                text_elements: Vec::new(),
+            }],
+            /*additional_context*/ Default::default(),
+            /*expected_turn_id*/ None,
+            /*client_user_message_id*/ None,
+            /*responsesapi_client_metadata*/ None,
+        )
+        // SteerInputError does not implement std::error::Error, so `?` under
+        // anyhow will not compile; expect() mirrors suite/pending_input.rs.
+        .await
+        .expect("steer user input");
+    // Exceeds the tool's 60s deadline so a park here crisply signals a real
+    // steer-wake failure rather than scheduling skew under gate load.
+    wait_for_event_with_timeout(
+        &test.codex,
+        |event| matches!(event, EventMsg::TurnComplete(_)),
+        Duration::from_secs(70),
+    )
+    .await;
+
+    let requests = request_log.requests();
+    assert_eq!(
+        requests.len(),
+        2,
+        "expected the wait turn and the drained follow-up request"
+    );
+    assert_eq!(
+        count_containing(&user_texts(&requests[0].input()), FRAMING_SNIPPET),
+        0,
+        "an image-only initial turn has no user text, so nothing fuses up front"
+    );
+    let follow_up_input = requests[1].input();
+    let steered_message = follow_up_input
+        .iter()
+        .find(|item| {
+            item.get("role").and_then(Value::as_str) == Some("user")
+                && item
+                    .get("content")
+                    .and_then(Value::as_array)
+                    .is_some_and(|content| {
+                        content.iter().any(|block| {
+                            block.get("text").and_then(Value::as_str) == Some(STEER_PROMPT)
+                        })
+                    })
+        })
+        .expect("steered user message should ride the follow-up request");
+    let steered_texts: Vec<&str> = steered_message
+        .get("content")
+        .and_then(Value::as_array)
+        .expect("steered message content")
+        .iter()
+        .filter_map(|block| block.get("text").and_then(Value::as_str))
+        .collect();
+    assert_eq!(
+        count_containing(&steered_texts, FRAMING_SNIPPET),
+        1,
+        "the drained pending input must receive the auto-coordinator framing"
+    );
+    assert_eq!(
+        count_containing(&user_texts(&follow_up_input), FRAMING_SNIPPET),
+        1,
+        "the framing is bounded to one fused copy per run_turn"
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn forked_child_history_strips_generated_hints_and_framing() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    const SPAWN_CALL_ID: &str = "spawn-fork-call";
+    const ROOT_PROMPT: &str = "coordinate the big refactor";
+    const CHILD_TASK: &str = "handle the parser module slice";
+    const ROOT_HINT_SNIPPET: &str = "MultiAgentV2 planning mode is enabled.";
+    const SUBAGENT_HINT_SNIPPET: &str = "MultiAgentV2 worker mode is enabled.";
+    const FRAMING_SNIPPET: &str = "You are operating as a COORDINATOR";
+
+    let server = start_mock_server().await;
+    let spawn_args = json!({
+        "message": CHILD_TASK,
+        "task_name": "parser_slice",
+        "fork_turns": "all",
+    })
+    .to_string();
+    let root_first = mount_sse_once_match(
+        &server,
+        |request: &wiremock::Request| {
+            request_body_contains(request, ROOT_PROMPT)
+                && !request_body_contains(request, CHILD_TASK)
+        },
+        sse(vec![
+            ev_response_created("resp-root-1"),
+            ev_function_call(SPAWN_CALL_ID, "spawn_agent", &spawn_args),
+            ev_completed("resp-root-1"),
+        ]),
+    )
+    .await;
+    let root_follow_up = mount_sse_once_match(
+        &server,
+        |request: &wiremock::Request| request_has_function_call_output(request, SPAWN_CALL_ID),
+        sse(vec![
+            ev_response_created("resp-root-2"),
+            ev_assistant_message("m-root-2", "spawned the worker"),
+            ev_completed("resp-root-2"),
+        ]),
+    )
+    .await;
+    let child_requests = mount_sse_once_match(
+        &server,
+        |request: &wiremock::Request| {
+            request_body_contains(request, CHILD_TASK)
+                && !request_has_function_call_output(request, SPAWN_CALL_ID)
+        },
+        sse(vec![
+            ev_response_created("resp-child-1"),
+            ev_assistant_message("m-child-1", "child done"),
+            ev_completed("resp-child-1"),
+        ]),
+    )
+    .await;
+
+    let test = test_codex()
+        .with_model("gpt-5.4")
+        .with_config(|config| {
+            config
+                .features
+                .enable(Feature::Collab)
+                .expect("test config should allow feature update");
+            config
+                .features
+                .enable(Feature::MultiAgentV2)
+                .expect("test config should allow feature update");
+            config.multi_agent_v2.auto_coordinator = AutoCoordinatorMode::Always;
+            config.multi_agent_v2.max_concurrent_threads_per_session = 2;
+        })
+        .build(&server)
+        .await?;
+
+    submit_turn(&test.codex, ROOT_PROMPT, None).await?;
+
+    // Positive control on the parent: the fused framing rode the root turn, so
+    // the absence assertions on the child below are non-vacuous.
+    let root_input = root_first.single_request().input();
+    assert!(
+        user_texts(&root_input)
+            .iter()
+            .any(|text| text.contains(FRAMING_SNIPPET)),
+        "auto-coordinator framing must ride the root turn"
+    );
+
+    // The spawn round-trip must have SUCCEEDED before polling for the child; a
+    // "collab spawn failed: {reason}" output otherwise makes this timeout mute.
+    let follow_up_input = root_follow_up.single_request().input();
+    let spawn_output = follow_up_input
+        .iter()
+        .find(|item| {
+            item.get("type").and_then(Value::as_str) == Some("function_call_output")
+                && item.get("call_id").and_then(Value::as_str) == Some(SPAWN_CALL_ID)
+        })
+        .and_then(|item| item.get("output"))
+        .and_then(Value::as_str)
+        .expect("root follow-up must carry the spawn_agent function_call_output");
+    assert!(
+        !spawn_output.starts_with("collab spawn failed:"),
+        "spawn_agent must succeed before the child can run, got: {spawn_output}"
+    );
+
+    let child_request = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Some(request) = child_requests.requests().into_iter().next() {
+                return request;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .expect("forked child should issue its first model request");
+
+    let child_input = child_request.input();
+    let child_texts = user_texts(&child_input);
+    assert!(
+        child_texts.iter().any(|text| text.contains(ROOT_PROMPT)),
+        "the fork must carry the parent's real user message"
+    );
+    assert!(
+        child_texts
+            .iter()
+            .any(|text| text.contains(SUBAGENT_HINT_SNIPPET)),
+        "the forked child must receive the worker-mode usage hint"
+    );
+    assert_eq!(
+        child_texts
+            .iter()
+            .filter(|text| text.contains(ROOT_HINT_SNIPPET))
+            .count(),
+        0,
+        "the parent's generated root usage hint must be stripped from forked history"
+    );
+    let forked_root_message = child_input
+        .iter()
+        .find(|item| {
+            item.get("role").and_then(Value::as_str) == Some("user")
+                && item
+                    .get("content")
+                    .and_then(Value::as_array)
+                    .is_some_and(|content| {
+                        content.iter().any(|block| {
+                            block
+                                .get("text")
+                                .and_then(Value::as_str)
+                                .is_some_and(|text| text.contains(ROOT_PROMPT))
+                        })
+                    })
+        })
+        .expect("forked child history should retain the parent's user message");
+    let forked_root_texts: Vec<&str> = forked_root_message
+        .get("content")
+        .and_then(Value::as_array)
+        .expect("forked user message content")
+        .iter()
+        .filter_map(|block| block.get("text").and_then(Value::as_str))
+        .collect();
+    assert_eq!(
+        count_containing(&forked_root_texts, FRAMING_SNIPPET),
+        0,
+        "the framing fused onto the parent's user message must be stripped in the fork"
     );
 
     Ok(())
