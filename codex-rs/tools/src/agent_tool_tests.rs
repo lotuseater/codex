@@ -67,7 +67,7 @@ fn spawn_agent_tool_v2_requires_task_name_and_lists_visible_models() {
     assert!(description.contains("prefer quality"));
     assert!(description.contains("total token effectiveness"));
     assert!(description.contains("Agent ROI Estimate"));
-    assert!(description.contains("net >= 2"));
+    assert!(description.contains("net >= 1"));
     assert!(description.contains("loop_followup_gain=0-3"));
     assert!(description.contains("auto-loop may accept the implementation prompt automatically"));
     assert!(description.contains("stable `helper` agent task name"));
