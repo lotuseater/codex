@@ -4,6 +4,8 @@
   minutes between checks - you are just a spawner, overseer
   
 Be careful. Conflicts may be numerous. We shouldn't loose our features. We need our features decoupled as well as tests for them - easy to maintain, change, test. And we need make merging easier next times.
+
+As for previous broader refactoring attempts in our fork and branch - they should be dropped to make branch closer to upstream for easier merging efforts. Only our features should be decoupled and better structured. 
   
 Delegate freely to spawned sessions or workflows. While you review and coordinate and plan.
 
