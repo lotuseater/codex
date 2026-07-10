@@ -70,6 +70,7 @@ pub use current_time::CurrentTimeHandler;
 pub(crate) use desktop_automation::DesktopAutomationHandler;
 pub use dynamic::DynamicToolHandler;
 pub use first_moves::FirstMovesHandler;
+pub(crate) use first_moves::maybe_spawn_first_moves_hit;
 pub(crate) use first_moves::spawn_record_tool_use_hit;
 pub use get_context_remaining::GetContextRemainingHandler;
 pub use goal::CreateGoalHandler;

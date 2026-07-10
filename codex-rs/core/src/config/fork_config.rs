@@ -1,4 +1,86 @@
+//! Fork-only sub-configuration types.
+//!
+//! These structures are specific to this fork and have no upstream counterpart.
+//! Keeping them in a dedicated module (instead of the upstream config monolith)
+//! lets the upstream config file 3-way-merge cleanly on the next merge.
+
 use super::*;
+
+/// Configuration for the experimental code-mode tool surface.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct CodeModeConfig {
+    pub excluded_tool_namespaces: Vec<String>,
+    pub direct_only_tool_namespaces: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActionOptimizationInstructionsConfig {
+    pub mode: ActionOptimizationInstructionsMode,
+    pub variant: ActionOptimizationInstructionsVariant,
+    /// Optional user-supplied prompt body. When `Some` and non-empty it
+    /// overrides `variant`, allowing a custom variant persisted across sessions.
+    pub custom_text: Option<String>,
+    pub max_tokens: usize,
+}
+
+impl Default for ActionOptimizationInstructionsConfig {
+    fn default() -> Self {
+        Self {
+            mode: ActionOptimizationInstructionsMode::Always,
+            variant: ActionOptimizationInstructionsVariant::Routing,
+            custom_text: None,
+            max_tokens: 120,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActionOptimizationInstructionsMode {
+    Off,
+    Plan,
+    FirstTurn,
+    ToolTurn,
+    Always,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActionOptimizationInstructionsVariant {
+    ActionRouteSelection,
+    Routing,
+    Verbose,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BatchMiniProgrammingInstructionsConfig {
+    pub mode: BatchMiniProgrammingInstructionsMode,
+    pub variant: BatchMiniProgrammingInstructionsVariant,
+    /// Optional user-supplied prompt body. When `Some` and non-empty it
+    /// overrides `variant`, allowing a custom variant persisted across sessions.
+    pub custom_text: Option<String>,
+}
+
+impl Default for BatchMiniProgrammingInstructionsConfig {
+    fn default() -> Self {
+        Self {
+            mode: BatchMiniProgrammingInstructionsMode::Always,
+            variant: BatchMiniProgrammingInstructionsVariant::Current,
+            custom_text: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BatchMiniProgrammingInstructionsMode {
+    Off,
+    Always,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BatchMiniProgrammingInstructionsVariant {
+    Current,
+    Aggressive,
+    Compact,
+}
 
 /// Compatibility-only config retained so legacy `ghost_snapshot` settings
 /// continue to load even though snapshots are no longer produced.
@@ -17,16 +99,6 @@ impl Default for GhostSnapshotConfig {
             disable_warnings: false,
         }
     }
-}
-
-/// Configured thread persistence backend.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub enum ThreadStoreConfig {
-    /// Persist threads locally using rollout JSONL files and sqlite metadata.
-    #[default]
-    Local,
-    /// In-memory thread store for test and debug configurations.
-    InMemory { id: String },
 }
 
 /// Cadence for re-surfacing the multi-agent delegation usage hint within a turn.
@@ -376,49 +448,4 @@ pub enum TerminalResizeReflowMaxRows {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct TerminalResizeReflowConfig {
     pub max_rows: TerminalResizeReflowMaxRows,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct AgentRoleConfig {
-    /// Human-facing role documentation used in spawn tool guidance.
-    /// Required for loaded user-defined roles after deprecated/new metadata precedence resolves.
-    pub description: Option<String>,
-    /// Path to a role-specific config layer.
-    pub config_file: Option<PathBuf>,
-    /// Candidate nicknames for agents spawned with this role.
-    pub nickname_candidates: Option<Vec<String>>,
-}
-
-/// Optional overrides for user configuration (e.g., from CLI flags).
-#[derive(Default, Debug, Clone)]
-pub struct ConfigOverrides {
-    pub model: Option<String>,
-    pub review_model: Option<String>,
-    pub cwd: Option<PathBuf>,
-    pub approval_policy: Option<AskForApproval>,
-    pub approvals_reviewer: Option<ApprovalsReviewer>,
-    pub sandbox_mode: Option<SandboxMode>,
-    pub permission_profile: Option<PermissionProfile>,
-    pub default_permissions: Option<String>,
-    pub model_provider: Option<String>,
-    pub service_tier: Option<Option<String>>,
-    pub context_budget_mode: Option<ContextBudgetMode>,
-    pub config_profile: Option<String>,
-    pub codex_self_exe: Option<PathBuf>,
-    pub codex_linux_sandbox_exe: Option<PathBuf>,
-    pub main_execve_wrapper_exe: Option<PathBuf>,
-    pub default_zsh_path: Option<AbsolutePathBuf>,
-    pub base_instructions: Option<String>,
-    pub developer_instructions: Option<String>,
-    pub personality: Option<Personality>,
-    pub compact_prompt: Option<String>,
-    pub show_raw_agent_reasoning: Option<bool>,
-    pub tools_web_search_request: Option<bool>,
-    pub ephemeral: Option<bool>,
-    pub bypass_hook_trust: Option<bool>,
-    /// Additional directories that should be treated as writable roots for this session.
-    pub additional_writable_roots: Vec<PathBuf>,
-    /// Explicit workspace roots for this session. When set, these replace the
-    /// default cwd-derived workspace roots.
-    pub workspace_roots: Option<Vec<PathBuf>>,
 }

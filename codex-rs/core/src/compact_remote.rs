@@ -223,6 +223,7 @@ async fn run_remote_compact_task_inner_impl(
         // compact endpoint. The checkpoint below records it separately from the next sampling request,
         // whose prompt will repeat current developer/context prefix items.
         let trace_input_history = prepared.history.raw_items().to_vec();
+        // fork seam: task-memory orchestration lives in task_memory.rs / codex-task-memory
         let mut task_memory =
             crate::task_memory::CompactionTaskMemory::from_history(&trace_input_history);
         let tool_router = built_tools(
@@ -323,6 +324,7 @@ async fn run_remote_compact_task_inner_impl(
         });
         sess.replace_compacted_history(new_history, reference_context_item, compacted_item)
             .await;
+        // fork seam: task-memory orchestration lives in task_memory.rs / codex-task-memory
         sess.reset_task_memory_throttle_after_compaction(task_memory.digest())
             .await;
         sess.recompute_token_usage(turn_context).await;
@@ -347,6 +349,7 @@ pub(crate) async fn process_compacted_history(
     // compaction item, but mid-turn compaction keeps the compaction item last for model training.
     let (mut injected_context, world_state_baseline) =
         build_compaction_initial_context(sess, turn_context, initial_context_injection).await;
+    // fork seam: task-memory orchestration lives in task_memory.rs / codex-task-memory
     task_memory.push_into_replacement_context(&mut injected_context);
 
     crate::task_memory::CompactionTaskMemory::remove_from_history(&mut compacted_history);

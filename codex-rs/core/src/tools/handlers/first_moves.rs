@@ -15,6 +15,7 @@ use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::handlers::parse_arguments;
+use crate::tools::registry::PreToolUsePayload;
 use crate::tools::registry::ToolExecutor;
 use crate::tools::registry::ToolHandler;
 use codex_tool_execution_api::FunctionCallError;
@@ -143,6 +144,27 @@ fn json_output(value: Value) -> Result<FunctionToolOutput, FunctionCallError> {
     let mut output = FunctionToolOutput::from_text(text, Some(true));
     output.post_tool_use_response = Some(value);
     Ok(output)
+}
+
+pub(crate) fn maybe_spawn_first_moves_hit(
+    invocation: &ToolInvocation,
+    pre_tool_use_payload: Option<&PreToolUsePayload>,
+    success: bool,
+) {
+    if !success || !invocation.turn.config.first_moves.enabled() {
+        return;
+    }
+    let Some(pre_tool_use_payload) = pre_tool_use_payload else {
+        return;
+    };
+    let tool_input = serde_json::to_string(&pre_tool_use_payload.tool_input)
+        .unwrap_or_else(|_| pre_tool_use_payload.tool_input.to_string());
+    spawn_record_tool_use_hit(
+        invocation.turn.cwd.to_path_buf(),
+        invocation.turn.config.codex_home.to_path_buf(),
+        pre_tool_use_payload.tool_name.name().to_string(),
+        tool_input,
+    );
 }
 
 pub(crate) fn spawn_record_tool_use_hit(

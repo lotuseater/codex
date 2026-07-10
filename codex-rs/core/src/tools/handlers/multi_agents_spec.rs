@@ -1,4 +1,13 @@
+use crate::config::DEFAULT_MULTI_AGENT_V2_DEFAULT_WAIT_TIMEOUT_MS;
+use crate::config::DEFAULT_MULTI_AGENT_V2_MAX_WAIT_TIMEOUT_MS;
+use crate::config::DEFAULT_MULTI_AGENT_V2_MIN_WAIT_TIMEOUT_MS;
+use crate::session::turn_context::TurnContext;
+use crate::tools::handlers::multi_agents_common::DEFAULT_WAIT_TIMEOUT_MS;
+use crate::tools::handlers::multi_agents_common::MAX_WAIT_TIMEOUT_MS;
+use crate::tools::handlers::multi_agents_common::MIN_WAIT_TIMEOUT_MS;
 use codex_protocol::openai_models::ModelPreset;
+use codex_protocol::protocol::MultiAgentVersion;
+use codex_tool_execution_api::ToolsConfig;
 use codex_tools::JsonSchema;
 use codex_tools::ResponsesApiNamespace;
 use codex_tools::ResponsesApiNamespaceTool;
@@ -43,6 +52,64 @@ impl Default for WaitAgentTimeoutOptions {
             default_timeout_ms: super::multi_agents_common::DEFAULT_WAIT_TIMEOUT_MS,
             min_timeout_ms: super::multi_agents_common::MIN_WAIT_TIMEOUT_MS,
             max_timeout_ms: super::multi_agents_common::MAX_WAIT_TIMEOUT_MS,
+        }
+    }
+}
+
+impl WaitAgentTimeoutOptions {
+    // fork-local: two deliberately DISTINCT constructors, one per call site. Do NOT unify them:
+    // `new` reads the upstream `TurnContext` config (multi_agent_v2 struct fields), while
+    // `legacy_defaults` reads the legacy `ToolsConfig` overrides. They select different sources.
+
+    // Upstream `TurnContext` pipeline. Reproduces the former
+    // `tools::spec_plan::wait_agent_timeout_options` body verbatim.
+    pub fn new(turn_context: &TurnContext) -> Self {
+        let multi_agent_v2_enabled = turn_context.multi_agent_version == MultiAgentVersion::V2;
+        if multi_agent_v2_enabled {
+            return Self {
+                default_timeout_ms: turn_context.config.multi_agent_v2.default_wait_timeout_ms,
+                min_timeout_ms: turn_context.config.multi_agent_v2.min_wait_timeout_ms,
+                max_timeout_ms: turn_context.config.multi_agent_v2.max_wait_timeout_ms,
+            };
+        }
+
+        Self {
+            default_timeout_ms: DEFAULT_WAIT_TIMEOUT_MS,
+            min_timeout_ms: MIN_WAIT_TIMEOUT_MS,
+            max_timeout_ms: MAX_WAIT_TIMEOUT_MS,
+        }
+    }
+
+    // Legacy `ToolsConfig` pipeline. Reproduces the former
+    // `tools::spec::collect_tool_router_parts` body verbatim.
+    pub fn legacy_defaults(config: &ToolsConfig) -> Self {
+        let (min_wait_timeout_ms, max_wait_timeout_ms, default_wait_timeout_ms) =
+            if config.multi_agent_v2 {
+                let min_wait_timeout_ms = config
+                    .wait_agent_min_timeout_ms
+                    .unwrap_or(DEFAULT_MULTI_AGENT_V2_MIN_WAIT_TIMEOUT_MS);
+                let max_wait_timeout_ms = config
+                    .wait_agent_max_timeout_ms
+                    .unwrap_or(DEFAULT_MULTI_AGENT_V2_MAX_WAIT_TIMEOUT_MS);
+                let default_wait_timeout_ms = config
+                    .wait_agent_default_timeout_ms
+                    .unwrap_or(DEFAULT_MULTI_AGENT_V2_DEFAULT_WAIT_TIMEOUT_MS);
+                (
+                    min_wait_timeout_ms,
+                    max_wait_timeout_ms,
+                    default_wait_timeout_ms,
+                )
+            } else {
+                (
+                    MIN_WAIT_TIMEOUT_MS,
+                    MAX_WAIT_TIMEOUT_MS,
+                    DEFAULT_WAIT_TIMEOUT_MS,
+                )
+            };
+        Self {
+            default_timeout_ms: default_wait_timeout_ms,
+            min_timeout_ms: min_wait_timeout_ms,
+            max_timeout_ms: max_wait_timeout_ms,
         }
     }
 }

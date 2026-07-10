@@ -5,11 +5,9 @@
 
 use super::resize_reflow::trailing_run_start;
 use super::*;
-use crate::app_event::PromptReductionTuningField;
 use crate::app_event::RealtimeAudioDeviceKind;
 use crate::config_update::format_config_error;
 use crate::external_agent_config_migration_flow::ExternalAgentConfigMigrationFlowOutcome;
-use codex_config::types::PromptReductionModeToml;
 #[cfg(target_os = "windows")]
 use codex_config::types::WindowsSandboxModeToml;
 
@@ -2261,375 +2259,49 @@ impl App {
                 tui.frame_requester().schedule_frame();
             }
             AppEvent::PersistActionPromptMode { mode_token } => {
-                let edit =
-                    crate::legacy_core::config::edit::action_optimization_mode_edit(&mode_token);
-                match ConfigEditsBuilder::new(&self.config.codex_home)
-                    .with_edits([edit])
-                    .apply()
-                    .await
-                {
-                    Ok(()) => {
-                        if let Some(mode) =
-                            crate::chatwidget::prompt_injection::action_mode_from_token(&mode_token)
-                        {
-                            self.config.action_optimization_instructions.mode = mode;
-                        }
-                    }
-                    Err(err) => {
-                        tracing::error!(error = %err, "failed to persist action prompt mode");
-                        self.chat_widget
-                            .add_error_message(format!("Failed to save action prompt mode: {err}"));
-                    }
-                }
+                event_dispatch_local::on_persist_action_prompt_mode(self, mode_token).await
             }
             AppEvent::PersistActionPromptVariant { variant } => {
-                let edit =
-                    crate::legacy_core::config::edit::action_optimization_variant_edit(&variant);
-                match ConfigEditsBuilder::new(&self.config.codex_home)
-                    .with_edits([edit])
-                    .apply()
-                    .await
-                {
-                    Ok(()) => {
-                        if let Some(value) =
-                            crate::chatwidget::prompt_injection::action_variant_from_token(&variant)
-                        {
-                            self.config.action_optimization_instructions.variant = value;
-                        }
-                    }
-                    Err(err) => {
-                        tracing::error!(error = %err, "failed to persist action prompt variant");
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to save action prompt variant: {err}"
-                        ));
-                    }
-                }
+                event_dispatch_local::on_persist_action_prompt_variant(self, variant).await
             }
             AppEvent::PersistActionPromptCustomText { custom_text } => {
-                let edit = crate::legacy_core::config::edit::action_optimization_custom_text_edit(
-                    custom_text.as_deref(),
-                );
-                match ConfigEditsBuilder::new(&self.config.codex_home)
-                    .with_edits([edit])
-                    .apply()
-                    .await
-                {
-                    Ok(()) => {
-                        self.config.action_optimization_instructions.custom_text =
-                            custom_text.clone();
-                    }
-                    Err(err) => {
-                        tracing::error!(error = %err, "failed to persist action prompt custom text");
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to save action prompt custom text: {err}"
-                        ));
-                    }
-                }
+                event_dispatch_local::on_persist_action_prompt_custom_text(self, custom_text).await
             }
             AppEvent::PersistBatchPromptMode { mode_token } => {
-                let edit =
-                    crate::legacy_core::config::edit::batch_mini_programming_mode_edit(&mode_token);
-                match ConfigEditsBuilder::new(&self.config.codex_home)
-                    .with_edits([edit])
-                    .apply()
-                    .await
-                {
-                    Ok(()) => {
-                        if let Some(mode) =
-                            crate::chatwidget::prompt_injection::batch_mode_from_token(&mode_token)
-                        {
-                            self.config.batch_mini_programming_instructions.mode = mode;
-                        }
-                    }
-                    Err(err) => {
-                        tracing::error!(error = %err, "failed to persist batch prompt mode");
-                        self.chat_widget
-                            .add_error_message(format!("Failed to save batch prompt mode: {err}"));
-                    }
-                }
+                event_dispatch_local::on_persist_batch_prompt_mode(self, mode_token).await
             }
             AppEvent::PersistBatchPromptVariant { variant } => {
-                let edit =
-                    crate::legacy_core::config::edit::batch_mini_programming_variant_edit(&variant);
-                match ConfigEditsBuilder::new(&self.config.codex_home)
-                    .with_edits([edit])
-                    .apply()
-                    .await
-                {
-                    Ok(()) => {
-                        if let Some(value) =
-                            crate::chatwidget::prompt_injection::batch_variant_from_token(&variant)
-                        {
-                            self.config.batch_mini_programming_instructions.variant = value;
-                        }
-                    }
-                    Err(err) => {
-                        tracing::error!(error = %err, "failed to persist batch prompt variant");
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to save batch prompt variant: {err}"
-                        ));
-                    }
-                }
+                event_dispatch_local::on_persist_batch_prompt_variant(self, variant).await
             }
             AppEvent::PersistBatchPromptCustomText { custom_text } => {
-                let edit =
-                    crate::legacy_core::config::edit::batch_mini_programming_custom_text_edit(
-                        custom_text.as_deref(),
-                    );
-                match ConfigEditsBuilder::new(&self.config.codex_home)
-                    .with_edits([edit])
-                    .apply()
-                    .await
-                {
-                    Ok(()) => {
-                        self.config.batch_mini_programming_instructions.custom_text =
-                            custom_text.clone();
-                    }
-                    Err(err) => {
-                        tracing::error!(error = %err, "failed to persist batch prompt custom text");
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to save batch prompt custom text: {err}"
-                        ));
-                    }
-                }
+                event_dispatch_local::on_persist_batch_prompt_custom_text(self, custom_text).await
             }
             AppEvent::PersistDelegatePromptEnabled { enabled } => {
-                let edit = crate::legacy_core::config::edit::multi_agent_v2_usage_hint_enabled_edit(
-                    enabled,
-                );
-                match ConfigEditsBuilder::new(&self.config.codex_home)
-                    .with_edits([edit])
-                    .apply()
-                    .await
-                {
-                    Ok(()) => {
-                        self.config.multi_agent_v2.usage_hint_enabled = enabled;
-                    }
-                    Err(err) => {
-                        tracing::error!(error = %err, "failed to persist delegate prompt enabled");
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to save delegate prompt enabled: {err}"
-                        ));
-                    }
-                }
+                event_dispatch_local::on_persist_delegate_prompt_enabled(self, enabled).await
             }
             AppEvent::PersistDelegatePromptK { k } => {
-                let edit = crate::legacy_core::config::edit::multi_agent_v2_delegation_k_edit(k);
-                match ConfigEditsBuilder::new(&self.config.codex_home)
-                    .with_edits([edit])
-                    .apply()
-                    .await
-                {
-                    Ok(()) => {
-                        self.config.multi_agent_v2.plan_token_economy_delegation_k = k;
-                    }
-                    Err(err) => {
-                        tracing::error!(error = %err, "failed to persist delegate prompt K");
-                        self.chat_widget
-                            .add_error_message(format!("Failed to save delegate prompt K: {err}"));
-                    }
-                }
+                event_dispatch_local::on_persist_delegate_prompt_k(self, k).await
             }
             AppEvent::PersistDelegatePromptRootText { text } => {
-                let edit =
-                    crate::legacy_core::config::edit::multi_agent_v2_root_usage_hint_text_edit(
-                        text.as_deref(),
-                    );
-                match ConfigEditsBuilder::new(&self.config.codex_home)
-                    .with_edits([edit])
-                    .apply()
-                    .await
-                {
-                    Ok(()) => {
-                        self.config.multi_agent_v2.root_agent_usage_hint_text = text.clone();
-                    }
-                    Err(err) => {
-                        tracing::error!(error = %err, "failed to persist delegate prompt root text");
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to save delegate prompt root text: {err}"
-                        ));
-                    }
-                }
+                event_dispatch_local::on_persist_delegate_prompt_root_text(self, text).await
             }
             AppEvent::PersistDelegatePromptSubText { text } => {
-                let edit =
-                    crate::legacy_core::config::edit::multi_agent_v2_subagent_usage_hint_text_edit(
-                        text.as_deref(),
-                    );
-                match ConfigEditsBuilder::new(&self.config.codex_home)
-                    .with_edits([edit])
-                    .apply()
-                    .await
-                {
-                    Ok(()) => {
-                        self.config.multi_agent_v2.subagent_usage_hint_text = text.clone();
-                    }
-                    Err(err) => {
-                        tracing::error!(error = %err, "failed to persist delegate prompt sub text");
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to save delegate prompt sub text: {err}"
-                        ));
-                    }
-                }
+                event_dispatch_local::on_persist_delegate_prompt_sub_text(self, text).await
             }
             AppEvent::PersistAutoCompactEnabled { enabled } => {
-                let edit = crate::legacy_core::config::edit::auto_compact_enabled_edit(enabled);
-                match ConfigEditsBuilder::new(&self.config.codex_home)
-                    .with_edits([edit])
-                    .apply()
-                    .await
-                {
-                    Ok(()) => {
-                        self.config.auto_compact_enabled = enabled;
-                    }
-                    Err(err) => {
-                        tracing::error!(error = %err, "failed to persist auto compact enabled");
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to save auto compact enabled: {err}"
-                        ));
-                    }
-                }
+                event_dispatch_local::on_persist_auto_compact_enabled(self, enabled).await
             }
             AppEvent::PersistAutoCompactPercent { percent } => {
-                let edit = crate::legacy_core::config::edit::model_compact_percentage_edit(percent);
-                match ConfigEditsBuilder::new(&self.config.codex_home)
-                    .with_edits([edit])
-                    .apply()
-                    .await
-                {
-                    Ok(()) => {
-                        self.config.model_compact_percentage = percent;
-                    }
-                    Err(err) => {
-                        tracing::error!(error = %err, "failed to persist auto compact percent");
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to save auto compact percent: {err}"
-                        ));
-                    }
-                }
+                event_dispatch_local::on_persist_auto_compact_percent(self, percent).await
             }
             AppEvent::PersistAutoCompactPrompt { prompt } => {
-                let edit = crate::legacy_core::config::edit::compact_prompt_edit(prompt.as_deref());
-                match ConfigEditsBuilder::new(&self.config.codex_home)
-                    .with_edits([edit])
-                    .apply()
-                    .await
-                {
-                    Ok(()) => {
-                        self.config.compact_prompt = prompt.clone();
-                    }
-                    Err(err) => {
-                        tracing::error!(error = %err, "failed to persist auto compact prompt");
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to save auto compact prompt: {err}"
-                        ));
-                    }
-                }
+                event_dispatch_local::on_persist_auto_compact_prompt(self, prompt).await
             }
             AppEvent::PersistPromptReductionMode { mode } => {
-                let mode_str = match mode {
-                    PromptReductionModeToml::Off => "off",
-                    PromptReductionModeToml::Conservative => "conservative",
-                    PromptReductionModeToml::RecencyWeighted => "recency_weighted",
-                };
-                let edit = crate::legacy_core::config::edit::ConfigEdit::SetPath {
-                    segments: vec!["prompt_reduction_mode".to_string()],
-                    value: toml_edit::value(mode_str),
-                };
-                match ConfigEditsBuilder::new(&self.config.codex_home)
-                    .with_edits([edit])
-                    .apply()
-                    .await
-                {
-                    Ok(()) => {
-                        self.config.prompt_reduction_mode = mode;
-                    }
-                    Err(err) => {
-                        tracing::error!(error = %err, "failed to persist prompt reduction mode");
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to save prompt reduction mode: {err}"
-                        ));
-                    }
-                }
+                event_dispatch_local::on_persist_prompt_reduction_mode(self, mode).await
             }
             AppEvent::PersistPromptReductionTuning { field } => {
-                let edit = match &field {
-                    PromptReductionTuningField::PreserveRecentItems(n) => ConfigEdit::SetPath {
-                        segments: vec![
-                            "prompt_reduction".to_string(),
-                            "preserve_recent_items".to_string(),
-                        ],
-                        value: (*n as i64).into(),
-                    },
-                    PromptReductionTuningField::RecentWindowItems(n) => ConfigEdit::SetPath {
-                        segments: vec![
-                            "prompt_reduction".to_string(),
-                            "recent_window_items".to_string(),
-                        ],
-                        value: (*n as i64).into(),
-                    },
-                    PromptReductionTuningField::MidWindowItems(n) => ConfigEdit::SetPath {
-                        segments: vec![
-                            "prompt_reduction".to_string(),
-                            "mid_window_items".to_string(),
-                        ],
-                        value: (*n as i64).into(),
-                    },
-                    PromptReductionTuningField::OldThresholdMult(v) => ConfigEdit::SetPath {
-                        segments: vec![
-                            "prompt_reduction".to_string(),
-                            "old_threshold_mult".to_string(),
-                        ],
-                        value: (f64::from(*v)).into(),
-                    },
-                    PromptReductionTuningField::OldExcerptMult(v) => ConfigEdit::SetPath {
-                        segments: vec![
-                            "prompt_reduction".to_string(),
-                            "old_excerpt_mult".to_string(),
-                        ],
-                        value: (f64::from(*v)).into(),
-                    },
-                    PromptReductionTuningField::DisabledCategories(None) => ConfigEdit::ClearPath {
-                        segments: vec![
-                            "prompt_reduction".to_string(),
-                            "disabled_categories".to_string(),
-                        ],
-                    },
-                    PromptReductionTuningField::DisabledCategories(Some(cats)) => {
-                        let arr: toml_edit::Array = cats.iter().map(|s| s.as_str()).collect();
-                        ConfigEdit::SetPath {
-                            segments: vec![
-                                "prompt_reduction".to_string(),
-                                "disabled_categories".to_string(),
-                            ],
-                            value: toml_edit::Item::Value(arr.into()),
-                        }
-                    }
-                    PromptReductionTuningField::MinReduceChars(n) => ConfigEdit::SetPath {
-                        segments: vec![
-                            "prompt_reduction".to_string(),
-                            "min_reduce_chars".to_string(),
-                        ],
-                        value: (*n as i64).into(),
-                    },
-                    PromptReductionTuningField::MinSavedTokens(n) => ConfigEdit::SetPath {
-                        segments: vec![
-                            "prompt_reduction".to_string(),
-                            "min_saved_tokens".to_string(),
-                        ],
-                        value: (*n as i64).into(),
-                    },
-                };
-                if let Err(err) = ConfigEditsBuilder::new(&self.config.codex_home)
-                    .with_edits([edit])
-                    .apply()
-                    .await
-                {
-                    tracing::error!(error = %err, "failed to persist prompt reduction tuning");
-                    self.chat_widget.add_error_message(format!(
-                        "Failed to save prompt reduction tuning: {err}"
-                    ));
-                }
+                event_dispatch_local::on_persist_prompt_reduction_tuning(self, field).await
             }
             AppEvent::OpenKeymapActionMenu { context, action } => {
                 self.chat_widget

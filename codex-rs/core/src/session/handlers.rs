@@ -165,7 +165,6 @@ async fn settings_update_from_thread_settings(
         personality,
         app_server_client_name: None,
         app_server_client_version: None,
-        fork_features: Default::default(),
     }
 }
 

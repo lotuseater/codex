@@ -49,11 +49,6 @@ use crate::session::TurnInput;
 use crate::session::context_budget_adapter::PostSamplingCompactionDecision;
 use crate::session::context_budget_adapter::auto_compact_token_limit;
 use crate::session::context_budget_adapter::post_sampling_compaction_decision;
-use crate::session::desktop_automation::desktop_automation_context_for_prompt;
-use crate::session::desktop_automation::merge_desktop_automation_context;
-use crate::session::first_moves::first_moves_context_for_fresh_turn;
-use crate::session::first_moves::merge_first_moves_context;
-use crate::session::first_moves::spawn_repo_context_scout_shadow_for_fresh_turn;
 use crate::session::session::Session;
 use crate::session::step_context::StepContext;
 use crate::session::turn_context::TurnContext;
@@ -118,7 +113,6 @@ use codex_protocol::protocol::AgentReasoningSectionBreakEvent;
 use codex_protocol::protocol::CodexErrorInfo;
 use codex_protocol::protocol::ErrorEvent;
 use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::MultiAgentVersion;
 use codex_protocol::protocol::PlanDeltaEvent;
 use codex_protocol::protocol::ReasoningContentDeltaEvent;
 use codex_protocol::protocol::ReasoningRawContentDeltaEvent;
@@ -148,15 +142,12 @@ use tracing::trace;
 use tracing::trace_span;
 use tracing::warn;
 
-pub(crate) mod plan_mode;
+mod fresh_turn_context;
 pub(crate) mod prompt_reduction;
 
-use plan_mode::*;
 use prompt_reduction::*;
 
 // Preserve external paths that referenced these items as `turn::Thing`.
-pub(crate) use plan_mode::AssistantMessageStreamParsers;
-pub(crate) use plan_mode::realtime_text_for_event;
 pub(crate) use prompt_reduction::build_prompt;
 
 /// Takes initial turn input and runs a loop where, at each sampling request,
@@ -239,31 +230,11 @@ pub(crate) async fn run_turn(
         return Ok(None);
     }
     let mut can_drain_pending_input = input.is_empty();
-    // fork-local: gather first-moves / repo-context-scout / desktop-automation /
-    // blackboard context for a fresh user turn and fold it into the recorded input.
-    let prompt = user_prompt_messages(&input).join("\n");
-    let mut additional_contexts = Vec::new();
-    if !prompt.is_empty() {
-        spawn_repo_context_scout_shadow_for_fresh_turn(&sess, &turn_context, prompt.as_str()).await;
-        let first_moves_context =
-            first_moves_context_for_fresh_turn(&sess, &turn_context, prompt.as_str()).await;
-        let desktop_automation_context = desktop_automation_context_for_prompt(
-            turn_context.config.desktop_automation,
-            prompt.as_str(),
-        );
-        let blackboard_context = sess
-            .services
-            .blackboard
-            .context_for_turn(turn_context.cwd.as_path(), prompt.as_str())
+    // fork-local: gather the fresh-turn (first-moves / repo-context-scout /
+    // desktop-automation / blackboard) additional contexts behind the fork seam.
+    let mut additional_contexts =
+        fresh_turn_context::gather_fresh_turn_additional_contexts(&sess, &turn_context, &input)
             .await;
-        additional_contexts = merge_desktop_automation_context(
-            desktop_automation_context,
-            merge_first_moves_context(first_moves_context, additional_contexts),
-        );
-        if let Some(blackboard_context) = blackboard_context {
-            additional_contexts.push(blackboard_context);
-        }
-    }
     // fork-local: at the start of a fresh, decomposable user turn, fuse the
     // auto-coordinator framing TASK-ADJACENT (folded into the user turn at
     // run_hooks_and_record_inputs below), gated by multi-agent V2 + the
@@ -272,8 +243,11 @@ pub(crate) async fn run_turn(
     // nothing fuses here and the pending-input drain in the loop below gets the
     // chance instead; the shared bool bounds the framing to at most one copy per
     // run_turn.
-    let mut framing_fused =
-        fuse_auto_coordinator_framing(&turn_context, &mut input, &mut additional_contexts);
+    let mut framing_fused = fresh_turn_context::fuse_auto_coordinator_framing(
+        &turn_context,
+        &mut input,
+        &mut additional_contexts,
+    );
     let initial_input_outcome = run_hooks_and_record_inputs(
         &sess,
         &turn_context,
@@ -353,7 +327,7 @@ pub(crate) async fn run_turn(
             // keeps the framing to at most one fused copy per run_turn.
             let mut pending_contexts: Vec<String> = Vec::new();
             if !framing_fused {
-                framing_fused = fuse_auto_coordinator_framing(
+                framing_fused = fresh_turn_context::fuse_auto_coordinator_framing(
                     &turn_context,
                     &mut pending_input,
                     &mut pending_contexts,
@@ -691,79 +665,6 @@ pub(crate) async fn run_turn(
     }
 
     Ok(last_agent_message)
-}
-
-/// fork-local: fuse the auto-coordinator framing into a turn's input, gated by
-/// multi-agent V2 + the resolved AutoCoordinatorMode heuristic over the input's
-/// user text. On the user channel the framing is appended as a trailing text
-/// block on the last user item (recorded as one user message by
-/// `run_hooks_and_record_inputs`); on the developer channel it is pushed onto
-/// `additional_contexts` instead. Returns `false` without side effects when the
-/// framing should not fire (no user text in `input`, non-V2 session,
-/// coordinator off, or a non-decomposable prompt under `Auto`); returns `true`
-/// when it fused, so `run_turn` can bound the framing to at most one copy per
-/// turn across the fresh-input and pending-drain call sites.
-fn fuse_auto_coordinator_framing(
-    turn_context: &TurnContext,
-    input: &mut [TurnInput],
-    additional_contexts: &mut Vec<String>,
-) -> bool {
-    let prompt = user_prompt_messages(input).join("\n");
-    if prompt.is_empty() {
-        return false;
-    }
-    if turn_context.multi_agent_version != MultiAgentVersion::V2
-        || !turn_context
-            .config
-            .multi_agent_v2
-            .should_inject_auto_coordinator(prompt.as_str())
-    {
-        return false;
-    }
-    if turn_context
-        .config
-        .multi_agent_v2
-        .inject_delegation_as_user()
-    {
-        // User channel: fuse the framing into the SAME role:"user" prompt so
-        // the model obeys it (a developer-role message is discounted). Append
-        // it as a trailing text block on the user turn's content vec, recorded
-        // as one user message by run_hooks_and_record_inputs.
-        if let Some(content) = input.iter_mut().rev().find_map(|item| match item {
-            TurnInput::UserInput { content, .. } => Some(content),
-            _ => None,
-        }) {
-            content.push(UserInput::Text {
-                text: codex_agent_policy::AUTO_COORDINATOR_FRAMING_TEXT.to_string(),
-                text_elements: Vec::new(),
-            });
-        }
-    } else {
-        additional_contexts.push(codex_agent_policy::AUTO_COORDINATOR_FRAMING_TEXT.to_string());
-    }
-    true
-}
-
-fn user_prompt_messages(input: &[TurnInput]) -> Vec<String> {
-    flattened_user_input(input)
-        .into_iter()
-        .filter_map(|item| match item {
-            UserInput::Text { text, .. } => Some(text),
-            _ => None,
-        })
-        .collect()
-}
-
-fn flattened_user_input(input: &[TurnInput]) -> Vec<UserInput> {
-    input
-        .iter()
-        .filter_map(|item| match item {
-            TurnInput::UserInput { content, .. } => Some(content.as_slice()),
-            TurnInput::ResponseItem(_) | TurnInput::InterAgentCommunication(_) => None,
-        })
-        .flatten()
-        .cloned()
-        .collect()
 }
 
 #[derive(Default)]
@@ -1971,26 +1872,15 @@ struct SamplingRequestResult {
     last_agent_message: Option<String>,
 }
 
-// fork-local: plan-mode streaming state and helpers live in the `plan_mode`
-// submodule (`pub(crate) mod plan_mode;` + `use plan_mode::*` above), which is
-// the fork's authoritative home for this code. Upstream instead defines the
-// same state/structs/impls and helper fns inline here; we intentionally keep
-// the fork's empty side and DROP upstream's inline block to avoid duplicate
-// definitions colliding with the `use plan_mode::*` glob.
+// fork-local: plan-mode streaming state and helpers (ProposedPlanItemState /
+// PlanModeStreamState / AssistantMessageStreamParsers + impls, and the
+// emit/flush/handle helper fns this file's body calls) were folded inline from
+// the former `plan_mode` submodule; their definitions now live at the end of
+// this file.
 //
-// plan_mode.rs is a COMPLETE extraction: it provides ProposedPlanItemState /
-// PlanModeStreamState / AssistantMessageStreamParsers (+ their impls), the
-// helpers (handle_plan_segments / maybe_complete_plan_item_from_message /
-// emit_agent_message_in_plan_mode / emit_turn_item_in_plan_mode /
-// maybe_emit_pending_agent_message_start), AND the four `pub(super)` free fns
-// this file's body calls (emit_streamed_assistant_text_delta,
-// flush_assistant_text_segments_for_item, flush_assistant_text_segments_all,
-// handle_assistant_item_done_in_plan_mode) — all reachable here via the glob.
-//
-// NOTE for plan_mode.rs's owner: upstream's newer plan-mode refactor
-// (finalize_non_tool_response_item / turn_store / SubAgentActivity arm) is NOT
-// present in plan_mode.rs and should be ported into it if that behavior is
-// wanted; it was intentionally not carried over inline here.
+// NOTE: upstream's newer plan-mode refactor (finalize_non_tool_response_item /
+// turn_store / SubAgentActivity arm) is NOT present here and should be ported
+// in if that behavior is wanted; it was intentionally not carried over.
 
 #[instrument(level = "trace", skip_all)]
 async fn drain_in_flight(
@@ -2530,4 +2420,536 @@ pub(crate) fn get_last_assistant_message_from_turn(responses: &[ResponseItem]) -
         }
     }
     None
+}
+
+// fork-local: plan-mode streaming state and helpers, folded inline from the
+// former `session/turn/plan_mode.rs` submodule (arch-refactor extraction
+// 5ea54dcac8). Bodies are byte-identical to that file; only its
+// `use super::*;` header was dropped, since these items now live directly
+// in `turn`.
+
+/// Ephemeral per-response state for streaming a single proposed plan.
+/// This is intentionally not persisted or stored in session/state since it
+/// only exists while a response is actively streaming. The final plan text
+/// is extracted from the completed assistant message.
+/// Tracks a single proposed plan item across a streaming response.
+struct ProposedPlanItemState {
+    item_id: String,
+    started: bool,
+    completed: bool,
+}
+
+/// Aggregated state used only while streaming a plan-mode response.
+/// Includes per-item parsers, deferred agent message bookkeeping, and the plan item lifecycle.
+pub(super) struct PlanModeStreamState {
+    /// Agent message items started by the model but deferred until we see non-plan text.
+    pub(crate) pending_agent_message_items: HashMap<String, TurnItem>,
+    /// Agent message items whose start notification has been emitted.
+    started_agent_message_items: HashSet<String>,
+    /// Leading whitespace buffered until we see non-whitespace text for an item.
+    leading_whitespace_by_item: HashMap<String, String>,
+    /// Tracks plan item lifecycle while streaming plan output.
+    plan_item_state: ProposedPlanItemState,
+}
+
+impl PlanModeStreamState {
+    pub(super) fn new(turn_id: &str) -> Self {
+        Self {
+            pending_agent_message_items: HashMap::new(),
+            started_agent_message_items: HashSet::new(),
+            leading_whitespace_by_item: HashMap::new(),
+            plan_item_state: ProposedPlanItemState::new(turn_id),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct AssistantMessageStreamParsers {
+    plan_mode: bool,
+    parsers_by_item: HashMap<String, AssistantTextStreamParser>,
+}
+
+pub(crate) type ParsedAssistantTextDelta = AssistantTextChunk;
+
+impl AssistantMessageStreamParsers {
+    pub(crate) fn new(plan_mode: bool) -> Self {
+        Self {
+            plan_mode,
+            parsers_by_item: HashMap::new(),
+        }
+    }
+
+    fn parser_mut(&mut self, item_id: &str) -> &mut AssistantTextStreamParser {
+        let plan_mode = self.plan_mode;
+        self.parsers_by_item
+            .entry(item_id.to_string())
+            .or_insert_with(|| AssistantTextStreamParser::new(plan_mode))
+    }
+
+    pub(crate) fn seed_item_text(&mut self, item_id: &str, text: &str) -> ParsedAssistantTextDelta {
+        if text.is_empty() {
+            return ParsedAssistantTextDelta::default();
+        }
+        self.parser_mut(item_id).push_str(text)
+    }
+
+    pub(crate) fn parse_delta(&mut self, item_id: &str, delta: &str) -> ParsedAssistantTextDelta {
+        self.parser_mut(item_id).push_str(delta)
+    }
+
+    pub(crate) fn finish_item(&mut self, item_id: &str) -> ParsedAssistantTextDelta {
+        let Some(mut parser) = self.parsers_by_item.remove(item_id) else {
+            return ParsedAssistantTextDelta::default();
+        };
+        parser.finish()
+    }
+
+    fn drain_finished(&mut self) -> Vec<(String, ParsedAssistantTextDelta)> {
+        let parsers_by_item = std::mem::take(&mut self.parsers_by_item);
+        parsers_by_item
+            .into_iter()
+            .map(|(item_id, mut parser)| (item_id, parser.finish()))
+            .collect()
+    }
+}
+
+impl ProposedPlanItemState {
+    fn new(turn_id: &str) -> Self {
+        Self {
+            item_id: format!("{turn_id}-plan"),
+            started: false,
+            completed: false,
+        }
+    }
+
+    async fn start(&mut self, sess: &Session, turn_context: &TurnContext) {
+        if self.started || self.completed {
+            return;
+        }
+        self.started = true;
+        let item = TurnItem::Plan(PlanItem {
+            id: self.item_id.clone(),
+            text: String::new(),
+        });
+        sess.emit_turn_item_started(turn_context, &item).await;
+    }
+
+    async fn push_delta(&mut self, sess: &Session, turn_context: &TurnContext, delta: &str) {
+        if self.completed {
+            return;
+        }
+        if delta.is_empty() {
+            return;
+        }
+        let event = PlanDeltaEvent {
+            thread_id: sess.thread_id.to_string(),
+            turn_id: turn_context.sub_id.clone(),
+            item_id: self.item_id.clone(),
+            delta: delta.to_string(),
+        };
+        sess.send_event(turn_context, EventMsg::PlanDelta(event))
+            .await;
+    }
+
+    async fn complete_with_text(
+        &mut self,
+        sess: &Session,
+        turn_context: &TurnContext,
+        text: String,
+    ) {
+        if self.completed || !self.started {
+            return;
+        }
+        self.completed = true;
+        let item = TurnItem::Plan(PlanItem {
+            id: self.item_id.clone(),
+            text,
+        });
+        sess.emit_turn_item_completed(turn_context, item).await;
+    }
+}
+
+/// In plan mode we defer agent message starts until the parser emits non-plan
+/// text. The parser buffers each line until it can rule out a tag prefix, so
+/// plan-only outputs never show up as empty assistant messages.
+async fn maybe_emit_pending_agent_message_start(
+    sess: &Session,
+    turn_context: &TurnContext,
+    state: &mut PlanModeStreamState,
+    item_id: &str,
+) {
+    if state.started_agent_message_items.contains(item_id) {
+        return;
+    }
+    if let Some(item) = state.pending_agent_message_items.remove(item_id) {
+        sess.emit_turn_item_started(turn_context, &item).await;
+        state
+            .started_agent_message_items
+            .insert(item_id.to_string());
+    }
+}
+
+/// Agent messages are text-only today; concatenate all text entries.
+fn agent_message_text(item: &codex_protocol::items::AgentMessageItem) -> String {
+    item.content
+        .iter()
+        .map(|entry| match entry {
+            codex_protocol::items::AgentMessageContent::Text { text } => text.as_str(),
+        })
+        .collect()
+}
+
+pub(crate) fn realtime_text_for_event(msg: &EventMsg) -> Option<String> {
+    match msg {
+        EventMsg::AgentMessage(event) => Some(event.message.clone()),
+        EventMsg::ItemCompleted(event) => match &event.item {
+            TurnItem::AgentMessage(item) => Some(agent_message_text(item)),
+            _ => None,
+        },
+        EventMsg::Error(_)
+        | EventMsg::Warning(_)
+        | EventMsg::GuardianWarning(_)
+        | EventMsg::RealtimeConversationStarted(_)
+        | EventMsg::RealtimeConversationSdp(_)
+        | EventMsg::RealtimeConversationRealtime(_)
+        | EventMsg::RealtimeConversationClosed(_)
+        | EventMsg::ModelReroute(_)
+        | EventMsg::ModelVerification(_)
+        | EventMsg::TurnModerationMetadata(_)
+        | EventMsg::ContextCompacted(_)
+        | EventMsg::ThreadRolledBack(_)
+        | EventMsg::TurnStarted(_)
+        | EventMsg::TurnComplete(_)
+        | EventMsg::TokenCount(_)
+        | EventMsg::UserMessage(_)
+        | EventMsg::AgentReasoning(_)
+        | EventMsg::AgentReasoningRawContent(_)
+        | EventMsg::AgentReasoningSectionBreak(_)
+        | EventMsg::SessionConfigured(_)
+        | EventMsg::ThreadGoalUpdated(_)
+        | EventMsg::McpStartupUpdate(_)
+        | EventMsg::McpStartupComplete(_)
+        | EventMsg::McpToolCallBegin(_)
+        | EventMsg::McpToolCallEnd(_)
+        | EventMsg::WebSearchBegin(_)
+        | EventMsg::WebSearchEnd(_)
+        | EventMsg::ExecCommandBegin(_)
+        | EventMsg::ExecCommandOutputDelta(_)
+        | EventMsg::TerminalInteraction(_)
+        | EventMsg::ExecCommandEnd(_)
+        | EventMsg::PatchApplyBegin(_)
+        | EventMsg::PatchApplyUpdated(_)
+        | EventMsg::PatchApplyEnd(_)
+        | EventMsg::ImageGenerationBegin(_)
+        | EventMsg::ImageGenerationEnd(_)
+        | EventMsg::ViewImageToolCall(_)
+        | EventMsg::ExecApprovalRequest(_)
+        | EventMsg::RequestPermissions(_)
+        | EventMsg::RequestUserInput(_)
+        | EventMsg::DynamicToolCallRequest(_)
+        | EventMsg::DynamicToolCallResponse(_)
+        | EventMsg::GuardianAssessment(_)
+        | EventMsg::ElicitationRequest(_)
+        | EventMsg::ApplyPatchApprovalRequest(_)
+        | EventMsg::DeprecationNotice(_)
+        | EventMsg::StreamError(_)
+        | EventMsg::TurnDiff(_)
+        | EventMsg::RealtimeConversationListVoicesResponse(_)
+        | EventMsg::PlanUpdate(_)
+        | EventMsg::TurnAborted(_)
+        | EventMsg::ShutdownComplete
+        | EventMsg::EnteredReviewMode(_)
+        | EventMsg::ExitedReviewMode(_)
+        | EventMsg::RawResponseItem(_)
+        | EventMsg::ItemStarted(_)
+        | EventMsg::HookStarted(_)
+        | EventMsg::HookCompleted(_)
+        | EventMsg::AgentMessageContentDelta(_)
+        | EventMsg::PlanDelta(_)
+        | EventMsg::ReasoningContentDelta(_)
+        | EventMsg::ReasoningRawContentDelta(_)
+        | EventMsg::CollabAgentSpawnBegin(_)
+        | EventMsg::CollabAgentSpawnEnd(_)
+        | EventMsg::CollabAgentInteractionBegin(_)
+        | EventMsg::CollabAgentInteractionEnd(_)
+        | EventMsg::CollabWaitingBegin(_)
+        | EventMsg::CollabWaitingEnd(_)
+        | EventMsg::CollabCloseBegin(_)
+        | EventMsg::CollabCloseEnd(_)
+        | EventMsg::CollabResumeBegin(_)
+        | EventMsg::CollabResumeEnd(_)
+        | EventMsg::CollabCompactBegin(_)
+        | EventMsg::CollabCompactEnd(_)
+        | EventMsg::CollabRestartBegin(_)
+        | EventMsg::CollabRestartEnd(_)
+        | EventMsg::SubAgentActivity(_)
+        | EventMsg::SafetyBuffering(_)
+        | EventMsg::ThreadSettingsApplied(_) => None,
+    }
+}
+
+/// Split the stream into normal assistant text vs. proposed plan content.
+/// Normal text becomes AgentMessage deltas; plan content becomes PlanDelta +
+/// TurnItem::Plan.
+async fn handle_plan_segments(
+    sess: &Session,
+    turn_context: &TurnContext,
+    state: &mut PlanModeStreamState,
+    item_id: &str,
+    segments: Vec<ProposedPlanSegment>,
+) {
+    for segment in segments {
+        match segment {
+            ProposedPlanSegment::Normal(delta) => {
+                if delta.is_empty() {
+                    continue;
+                }
+                let has_non_whitespace = delta.chars().any(|ch| !ch.is_whitespace());
+                if !has_non_whitespace && !state.started_agent_message_items.contains(item_id) {
+                    let entry = state
+                        .leading_whitespace_by_item
+                        .entry(item_id.to_string())
+                        .or_default();
+                    entry.push_str(&delta);
+                    continue;
+                }
+                let delta = if !state.started_agent_message_items.contains(item_id) {
+                    if let Some(prefix) = state.leading_whitespace_by_item.remove(item_id) {
+                        format!("{prefix}{delta}")
+                    } else {
+                        delta
+                    }
+                } else {
+                    delta
+                };
+                maybe_emit_pending_agent_message_start(sess, turn_context, state, item_id).await;
+
+                let event = AgentMessageContentDeltaEvent {
+                    thread_id: sess.thread_id.to_string(),
+                    turn_id: turn_context.sub_id.clone(),
+                    item_id: item_id.to_string(),
+                    delta,
+                };
+                sess.send_event(turn_context, EventMsg::AgentMessageContentDelta(event))
+                    .await;
+            }
+            ProposedPlanSegment::ProposedPlanStart => {
+                if !state.plan_item_state.completed {
+                    state.plan_item_state.start(sess, turn_context).await;
+                }
+            }
+            ProposedPlanSegment::ProposedPlanDelta(delta) => {
+                if !state.plan_item_state.completed {
+                    if !state.plan_item_state.started {
+                        state.plan_item_state.start(sess, turn_context).await;
+                    }
+                    state
+                        .plan_item_state
+                        .push_delta(sess, turn_context, &delta)
+                        .await;
+                }
+            }
+            ProposedPlanSegment::ProposedPlanEnd => {}
+        }
+    }
+}
+
+pub(super) async fn emit_streamed_assistant_text_delta(
+    sess: &Session,
+    turn_context: &TurnContext,
+    plan_mode_state: Option<&mut PlanModeStreamState>,
+    item_id: &str,
+    parsed: ParsedAssistantTextDelta,
+) {
+    if parsed.is_empty() {
+        return;
+    }
+    if !parsed.citations.is_empty() {
+        // Citation extraction is intentionally local for now; we strip citations from display text
+        // but do not yet surface them in protocol events.
+        let _citations = parsed.citations;
+    }
+    if let Some(state) = plan_mode_state {
+        if !parsed.plan_segments.is_empty() {
+            handle_plan_segments(sess, turn_context, state, item_id, parsed.plan_segments).await;
+        }
+        return;
+    }
+    if parsed.visible_text.is_empty() {
+        return;
+    }
+    let event = AgentMessageContentDeltaEvent {
+        thread_id: sess.thread_id.to_string(),
+        turn_id: turn_context.sub_id.clone(),
+        item_id: item_id.to_string(),
+        delta: parsed.visible_text,
+    };
+    sess.send_event(turn_context, EventMsg::AgentMessageContentDelta(event))
+        .await;
+}
+
+/// Flush buffered assistant text parser state when an assistant message item ends.
+pub(super) async fn flush_assistant_text_segments_for_item(
+    sess: &Session,
+    turn_context: &TurnContext,
+    plan_mode_state: Option<&mut PlanModeStreamState>,
+    parsers: &mut AssistantMessageStreamParsers,
+    item_id: &str,
+) {
+    let parsed = parsers.finish_item(item_id);
+    emit_streamed_assistant_text_delta(sess, turn_context, plan_mode_state, item_id, parsed).await;
+}
+
+/// Flush any remaining buffered assistant text parser state at response completion.
+pub(super) async fn flush_assistant_text_segments_all(
+    sess: &Session,
+    turn_context: &TurnContext,
+    mut plan_mode_state: Option<&mut PlanModeStreamState>,
+    parsers: &mut AssistantMessageStreamParsers,
+) {
+    for (item_id, parsed) in parsers.drain_finished() {
+        emit_streamed_assistant_text_delta(
+            sess,
+            turn_context,
+            plan_mode_state.as_deref_mut(),
+            &item_id,
+            parsed,
+        )
+        .await;
+    }
+}
+
+/// Emit completion for plan items by parsing the finalized assistant message.
+async fn maybe_complete_plan_item_from_message(
+    sess: &Session,
+    turn_context: &TurnContext,
+    state: &mut PlanModeStreamState,
+    item: &ResponseItem,
+) {
+    if let ResponseItem::Message { role, content, .. } = item
+        && role == "assistant"
+    {
+        let mut text = String::new();
+        for entry in content {
+            if let ContentItem::OutputText { text: chunk } = entry {
+                text.push_str(chunk);
+            }
+        }
+        if let Some(plan_text) = extract_proposed_plan_text(&text) {
+            let (plan_text, _citations) = strip_citations(&plan_text);
+            if !state.plan_item_state.started {
+                state.plan_item_state.start(sess, turn_context).await;
+            }
+            state
+                .plan_item_state
+                .complete_with_text(sess, turn_context, plan_text)
+                .await;
+        }
+    }
+}
+
+/// Emit a completed agent message in plan mode, respecting deferred starts.
+async fn emit_agent_message_in_plan_mode(
+    sess: &Session,
+    turn_context: &TurnContext,
+    agent_message: codex_protocol::items::AgentMessageItem,
+    state: &mut PlanModeStreamState,
+) {
+    let agent_message_id = agent_message.id.clone();
+    let text = agent_message_text(&agent_message);
+    if text.trim().is_empty() {
+        state.pending_agent_message_items.remove(&agent_message_id);
+        state.started_agent_message_items.remove(&agent_message_id);
+        return;
+    }
+
+    maybe_emit_pending_agent_message_start(sess, turn_context, state, &agent_message_id).await;
+
+    if !state
+        .started_agent_message_items
+        .contains(&agent_message_id)
+    {
+        let start_item = state
+            .pending_agent_message_items
+            .remove(&agent_message_id)
+            .unwrap_or_else(|| {
+                TurnItem::AgentMessage(codex_protocol::items::AgentMessageItem {
+                    id: agent_message_id.clone(),
+                    content: Vec::new(),
+                    phase: None,
+                    memory_citation: None,
+                })
+            });
+        sess.emit_turn_item_started(turn_context, &start_item).await;
+        state
+            .started_agent_message_items
+            .insert(agent_message_id.clone());
+    }
+
+    sess.emit_turn_item_completed(turn_context, TurnItem::AgentMessage(agent_message))
+        .await;
+    state.started_agent_message_items.remove(&agent_message_id);
+}
+
+/// Emit completion for a plan-mode turn item, handling agent messages specially.
+async fn emit_turn_item_in_plan_mode(
+    sess: &Session,
+    turn_context: &TurnContext,
+    turn_item: TurnItem,
+    previously_active_item: Option<&TurnItem>,
+    state: &mut PlanModeStreamState,
+) {
+    match turn_item {
+        TurnItem::AgentMessage(agent_message) => {
+            emit_agent_message_in_plan_mode(sess, turn_context, agent_message, state).await;
+        }
+        _ => {
+            if previously_active_item.is_none() {
+                sess.emit_turn_item_started(turn_context, &turn_item).await;
+            }
+            sess.emit_turn_item_completed(turn_context, turn_item).await;
+        }
+    }
+}
+
+/// Handle a completed assistant response item in plan mode, returning true if handled.
+pub(super) async fn handle_assistant_item_done_in_plan_mode(
+    sess: &Session,
+    turn_context: &TurnContext,
+    item: &ResponseItem,
+    state: &mut PlanModeStreamState,
+    previously_active_item: Option<&TurnItem>,
+    last_agent_message: &mut Option<String>,
+) -> bool {
+    if let ResponseItem::Message { role, .. } = item
+        && role == "assistant"
+    {
+        maybe_complete_plan_item_from_message(sess, turn_context, state, item).await;
+
+        if let Some(turn_item) = handle_non_tool_response_item(
+            sess,
+            turn_context,
+            TurnItemContributorPolicy::Skip,
+            item,
+            /*plan_mode*/ true,
+        )
+        .await
+        {
+            emit_turn_item_in_plan_mode(
+                sess,
+                turn_context,
+                turn_item,
+                previously_active_item,
+                state,
+            )
+            .await;
+        }
+
+        record_completed_response_item(sess, turn_context, item).await;
+        if let Some(agent_message) = last_assistant_message_from_item(item, /*plan_mode*/ true) {
+            *last_agent_message = Some(agent_message);
+        }
+        return true;
+    }
+    false
 }

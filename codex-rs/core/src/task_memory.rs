@@ -1,3 +1,13 @@
+//! Fork-owned task-memory seam for compaction.
+//!
+//! This module is the single core-resident boundary between the fork's remote
+//! compaction paths (`compact_remote.rs` / `compact_remote_v2.rs`) and the
+//! `codex-task-memory` leaf crate. `CompactionTaskMemory` and the helpers below
+//! wrap `codex_task_memory::*` so those upstream-hot compaction files hold only
+//! thin call sites (construct, thread, finalize) rather than task-memory logic.
+//! Behavior is unchanged; upstream edits to compaction should not need to touch
+//! this file.
+
 use codex_protocol::items::TurnItem;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;

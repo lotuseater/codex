@@ -18,8 +18,8 @@ use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
 use crate::tools::flat_tool_name;
+use crate::tools::handlers::maybe_spawn_first_moves_hit;
 use crate::tools::handlers::multi_agents_spec::MULTI_AGENT_V1_NAMESPACE;
-use crate::tools::handlers::spawn_record_tool_use_hit;
 use crate::tools::hook_names::HookToolName;
 use crate::tools::lifecycle::notify_tool_finish;
 use crate::tools::lifecycle::notify_tool_start;
@@ -881,22 +881,20 @@ impl ToolRegistry {
 
         let pre_tool_use_payload = tool.pre_tool_use_payload(&invocation);
         let operation_cache_cwd = operation_cache::cwd(&invocation);
-        let mut served_from_operation_cache = false;
         let response_cell = tokio::sync::Mutex::new(None);
         let invocation_for_tool = invocation.clone();
         let log_payload = invocation.payload.log_payload();
 
-        let result = if let Some(pre_tool_use_payload) = &pre_tool_use_payload
-            && let Some(cache_hit) = operation_cache::lookup(
-                pre_tool_use_payload,
-                operation_cache_cwd.as_path(),
-                tool.supports_parallel_tool_calls(),
-            )
-            .await
-        {
-            served_from_operation_cache = true;
-            let cached =
-                operation_cache::result_from_hit(&invocation, pre_tool_use_payload, cache_hit);
+        let cached_hit = operation_cache::try_serve_from_cache(
+            &invocation,
+            pre_tool_use_payload.as_ref(),
+            operation_cache_cwd.as_path(),
+            tool.supports_parallel_tool_calls(),
+        )
+        .await;
+        let served_from_operation_cache = cached_hit.is_some();
+
+        let result = if let Some(cached) = cached_hit {
             let preview = cached.result.result.log_preview();
             let success = cached.result.result.success_for_logging();
             otel.tool_result_with_tags(
@@ -1005,10 +1003,7 @@ impl ToolRegistry {
             }
         }
 
-        // fork-local: skip operation-cache store when served from cache or replaced by a
-        // PostToolUse hook; a PostToolUse block rejects the result, not the execution.
-        if !served_from_operation_cache
-            && !replaced_by_post_tool_use
+        if operation_cache::should_store(served_from_operation_cache, replaced_by_post_tool_use)
             && let Some(cache_store_payload) = &cache_store_payload
         {
             operation_cache::store(
@@ -1094,27 +1089,6 @@ impl ToolRegistry {
             }
         }
     }
-}
-
-fn maybe_spawn_first_moves_hit(
-    invocation: &ToolInvocation,
-    pre_tool_use_payload: Option<&PreToolUsePayload>,
-    success: bool,
-) {
-    if !success || !invocation.turn.config.first_moves.enabled() {
-        return;
-    }
-    let Some(pre_tool_use_payload) = pre_tool_use_payload else {
-        return;
-    };
-    let tool_input = serde_json::to_string(&pre_tool_use_payload.tool_input)
-        .unwrap_or_else(|_| pre_tool_use_payload.tool_input.to_string());
-    spawn_record_tool_use_hit(
-        invocation.turn.cwd.to_path_buf(),
-        invocation.turn.config.codex_home.to_path_buf(),
-        pre_tool_use_payload.tool_name.name().to_string(),
-        tool_input,
-    );
 }
 
 async fn notify_tool_finish_if_unclaimed(

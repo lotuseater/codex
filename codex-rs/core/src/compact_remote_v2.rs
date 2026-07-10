@@ -232,6 +232,7 @@ async fn run_remote_compact_task_inner_impl(
     }
 
     let trace_input_history = history.raw_items().to_vec();
+    // fork seam: task-memory orchestration lives in task_memory.rs / codex-task-memory
     let mut task_memory =
         crate::task_memory::CompactionTaskMemory::from_history(&trace_input_history);
     let prompt_input = history.for_prompt(&turn_context.model_info.input_modalities);
@@ -337,6 +338,7 @@ async fn run_remote_compact_task_inner_impl(
     });
     sess.replace_compacted_history(new_history, reference_context_item, compacted_item)
         .await;
+    // fork seam: task-memory orchestration lives in task_memory.rs / codex-task-memory
     sess.reset_task_memory_throttle_after_compaction(task_memory.digest())
         .await;
     sess.recompute_token_usage(turn_context).await;

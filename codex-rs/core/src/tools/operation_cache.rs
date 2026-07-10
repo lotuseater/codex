@@ -123,6 +123,27 @@ pub(crate) fn result_from_hit(
     }
 }
 
+pub(crate) async fn try_serve_from_cache(
+    invocation: &ToolInvocation,
+    pre_tool_use_payload: Option<&PreToolUsePayload>,
+    cwd: &Path,
+    supports_parallel_tool_calls: bool,
+) -> Option<CachedToolResult> {
+    let pre_tool_use_payload = pre_tool_use_payload?;
+    let cache_hit = lookup(pre_tool_use_payload, cwd, supports_parallel_tool_calls).await?;
+    Some(result_from_hit(invocation, pre_tool_use_payload, cache_hit))
+}
+
+/// fork-local: skip the operation-cache store when the result was served from
+/// cache or replaced by a PostToolUse hook; a PostToolUse block rejects the
+/// result, not the execution.
+pub(crate) fn should_store(
+    served_from_operation_cache: bool,
+    replaced_by_post_tool_use: bool,
+) -> bool {
+    !served_from_operation_cache && !replaced_by_post_tool_use
+}
+
 pub(crate) fn tool_is_cacheable(
     tool_name: &str,
     tool_input: &Value,
@@ -280,5 +301,25 @@ mod tests {
             false
         );
         assert_eq!(tool_is_cacheable("dab_screenshot", &json!({}), true), false);
+    }
+
+    #[test]
+    fn should_store_only_when_not_served_and_not_replaced() {
+        assert!(should_store(
+            /*served_from_operation_cache*/ false,
+            /*replaced_by_post_tool_use*/ false
+        ));
+        assert!(!should_store(
+            /*served_from_operation_cache*/ true,
+            /*replaced_by_post_tool_use*/ false
+        ));
+        assert!(!should_store(
+            /*served_from_operation_cache*/ false,
+            /*replaced_by_post_tool_use*/ true
+        ));
+        assert!(!should_store(
+            /*served_from_operation_cache*/ true,
+            /*replaced_by_post_tool_use*/ true
+        ));
     }
 }
