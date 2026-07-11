@@ -15,6 +15,7 @@ use codex_protocol::config_types::ShellEnvironmentPolicy;
 use codex_protocol::models::AdditionalPermissionProfile;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::protocol::MultiAgentVersion;
+use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::ThreadSource;
 use codex_protocol::protocol::TruncationPolicy;
 use codex_protocol::protocol::TurnEnvironmentSelection;
@@ -131,6 +132,7 @@ pub struct TurnContext {
     pub(crate) reasoning_effort: Option<ReasoningEffortConfig>,
     pub(crate) reasoning_summary: ReasoningSummaryConfig,
     pub(crate) session_source: SessionSource,
+    pub(crate) history_mode: ThreadHistoryMode,
     pub(crate) parent_thread_id: Option<ThreadId>,
     // fork-local: origin of this thread (user-initiated vs. subagent/etc.), read by
     // prompt-reduction and rollout logic.
@@ -152,7 +154,6 @@ pub struct TurnContext {
     /// read via [`TurnContext::compact_prompt`].
     pub(crate) compact_prompt: Option<String>,
     pub(crate) collaboration_mode: CollaborationMode,
-    pub(crate) multi_agent_mode: MultiAgentMode,
     pub(crate) multi_agent_version: MultiAgentVersion,
     pub(crate) personality: Option<Personality>,
     pub(crate) approval_policy: Constrained<AskForApproval>,
@@ -186,6 +187,11 @@ enum TurnMultiAgentRuntime {
 }
 
 impl TurnContext {
+    pub(crate) fn item_ids_enabled(&self) -> bool {
+        self.config.features.enabled(Feature::ItemIds)
+            || matches!(self.history_mode, ThreadHistoryMode::Paginated)
+    }
+
     pub(crate) fn permission_profile(&self) -> PermissionProfile {
         self.permission_profile.clone()
     }
@@ -294,7 +300,10 @@ impl TurnContext {
         let features = config.features.clone();
         let truncation_policy = model_info.truncation_policy.into();
         let available_models = models_manager
-            .list_models(RefreshStrategy::OnlineIfUncached)
+            .list_models(
+                RefreshStrategy::OnlineIfUncached,
+                config.http_client_factory(),
+            )
             .await;
         let provider_capabilities = self.provider.capabilities();
         let workflow_batch_enabled = self.tools_config.workflow_batch_enabled
@@ -376,6 +385,7 @@ impl TurnContext {
             reasoning_effort,
             reasoning_summary: self.reasoning_summary,
             session_source: self.session_source.clone(),
+            history_mode: self.history_mode,
             parent_thread_id: self.parent_thread_id,
             thread_source: self.thread_source.clone(),
             originator: self.originator.clone(),
@@ -388,8 +398,7 @@ impl TurnContext {
             developer_instructions: self.developer_instructions.clone(),
             user_instructions: self.user_instructions.clone(),
             compact_prompt: self.compact_prompt.clone(),
-            collaboration_mode: collaboration_mode.clone(),
-            multi_agent_mode: self.multi_agent_mode,
+            collaboration_mode,
             multi_agent_version: self.multi_agent_version,
             personality: self.personality,
             approval_policy: self.approval_policy.clone(),
@@ -485,6 +494,7 @@ impl TurnContext {
             current_date: self.current_date.clone(),
             timezone: self.timezone.clone(),
             approval_policy: self.approval_policy.value(),
+            approvals_reviewer: Some(self.config.approvals_reviewer),
             sandbox_policy: self.sandbox_policy(),
             permission_profile: Some(self.permission_profile()),
             network: self.turn_context_network_item(),
@@ -494,11 +504,7 @@ impl TurnContext {
             personality: self.personality,
             collaboration_mode: Some(self.collaboration_mode.clone()),
             multi_agent_version: Some(self.multi_agent_version),
-            multi_agent_mode: super::multi_agents::effective_multi_agent_mode(
-                self.multi_agent_version,
-                &self.session_source,
-                self.multi_agent_mode,
-            ),
+            multi_agent_mode: super::multi_agents::effective_multi_agent_mode(self),
             realtime_active: Some(self.realtime_active),
             effort: self.reasoning_effort.clone(),
             summary: self.reasoning_summary,
@@ -745,6 +751,7 @@ impl Session {
             reasoning_effort,
             reasoning_summary,
             session_source,
+            history_mode: session_configuration.history_mode,
             parent_thread_id: session_configuration.parent_thread_id,
             thread_source: session_configuration.thread_source.clone(),
             originator: session_configuration.originator.clone(),
@@ -761,7 +768,6 @@ impl Session {
                 .map(LoadedAgentsMd::render),
             compact_prompt: session_configuration.compact_prompt.clone(),
             collaboration_mode: session_configuration.collaboration_mode.clone(),
-            multi_agent_mode: session_configuration.multi_agent_mode,
             multi_agent_version,
             personality: session_configuration.personality,
             approval_policy: session_configuration.approval_policy.clone(),
@@ -902,7 +908,8 @@ impl Session {
             .unwrap_or_else(|| session_configuration.cwd().clone());
         let per_turn_config = Self::build_per_turn_config(&session_configuration, cwd.clone());
         {
-            let mcp_connection_manager = self.services.mcp_connection_manager.load_full();
+            let mcp_runtime = self.services.latest_mcp_runtime();
+            let mcp_connection_manager = mcp_runtime.manager();
             mcp_connection_manager.set_approval_policy(&session_configuration.approval_policy);
             mcp_connection_manager
                 .set_permission_profile(session_configuration.permission_profile());
@@ -916,6 +923,9 @@ impl Session {
                 &per_turn_config.to_models_manager_config(),
             )
             .await;
+        self.services
+            .thread_extension_data
+            .insert(model_info.clone());
 
         let multi_agent_version = match multi_agent_runtime {
             TurnMultiAgentRuntime::ResolveAndStore => {

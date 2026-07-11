@@ -62,17 +62,19 @@ members = [
     "core-plugins",
     "core-skills",
     "hooks",
+    "http-client",
     "secrets",
     "exec",
     "file-system",
     "exec-server",
     "exec-server-protocol",
     "execpolicy",
-    "execpolicy-legacy",
+    "ext/connectors",
     "ext/extension-api",
     "ext/goal",
     "ext/guardian",
     "ext/image-generation",
+    "ext/items",
     "ext/memories",
     "ext/mcp",
     "ext/skills",
@@ -121,6 +123,7 @@ members = [
     "tools",
     "workflow-batch",
     "v8-poc",
+    "websocket-client",
     "utils/absolute-path",
     "utils/path-uri",
     "utils/cargo-bin",
@@ -224,11 +227,14 @@ codex-code-mode = { path = "code-mode" }
 codex-code-mode-spec = { path = "code-mode-spec" }
 codex-code-mode-protocol = { path = "code-mode-protocol" }
 codex-home = { path = "codex-home" }
+codex-http-client = { path = "http-client" }
+codex-websocket-client = { path = "websocket-client" }
 codex-config = { path = "config" }
 codex-config-types = { path = "config-types" }
 codex-compaction-policy = { path = "context-domain/compaction-policy" }
 codex-cognos-ops = { path = "cognos-ops" }
 codex-connectors = { path = "connectors" }
+codex-connectors-extension = { path = "ext/connectors" }
 codex-context-pack = { path = "context-pack" }
 codex-context-reduction = { path = "context-reduction" }
 codex-context-ops-impl = { path = "context-ops-impl" }
@@ -246,6 +252,7 @@ codex-exec-server-protocol = { path = "exec-server-protocol" }
 system-configuration = "0.7"
 codex-execpolicy = { path = "execpolicy", default-features = false }
 codex-extension-api = { path = "ext/extension-api" }
+codex-extension-items = { path = "ext/items" }
 codex-goal-extension = { path = "ext/goal" }
 codex-guardian = { path = "ext/guardian" }
 codex-image-generation-extension = { path = "ext/image-generation" }
@@ -413,7 +420,6 @@ dotenvy = "0.15.7"
 dunce = "1.0.4"
 ed25519-dalek = { version = "2.2.0", features = ["pkcs8"] }
 encoding_rs = "0.8.35"
-env_logger = "0.11.9"
 eventsource-stream = "0.2.3"
 flate2 = "1.1.8"
 futures = { version = "0.3", default-features = false }
@@ -423,8 +429,9 @@ glob = "0.3"
 globset = "0.4"
 hex = "0.4"
 hmac = "0.13"
-http = "1"
-iana-time-zone = "0.1"
+http = "1.3.1"
+httpdate = "1.0.3"
+iana-time-zone = "0.1.64"
 icu_decimal = "2.1"
 icu_locale_core = "2.1"
 icu_provider = { version = "2.1", features = ["sync"] }
@@ -454,20 +461,20 @@ notify = "8.2.0"
 nucleo = { git = "https://github.com/helix-editor/nucleo.git", rev = "4253de9faabb4e5c6d81d946a5e35a90f87347ee" }
 once_cell = "1"
 openssl-sys = "*"
-opentelemetry = "0.31"
-opentelemetry-appender-tracing = "0.31"
-opentelemetry-otlp = "0.31"
-opentelemetry-semantic-conventions = "0.31"
-opentelemetry_sdk = "0.31"
-os_info = "3"
-owo-colors = "4"
+opentelemetry = "0.31.0"
+opentelemetry-appender-tracing = "0.31.0"
+opentelemetry-otlp = "0.31.0"
+opentelemetry-semantic-conventions = "0.31.0"
+opentelemetry_sdk = "0.31.0"
+os_info = "3.12.0"
+owo-colors = "4.3.0"
 path-absolutize = "3"
 pathdiff = "0.2"
 portable-pty = "0.9"
 predicates = "3"
 pretty_assertions = "1"
 pulldown-cmark = "0.10"
-quick-xml = "0.39"
+quick-xml = "0.41.0"
 rand = { version = "0.9", default-features = false, features = [
     "os_rng",
     "small_rng",
@@ -475,9 +482,9 @@ rand = { version = "0.9", default-features = false, features = [
     "std_rng",
     "thread_rng",
 ] }
-ratatui = "0.29"
-ratatui-macros = "0.6"
-rcgen = { version = "0.14", default-features = false, features = [
+ratatui = "0.29.0"
+ratatui-macros = "0.6.0"
+rcgen = { version = "0.14.7", default-features = false, features = [
     "aws_lc_rs",
     "pem",
 ] }
@@ -541,7 +548,8 @@ thiserror = "2"
 time = "0.3"
 tiny_http = "0.12"
 tokio = "1"
-tokio-stream = "0.1"
+tokio-rustls = "0.26.4"
+tokio-stream = "0.1.18"
 tokio-test = "0.4"
 tokio-tungstenite = { version = "0.28", features = [
     "proxy",

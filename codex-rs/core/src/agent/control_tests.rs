@@ -3,6 +3,8 @@ use crate::CodexThread;
 use crate::StateDbHandle;
 use crate::ThreadManager;
 use crate::agent::agent_status_from_event;
+use crate::agent_communication::AgentCommunicationContext;
+use crate::agent_communication::AgentCommunicationKind;
 use crate::config::AgentRoleConfig;
 use crate::config::Config;
 use crate::config::ConfigBuilder;
@@ -12,11 +14,14 @@ use crate::init_state_db;
 use crate::thread_manager::StartThreadOptions;
 use assert_matches::assert_matches;
 use codex_extension_api::ExtensionDataInit;
+use codex_extension_api::empty_extension_registry;
 use codex_features::Feature;
+use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_protocol::AgentPath;
+use codex_protocol::capabilities::CapabilityRootLocation;
+use codex_protocol::capabilities::SelectedCapabilityRoot;
 use codex_protocol::config_types::ModeKind;
-use codex_protocol::config_types::MultiAgentMode;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::MessagePhase;
 use codex_protocol::models::ResponseItem;
@@ -32,10 +37,12 @@ use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::TurnAbortedEvent;
 use codex_protocol::protocol::TurnCompleteEvent;
 use codex_protocol::protocol::TurnStartedEvent;
+use codex_thread_store::InMemoryThreadStore;
 use codex_thread_store::LocalThreadStore;
 use codex_thread_store::LocalThreadStoreConfig;
 use codex_thread_store_api::ArchiveThreadParams;
 use codex_thread_store_api::ThreadStore;
+use codex_utils_path_uri::PathUri;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 use tokio::time::Duration;
@@ -74,9 +81,13 @@ fn agent_control_depth_limit_allows_equal_depth_and_rejects_greater_depth() {
 }
 
 async fn test_config_with_cli_overrides(
-    cli_overrides: Vec<(String, TomlValue)>,
+    mut cli_overrides: Vec<(String, TomlValue)>,
 ) -> (TempDir, Config) {
     let home = TempDir::new().expect("create temp dir");
+    cli_overrides.push((
+        "model".to_string(),
+        TomlValue::String("gpt-5.5".to_string()),
+    ));
     let config = ConfigBuilder::without_managed_config_for_tests()
         .codex_home(home.path().to_path_buf())
         .cli_overrides(cli_overrides)
@@ -90,12 +101,11 @@ async fn test_config() -> (TempDir, Config) {
     test_config_with_cli_overrides(Vec::new()).await
 }
 
-fn text_input(text: &str) -> Op {
+fn text_input(text: &str) -> Vec<UserInput> {
     vec![UserInput::Text {
         text: text.to_string(),
         text_elements: Vec::new(),
     }]
-    .into()
 }
 
 fn assistant_message(text: &str, phase: Option<MessagePhase>) -> ResponseItem {
@@ -196,6 +206,7 @@ async fn persisted_originator(thread: &CodexThread) -> String {
             | RolloutItem::InterAgentCommunicationMetadata { .. }
             | RolloutItem::EventMsg(_)
             | RolloutItem::Compacted(_)
+            | RolloutItem::WorldState(_)
             | RolloutItem::TurnContext(_) => None,
         })
         .expect("session metadata should be persisted")
@@ -335,8 +346,7 @@ async fn send_input_errors_when_manager_dropped() {
             vec![UserInput::Text {
                 text: "hello".to_string(),
                 text_elements: Vec::new(),
-            }]
-            .into(),
+            }],
         )
         .await
         .expect_err("send_input should fail without a manager");
@@ -447,8 +457,7 @@ async fn send_input_errors_when_thread_missing() {
             vec![UserInput::Text {
                 text: "hello".to_string(),
                 text_elements: Vec::new(),
-            }]
-            .into(),
+            }],
         )
         .await
         .expect_err("send_input should fail for missing thread");
@@ -514,8 +523,7 @@ async fn send_input_submits_user_message() {
             vec![UserInput::Text {
                 text: "hello from tests".to_string(),
                 text_elements: Vec::new(),
-            }]
-            .into(),
+            }],
         )
         .await
         .expect("send_input should succeed");
@@ -557,7 +565,11 @@ async fn send_inter_agent_communication_without_turn_queues_message_without_trig
 
     let submission_id = harness
         .control
-        .send_inter_agent_communication(thread_id, communication.clone())
+        .send_inter_agent_communication(
+            thread_id,
+            communication.clone(),
+            AgentCommunicationContext::new(AgentCommunicationKind::Message, ThreadId::new()),
+        )
         .await
         .expect("send_inter_agent_communication should succeed");
     assert!(!submission_id.is_empty());
@@ -682,7 +694,11 @@ async fn ensure_v2_agent_loaded_reloads_registered_unloaded_agent() {
     );
     harness
         .control
-        .send_inter_agent_communication(spawned_agent.thread_id, communication.clone())
+        .send_inter_agent_communication(
+            spawned_agent.thread_id,
+            communication.clone(),
+            AgentCommunicationContext::new(AgentCommunicationKind::Message, ThreadId::new()),
+        )
         .await
         .expect("send_inter_agent_communication should succeed after reload");
     let expected = (
@@ -829,7 +845,11 @@ async fn encrypted_inter_agent_communication_clears_existing_last_task_message()
     );
     harness
         .control
-        .send_inter_agent_communication(spawned_agent.thread_id, communication)
+        .send_inter_agent_communication(
+            spawned_agent.thread_id,
+            communication,
+            AgentCommunicationContext::new(AgentCommunicationKind::Followup, ThreadId::new()),
+        )
         .await
         .expect("send_inter_agent_communication should succeed");
 
@@ -884,15 +904,16 @@ async fn spawn_agent_creates_thread_and_sends_prompt() {
 }
 
 #[tokio::test]
-async fn spawn_thread_subagent_uses_supplied_initial_multi_agent_mode_without_history() {
-    let harness = AgentControlHarness::new().await;
+async fn ephemeral_spawn_does_not_persist_agent_graph_edge() {
+    let (home, mut config) = test_config().await;
+    config.ephemeral = true;
+    let harness = AgentControlHarness::new_with_config(home, config).await;
     let (parent_thread_id, _parent_thread) = harness.start_thread().await;
-
     let child_thread_id = harness
         .control
-        .spawn_agent_with_metadata(
+        .spawn_agent(
             harness.config.clone(),
-            text_input("child task"),
+            text_input("spawned"),
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
@@ -900,23 +921,22 @@ async fn spawn_thread_subagent_uses_supplied_initial_multi_agent_mode_without_hi
                 agent_nickname: None,
                 agent_role: None,
             })),
-            SpawnAgentOptions {
-                initial_multi_agent_mode: Some(MultiAgentMode::Proactive),
-                ..Default::default()
-            },
         )
         .await
-        .expect("spawn child without parent history")
-        .thread_id;
-    let child_snapshot = harness
-        .manager
-        .get_thread(child_thread_id)
-        .await
-        .expect("child thread should be registered")
-        .config_snapshot()
-        .await;
+        .expect("ephemeral agent spawn should succeed");
 
-    assert_eq!(child_snapshot.multi_agent_mode, MultiAgentMode::Proactive);
+    let persisted_children = harness
+        .state_db
+        .as_ref()
+        .expect("manager should retain state db")
+        .list_thread_spawn_children(parent_thread_id)
+        .await
+        .expect("persisted child list should load");
+    assert_eq!(persisted_children, Vec::<ThreadId>::new());
+    assert!(
+        harness.manager.get_thread(child_thread_id).await.is_ok(),
+        "ephemeral child should remain live"
+    );
 }
 
 #[tokio::test]
@@ -941,15 +961,6 @@ async fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items() {
         .expect("start parent thread");
     let parent_thread_id = new_thread.thread_id;
     let parent_thread = new_thread.thread;
-    parent_thread
-        .codex
-        .session
-        .update_settings(crate::session::SessionSettingsUpdate {
-            multi_agent_mode: Some(MultiAgentMode::Proactive),
-            ..Default::default()
-        })
-        .await
-        .expect("update parent multi-agent mode");
     parent_thread
         .inject_user_message_without_turn("parent seed context".to_string())
         .await;
@@ -1044,7 +1055,6 @@ async fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items() {
             SpawnAgentOptions {
                 fork_parent_spawn_call_id: Some(parent_spawn_call_id.clone()),
                 fork_mode: Some(SpawnAgentForkMode::FullHistory),
-                initial_multi_agent_mode: Some(MultiAgentMode::Proactive),
                 ..Default::default()
             },
         )
@@ -1057,10 +1067,6 @@ async fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items() {
         .get_thread(child_thread_id)
         .await
         .expect("child thread should be registered");
-    assert_eq!(
-        child_thread.config_snapshot().await.multi_agent_mode,
-        MultiAgentMode::Proactive
-    );
     assert_ne!(child_thread_id, parent_thread_id);
     let history = child_thread.codex.session.clone_history().await;
     let mut expected_final_answer =
@@ -1399,15 +1405,6 @@ async fn spawn_agent_fork_flushes_parent_rollout_before_loading_history() {
 async fn spawn_agent_fork_last_n_turns_keeps_only_recent_turns() {
     let harness = AgentControlHarness::new().await;
     let (parent_thread_id, parent_thread) = harness.start_thread().await;
-    parent_thread
-        .codex
-        .session
-        .update_settings(crate::session::SessionSettingsUpdate {
-            multi_agent_mode: Some(MultiAgentMode::Proactive),
-            ..Default::default()
-        })
-        .await
-        .expect("update parent multi-agent mode");
 
     parent_thread
         .inject_user_message_without_turn("old parent context".to_string())
@@ -1492,7 +1489,6 @@ async fn spawn_agent_fork_last_n_turns_keeps_only_recent_turns() {
             SpawnAgentOptions {
                 fork_parent_spawn_call_id: Some(parent_spawn_call_id.clone()),
                 fork_mode: Some(SpawnAgentForkMode::LastNTurns(2)),
-                initial_multi_agent_mode: Some(MultiAgentMode::Proactive),
                 ..Default::default()
             },
         )
@@ -1505,10 +1501,6 @@ async fn spawn_agent_fork_last_n_turns_keeps_only_recent_turns() {
         .get_thread(child_thread_id)
         .await
         .expect("child thread should be registered");
-    assert_eq!(
-        child_thread.config_snapshot().await.multi_agent_mode,
-        MultiAgentMode::Proactive
-    );
     let history = child_thread.codex.session.clone_history().await;
 
     assert!(
@@ -1551,7 +1543,35 @@ async fn spawn_agent_fork_last_n_turns_keeps_only_recent_turns() {
 #[tokio::test]
 async fn spawn_agent_fork_last_n_turns_drops_parent_startup_prefix_when_under_limit() {
     let harness = AgentControlHarness::new().await;
-    let (parent_thread_id, parent_thread) = harness.start_thread().await;
+    let selected_capability_roots = vec![SelectedCapabilityRoot {
+        id: "demo@1".to_string(),
+        location: CapabilityRootLocation::Environment {
+            environment_id: "build".to_string(),
+            path: PathUri::parse("file:///plugins/demo").expect("plugin root URI"),
+        },
+    }];
+    let mut thread_extension_init = ExtensionDataInit::new();
+    thread_extension_init.insert(selected_capability_roots.clone());
+    let parent = harness
+        .manager
+        .start_thread_with_options(StartThreadOptions {
+            config: harness.config.clone(),
+            allow_provider_model_fallback: false,
+            initial_history: InitialHistory::New,
+            history_mode: None,
+            session_source: None,
+            thread_source: None,
+            dynamic_tools: Vec::new(),
+            metrics_service_name: None,
+            parent_trace: None,
+            environments: Vec::new(),
+            thread_extension_init,
+            supports_openai_form_elicitation: false,
+        })
+        .await
+        .expect("start parent thread");
+    let parent_thread_id = parent.thread_id;
+    let parent_thread = parent.thread;
     let startup_turn_context = parent_thread.codex.session.new_default_turn().await;
     parent_thread
         .codex
@@ -1629,6 +1649,14 @@ async fn spawn_agent_fork_last_n_turns_drops_parent_startup_prefix_when_under_li
     assert!(
         !history_contains_text(history.raw_items(), "parent startup developer context"),
         "bounded fork should drop parent startup context even when fewer turns exist than requested"
+    );
+    assert_eq!(
+        &child_thread
+            .codex
+            .session
+            .services
+            .selected_capability_roots,
+        &selected_capability_roots
     );
     assert!(
         child_thread
@@ -2318,12 +2346,13 @@ async fn spawn_thread_subagents_persist_parent_originator_across_new_and_truncat
         .manager
         .start_thread_with_options(StartThreadOptions {
             config: harness.config.clone(),
+            allow_provider_model_fallback: false,
             initial_history: InitialHistory::New,
+            history_mode: None,
             session_source: None,
             thread_source: None,
             dynamic_tools: Vec::new(),
             metrics_service_name: Some("codex_work_desktop".to_string()),
-            multi_agent_mode: None,
             parent_trace: None,
             environments: Vec::new(),
             thread_extension_init: ExtensionDataInit::default(),
@@ -2433,29 +2462,32 @@ async fn spawn_thread_subagent_uses_role_specific_nickname_candidates() {
 }
 
 #[tokio::test]
-async fn resume_thread_subagent_restores_stored_metadata_and_effective_multi_agent_mode() {
-    let (home, mut config) = test_config().await;
-    config
-        .features
-        .enable(Feature::Sqlite)
-        .expect("test config should allow sqlite");
-    let state_db = init_state_db(&config).await;
-    let manager = ThreadManager::with_models_provider_home_and_state_for_tests(
-        CodexAuth::from_api_key("dummy"),
-        config.model_provider.clone(),
-        config.codex_home.to_path_buf(),
-        std::sync::Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
-        state_db.clone(),
+async fn resume_thread_subagent_restores_stored_metadata() {
+    let (home, config) = test_config().await;
+    let thread_store = Arc::new(InMemoryThreadStore::default());
+    let manager = ThreadManager::new(
+        &config,
+        AuthManager::from_auth_for_testing(CodexAuth::from_api_key("dummy")),
+        SessionSource::Exec,
+        Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
+        empty_extension_registry(),
+        Arc::new(crate::test_support::EmptyUserInstructionsProvider),
+        /*analytics_events_client*/ None,
+        thread_store.clone(),
+        /*agent_graph_store*/ None,
+        uuid::Uuid::new_v4().to_string(),
+        /*attestation_provider*/ None,
+        /*external_time_provider*/ None,
     );
     let control = manager.agent_control();
     let harness = AgentControlHarness {
         _home: home,
         config,
-        state_db,
+        state_db: None,
         manager,
         control,
     };
-    let (parent_thread_id, parent_thread) = harness.start_thread().await;
+    let (parent_thread_id, _parent_thread) = harness.start_thread().await;
     let agent_path = AgentPath::from_string("/root/explorer".to_string())
         .expect("test agent path should be valid");
 
@@ -2480,18 +2512,6 @@ async fn resume_thread_subagent_restores_stored_metadata_and_effective_multi_age
         .get_thread(child_thread_id)
         .await
         .expect("child thread should exist");
-    let mut child_turn_context = child_thread
-        .codex
-        .session
-        .new_default_turn()
-        .await
-        .to_turn_context_item();
-    child_turn_context.multi_agent_mode = Some(MultiAgentMode::Proactive);
-    child_thread
-        .codex
-        .session
-        .persist_rollout_items(&[RolloutItem::TurnContext(child_turn_context)])
-        .await;
     child_thread
         .codex
         .session
@@ -2502,16 +2522,7 @@ async fn resume_thread_subagent_restores_stored_metadata_and_effective_multi_age
         .session
         .flush_rollout()
         .await
-        .expect("flush child effective multi-agent mode");
-    parent_thread
-        .codex
-        .session
-        .update_settings(crate::session::SessionSettingsUpdate {
-            multi_agent_mode: Some(MultiAgentMode::ExplicitRequestOnly),
-            ..Default::default()
-        })
-        .await
-        .expect("change parent multi-agent mode before child resume");
+        .expect("flush child rollout");
     let mut status_rx = harness
         .control
         .subscribe_status(child_thread_id)
@@ -2537,14 +2548,18 @@ async fn resume_thread_subagent_restores_stored_metadata_and_effective_multi_age
         .session_source
         .get_nickname()
         .expect("spawned sub-agent should have a nickname");
-    let state_db = child_thread
-        .state_db()
-        .expect("sqlite state db should be available for nickname resume test");
     timeout(Duration::from_secs(5), async {
         loop {
-            if let Ok(Some(metadata)) = state_db.get_thread(child_thread_id).await
-                && metadata.agent_nickname.is_some()
-                && metadata.agent_role.as_deref() == Some("explorer")
+            if let Ok(stored_thread) = thread_store
+                .read_thread(ReadThreadParams {
+                    thread_id: child_thread_id,
+                    include_archived: true,
+                    include_history: false,
+                })
+                .await
+                && stored_thread.agent_nickname.is_some()
+                && stored_thread.agent_role.as_deref() == Some("explorer")
+                && stored_thread.agent_path.as_deref() == Some(agent_path.as_str())
             {
                 break;
             }
@@ -2568,7 +2583,7 @@ async fn resume_thread_subagent_restores_stored_metadata_and_effective_multi_age
             SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
-                agent_path: Some(agent_path.clone()),
+                agent_path: None,
                 agent_nickname: None,
                 agent_role: None,
             }),
@@ -2600,7 +2615,6 @@ async fn resume_thread_subagent_restores_stored_metadata_and_effective_multi_age
     assert_eq!(resumed_agent_path, Some(agent_path));
     assert_eq!(resumed_nickname, Some(original_nickname));
     assert_eq!(resumed_role, Some("explorer".to_string()));
-    assert_eq!(resumed_snapshot.multi_agent_mode, MultiAgentMode::Proactive);
 
     let _ = harness
         .control

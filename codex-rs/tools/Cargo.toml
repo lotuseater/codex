@@ -15,6 +15,7 @@ codex-code-mode = { workspace = true }
 codex-connectors = { workspace = true }
 codex-features = { workspace = true }
 codex-file-system = { workspace = true }
+codex-extension-items = { workspace = true }
 codex-protocol = { workspace = true }
 codex-tool-execution-api = { workspace = true }
 codex-tool-registry-api = { workspace = true }

@@ -70,7 +70,6 @@ async fn list_tool_suggest_discoverable_plugins_includes_cached_remote_global_pl
         &codex_home.path().join(crate::config::CONFIG_TOML_FILE),
         r#"[features]
 plugins = true
-remote_plugin = true
 "#,
     );
 
@@ -307,7 +306,6 @@ remote_plugin = true
         &codex_home.path().join(crate::config::CONFIG_TOML_FILE),
         r#"[features]
 plugins = true
-remote_plugin = true
 
 [tool_suggest]
 disabled_tools = [

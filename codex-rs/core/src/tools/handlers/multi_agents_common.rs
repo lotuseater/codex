@@ -16,9 +16,10 @@ use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::openai_models::ReasoningEffortPreset;
+// fork-local: restored on upstream merge — CollabAgentRef/CollabAgentStatusEntry are used by
+// build_wait_agent_statuses below; the auto-merge dropped these two imports.
 use codex_protocol::protocol::CollabAgentRef;
 use codex_protocol::protocol::CollabAgentStatusEntry;
-use codex_protocol::protocol::Op;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::user_input::UserInput;
@@ -262,7 +263,7 @@ pub(crate) fn thread_spawn_source(
 pub(crate) fn parse_collab_input(
     message: Option<String>,
     items: Option<Vec<UserInput>>,
-) -> Result<Op, FunctionCallError> {
+) -> Result<Vec<UserInput>, FunctionCallError> {
     match (message, items) {
         (Some(_), Some(_)) => Err(FunctionCallError::RespondToModel(
             "Provide either message or items, but not both".to_string(),
@@ -279,8 +280,7 @@ pub(crate) fn parse_collab_input(
             Ok(vec![UserInput::Text {
                 text: message,
                 text_elements: Vec::new(),
-            }]
-            .into())
+            }])
         }
         (None, Some(items)) => {
             if items.is_empty() {
@@ -288,7 +288,7 @@ pub(crate) fn parse_collab_input(
                     "Items can't be empty".to_string(),
                 ));
             }
-            Ok(items.into())
+            Ok(items)
         }
     }
 }
@@ -390,7 +390,7 @@ pub(crate) async fn apply_requested_spawn_agent_model_overrides(
         let available_models = session
             .services
             .models_manager
-            .list_models(RefreshStrategy::Offline)
+            .list_models(RefreshStrategy::Offline, config.http_client_factory())
             .await;
         let selected_model_name = find_spawn_agent_model_name(&available_models, requested_model)?;
         let selected_model_info = session

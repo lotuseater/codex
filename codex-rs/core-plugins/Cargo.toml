@@ -18,6 +18,7 @@ codex-app-server-protocol = { workspace = true }
 codex-analytics = { workspace = true }
 codex-config = { workspace = true }
 codex-config-types = { workspace = true }
+codex-connectors = { workspace = true }
 codex-core-skills = { workspace = true }
 codex-exec-server = { workspace = true }
 codex-git-utils = { workspace = true }
@@ -36,7 +37,6 @@ codex-utils-plugins = { workspace = true }
 chrono = { workspace = true }
 dirs = { workspace = true }
 flate2 = { workspace = true }
-indexmap = { workspace = true, features = ["serde"] }
 reqwest = { workspace = true }
 regex = { workspace = true }
 semver = { workspace = true }
@@ -50,6 +50,9 @@ toml = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
 zip = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+which = { workspace = true }
 
 [dev-dependencies]
 libc = { workspace = true }

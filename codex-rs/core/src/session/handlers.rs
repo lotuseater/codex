@@ -130,6 +130,7 @@ async fn settings_update_from_thread_settings(
         summary,
         service_tier,
         collaboration_mode,
+        // fork-local: multi-agent mode carried through thread settings (upstream lacks it)
         multi_agent_mode,
         personality,
     } = thread_settings;
@@ -188,6 +189,7 @@ async fn thread_settings_applied_event(sess: &Session) -> EventMsg {
             reasoning_summary: snapshot.reasoning_summary,
             personality: snapshot.personality,
             collaboration_mode: snapshot.collaboration_mode,
+            // fork-local: multi-agent mode (upstream lacks it)
             multi_agent_mode: snapshot.multi_agent_mode,
         },
     })
@@ -246,7 +248,7 @@ pub(super) async fn user_input_or_turn_inner(
         return;
     };
     if emit_thread_settings_applied {
-        sess.send_event_raw(Event {
+        sess.send_event_raw_without_materializing_rollout(Event {
             id: sub_id.clone(),
             msg: thread_settings_applied_event(sess).await,
         })
@@ -317,7 +319,10 @@ pub async fn inter_agent_communication(
     communication: InterAgentCommunication,
 ) {
     let trigger_turn = communication.trigger_turn;
+    // fork-local: fork routes inter-agent mail through Session's own mailbox
+    // (watch channel) rather than upstream's InputQueue queue.
     sess.enqueue_mailbox_communication(communication);
+    crate::agent_communication::emit_agent_communication_receive(&sub_id);
     if trigger_turn {
         sess.maybe_start_turn_for_pending_work_with_sub_id(sub_id)
             .await;
@@ -616,8 +621,8 @@ async fn shutdown_session_runtime(sess: &Arc<Session>) {
     if let Some(startup_prewarm) = sess.take_session_startup_prewarm().await {
         startup_prewarm.abort().await;
     }
-    sess.abort_all_tasks(TurnAbortReason::Interrupted).await;
     let _ = sess.conversation.shutdown().await;
+    sess.abort_all_tasks(TurnAbortReason::Interrupted).await;
     sess.services
         .unified_exec_manager
         .terminate_all_processes()
@@ -626,8 +631,8 @@ async fn shutdown_session_runtime(sess: &Arc<Session>) {
         warn!("failed to shutdown code mode session: {err}");
     }
     sess.services
-        .mcp_connection_manager
-        .load_full()
+        .latest_mcp_runtime()
+        .manager_arc()
         .shutdown()
         .await;
     sess.guardian_review_session.shutdown().await;
@@ -881,6 +886,11 @@ pub(super) async fn submission_loop(
     if !shutdown_received {
         shutdown_session_runtime(&sess).await;
         emit_thread_stop_lifecycle(sess.as_ref()).await;
+        if let Some(live_thread) = sess.live_thread()
+            && let Err(err) = live_thread.shutdown().await
+        {
+            warn!("failed to shutdown thread persistence after submission channel closed: {err}");
+        }
     }
     debug!("Agent loop exited");
 }

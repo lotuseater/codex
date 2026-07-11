@@ -703,7 +703,7 @@ mod tests {
             mcp_servers: Some(Sourced::new(
                 BTreeMap::from([(
                     "docs".to_string(),
-                    McpServerRequirement {
+                    McpServerRequirement::Identity {
                         identity: McpServerIdentity::Command {
                             command: "codex-mcp".to_string(),
                         },
@@ -782,7 +782,7 @@ mod tests {
             hooks: None,
             mcp_servers: Some(BTreeMap::from([(
                 "docs".to_string(),
-                McpServerRequirement {
+                McpServerRequirement::Identity {
                     identity: McpServerIdentity::Command {
                         command: "codex-mcp".to_string(),
                     },
@@ -795,6 +795,7 @@ mod tests {
             enforce_residency: Some(ResidencyRequirement::Us),
             network: None,
             permissions: None,
+            models: None,
         };
 
         let user_file = if cfg!(windows) {
@@ -1153,6 +1154,7 @@ approval_policy = "never"
             enforce_residency: None,
             network: None,
             permissions: None,
+            models: None,
         };
 
         let stack = ConfigLayerStack::new(Vec::new(), requirements, requirements_toml)

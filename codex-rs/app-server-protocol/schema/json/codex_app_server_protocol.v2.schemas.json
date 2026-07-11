@@ -211,43 +211,12 @@
         "id": {
           "description": "Identifier from `default_permissions` or the implicit built-in default, such as `:workspace` or a user-defined `[permissions.<id>]` profile.",
           "type": "string"
-        },
-        "modifications": {
-          "default": [],
-          "items": {
-            "$ref": "#/definitions/ActivePermissionProfileModification"
-          },
-          "type": "array"
         }
       },
       "required": [
         "id"
       ],
       "type": "object"
-    },
-    "ActivePermissionProfileModification": {
-      "oneOf": [
-        {
-          "properties": {
-            "path": {
-              "$ref": "#/definitions/AbsolutePathBuf"
-            },
-            "type": {
-              "enum": [
-                "additionalWritableRoot"
-              ],
-              "title": "AdditionalWritableRootActivePermissionProfileModificationType",
-              "type": "string"
-            }
-          },
-          "required": [
-            "path",
-            "type"
-          ],
-          "title": "AdditionalWritableRootActivePermissionProfileModification",
-          "type": "object"
-        }
-      ]
     },
     "AddCreditsNudgeCreditType": {
       "enum": [
@@ -307,7 +276,7 @@
         "read": {
           "description": "This will be removed in favor of `entries`.",
           "items": {
-            "$ref": "#/definitions/AbsolutePathBuf"
+            "$ref": "#/definitions/LegacyAppPathString"
           },
           "type": [
             "array",
@@ -317,7 +286,7 @@
         "write": {
           "description": "This will be removed in favor of `entries`.",
           "items": {
-            "$ref": "#/definitions/AbsolutePathBuf"
+            "$ref": "#/definitions/LegacyAppPathString"
           },
           "type": [
             "array",
@@ -560,6 +529,24 @@
         "distributionChannel": {
           "type": [
             "string",
+            "null"
+          ]
+        },
+        "iconAssets": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "iconDarkAssets": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": [
+            "object",
             "null"
           ]
         },
@@ -867,6 +854,7 @@
       "enum": [
         "auto",
         "prompt",
+        "writes",
         "approve"
       ],
       "type": "string"
@@ -1027,13 +1015,6 @@
           "type": "string"
         },
         {
-          "description": "DEPRECATED: run commands inside a sandbox; escalate to the user only on failure. Prefer `OnRequest` for interactive runs or `Never` for non-interactive runs.",
-          "enum": [
-            "on-failure"
-          ],
-          "type": "string"
-        },
-        {
           "additionalProperties": false,
           "properties": {
             "granular": {
@@ -1097,6 +1078,13 @@
           "type": "string"
         },
         {
+          "description": "Backend auth supplied as request headers.",
+          "enum": [
+            "headers"
+          ],
+          "type": "string"
+        },
+        {
           "description": "Programmatic Codex auth backed by a registered Agent Identity.",
           "enum": [
             "agentIdentity"
@@ -1114,6 +1102,25 @@
           "description": "Amazon Bedrock bearer token managed by Codex.",
           "enum": [
             "bedrockApiKey"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "AutoCompactTokenLimitScope": {
+      "description": "Selects which part of the active context is charged against `model_auto_compact_token_limit`.",
+      "oneOf": [
+        {
+          "description": "Count the full active context against the limit.",
+          "enum": [
+            "total"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Count sampled output and later growth after the carried window prefix.",
+          "enum": [
+            "body_after_prefix"
           ],
           "type": "string"
         }
@@ -3323,52 +3330,6 @@
       ],
       "title": "ClientRequest"
     },
-    "CodexAppsToolsCacheStatus": {
-      "properties": {
-        "byteSize": {
-          "format": "uint64",
-          "minimum": 0.0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "modifiedAt": {
-          "format": "int64",
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "path": {
-          "type": "string"
-        },
-        "schemaVersion": {
-          "format": "uint32",
-          "minimum": 0.0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "state": {
-          "$ref": "#/definitions/McpCacheEntryState"
-        },
-        "toolCount": {
-          "format": "uint64",
-          "minimum": 0.0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "path",
-        "state"
-      ],
-      "type": "object"
-    },
     "CodexErrorInfo": {
       "description": "This translation layer make sure that we expose codex error code in camel case.\n\nWhen an upstream HTTP status is available (for example, from the Responses API or a provider), it is forwarded in `httpStatusCode` on the relevant `codexErrorInfo` variant.",
       "oneOf": [
@@ -3542,9 +3503,7 @@
         "sendInput",
         "resumeAgent",
         "wait",
-        "closeAgent",
-        "compactAgent",
-        "restartAgent"
+        "closeAgent"
       ],
       "type": "string"
     },
@@ -4120,6 +4079,13 @@
             "null"
           ]
         },
+        "desktop": {
+          "additionalProperties": true,
+          "type": [
+            "object",
+            "null"
+          ]
+        },
         "developer_instructions": {
           "type": [
             "string",
@@ -4127,9 +4093,13 @@
           ]
         },
         "forced_chatgpt_workspace_id": {
-          "type": [
-            "string",
-            "null"
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ForcedChatgptWorkspaceIds"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "forced_login_method": {
@@ -4159,6 +4129,16 @@
           "type": [
             "integer",
             "null"
+          ]
+        },
+        "model_auto_compact_token_limit_scope": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AutoCompactTokenLimitScope"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "model_context_window": {
@@ -4401,7 +4381,7 @@
           "type": "object"
         },
         {
-          "description": "Enterprise-managed config layer delivered via the cloud config bundle.",
+          "description": "Enterprise-managed config layer delivered by the cloud config bundle.",
           "properties": {
             "id": {
               "description": "Stable identifier for the delivered layer.",
@@ -4439,7 +4419,7 @@
               "description": "This is the path to the user's config.toml file, though it is not guaranteed to exist."
             },
             "profile": {
-              "default": null,
+              "description": "Name of the selected profile-v2 config layered on top of the base user config, when this layer represents one.",
               "type": [
                 "string",
                 "null"
@@ -4520,7 +4500,6 @@
           "type": "object"
         },
         {
-          "description": "Legacy managed config loaded from MDM.",
           "properties": {
             "type": {
               "enum": [
@@ -4682,6 +4661,16 @@
           "type": [
             "object",
             "null"
+          ]
+        },
+        "models": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ModelsRequirements"
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       },
@@ -4947,6 +4936,13 @@
     "ConsumeAccountRateLimitResetCreditParams": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
+        "creditId": {
+          "description": "Opaque reset-credit identifier to redeem. When omitted, the backend selects the next available credit.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "idempotencyKey": {
           "description": "Identifies one logical reset attempt. A UUID is recommended; reuse the same value when retrying that attempt.",
           "type": "string"
@@ -5044,13 +5040,6 @@
           "type": "object"
         }
       ]
-    },
-    "ContextBudgetMode": {
-      "enum": [
-        "standard",
-        "slow"
-      ],
-      "type": "string"
     },
     "ContextCompactedNotification": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -5885,8 +5874,7 @@
       "enum": [
         "read",
         "write",
-        "deny",
-        "none"
+        "deny"
       ],
       "type": "string"
     },
@@ -5895,7 +5883,7 @@
         {
           "properties": {
             "path": {
-              "$ref": "#/definitions/AbsolutePathBuf"
+              "$ref": "#/definitions/LegacyAppPathString"
             },
             "type": {
               "enum": [
@@ -6096,6 +6084,20 @@
         "path"
       ],
       "type": "object"
+    },
+    "ForcedChatgptWorkspaceIds": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      ],
+      "description": "Backward-compatible API shape for ChatGPT workspace login restrictions."
     },
     "ForcedLoginMethod": {
       "enum": [
@@ -7913,6 +7915,17 @@
         },
         {
           "properties": {
+            "appBrand": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/LoginAppBrand"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
             "codexStreamlinedLogin": {
               "type": "boolean"
             },
@@ -7922,6 +7935,9 @@
               ],
               "title": "Chatgptv2::LoginAccountParamsType",
               "type": "string"
+            },
+            "useHostedLoginSuccessPage": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -7978,6 +7994,31 @@
             "type"
           ],
           "title": "ChatgptAuthTokensv2::LoginAccountParams",
+          "type": "object"
+        },
+        {
+          "description": "[UNSTABLE] Managed Amazon Bedrock login is experimental.",
+          "properties": {
+            "apiKey": {
+              "type": "string"
+            },
+            "region": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "amazonBedrock"
+              ],
+              "title": "AmazonBedrockv2::LoginAccountParamsType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "apiKey",
+            "region",
+            "type"
+          ],
+          "title": "AmazonBedrockv2::LoginAccountParams",
           "type": "object"
         }
       ],
@@ -8072,9 +8113,32 @@
           ],
           "title": "ChatgptAuthTokensv2::LoginAccountResponse",
           "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "amazonBedrock"
+              ],
+              "title": "AmazonBedrockv2::LoginAccountResponseType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "title": "AmazonBedrockv2::LoginAccountResponse",
+          "type": "object"
         }
       ],
       "title": "LoginAccountResponse"
+    },
+    "LoginAppBrand": {
+      "enum": [
+        "codex",
+        "chatgpt"
+      ],
+      "type": "string"
     },
     "LogoutAccountResponse": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -8348,14 +8412,6 @@
       ],
       "type": "string"
     },
-    "McpCacheEntryState": {
-      "enum": [
-        "hit",
-        "missing",
-        "invalid"
-      ],
-      "type": "string"
-    },
     "McpResourceReadParams": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
@@ -8461,6 +8517,12 @@
         },
         "success": {
           "type": "boolean"
+        },
+        "threadId": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -8482,6 +8544,12 @@
           },
           "type": [
             "array",
+            "null"
+          ]
+        },
+        "threadId": {
+          "type": [
+            "string",
             "null"
           ]
         },
@@ -8516,6 +8584,12 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "McpServerRefreshResponse",
       "type": "object"
+    },
+    "McpServerStartupFailureReason": {
+      "enum": [
+        "reauthenticationRequired"
+      ],
+      "type": "string"
     },
     "McpServerStartupState": {
       "enum": [
@@ -8588,6 +8662,16 @@
             "null"
           ]
         },
+        "failureReason": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/McpServerStartupFailureReason"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "name": {
           "type": "string"
         },
@@ -8655,6 +8739,18 @@
     },
     "McpToolCallAppContext": {
       "properties": {
+        "actionName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "appName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "connectorId": {
           "type": "string"
         },
@@ -8665,6 +8761,12 @@
           ]
         },
         "resourceUri": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "templateId": {
           "type": [
             "string",
             "null"
@@ -8782,27 +8884,6 @@
       ],
       "type": "object"
     },
-    "MemoryJobStatus": {
-      "properties": {
-        "count": {
-          "format": "uint64",
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "kind": {
-          "type": "string"
-        },
-        "status": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "count",
-        "kind",
-        "status"
-      ],
-      "type": "object"
-    },
     "MergeStrategy": {
       "enum": [
         "replace",
@@ -8863,6 +8944,13 @@
           "default": [],
           "items": {
             "$ref": "#/definitions/SessionMigration"
+          },
+          "type": "array"
+        },
+        "skills": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/SkillMigration"
           },
           "type": "array"
         },
@@ -9237,14 +9325,45 @@
       "title": "ModelVerificationNotification",
       "type": "object"
     },
+    "ModelsRequirements": {
+      "properties": {
+        "newThread": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/NewThreadModelDefaults"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
     "MultiAgentMode": {
-      "description": "Controls whether the model receives multi-agent delegation instructions and, when it does, whether it should only spawn sub-agents after an explicit user request or may delegate proactively when doing so would help. `none` leaves the multi-agent tools available without injecting delegation instructions.\n\nProtocol-only: not present in `codex_config_types`.",
-      "enum": [
-        "none",
-        "explicitRequestOnly",
-        "proactive"
-      ],
-      "type": "string"
+      "description": "Controls the effective multi-agent delegation instructions for a turn. `custom` means the configured mode hint defines the policy instead of a built-in policy.",
+      "oneOf": [
+        {
+          "enum": [
+            "explicitRequestOnly",
+            "proactive"
+          ],
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "custom": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "custom"
+          ],
+          "title": "CustomMultiAgentMode",
+          "type": "object"
+        }
+      ]
     },
     "NetworkAccess": {
       "enum": [
@@ -9383,6 +9502,33 @@
         "deny"
       ],
       "type": "string"
+    },
+    "NewThreadModelDefaults": {
+      "properties": {
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "modelReasoningEffort": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ReasoningEffort"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "serviceTier": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
     },
     "NonSteerableTurnKind": {
       "enum": [
@@ -9748,6 +9894,13 @@
         "NOT_AVAILABLE",
         "AVAILABLE",
         "INSTALLED_BY_DEFAULT"
+      ],
+      "type": "string"
+    },
+    "PluginInstallPolicySource": {
+      "enum": [
+        "WORKSPACE_SETTING",
+        "IMPLICIT_CANONICAL_APP"
       ],
       "type": "string"
     },
@@ -10559,6 +10712,40 @@
           "type": "object"
         },
         {
+          "properties": {
+            "package": {
+              "type": "string"
+            },
+            "registry": {
+              "description": "Optional HTTPS registry URL. Authentication stays in the user's npm config.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "enum": [
+                "npm"
+              ],
+              "title": "NpmPluginSourceType",
+              "type": "string"
+            },
+            "version": {
+              "description": "Optional npm version or version range.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "package",
+            "type"
+          ],
+          "title": "NpmPluginSource",
+          "type": "object"
+        },
+        {
           "description": "The plugin is available in the remote catalog. Download metadata is kept server-side and is not exposed through the app-server API.",
           "properties": {
             "type": {
@@ -10599,6 +10786,16 @@
         },
         "installPolicy": {
           "$ref": "#/definitions/PluginInstallPolicy"
+        },
+        "installPolicySource": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PluginInstallPolicySource"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "installed": {
           "type": "boolean"
@@ -10651,6 +10848,14 @@
         },
         "source": {
           "$ref": "#/definitions/PluginSource"
+        },
+        "version": {
+          "default": null,
+          "description": "Version advertised by the remote marketplace backend when available.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -10826,17 +11031,91 @@
       ],
       "type": "string"
     },
+    "RateLimitResetCredit": {
+      "properties": {
+        "description": {
+          "description": "Backend-provided display description for this credit, or `null` when unavailable.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expiresAt": {
+          "description": "Unix timestamp in seconds when the credit expires, or `null` if it does not expire.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "grantedAt": {
+          "description": "Unix timestamp in seconds when the credit was granted.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "id": {
+          "description": "Opaque backend identifier for this reset credit.",
+          "type": "string"
+        },
+        "resetType": {
+          "$ref": "#/definitions/RateLimitResetType"
+        },
+        "status": {
+          "$ref": "#/definitions/RateLimitResetCreditStatus"
+        },
+        "title": {
+          "description": "Backend-provided display title for this credit, or `null` when unavailable.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "grantedAt",
+        "id",
+        "resetType",
+        "status"
+      ],
+      "type": "object"
+    },
+    "RateLimitResetCreditStatus": {
+      "enum": [
+        "available",
+        "redeeming",
+        "redeemed",
+        "unknown"
+      ],
+      "type": "string"
+    },
     "RateLimitResetCreditsSummary": {
       "properties": {
         "availableCount": {
           "format": "int64",
           "type": "integer"
+        },
+        "credits": {
+          "description": "Detail rows for available reset credits, when the backend provides them.\n\n`null` means only `availableCount` is known, while an empty array means details were fetched and no available credits were returned. The backend may cap this list, so its length can be less than `availableCount`.",
+          "items": {
+            "$ref": "#/definitions/RateLimitResetCredit"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
         }
       },
       "required": [
         "availableCount"
       ],
       "type": "object"
+    },
+    "RateLimitResetType": {
+      "enum": [
+        "codexRateLimits",
+        "unknown"
+      ],
+      "type": "string"
     },
     "RateLimitSnapshot": {
       "properties": {
@@ -11030,15 +11309,8 @@
       "type": "object"
     },
     "ReasoningEffort": {
-      "description": "See https://platform.openai.com/docs/guides/reasoning?api-mode=responses#get-started-with-reasoning",
-      "enum": [
-        "none",
-        "minimal",
-        "low",
-        "medium",
-        "high",
-        "xhigh"
-      ],
+      "description": "A non-empty reasoning effort value advertised by the model.",
+      "minLength": 1,
       "type": "string"
     },
     "ReasoningEffortOption": {
@@ -11834,6 +12106,12 @@
             "name": {
               "type": "string"
             },
+            "namespace": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "status": {
               "type": [
                 "string",
@@ -12257,102 +12535,12 @@
         }
       ]
     },
-    "ReviewCodeLocation": {
-      "properties": {
-        "absoluteFilePath": {
-          "type": "string"
-        },
-        "lineRange": {
-          "$ref": "#/definitions/ReviewLineRange"
-        }
-      },
-      "required": [
-        "absoluteFilePath",
-        "lineRange"
-      ],
-      "type": "object"
-    },
     "ReviewDelivery": {
       "enum": [
         "inline",
         "detached"
       ],
       "type": "string"
-    },
-    "ReviewFinding": {
-      "properties": {
-        "body": {
-          "type": "string"
-        },
-        "codeLocation": {
-          "$ref": "#/definitions/ReviewCodeLocation"
-        },
-        "confidenceScore": {
-          "format": "float",
-          "type": "number"
-        },
-        "priority": {
-          "format": "int32",
-          "type": "integer"
-        },
-        "title": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "body",
-        "codeLocation",
-        "confidenceScore",
-        "priority",
-        "title"
-      ],
-      "type": "object"
-    },
-    "ReviewLineRange": {
-      "properties": {
-        "end": {
-          "format": "uint32",
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "start": {
-          "format": "uint32",
-          "minimum": 0.0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "end",
-        "start"
-      ],
-      "type": "object"
-    },
-    "ReviewOutput": {
-      "properties": {
-        "findings": {
-          "items": {
-            "$ref": "#/definitions/ReviewFinding"
-          },
-          "type": "array"
-        },
-        "overallConfidenceScore": {
-          "format": "float",
-          "type": "number"
-        },
-        "overallCorrectness": {
-          "type": "string"
-        },
-        "overallExplanation": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "findings",
-        "overallConfidenceScore",
-        "overallCorrectness",
-        "overallExplanation"
-      ],
-      "type": "object"
     },
     "ReviewStartParams": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -14284,6 +14472,17 @@
       ],
       "type": "object"
     },
+    "SkillMigration": {
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
     "SkillScope": {
       "enum": [
         "user",
@@ -14938,52 +15137,6 @@
       "title": "ThreadArchivedNotification",
       "type": "object"
     },
-    "ThreadBackgroundTerminal": {
-      "properties": {
-        "command": {
-          "type": "string"
-        },
-        "cpuPercent": {
-          "format": "double",
-          "type": [
-            "number",
-            "null"
-          ]
-        },
-        "cwd": {
-          "$ref": "#/definitions/AbsolutePathBuf"
-        },
-        "itemId": {
-          "type": "string"
-        },
-        "osPid": {
-          "format": "uint32",
-          "minimum": 0.0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "processId": {
-          "type": "string"
-        },
-        "rssKb": {
-          "format": "uint64",
-          "minimum": 0.0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "command",
-        "cwd",
-        "itemId",
-        "processId"
-      ],
-      "type": "object"
-    },
     "ThreadClosedNotification": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
@@ -15102,6 +15255,13 @@
         },
         "ephemeral": {
           "type": "boolean"
+        },
+        "lastTurnId": {
+          "description": "Optional last turn id to fork through, inclusive.\n\nWhen specified, turns after `last_turn_id` are omitted from the fork. The referenced turn cannot be in progress.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "model": {
           "description": "Configuration overrides for the forked thread, if any.",
@@ -15421,6 +15581,13 @@
       ],
       "title": "ThreadGoalUpdatedNotification",
       "type": "object"
+    },
+    "ThreadHistoryMode": {
+      "enum": [
+        "legacy",
+        "paginated"
+      ],
+      "type": "string"
     },
     "ThreadId": {
       "type": "string"
@@ -16151,16 +16318,6 @@
             },
             "review": {
               "type": "string"
-            },
-            "reviewOutput": {
-              "anyOf": [
-                {
-                  "$ref": "#/definitions/ReviewOutput"
-                },
-                {
-                  "type": "null"
-                }
-              ]
             },
             "type": {
               "enum": [
@@ -16951,6 +17108,7 @@
     },
     "ThreadRollbackParams": {
       "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "DEPRECATED: `thread/rollback` will be removed soon.",
       "properties": {
         "numTurns": {
           "description": "The number of turns to drop from the end of the thread. Must be >= 1.\n\nThis only modifies the thread's history and does not revert local file changes that have been made by the agent. Clients are responsible for reverting these changes.",
@@ -17976,17 +18134,6 @@
             "string",
             "null"
           ]
-        },
-        "contextBudgetMode": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/ContextBudgetMode"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Override local context-budget behavior for this turn and subsequent turns."
         },
         "cwd": {
           "description": "Override the working directory for this turn and subsequent turns.",

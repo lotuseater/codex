@@ -54,7 +54,7 @@ pub const CODEX_EXEC_SERVER_NOISE_CHATGPT_ACCOUNT_ID_ENV_VAR: &str =
 #[derive(Debug)]
 pub struct EnvironmentManager {
     default_environment: Option<String>,
-    environments: RwLock<HashMap<String, Arc<Environment>>>,
+    pub(super) environments: RwLock<HashMap<String, Arc<Environment>>>,
     local_environment: Option<Arc<Environment>>,
     local_runtime_paths: Option<ExecServerRuntimePaths>,
 }
@@ -574,6 +574,25 @@ impl Environment {
         }
     }
 
+    /// Starts the initial connection after an environment is actually selected for use.
+    pub(crate) fn start_connecting_for_use(environment: &Arc<Self>) {
+        if environment.remote_client.is_none() {
+            return;
+        }
+        let mut startup_task = environment
+            .startup_task
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if startup_task.is_none() {
+            let environment = Arc::clone(environment);
+            *startup_task = Some(AbortOnDropHandle::new(tokio::spawn(async move {
+                if let Err(error) = environment.wait_until_ready().await {
+                    tracing::debug!(%error, "exec-server environment startup failed");
+                }
+            })));
+        }
+    }
+
     /// Returns whether initial startup has either succeeded or permanently failed.
     pub fn startup_finished(&self) -> bool {
         self.remote_client
@@ -589,6 +608,14 @@ impl Environment {
         }
     }
 
+    /// Returns whether the environment can serve a request without waiting or reconnecting.
+    pub(crate) fn readiness_result(&self) -> Option<Result<(), ExecServerError>> {
+        match &self.remote_client {
+            Some(client) => client.readiness_result(),
+            None => Some(Ok(())),
+        }
+    }
+
     pub fn get_exec_backend(&self) -> Arc<dyn ExecBackend> {
         Arc::clone(&self.exec_backend)
     }
@@ -599,6 +626,14 @@ impl Environment {
 
     pub fn get_filesystem(&self) -> Arc<dyn ExecutorFileSystem> {
         Arc::clone(&self.filesystem)
+    }
+
+    /// Returns a filesystem view that fails instead of starting or waiting for a connection.
+    pub fn get_filesystem_without_reconnect(&self) -> Arc<dyn ExecutorFileSystem> {
+        match &self.remote_client {
+            Some(client) => Arc::new(RemoteFileSystem::new(client.fail_fast())),
+            None => Arc::clone(&self.filesystem),
+        }
     }
 }
 
@@ -1062,6 +1097,72 @@ mod tests {
         assert!(!environment.startup_finished());
         assert!(environment.wait_until_ready().await.is_err());
         assert!(environment.startup_finished());
+    }
+
+    #[tokio::test]
+    async fn selected_capability_inspection_keeps_stdio_environment_lazy() {
+        use codex_protocol::capabilities::CapabilityRootLocation;
+        use codex_protocol::capabilities::SelectedCapabilityRoot;
+
+        let environment = Environment::remote_with_transport(
+            ExecServerTransportParams::StdioCommand {
+                command: StdioExecServerCommand {
+                    program: "codex-missing-exec-server-for-test".to_string(),
+                    args: Vec::new(),
+                    env: HashMap::new(),
+                    cwd: None,
+                },
+                initialize_timeout: Duration::from_secs(1),
+            },
+            /*local_runtime_paths*/ None,
+        );
+        let manager = EnvironmentManager::from_snapshot(
+            EnvironmentProviderSnapshot {
+                environments: vec![("stdio".to_string(), environment)],
+                default: EnvironmentDefault::Disabled,
+                include_local: false,
+            },
+            /*local_runtime_paths*/ None,
+        )
+        .expect("environment manager");
+        let environment = manager.get_environment("stdio").expect("stdio environment");
+        let selected_root = SelectedCapabilityRoot {
+            id: "demo@1".to_string(),
+            location: CapabilityRootLocation::Environment {
+                environment_id: "stdio".to_string(),
+                path: PathUri::parse("file:///plugins/demo").expect("plugin path URI"),
+            },
+        };
+
+        let status =
+            manager.inspect_selected_capability_roots(std::slice::from_ref(&selected_root));
+        assert!(status.ready_roots.is_empty());
+        assert_eq!(status.warnings, Vec::<String>::new());
+        assert!(!environment.startup_finished());
+
+        let missing_root = SelectedCapabilityRoot {
+            id: "missing@1".to_string(),
+            location: CapabilityRootLocation::Environment {
+                environment_id: "missing".to_string(),
+                path: PathUri::parse("file:///plugins/missing").expect("missing plugin path URI"),
+            },
+        };
+        let status = manager.inspect_selected_capability_roots(&[missing_root]);
+        assert!(status.ready_roots.is_empty());
+        assert_eq!(
+            status.warnings,
+            vec![
+                "selected capability root `missing@1` references unavailable environment `missing`"
+                    .to_string()
+            ]
+        );
+
+        assert!(environment.wait_until_ready().await.is_err());
+
+        let status = manager.inspect_selected_capability_roots(&[selected_root]);
+        assert!(status.ready_roots.is_empty());
+        assert_eq!(status.warnings.len(), 1);
+        assert!(status.warnings[0].contains("environment `stdio` is unavailable"));
     }
 
     #[tokio::test]

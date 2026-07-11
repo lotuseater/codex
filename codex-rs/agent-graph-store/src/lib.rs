@@ -10,5 +10,6 @@ pub use error::AgentGraphStoreError;
 pub use error::AgentGraphStoreResult;
 pub use local::LocalAgentGraphStore;
 pub use store::AgentGraphStore;
+pub use store::AgentGraphStoreFuture;
 pub use thread_spawn_graph::ThreadSpawnGraph;
 pub use types::ThreadSpawnEdgeStatus;

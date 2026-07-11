@@ -17,6 +17,7 @@ mod tools;
 mod turn_input;
 mod turn_item;
 mod turn_lifecycle;
+mod world_state;
 
 pub use approval_review::ApprovalReviewContributor;
 pub use approval_review::ApprovalReviewFuture;
@@ -48,6 +49,10 @@ pub use turn_lifecycle::TurnAbortReason;
 pub use turn_lifecycle::TurnErrorInput;
 pub use turn_lifecycle::TurnStartInput;
 pub use turn_lifecycle::TurnStopInput;
+pub use world_state::PreviousWorldStateSection;
+pub use world_state::RenderedWorldStateFragment;
+pub use world_state::WorldStateContributionInput;
+pub use world_state::WorldStateSectionContribution;
 
 /// Boxed, sendable future returned by asynchronous extension contributors.
 pub type ExtensionFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -95,6 +100,17 @@ pub trait ContextContributor: Send + Sync {
         &'a self,
         input: TurnContextContributionInput<'a>,
     ) -> ExtensionFuture<'a, Vec<PromptFragment>> {
+        Box::pin(async move {
+            let _self = self;
+            let _input = input;
+            Vec::new()
+        })
+    }
+
+    fn contribute_world_state<'a>(
+        &'a self,
+        input: WorldStateContributionInput<'a>,
+    ) -> ExtensionFuture<'a, Vec<WorldStateSectionContribution>> {
         Box::pin(async move {
             let _self = self;
             let _input = input;

@@ -132,6 +132,7 @@ use codex_protocol::protocol::ReviewRequest;
 use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
+use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::ThreadSource;
 use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::TurnContextItem;
@@ -139,6 +140,7 @@ use codex_protocol::protocol::TurnContextNetworkItem;
 use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::protocol::TurnEnvironmentSelections;
 use codex_protocol::protocol::W3cTraceContext;
+use codex_protocol::protocol::WorldStateItem;
 use codex_protocol::request_permissions::PermissionGrantScope;
 use codex_protocol::request_permissions::RequestPermissionProfile;
 use codex_protocol::request_permissions::RequestPermissionsArgs;
@@ -242,8 +244,10 @@ pub(crate) mod usage_hint_reminder;
 // upstream-added split modules (files exist on disk; consumed by sibling modules)
 mod code_mode_warning;
 pub(crate) mod context_window;
+mod mcp_runtime;
 pub(crate) mod step_context;
 mod world_state;
+pub use self::mcp_runtime::McpRuntimeSnapshot;
 use self::config_lock::export_config_lock_if_configured;
 use self::config_lock::validate_config_lock_if_configured;
 #[cfg(test)]
@@ -759,21 +763,87 @@ impl Session {
         )
     }
 
+    /// Captures one request-scoped view of dynamic state.
+    ///
+    /// This may refresh filesystem-derived state. Normal turns should call it only from
+    /// `run_turn` and pass the result down; standalone request or history boundaries may capture
+    /// their own step.
+    #[tracing::instrument(name = "step_context.capture", level = "info", skip_all)]
     pub(crate) async fn capture_step_context(
-        &self,
+        self: &Arc<Self>,
         turn_context: Arc<TurnContext>,
     ) -> Arc<StepContext> {
-        // Keep the old turn-frozen view unless deferred executors are explicitly enabled.
-        let environments = if turn_context
+        let deferred_executor_enabled = turn_context
             .config
             .features
-            .enabled(Feature::DeferredExecutor)
-        {
+            .enabled(Feature::DeferredExecutor);
+        // Keep the old turn-frozen environment view unless deferred executors are enabled.
+        let environments = if deferred_executor_enabled {
             self.services.turn_environments.snapshot().await
         } else {
             turn_context.environments.clone()
         };
-        Arc::new(StepContext::new(turn_context, environments))
+        if deferred_executor_enabled {
+            self.services
+                .agents_md_manager
+                .refresh(&turn_context.config, &environments)
+                .await;
+        }
+        let loaded_agents_md = self.services.agents_md_manager.get_loaded().await;
+        let selected_capability_roots = self
+            .resolve_selected_capability_roots_for_step(&environments)
+            .await;
+        let mcp = self
+            .mcp_runtime_for_step(
+                turn_context.as_ref(),
+                &environments,
+                &selected_capability_roots,
+            )
+            .await;
+        Arc::new(StepContext::new(
+            turn_context,
+            environments,
+            selected_capability_roots,
+            mcp,
+            loaded_agents_md,
+        ))
+    }
+
+    /// Upstream world-state machinery (snapshot/patch model). Unioned alongside the fork's
+    /// `record_step_environment_context_if_changed` so callers of either surface resolve.
+    pub(crate) async fn record_step_world_state_if_changed(
+        &self,
+        previous_world_state: &Arc<WorldState>,
+        step_context: &step_context::StepContext,
+    ) -> Arc<WorldState> {
+        let turn_context = step_context.turn.as_ref();
+        // Render model-visible state from the same step used to build and run tools.
+        let world_state = Arc::new(self.build_world_state_for_step(step_context).await);
+        // Derive the model update and persisted patch from the same two snapshots.
+        let previous_snapshot = previous_world_state.snapshot();
+        let world_state_snapshot = world_state.snapshot();
+        let world_state_item = world_state_snapshot
+            .merge_patch_from(&previous_snapshot)
+            .map(WorldStateItem::patch);
+        let items = crate::context_manager::updates::merge_contextual_fragments(
+            world_state.render_diff(&previous_snapshot),
+        );
+        if !items.is_empty() {
+            self.record_conversation_items(turn_context, &items).await;
+        }
+
+        // ContextManager remembers this for later turns; run_turn owns the live value.
+        self.state
+            .lock()
+            .await
+            .history
+            .set_world_state_baseline(world_state_snapshot);
+        // Record the patch after the context it describes is present in model history.
+        if let Some(world_state_item) = world_state_item {
+            self.persist_rollout_items(&[RolloutItem::WorldState(world_state_item)])
+                .await;
+        }
+        world_state
     }
 
     pub(crate) async fn record_step_environment_context_if_changed(
@@ -1932,6 +2002,8 @@ pub struct CodexSpawnOk {
 
 pub(crate) struct CodexSpawnArgs {
     pub(crate) config: Config,
+    // fork-local: unioned upstream field (provider/model fallback gate).
+    pub(crate) allow_provider_model_fallback: bool,
     pub(crate) user_instructions: LoadedUserInstructions,
     pub(crate) installation_id: String,
     pub(crate) auth_manager: Arc<AuthManager>,
@@ -1940,8 +2012,12 @@ pub(crate) struct CodexSpawnArgs {
     pub(crate) skills_service: Arc<SkillsService>,
     pub(crate) plugins_manager: Arc<PluginsManager>,
     pub(crate) mcp_manager: Arc<McpManager>,
+    // fork-local: unioned upstream field (code-mode session provider).
+    pub(crate) code_mode_session_provider: Arc<dyn codex_code_mode::CodeModeSessionProvider>,
     pub(crate) extensions: Arc<codex_extension_api::ExtensionRegistry<crate::config::Config>>,
     pub(crate) conversation_history: InitialHistory,
+    // fork-local: unioned upstream field (requested thread history mode).
+    pub(crate) requested_history_mode: Option<ThreadHistoryMode>,
     pub(crate) session_source: SessionSource,
     pub(crate) forked_from_thread_id: Option<ThreadId>,
     pub(crate) thread_source: Option<ThreadSource>,

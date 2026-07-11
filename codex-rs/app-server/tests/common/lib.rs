@@ -3,10 +3,13 @@
 mod analytics_server;
 mod auth_fixtures;
 mod config;
+mod json_logging;
+mod local_websocket_exec_server;
 mod mock_model_server;
 mod models_cache;
 pub mod responses;
 mod rollout;
+mod rpc_delay;
 mod test_app_server;
 
 pub use analytics_server::start_analytics_events_server;
@@ -37,6 +40,9 @@ pub use codex_test_support_lightweight::test_path_buf_with_windows;
 pub use codex_test_support_lightweight::test_tmp_path;
 pub use codex_test_support_lightweight::test_tmp_path_buf;
 pub use codex_test_support_responses::streaming_sse;
+// fork-local: upstream re-exports its monolithic core_test_support helpers here;
+// the fork already re-exports the equivalents from its split test crates above.
+pub use json_logging::app_server_json_shutdown_event;
 pub use mock_model_server::create_mock_responses_server_repeating_assistant;
 pub use mock_model_server::create_mock_responses_server_sequence;
 pub use mock_model_server::create_mock_responses_server_sequence_unchecked;
@@ -61,6 +67,7 @@ pub use test_app_server::DISABLE_PLUGIN_STARTUP_TASKS_ARG;
 // the legacy MANAGED_CONFIG_PATH_ARG re-export keep working.
 pub use test_app_server::MANAGED_CONFIG_PATH_ARG;
 pub use test_app_server::TestAppServer;
+pub use test_app_server::TestAppServerBuilder;
 
 pub fn to_response<T: DeserializeOwned>(response: JSONRPCResponse) -> anyhow::Result<T> {
     let value = serde_json::to_value(response.result)?;

@@ -22,6 +22,7 @@ codex-tool-execution-api = { workspace = true }
 codex-tool-registry-api = { workspace = true }
 codex-tools = { workspace = true }
 codex-utils-absolute-path = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }

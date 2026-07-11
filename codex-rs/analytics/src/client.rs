@@ -11,6 +11,9 @@ use crate::facts::ExternalAgentConfigImportFailureInput;
 use crate::facts::HookRunFact;
 use crate::facts::HookRunInput;
 use crate::facts::PluginInstallFailedInput;
+use crate::facts::PluginInstallRequested;
+use crate::facts::PluginInstallRequestedInput;
+use crate::facts::PluginInstallSource;
 use crate::facts::PluginState;
 use crate::facts::PluginStateChangedInput;
 use crate::facts::SkillInvocation;
@@ -267,6 +270,19 @@ impl AnalyticsEventsClient {
         )));
     }
 
+    pub fn track_plugin_install_requested(
+        &self,
+        tracking: TrackEventsContext,
+        request: PluginInstallRequested,
+    ) {
+        self.record_fact(AnalyticsFact::Custom(
+            CustomAnalyticsFact::PluginInstallRequested(PluginInstallRequestedInput {
+                tracking,
+                request,
+            }),
+        ));
+    }
+
     pub fn track_compaction(&self, event: crate::facts::CodexCompactionEvent) {
         self.record_fact(AnalyticsFact::Custom(CustomAnalyticsFact::Compaction(
             Box::new(event),
@@ -312,10 +328,16 @@ impl AnalyticsEventsClient {
         ));
     }
 
-    pub fn track_plugin_install_failed(&self, plugin: PluginTelemetryMetadata, error_type: String) {
+    pub fn track_plugin_install_failed(
+        &self,
+        plugin: PluginTelemetryMetadata,
+        source: PluginInstallSource,
+        error_type: String,
+    ) {
         self.record_fact(AnalyticsFact::Custom(
             CustomAnalyticsFact::PluginInstallFailed(PluginInstallFailedInput {
                 plugin,
+                source,
                 error_type,
             }),
         ));

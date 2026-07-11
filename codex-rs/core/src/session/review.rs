@@ -40,7 +40,10 @@ pub(super) async fn spawn_review_thread(
     let available_models = sess
         .services
         .models_manager
-        .list_models(RefreshStrategy::OnlineIfUncached)
+        .list_models(
+            RefreshStrategy::OnlineIfUncached,
+            config.http_client_factory(),
+        )
         .await;
     let goal_tools_supported = !config.ephemeral && parent_turn_context.tools_config.goal_tools;
     let provider_capabilities = parent_turn_context.provider.capabilities();
@@ -184,6 +187,7 @@ pub(super) async fn spawn_review_thread(
         reasoning_effort,
         reasoning_summary,
         session_source,
+        history_mode: parent_turn_context.history_mode,
         parent_thread_id: parent_turn_context.parent_thread_id,
         thread_source: parent_turn_context.thread_source.clone(),
         originator: parent_turn_context.originator.clone(),
@@ -200,7 +204,6 @@ pub(super) async fn spawn_review_thread(
         user_instructions: None,
         compact_prompt: parent_turn_context.compact_prompt.clone(),
         collaboration_mode: parent_turn_context.collaboration_mode.clone(),
-        multi_agent_mode: parent_turn_context.multi_agent_mode,
         multi_agent_version: MultiAgentVersion::Disabled,
         personality: parent_turn_context.personality,
         approval_policy: parent_turn_context.approval_policy.clone(),
@@ -240,10 +243,11 @@ pub(super) async fn spawn_review_thread(
     sess.spawn_task(tc.clone(), input, ReviewTask::new()).await;
 
     // Announce entering review mode so UIs can switch modes.
-    let review_request = ReviewRequest {
+    let item = TurnItem::EnteredReviewMode(EnteredReviewModeItem {
+        id: uuid::Uuid::now_v7().to_string(),
         target: resolved.target,
-        user_facing_hint: Some(resolved.user_facing_hint),
-    };
-    sess.send_event(&tc, EventMsg::EnteredReviewMode(review_request))
-        .await;
+        user_facing_hint: resolved.user_facing_hint,
+    });
+    sess.emit_turn_item_started(&tc, &item).await;
+    sess.emit_turn_item_completed(&tc, item).await;
 }

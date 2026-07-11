@@ -400,6 +400,7 @@ use self::rate_limits::app_server_rate_limit_error_kind;
 pub(crate) use self::rate_limits::fallback_limit_label;
 pub(crate) use self::rate_limits::get_limits_duration;
 use self::rate_limits::is_app_server_cyber_policy_error;
+mod reset_credits;
 pub(crate) use self::rate_limits::limit_label_for_window;
 mod realtime;
 mod reasoning_shortcuts;
@@ -411,10 +412,12 @@ mod review_popups;
 use self::review::ReviewState;
 #[cfg(test)]
 pub(crate) use self::review_popups::show_review_commit_picker_with_entries;
+mod safety_buffering;
 mod service_tiers;
 mod settings;
 mod settings_popups;
 mod side;
+use self::safety_buffering::SafetyBufferingState;
 mod status_state;
 mod windows_sandbox_prompts;
 use self::status_state::StatusIndicatorState;
@@ -603,6 +606,7 @@ pub(crate) struct ChatWidget {
     last_unified_wait: Option<UnifiedExecWaitState>,
     unified_exec_wait_streak: Option<UnifiedExecWaitStreak>,
     turn_lifecycle: TurnLifecycleState,
+    safety_buffering: SafetyBufferingState,
     task_complete_pending: bool,
     unified_exec_processes: Vec<UnifiedExecProcessSummary>,
     latest_completed_plan_markdown: Option<String>,
@@ -640,8 +644,8 @@ pub(crate) struct ChatWidget {
     interrupts: InterruptManager,
     // Accumulates the current reasoning block text to extract a header
     reasoning_buffer: String,
-    // Accumulates full reasoning content for transcript-only recording
-    full_reasoning_buffer: String,
+    // Preserves reasoning-summary part boundaries for transcript-only recording.
+    reasoning_summary_parts: Vec<String>,
     status_state: StatusState,
     review: ReviewState,
     // Active hook runs render in a dedicated live cell so they can run alongside tools.

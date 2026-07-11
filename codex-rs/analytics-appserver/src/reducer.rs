@@ -221,6 +221,7 @@ fn is_unconditional_custom(custom: &CustomAnalyticsFact) -> bool {
         | CustomAnalyticsFact::PluginStateChanged(_)
         // fork-local: upstream-new stateless custom facts; delegated verbatim to
         // `codex_analytics::CustomFactReducer` like the other unconditional ones.
+        | CustomAnalyticsFact::PluginInstallRequested(_)
         | CustomAnalyticsFact::PluginInstallFailed(_)
         | CustomAnalyticsFact::ExternalAgentConfigImportCompleted(_)
         | CustomAnalyticsFact::ExternalAgentConfigImportFailure(_) => true,
@@ -247,6 +248,20 @@ struct ConnectionState {
 struct ThreadAnalyticsState {
     connection_id: Option<u64>,
     metadata: Option<ThreadMetadataState>,
+    originator: Option<String>,
+}
+
+impl ThreadAnalyticsState {
+    fn app_server_client(
+        &self,
+        connection_state: &ConnectionState,
+    ) -> CodexAppServerClientMetadata {
+        let mut app_server_client = connection_state.app_server_client.clone();
+        if let Some(originator) = self.originator.as_ref() {
+            app_server_client.product_client_id.clone_from(originator);
+        }
+        app_server_client
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -470,8 +485,8 @@ impl TurnToolCounts {
             ThreadItem::CollabAgentToolCall { .. } | ThreadItem::SubAgentActivity { .. } => {
                 self.subagent_tool_call += 1;
             }
-            ThreadItem::WebSearch { .. } => self.web_search += 1,
-            ThreadItem::ImageGeneration { .. } => self.image_generation += 1,
+            ThreadItem::WebSearch(_) => self.web_search += 1,
+            ThreadItem::ImageGeneration(_) => self.image_generation += 1,
             ThreadItem::UserMessage { .. }
             | ThreadItem::HookPrompt { .. }
             | ThreadItem::AgentMessage { .. }
@@ -513,9 +528,11 @@ impl AppServerReducer {
                 connection_id,
                 request_id,
                 response,
+                thread_originator,
             } => {
                 if let Some(response) = response.into_client_response(request_id) {
-                    self.ingest_response(connection_id, response, out).await;
+                    self.ingest_response(connection_id, response, thread_originator, out)
+                        .await;
                 }
             }
             AppServerFact::ErrorResponse {
@@ -592,7 +609,7 @@ impl AppServerReducer {
         input: GuardianReviewEventParams,
         out: &mut Vec<TrackEventRequest>,
     ) {
-        let Some((connection_state, thread_metadata)) =
+        let Some((connection_state, thread_state, thread_metadata)) =
             self.thread_context_or_warn(AnalyticsDropSite::guardian(&input))
         else {
             return;
@@ -602,7 +619,7 @@ impl AppServerReducer {
                 event_type: "codex_guardian_review",
                 event_params: GuardianReviewEventPayload {
                     session_id: thread_metadata.session_id.clone(),
-                    app_server_client: connection_state.app_server_client.clone(),
+                    app_server_client: thread_state.app_server_client(connection_state),
                     runtime: connection_state.runtime.clone(),
                     guardian_review: input,
                 },
@@ -698,6 +715,7 @@ impl AppServerReducer {
         &mut self,
         connection_id: u64,
         response: ClientResponse,
+        thread_originator: Option<String>,
         out: &mut Vec<TrackEventRequest>,
     ) {
         match response {
@@ -707,6 +725,7 @@ impl AppServerReducer {
                     response.thread,
                     response.model,
                     ThreadInitializationMode::New,
+                    thread_originator,
                     out,
                 );
             }
@@ -716,6 +735,7 @@ impl AppServerReducer {
                     response.thread,
                     response.model,
                     ThreadInitializationMode::Resumed,
+                    thread_originator,
                     out,
                 );
             }
@@ -725,6 +745,7 @@ impl AppServerReducer {
                     response.thread,
                     response.model,
                     ThreadInitializationMode::Forked,
+                    thread_originator,
                     out,
                 );
             }
@@ -1072,7 +1093,7 @@ impl AppServerReducer {
                 else {
                     return;
                 };
-                let Some((connection_state, thread_metadata)) = self
+                let Some((connection_state, thread_state, thread_metadata)) = self
                     .thread_context_or_warn(AnalyticsDropSite::tool_item(&notification, item_id))
                 else {
                     return;
@@ -1084,6 +1105,7 @@ impl AppServerReducer {
                     started_at_ms,
                     completed_at_ms,
                     connection_state,
+                    thread_state,
                     thread_metadata,
                     review_summary: self.item_review_summaries.get(&key),
                 }) {
@@ -1140,6 +1162,7 @@ impl AppServerReducer {
         thread: codex_app_server_protocol::Thread,
         model: String,
         initialization_mode: ThreadInitializationMode,
+        thread_originator: Option<String>,
         out: &mut Vec<TrackEventRequest>,
     ) {
         let session_source: SessionSource =
@@ -1158,20 +1181,20 @@ impl AppServerReducer {
             parent_thread_id,
             initialization_mode,
         );
-        self.threads.insert(
-            thread_id.clone(),
-            ThreadAnalyticsState {
-                connection_id: Some(connection_id),
-                metadata: Some(thread_metadata.clone()),
-            },
-        );
+        let thread_state = self.threads.entry(thread_id.clone()).or_default();
+        if let Some(originator) = thread_originator {
+            thread_state.originator = Some(originator);
+        }
+        thread_state.connection_id = Some(connection_id);
+        thread_state.metadata = Some(thread_metadata.clone());
+        let app_server_client = thread_state.app_server_client(connection_state);
         out.push(TrackEventRequest::ThreadInitialized(
             ThreadInitializedEvent {
                 event_type: "codex_thread_initialized",
                 event_params: ThreadInitializedEventParams {
                     thread_id,
                     session_id,
-                    app_server_client: connection_state.app_server_client.clone(),
+                    app_server_client,
                     runtime: connection_state.runtime.clone(),
                     model,
                     ephemeral: thread.ephemeral,
@@ -1191,7 +1214,7 @@ impl AppServerReducer {
         input: CodexCompactionEvent,
         out: &mut Vec<TrackEventRequest>,
     ) {
-        let Some((connection_state, thread_metadata)) =
+        let Some((connection_state, thread_state, thread_metadata)) =
             self.thread_context_or_warn(AnalyticsDropSite::compaction(&input))
         else {
             return;
@@ -1202,7 +1225,7 @@ impl AppServerReducer {
                 event_params: codex_compaction_event_params(
                     input,
                     thread_metadata.session_id.clone(),
-                    connection_state.app_server_client.clone(),
+                    thread_state.app_server_client(connection_state),
                     connection_state.runtime.clone(),
                     thread_metadata.thread_source.clone(),
                     thread_metadata.subagent_source.clone(),
@@ -1213,7 +1236,7 @@ impl AppServerReducer {
     }
 
     fn ingest_goal(&mut self, input: CodexGoalEvent, out: &mut Vec<TrackEventRequest>) {
-        let Some((connection_state, thread_metadata)) =
+        let Some((connection_state, thread_state, thread_metadata)) =
             self.thread_context_or_warn(AnalyticsDropSite::goal(&input))
         else {
             return;
@@ -1223,7 +1246,7 @@ impl AppServerReducer {
             event_params: codex_goal_event_params(
                 input,
                 thread_metadata.session_id.clone(),
-                connection_state.app_server_client.clone(),
+                thread_state.app_server_client(connection_state),
                 connection_state.runtime.clone(),
                 thread_metadata.thread_source.clone(),
                 thread_metadata.subagent_source.clone(),
@@ -1312,11 +1335,11 @@ impl AppServerReducer {
             return;
         };
         let drop_site = AnalyticsDropSite::turn_steer(&pending_request.thread_id);
-        let Some(thread_metadata) = self
-            .threads
-            .get(drop_site.thread_id)
-            .and_then(|thread| thread.metadata.as_ref())
-        else {
+        let Some(thread_state) = self.threads.get(drop_site.thread_id) else {
+            warn_missing_analytics_context(&drop_site, MissingAnalyticsContext::ThreadMetadata);
+            return;
+        };
+        let Some(thread_metadata) = thread_state.metadata.as_ref() else {
             warn_missing_analytics_context(&drop_site, MissingAnalyticsContext::ThreadMetadata);
             return;
         };
@@ -1327,7 +1350,7 @@ impl AppServerReducer {
                 session_id: thread_metadata.session_id.clone(),
                 expected_turn_id: Some(pending_request.expected_turn_id),
                 accepted_turn_id,
-                app_server_client: connection_state.app_server_client.clone(),
+                app_server_client: thread_state.app_server_client(connection_state),
                 runtime: connection_state.runtime.clone(),
                 thread_source: thread_metadata.thread_source.clone(),
                 subagent_source: thread_metadata.subagent_source.clone(),
@@ -1358,7 +1381,7 @@ impl AppServerReducer {
                 &pending_review,
             );
         }
-        let Some((connection_state, thread_metadata)) =
+        let Some((connection_state, thread_state, thread_metadata)) =
             self.thread_context_or_warn(AnalyticsDropSite::review(&pending_review))
         else {
             return;
@@ -1370,7 +1393,7 @@ impl AppServerReducer {
                 turn_id: pending_review.turn_id,
                 item_id: pending_review.item_id,
                 review_id: pending_review.review_id,
-                app_server_client: connection_state.app_server_client.clone(),
+                app_server_client: thread_state.app_server_client(connection_state),
                 runtime: connection_state.runtime.clone(),
                 thread_source: thread_metadata.thread_source.clone(),
                 subagent_source: thread_metadata.subagent_source.clone(),
@@ -1439,18 +1462,18 @@ impl AppServerReducer {
             );
             return;
         };
-        let Some(thread_metadata) = self
-            .threads
-            .get(drop_site.thread_id)
-            .and_then(|thread| thread.metadata.as_ref())
-        else {
+        let Some(thread_state) = self.threads.get(drop_site.thread_id) else {
+            warn_missing_analytics_context(&drop_site, MissingAnalyticsContext::ThreadMetadata);
+            return;
+        };
+        let Some(thread_metadata) = thread_state.metadata.as_ref() else {
             warn_missing_analytics_context(&drop_site, MissingAnalyticsContext::ThreadMetadata);
             return;
         };
         let turn_event = TrackEventRequest::TurnEvent(Box::new(CodexTurnEventRequest {
             event_type: "codex_turn_event",
             event_params: codex_turn_event_params(
-                connection_state.app_server_client.clone(),
+                thread_state.app_server_client(connection_state),
                 connection_state.runtime.clone(),
                 turn_id.to_string(),
                 turn_state,
@@ -1492,17 +1515,18 @@ impl AppServerReducer {
     fn thread_context_or_warn(
         &self,
         drop_site: AnalyticsDropSite<'_>,
-    ) -> Option<(&ConnectionState, &ThreadMetadataState)> {
+    ) -> Option<(
+        &ConnectionState,
+        &ThreadAnalyticsState,
+        &ThreadMetadataState,
+    )> {
         let connection_state = self.thread_connection_or_warn(drop_site)?;
-        let Some(thread_metadata) = self
-            .threads
-            .get(drop_site.thread_id)
-            .and_then(|thread| thread.metadata.as_ref())
-        else {
+        let thread_state = self.threads.get(drop_site.thread_id)?;
+        let Some(thread_metadata) = thread_state.metadata.as_ref() else {
             warn_missing_analytics_context(&drop_site, MissingAnalyticsContext::ThreadMetadata);
             return None;
         };
-        Some((connection_state, thread_metadata))
+        Some((connection_state, thread_state, thread_metadata))
     }
 }
 
@@ -1535,9 +1559,9 @@ fn tracked_tool_item_id(item: &ThreadItem) -> Option<&str> {
         | ThreadItem::FileChange { id, .. }
         | ThreadItem::McpToolCall { id, .. }
         | ThreadItem::DynamicToolCall { id, .. }
-        | ThreadItem::CollabAgentToolCall { id, .. }
-        | ThreadItem::WebSearch { id, .. }
-        | ThreadItem::ImageGeneration { id, .. } => Some(id),
+        | ThreadItem::CollabAgentToolCall { id, .. } => Some(id),
+        ThreadItem::WebSearch(item) => Some(&item.id),
+        ThreadItem::ImageGeneration(item) => Some(&item.id),
         ThreadItem::UserMessage { .. }
         | ThreadItem::HookPrompt { .. }
         | ThreadItem::AgentMessage { .. }
@@ -1572,6 +1596,7 @@ struct ToolItemEventInput<'a> {
     started_at_ms: u64,
     completed_at_ms: u64,
     connection_state: &'a ConnectionState,
+    thread_state: &'a ThreadAnalyticsState,
     thread_metadata: &'a ThreadMetadataState,
     review_summary: Option<&'a ItemReviewSummary>,
 }
@@ -1584,6 +1609,7 @@ fn tool_item_event(input: ToolItemEventInput<'_>) -> Option<TrackEventRequest> {
         started_at_ms,
         completed_at_ms,
         connection_state,
+        thread_state,
         thread_metadata,
         review_summary,
     } = input;
@@ -1613,6 +1639,7 @@ fn tool_item_event(input: ToolItemEventInput<'_>) -> Option<TrackEventRequest> {
                     started_at_ms,
                     completed_at_ms,
                     connection_state,
+                    thread_state,
                     thread_metadata,
                     review_summary,
                 },
@@ -1654,6 +1681,7 @@ fn tool_item_event(input: ToolItemEventInput<'_>) -> Option<TrackEventRequest> {
                     started_at_ms,
                     completed_at_ms,
                     connection_state,
+                    thread_state,
                     thread_metadata,
                     review_summary,
                 },
@@ -1695,6 +1723,7 @@ fn tool_item_event(input: ToolItemEventInput<'_>) -> Option<TrackEventRequest> {
                     started_at_ms,
                     completed_at_ms,
                     connection_state,
+                    thread_state,
                     thread_metadata,
                     review_summary,
                 },
@@ -1739,6 +1768,7 @@ fn tool_item_event(input: ToolItemEventInput<'_>) -> Option<TrackEventRequest> {
                     started_at_ms,
                     completed_at_ms,
                     connection_state,
+                    thread_state,
                     thread_metadata,
                     review_summary,
                 },
@@ -1783,6 +1813,7 @@ fn tool_item_event(input: ToolItemEventInput<'_>) -> Option<TrackEventRequest> {
                     started_at_ms,
                     completed_at_ms,
                     connection_state,
+                    thread_state,
                     thread_metadata,
                     review_summary,
                 },
@@ -1823,11 +1854,11 @@ fn tool_item_event(input: ToolItemEventInput<'_>) -> Option<TrackEventRequest> {
                 },
             ))
         }
-        ThreadItem::WebSearch { id, query, action } => {
+        ThreadItem::WebSearch(item) => {
             let base = tool_item_base(
                 thread_id,
                 turn_id,
-                id.clone(),
+                item.id.clone(),
                 "web_search".to_string(),
                 ToolItemOutcome {
                     terminal_status: ToolItemTerminalStatus::Completed,
@@ -1838,6 +1869,7 @@ fn tool_item_event(input: ToolItemEventInput<'_>) -> Option<TrackEventRequest> {
                     started_at_ms,
                     completed_at_ms,
                     connection_state,
+                    thread_state,
                     thread_metadata,
                     review_summary,
                 },
@@ -1846,24 +1878,18 @@ fn tool_item_event(input: ToolItemEventInput<'_>) -> Option<TrackEventRequest> {
                 event_type: "codex_web_search_event",
                 event_params: CodexWebSearchEventParams {
                     base,
-                    web_search_action: action.as_ref().map(web_search_action_kind),
-                    query_present: !query.trim().is_empty(),
-                    query_count: web_search_query_count(query, action.as_ref()),
+                    web_search_action: item.action.as_ref().map(web_search_action_kind),
+                    query_present: !item.query.trim().is_empty(),
+                    query_count: web_search_query_count(&item.query, item.action.as_ref()),
                 },
             }))
         }
-        ThreadItem::ImageGeneration {
-            id,
-            status,
-            revised_prompt,
-            saved_path,
-            ..
-        } => {
-            let (terminal_status, failure_kind) = image_generation_outcome(status.as_str());
+        ThreadItem::ImageGeneration(item) => {
+            let (terminal_status, failure_kind) = image_generation_outcome(item.status.as_str());
             let base = tool_item_base(
                 thread_id,
                 turn_id,
-                id.clone(),
+                item.id.clone(),
                 "image_generation".to_string(),
                 ToolItemOutcome {
                     terminal_status,
@@ -1874,6 +1900,7 @@ fn tool_item_event(input: ToolItemEventInput<'_>) -> Option<TrackEventRequest> {
                     started_at_ms,
                     completed_at_ms,
                     connection_state,
+                    thread_state,
                     thread_metadata,
                     review_summary,
                 },
@@ -1883,8 +1910,8 @@ fn tool_item_event(input: ToolItemEventInput<'_>) -> Option<TrackEventRequest> {
                     event_type: "codex_image_generation_event",
                     event_params: CodexImageGenerationEventParams {
                         base,
-                        revised_prompt_present: revised_prompt.is_some(),
-                        saved_path_present: saved_path.is_some(),
+                        revised_prompt_present: item.revised_prompt.is_some(),
+                        saved_path_present: item.saved_path.is_some(),
                     },
                 },
             ))
@@ -1929,6 +1956,7 @@ struct ToolItemContext<'a> {
     started_at_ms: u64,
     completed_at_ms: u64,
     connection_state: &'a ConnectionState,
+    thread_state: &'a ThreadAnalyticsState,
     thread_metadata: &'a ThreadMetadataState,
     review_summary: Option<&'a ItemReviewSummary>,
 }
@@ -1947,7 +1975,9 @@ fn tool_item_base(
         thread_id: thread_id.to_string(),
         turn_id: turn_id.to_string(),
         item_id,
-        app_server_client: context.connection_state.app_server_client.clone(),
+        app_server_client: context
+            .thread_state
+            .app_server_client(context.connection_state),
         runtime: context.connection_state.runtime.clone(),
         thread_source: thread_metadata.thread_source.clone(),
         subagent_source: thread_metadata.subagent_source.clone(),

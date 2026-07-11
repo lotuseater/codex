@@ -16,55 +16,59 @@
 //! surfaces as channel-full errors rather than unbounded memory growth.
 
 pub mod legacy_core {
-//! Transitional access to core-only embedded app-server types.
-//!
-//! New TUI behavior should prefer the app-server protocol methods. This
-//! module exists so clients can remove a direct `codex-core` dependency
-//! while legacy startup/config paths are migrated to RPCs.
+    //! Transitional access to core-only embedded app-server types.
+    //!
+    //! New TUI behavior should prefer the app-server protocol methods. This
+    //! module exists so clients can remove a direct `codex-core` dependency
+    //! while legacy startup/config paths are migrated to RPCs.
 
-pub use codex_core::DEFAULT_AGENTS_MD_FILENAME;
-pub use codex_core::LOCAL_AGENTS_MD_FILENAME;
-pub use codex_core::McpManager;
-pub use codex_core::check_execpolicy_for_warnings;
-pub use codex_core::format_exec_policy_error_with_source;
-pub use codex_core::grant_read_root_non_elevated;
-pub use codex_core::web_search_detail;
+    pub use codex_core::DEFAULT_AGENTS_MD_FILENAME;
+    pub use codex_core::LOCAL_AGENTS_MD_FILENAME;
+    pub use codex_core::McpManager;
+    pub use codex_core::check_execpolicy_for_warnings;
+    pub use codex_core::format_exec_policy_error_with_source;
+    pub use codex_core::grant_read_root_non_elevated;
+    pub use codex_core::web_search_detail;
 
-pub mod config {
-    pub use codex_core::config::*;
-}
+    pub mod config {
+        pub use codex_core::config::*;
 
-pub mod connectors {
-    pub use codex_core::connectors::*;
-}
+        pub mod edit {
+            pub use codex_core::config::edit::*;
+        }
+    }
 
-pub mod otel_init {
-    pub use codex_core::otel_init::*;
-}
+    pub mod connectors {
+        pub use codex_core::connectors::*;
+    }
 
-pub mod personality_migration {
-    pub use codex_core::personality_migration::*;
-}
+    pub mod otel_init {
+        pub use codex_core::otel_init::*;
+    }
 
-pub mod review_format {
-    pub use codex_core::review_format::*;
-}
+    pub mod personality_migration {
+        pub use codex_core::personality_migration::*;
+    }
 
-pub mod review_prompts {
-    pub use codex_core::review_prompts::*;
-}
+    pub mod review_format {
+        pub use codex_core::review_format::*;
+    }
 
-pub mod test_support {
-    pub use codex_core::test_support::*;
-}
+    pub mod review_prompts {
+        pub use codex_core::review_prompts::*;
+    }
 
-pub mod util {
-    pub use codex_core::util::*;
-}
+    pub mod test_support {
+        pub use codex_core::test_support::*;
+    }
 
-pub mod windows_sandbox {
-    pub use codex_core::windows_sandbox::*;
-}
+    pub mod util {
+        pub use codex_core::util::*;
+    }
+
+    pub mod windows_sandbox {
+        pub use codex_core::windows_sandbox::*;
+    }
 }
 mod path;
 mod remote;
@@ -540,7 +544,6 @@ impl AppServerClient {
 // runtime and stands up the facade worker task bridging caller-facing
 // channels to the underlying [`InProcessClientHandle`].
 
-
 #[derive(Clone)]
 pub struct InProcessClientStartArgs {
     /// Resolved argv0 dispatch paths used by command execution internals.
@@ -878,7 +881,6 @@ mod bootstrap_tests {
 // server error, or treat the response as an internal request/response
 // mismatch.
 
-
 /// Raw app-server request result for typed in-process requests.
 ///
 /// Even on the in-process path, successful responses still travel back through
@@ -985,7 +987,6 @@ mod errors_tests {
 // best-effort. Both the in-process and remote transports delegate to
 // [`server_notification_requires_delivery`] so the classification stays in
 // sync.
-
 
 #[derive(Debug, Clone)]
 pub enum AppServerEvent {
@@ -1345,7 +1346,6 @@ pub(crate) mod notifications_tests {
         ));
     }
 }
-
 
 /// Extracts the JSON-RPC method name for diagnostics without extending the
 /// protocol crate with in-process-only helpers.

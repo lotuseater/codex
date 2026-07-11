@@ -236,7 +236,11 @@ async fn openai_model_header_mismatch_only_emits_one_warning_per_turn() -> Resul
     loop {
         let event = wait_for_event(&test.codex, |_| true).await;
         match event {
-            EventMsg::Warning(warning) if warning.message.contains(REQUESTED_MODEL) => {
+            EventMsg::Warning(warning)
+                if warning
+                    .message
+                    .contains("flagged for potentially high-risk cyber activity") =>
+            {
                 warning_count += 1;
             }
             EventMsg::TurnComplete(_) => break,
@@ -302,7 +306,7 @@ async fn model_verification_emits_structured_event_without_reroute_or_warning() 
     ]));
     let _mock = mount_response_once(&server, response).await;
 
-    let mut builder = test_codex().with_model(REQUESTED_MODEL);
+    let mut builder = test_codex().with_model(SERVER_MODEL);
     let test = builder.build(&server).await?;
 
     test.codex
@@ -378,7 +382,7 @@ async fn model_verification_only_emits_once_per_turn() -> Result<()> {
     ]));
     let _mock = mount_response_sequence(&server, vec![first_response, second_response]).await;
 
-    let mut builder = test_codex().with_model(REQUESTED_MODEL);
+    let mut builder = test_codex().with_model(SERVER_MODEL);
     let test = builder.build(&server).await?;
 
     test.codex

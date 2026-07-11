@@ -137,12 +137,12 @@ pub enum HookEvaluation {
 }
 
 pub(crate) fn validate_mitm_hook_config(config: &NetworkProxyConfig) -> Result<()> {
-    let hooks = &config.network.mitm_hooks;
+    let hooks = &config.mitm_hooks;
     if hooks.is_empty() {
         return Ok(());
     }
 
-    if !config.network.mitm {
+    if !config.mitm {
         return Err(anyhow!("network.mitm_hooks requires network.mitm = true"));
     }
 
@@ -242,7 +242,7 @@ where
     validate_mitm_hook_config(config)?;
 
     let mut hooks_by_host = MitmHooksByHost::new();
-    for hook in &config.network.mitm_hooks {
+    for hook in &config.mitm_hooks {
         let host = normalize_hook_host(&hook.host)?;
         let methods = normalize_methods(&hook.matcher.methods)?;
         let path_prefixes = compile_path_matchers(&hook.matcher.path_prefixes)?;
@@ -612,7 +612,7 @@ fn parse_secret_file(path: &str) -> Result<AbsolutePathBuf> {
 mod tests {
     use super::*;
     use crate::NetworkMode;
-    use crate::config::NetworkProxySettings;
+    use crate::config::NetworkProxyConfig;
     use pretty_assertions::assert_eq;
     use rama_http::Body;
     use rama_http::Method;
@@ -620,11 +620,9 @@ mod tests {
 
     fn base_config() -> NetworkProxyConfig {
         NetworkProxyConfig {
-            network: NetworkProxySettings {
-                mitm: true,
-                mode: NetworkMode::Limited,
-                ..NetworkProxySettings::default()
-            },
+            mitm: true,
+            mode: NetworkMode::Limited,
+            ..NetworkProxyConfig::default()
         }
     }
 
@@ -651,8 +649,8 @@ mod tests {
     #[test]
     fn validate_requires_mitm_for_hooks() {
         let mut config = base_config();
-        config.network.mitm = false;
-        config.network.mitm_hooks = vec![github_hook()];
+        config.mitm = false;
+        config.mitm_hooks = vec![github_hook()];
 
         let err = validate_mitm_hook_config(&config).expect_err("hooks require mitm");
         assert!(
@@ -664,8 +662,8 @@ mod tests {
     #[test]
     fn validate_allows_hooks_in_full_mode() {
         let mut config = base_config();
-        config.network.mode = NetworkMode::Full;
-        config.network.mitm_hooks = vec![github_hook()];
+        config.mode = NetworkMode::Full;
+        config.mitm_hooks = vec![github_hook()];
 
         validate_mitm_hook_config(&config).expect("hooks should be allowed in full mode");
     }
@@ -677,7 +675,7 @@ mod tests {
         hook.matcher.body = Some(MitmHookBodyConfig(serde_json::json!({
             "repository": "openai/codex"
         })));
-        config.network.mitm_hooks = vec![hook];
+        config.mitm_hooks = vec![hook];
 
         let err = validate_mitm_hook_config(&config).expect_err("body matchers are reserved");
         assert!(err.to_string().contains("match.body is reserved"));
@@ -689,7 +687,7 @@ mod tests {
         let mut hook = github_hook();
         hook.actions.inject_request_headers[0].secret_env_var = None;
         hook.actions.inject_request_headers[0].secret_file = Some("token.txt".to_string());
-        config.network.mitm_hooks = vec![hook];
+        config.mitm_hooks = vec![hook];
 
         let err = validate_mitm_hook_config(&config).expect_err("secret file must be absolute");
         assert!(format!("{err:#}").contains("secret_file must be an absolute path"));
@@ -700,7 +698,7 @@ mod tests {
         let mut config = base_config();
         let mut hook = github_hook();
         hook.actions.inject_request_headers[0].secret_file = Some("/tmp/github-token".to_string());
-        config.network.mitm_hooks = vec![hook];
+        config.mitm_hooks = vec![hook];
 
         let err = validate_mitm_hook_config(&config).expect_err("dual secret sources invalid");
         assert!(format!("{err:#}").contains("exactly one of secret_env_var or secret_file"));
@@ -709,7 +707,7 @@ mod tests {
     #[test]
     fn compile_resolves_env_backed_injected_headers() {
         let mut config = base_config();
-        config.network.mitm_hooks = vec![github_hook()];
+        config.mitm_hooks = vec![github_hook()];
 
         let hooks = compile_mitm_hooks_with_resolvers(
             &config,
@@ -740,7 +738,7 @@ mod tests {
         hook.actions.inject_request_headers[0].secret_env_var = None;
         hook.actions.inject_request_headers[0].secret_file =
             Some(secret_file.path().display().to_string());
-        config.network.mitm_hooks = vec![hook];
+        config.mitm_hooks = vec![hook];
 
         let hooks = compile_mitm_hooks(&config).unwrap();
         let compiled = hooks.get("api.github.com").unwrap();
@@ -757,7 +755,7 @@ mod tests {
         first.matcher.path_prefixes = vec!["/repos/openai/".to_string()];
         let mut second = github_hook();
         second.actions.inject_request_headers[0].prefix = Some("Token ".to_string());
-        config.network.mitm_hooks = vec![first, second];
+        config.mitm_hooks = vec![first, second];
 
         let hooks = compile_mitm_hooks_with_resolvers(
             &config,
@@ -795,7 +793,7 @@ mod tests {
             "x-github-api-version".to_string(),
             vec!["2022-11-28".to_string()],
         )]);
-        config.network.mitm_hooks = vec![hook];
+        config.mitm_hooks = vec![hook];
 
         let hooks = compile_mitm_hooks_with_resolvers(
             &config,
@@ -829,7 +827,7 @@ mod tests {
             "x-github-api-version".to_string(),
             vec!["pattern:2022*preview".to_string()],
         )]);
-        config.network.mitm_hooks = vec![hook];
+        config.mitm_hooks = vec![hook];
 
         let hooks = compile_mitm_hooks_with_resolvers(
             &config,
@@ -857,7 +855,7 @@ mod tests {
         let mut config = base_config();
         let mut hook = github_hook();
         hook.matcher.path_prefixes = vec!["pattern:/repos/[".to_string()];
-        config.network.mitm_hooks = vec![hook];
+        config.mitm_hooks = vec![hook];
 
         let err = validate_mitm_hook_config(&config).expect_err("invalid glob should fail");
         assert!(format!("{err:#}").contains("invalid glob pattern"));
@@ -868,7 +866,7 @@ mod tests {
         let mut config = base_config();
         let mut hook = github_hook();
         hook.matcher.path_prefixes = vec!["pattern:/repos/*/codex/issues*".to_string()];
-        config.network.mitm_hooks = vec![hook];
+        config.mitm_hooks = vec![hook];
 
         let hooks = compile_mitm_hooks_with_resolvers(
             &config,
@@ -898,7 +896,7 @@ mod tests {
             "x-github-api-version".to_string(),
             vec!["2022-11-28[preview]".to_string()],
         )]);
-        config.network.mitm_hooks = vec![hook];
+        config.mitm_hooks = vec![hook];
 
         let hooks = compile_mitm_hooks_with_resolvers(
             &config,
@@ -941,7 +939,7 @@ mod tests {
             "x-github-api-version".to_string(),
             vec!["literal:pattern:*".to_string()],
         )]);
-        config.network.mitm_hooks = vec![hook];
+        config.mitm_hooks = vec![hook];
 
         let hooks = compile_mitm_hooks_with_resolvers(
             &config,
@@ -979,7 +977,7 @@ mod tests {
         let mut config = base_config();
         let mut hook = github_hook();
         hook.matcher.query = BTreeMap::from([("state".to_string(), vec!["open".to_string()])]);
-        config.network.mitm_hooks = vec![hook];
+        config.mitm_hooks = vec![hook];
 
         let hooks = compile_mitm_hooks_with_resolvers(
             &config,

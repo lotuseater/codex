@@ -302,6 +302,9 @@ pub enum ResponseItem {
 
         call_id: String,
         name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        namespace: Option<String>,
         input: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]

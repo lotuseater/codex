@@ -1,4 +1,5 @@
 use codex_config_types::ApprovalsReviewer;
+use codex_config_types::ReasoningEffort;
 use codex_config_types::SandboxMode;
 use codex_config_types::WebSearchMode;
 use codex_permission_types::AskForApproval;
@@ -19,6 +20,7 @@ use super::requirements_exec_policy::RequirementsExecPolicyToml;
 use crate::Constrained;
 use crate::ConstraintError;
 use crate::ManagedHooksRequirementsToml;
+use crate::mcp_requirements::McpServerRequirement;
 use crate::mcp_types::AppToolApproval;
 use crate::types::WindowsSandboxModeToml;
 
@@ -216,19 +218,7 @@ impl ConfigRequirements {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(untagged)]
-pub enum McpServerIdentity {
-    Command { command: String },
-    Url { url: String },
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct McpServerRequirement {
-    pub identity: McpServerIdentity,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Deserialize, Debug, Clone, Default, PartialEq, Eq)]
 pub struct PluginRequirementsToml {
     pub mcp_servers: Option<BTreeMap<String, McpServerRequirement>>,
 }
@@ -816,7 +806,11 @@ pub(crate) fn merge_app_requirements_descending(
 }
 
 /// Base config deserialized from system `requirements.toml` or MDM.
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
+// fork-local: upstream moved `McpServerRequirement` into `mcp_requirements` as a
+// non-`Serialize` enum, so this container (which holds `mcp_servers`) can no longer
+// derive `Serialize`; matches upstream's derive. The fork's serializable-requirements
+// intent survives only on leaf toml types that don't embed `McpServerRequirement`.
+#[derive(Deserialize, Debug, Clone, Default, PartialEq)]
 pub struct ConfigRequirementsToml {
     pub allowed_approval_policies: Option<Vec<AskForApproval>>,
     pub allowed_approvals_reviewers: Option<Vec<ApprovalsReviewer>>,
@@ -842,7 +836,34 @@ pub struct ConfigRequirementsToml {
     #[serde(rename = "experimental_network")]
     pub network: Option<NetworkRequirementsToml>,
     pub permissions: Option<PermissionsRequirementsToml>,
+    pub models: Option<ModelsRequirementsToml>,
     pub guardian_policy_config: Option<String>,
+}
+
+#[derive(Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+pub struct ModelsRequirementsToml {
+    pub new_thread: Option<NewThreadModelDefaultsToml>,
+}
+
+impl ModelsRequirementsToml {
+    fn is_empty(&self) -> bool {
+        self.new_thread
+            .as_ref()
+            .is_none_or(NewThreadModelDefaultsToml::is_empty)
+    }
+}
+
+#[derive(Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+pub struct NewThreadModelDefaultsToml {
+    pub model: Option<String>,
+    pub model_reasoning_effort: Option<ReasoningEffort>,
+    pub service_tier: Option<String>,
+}
+
+impl NewThreadModelDefaultsToml {
+    fn is_empty(&self) -> bool {
+        self.model.is_none() && self.model_reasoning_effort.is_none() && self.service_tier.is_none()
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -896,6 +917,7 @@ pub struct ConfigRequirementsWithSources {
     pub enforce_residency: Option<Sourced<ResidencyRequirement>>,
     pub network: Option<Sourced<NetworkRequirementsToml>>,
     pub permissions: Option<Sourced<PermissionsRequirementsToml>>,
+    pub models: Option<Sourced<ModelsRequirementsToml>>,
     pub guardian_policy_config: Option<Sourced<String>>,
 }
 
@@ -940,6 +962,7 @@ impl ConfigRequirementsWithSources {
             enforce_residency: _,
             network: _,
             permissions: _,
+            models: _,
             guardian_policy_config: _,
         } = &other;
 
@@ -976,6 +999,7 @@ impl ConfigRequirementsWithSources {
                 enforce_residency,
                 network,
                 permissions,
+                models,
                 guardian_policy_config,
             }
         );
@@ -1012,6 +1036,7 @@ impl ConfigRequirementsWithSources {
             enforce_residency,
             network,
             permissions,
+            models,
             guardian_policy_config,
         } = self;
         ConfigRequirementsToml {
@@ -1037,6 +1062,7 @@ impl ConfigRequirementsWithSources {
             enforce_residency: enforce_residency.map(|sourced| sourced.value),
             network: network.map(|sourced| sourced.value),
             permissions: permissions.map(|sourced| sourced.value),
+            models: models.map(|sourced| sourced.value),
             guardian_policy_config: guardian_policy_config.map(|sourced| sourced.value),
         }
     }
@@ -1150,10 +1176,33 @@ impl ConfigRequirementsToml {
             && self.network.is_none()
             && self.permissions.is_none()
             && self
+                .models
+                .as_ref()
+                .is_none_or(ModelsRequirementsToml::is_empty)
+            && self
                 .guardian_policy_config
                 .as_deref()
                 .is_none_or(|value| value.trim().is_empty())
     }
+}
+
+fn validate_mcp_server_requirements(
+    requirements: &BTreeMap<String, McpServerRequirement>,
+    source: &RequirementSource,
+    plugin_name: Option<&str>,
+) -> Result<(), ConstraintError> {
+    for (server_name, requirement) in requirements {
+        requirement
+            .validate()
+            .map_err(|reason| ConstraintError::McpServerRequirementParse {
+                server_name: plugin_name
+                    .map(|plugin_name| format!("{plugin_name}/{server_name}"))
+                    .unwrap_or_else(|| server_name.clone()),
+                requirement_source: source.clone(),
+                reason,
+            })?;
+    }
+    Ok(())
 }
 
 impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
@@ -1161,8 +1210,9 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
 
     fn try_from(toml: ConfigRequirementsWithSources) -> Result<Self, Self::Error> {
         // Profile catalog selection remains on ConfigRequirementsToml for
-        // config loading and requirements API projection. The normalized
-        // constraints below only need the compiled PermissionProfile envelope.
+        // config loading and requirements API projection. Managed new-thread
+        // defaults also remain there because they are initialization values,
+        // not runtime constraints.
         let ConfigRequirementsWithSources {
             allowed_approval_policies,
             allowed_approvals_reviewers,
@@ -1185,8 +1235,28 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
             enforce_residency,
             network,
             permissions,
+            models: _,
             guardian_policy_config,
         } = toml;
+
+        if let Some(requirements) = &mcp_servers {
+            validate_mcp_server_requirements(
+                &requirements.value,
+                &requirements.source,
+                /*plugin_name*/ None,
+            )?;
+        }
+        if let Some(plugin_requirements) = &plugins {
+            for (plugin_name, plugin) in &plugin_requirements.value {
+                if let Some(requirements) = &plugin.mcp_servers {
+                    validate_mcp_server_requirements(
+                        requirements,
+                        &plugin_requirements.source,
+                        Some(plugin_name),
+                    )?;
+                }
+            }
+        }
 
         let approval_policy = match allowed_approval_policies {
             Some(Sourced {
@@ -1497,6 +1567,9 @@ pub fn sandbox_mode_requirement_for_permission_profile(
 mod tests {
     use super::*;
     use crate::HookEventsToml;
+    use crate::McpServerCommandMatcher;
+    use crate::McpServerIdentity;
+    use crate::McpServerValueMatcher;
     use anyhow::Result;
     use codex_execpolicy::Decision;
     use codex_execpolicy::Evaluation;
@@ -1565,6 +1638,7 @@ mod tests {
             enforce_residency,
             network,
             permissions,
+            models,
             guardian_policy_config,
         } = toml;
         ConfigRequirementsWithSources {
@@ -1600,6 +1674,7 @@ mod tests {
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
             network: network.map(|value| Sourced::new(value, RequirementSource::Unknown)),
             permissions: permissions.map(|value| Sourced::new(value, RequirementSource::Unknown)),
+            models: models.map(|value| Sourced::new(value, RequirementSource::Unknown)),
             guardian_policy_config: guardian_policy_config
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
         }
@@ -1753,6 +1828,31 @@ mod tests {
     }
 
     #[test]
+    fn deserialize_new_thread_model_defaults() -> Result<()> {
+        let requirements: ConfigRequirementsToml = from_str(
+            r#"
+                [models.new_thread]
+                model = "managed-model"
+                model_reasoning_effort = "medium"
+                service_tier = "fast"
+            "#,
+        )?;
+
+        assert_eq!(
+            requirements.models,
+            Some(ModelsRequirementsToml {
+                new_thread: Some(NewThreadModelDefaultsToml {
+                    model: Some("managed-model".to_string()),
+                    model_reasoning_effort: Some(ReasoningEffort::Medium),
+                    service_tier: Some("fast".to_string()),
+                }),
+            })
+        );
+        assert!(!requirements.is_empty());
+        Ok(())
+    }
+
+    #[test]
     fn merge_unset_fields_copies_every_field_and_sets_sources() {
         let mut target = ConfigRequirementsWithSources::default();
         let source = RequirementSource::LegacyManagedConfigTomlFromMdm;
@@ -1773,6 +1873,13 @@ mod tests {
         };
         let computer_use = ComputerUseRequirementsToml {
             allow_locked_computer_use: Some(false),
+        };
+        let models = ModelsRequirementsToml {
+            new_thread: Some(NewThreadModelDefaultsToml {
+                model: Some("managed-model".to_string()),
+                model_reasoning_effort: Some(ReasoningEffort::Medium),
+                service_tier: Some("fast".to_string()),
+            }),
         };
         let enforce_residency = ResidencyRequirement::Us;
         let enforce_source = source.clone();
@@ -1803,6 +1910,7 @@ mod tests {
             enforce_residency: Some(enforce_residency),
             network: None,
             permissions: None,
+            models: Some(models.clone()),
             guardian_policy_config: Some(guardian_policy_config.clone()),
         };
 
@@ -1853,6 +1961,7 @@ mod tests {
                 enforce_residency: Some(Sourced::new(enforce_residency, enforce_source)),
                 network: None,
                 permissions: None,
+                models: Some(Sourced::new(models, source.clone())),
                 guardian_policy_config: Some(Sourced::new(guardian_policy_config, source)),
             }
         );
@@ -1900,6 +2009,7 @@ mod tests {
                 enforce_residency: None,
                 network: None,
                 permissions: None,
+                models: None,
                 guardian_policy_config: None,
             }
         );
@@ -1955,6 +2065,7 @@ mod tests {
                 enforce_residency: None,
                 network: None,
                 permissions: None,
+                models: None,
                 guardian_policy_config: None,
             }
         );
@@ -3430,6 +3541,9 @@ command = "python3 /enterprise/hooks/pre.py"
     #[test]
     fn deserialize_mcp_server_requirements() -> Result<()> {
         let toml_str = r#"
+            [mcp_servers.docs]
+            description = "ignored legacy field"
+
             [mcp_servers.docs.identity]
             command = "codex-mcp"
 
@@ -3445,7 +3559,7 @@ command = "python3 /enterprise/hooks/pre.py"
                 BTreeMap::from([
                     (
                         "docs".to_string(),
-                        McpServerRequirement {
+                        McpServerRequirement::Identity {
                             identity: McpServerIdentity::Command {
                                 command: "codex-mcp".to_string(),
                             },
@@ -3453,7 +3567,7 @@ command = "python3 /enterprise/hooks/pre.py"
                     ),
                     (
                         "remote".to_string(),
-                        McpServerRequirement {
+                        McpServerRequirement::Identity {
                             identity: McpServerIdentity::Url {
                                 url: "https://example.com/mcp".to_string(),
                             },
@@ -3463,6 +3577,74 @@ command = "python3 /enterprise/hooks/pre.py"
                 RequirementSource::Unknown,
             ))
         );
+        Ok(())
+    }
+
+    #[test]
+    fn deserialize_mcp_server_matcher_requirements() -> Result<()> {
+        let toml_str = r#"
+            [mcp_servers.internal_mcp_proxy.identity]
+            command = { executable = "company-cli", args = [
+                { match = "exact", value = "mcp" },
+                { match = "exact", value = "proxy" },
+                { match = "exact", value = "--server" },
+                { match = "regex", expression = '^https://[A-Za-z0-9-]+\.mcp\.internal\.example\.com(?::443)?(?:/.*)?$' },
+            ] }
+        "#;
+        let requirements: ConfigRequirements =
+            with_unknown_source(from_str(toml_str)?).try_into()?;
+
+        assert_eq!(
+            requirements.mcp_servers,
+            Some(Sourced::new(
+                BTreeMap::from([(
+                    "internal_mcp_proxy".to_string(),
+                    McpServerRequirement::Command(McpServerCommandMatcher {
+                        executable: "company-cli".to_string(),
+                        args: vec![
+                            McpServerValueMatcher::Exact {
+                                value: "mcp".to_string(),
+                            },
+                            McpServerValueMatcher::Exact {
+                                value: "proxy".to_string(),
+                            },
+                            McpServerValueMatcher::Exact {
+                                value: "--server".to_string(),
+                            },
+                            McpServerValueMatcher::Regex {
+                                expression: r"^https://[A-Za-z0-9-]+\.mcp\.internal\.example\.com(?::443)?(?:/.*)?$"
+                                    .to_string(),
+                            },
+                        ],
+                    }),
+                )]),
+                RequirementSource::Unknown,
+            ))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn invalid_mcp_server_requirement_regex_reports_the_server_name_and_source() -> Result<()> {
+        let toml_str = r#"
+            [mcp_servers.broken_rule.identity]
+            url = { match = "regex", expression = "[" }
+        "#;
+
+        let err = ConfigRequirements::try_from(with_unknown_source(from_str(toml_str)?))
+            .expect_err("invalid matcher regex should fail requirements normalization");
+        let ConstraintError::McpServerRequirementParse {
+            server_name,
+            requirement_source,
+            reason,
+        } = err
+        else {
+            panic!("unexpected error: {err:?}");
+        };
+
+        assert_eq!(server_name, "broken_rule");
+        assert_eq!(requirement_source, RequirementSource::Unknown);
+        assert!(reason.contains("invalid regex `[`"), "{reason}");
         Ok(())
     }
 
@@ -3487,7 +3669,7 @@ command = "python3 /enterprise/hooks/pre.py"
                         PluginRequirementsToml {
                             mcp_servers: Some(BTreeMap::from([(
                                 "remote".to_string(),
-                                McpServerRequirement {
+                                McpServerRequirement::Identity {
                                     identity: McpServerIdentity::Url {
                                         url: "https://example.com/mcp".to_string(),
                                     },
@@ -3500,7 +3682,7 @@ command = "python3 /enterprise/hooks/pre.py"
                         PluginRequirementsToml {
                             mcp_servers: Some(BTreeMap::from([(
                                 "sample".to_string(),
-                                McpServerRequirement {
+                                McpServerRequirement::Identity {
                                     identity: McpServerIdentity::Command {
                                         command: "sample-mcp".to_string(),
                                     },
@@ -3512,6 +3694,70 @@ command = "python3 /enterprise/hooks/pre.py"
                 RequirementSource::Unknown,
             ))
         );
+        Ok(())
+    }
+
+    #[test]
+    fn deserialize_plugin_mcp_server_matcher_requirement() -> Result<()> {
+        let toml_str = r#"
+            [plugins."sample@test".mcp_servers.internal_proxy.identity]
+            command = { executable = "company-cli", args = [
+                { match = "exact", value = "mcp" },
+                { match = "regex", expression = '^https://[a-z]+\.example\.com$' },
+            ] }
+        "#;
+        let requirements: ConfigRequirements =
+            with_unknown_source(from_str(toml_str)?).try_into()?;
+
+        assert_eq!(
+            requirements.plugins,
+            Some(Sourced::new(
+                BTreeMap::from([(
+                    "sample@test".to_string(),
+                    PluginRequirementsToml {
+                        mcp_servers: Some(BTreeMap::from([(
+                            "internal_proxy".to_string(),
+                            McpServerRequirement::Command(McpServerCommandMatcher {
+                                executable: "company-cli".to_string(),
+                                args: vec![
+                                    McpServerValueMatcher::Exact {
+                                        value: "mcp".to_string(),
+                                    },
+                                    McpServerValueMatcher::Regex {
+                                        expression: r"^https://[a-z]+\.example\.com$".to_string(),
+                                    },
+                                ],
+                            }),
+                        )])),
+                    },
+                )]),
+                RequirementSource::Unknown,
+            ))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn invalid_plugin_mcp_server_regex_reports_plugin_and_server_name() -> Result<()> {
+        let toml_str = r#"
+            [plugins."sample@test".mcp_servers.broken_rule.identity]
+            url = { match = "regex", expression = "[" }
+        "#;
+
+        let err = ConfigRequirements::try_from(with_unknown_source(from_str(toml_str)?))
+            .expect_err("invalid plugin MCP regex should fail requirements normalization");
+        let ConstraintError::McpServerRequirementParse {
+            server_name,
+            requirement_source,
+            reason,
+        } = err
+        else {
+            panic!("unexpected error: {err:?}");
+        };
+
+        assert_eq!(server_name, "sample@test/broken_rule");
+        assert_eq!(requirement_source, RequirementSource::Unknown);
+        assert!(reason.contains("invalid regex `[`"), "{reason}");
         Ok(())
     }
 

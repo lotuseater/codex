@@ -2,8 +2,6 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::OnceLock;
 
-use crate::Prompt;
-use crate::client::CompactConversationRequestSettings;
 use crate::compact::CompactionAnalyticsAttempt;
 use crate::compact::CompactionAnalyticsDetails;
 use crate::compact::InitialContextInjection;
@@ -16,11 +14,9 @@ use crate::hook_runtime::PostCompactHookOutcome;
 use crate::hook_runtime::PreCompactHookOutcome;
 use crate::hook_runtime::run_post_compact_hooks;
 use crate::hook_runtime::run_pre_compact_hooks;
-use crate::responses_metadata::CodexResponsesRequestKind;
 use crate::responses_metadata::CompactionTurnMetadata;
 use crate::session::session::Session;
 use crate::session::step_context::StepContext;
-use crate::session::turn::built_tools;
 use crate::session::turn_context::TurnContext;
 use codex_analytics::CompactionImplementation;
 use codex_analytics::CompactionPhase;
@@ -51,19 +47,25 @@ const CONTEXT_WINDOW_TRUNCATED_OUTPUT_MESSAGE: &str =
 pub(crate) async fn run_inline_remote_auto_compact_task(
     sess: Arc<Session>,
     step_context: Arc<StepContext>,
+    fallback_step_context: Option<Arc<StepContext>>,
     turn_state: Arc<OnceLock<String>>,
     initial_context_injection: InitialContextInjection,
     reason: CompactionReason,
     phase: CompactionPhase,
 ) -> CodexResult<()> {
+    let compaction_metadata = CompactionTurnMetadata::new(
+        CompactionTrigger::Auto,
+        reason,
+        CompactionImplementation::ResponsesCompact,
+        phase,
+    );
     run_remote_compact_task_inner(
         &sess,
         &step_context,
+        fallback_step_context.as_ref(),
         Some(turn_state),
         initial_context_injection,
-        CompactionTrigger::Auto,
-        reason,
-        phase,
+        compaction_metadata,
     )
     .await?;
     Ok(())
@@ -84,14 +86,19 @@ pub(crate) async fn run_remote_compact_task(
     });
     sess.send_event(&turn_context, start_event).await;
 
+    let compaction_metadata = CompactionTurnMetadata::new(
+        CompactionTrigger::Manual,
+        CompactionReason::UserRequested,
+        CompactionImplementation::ResponsesCompact,
+        CompactionPhase::StandaloneTurn,
+    );
     run_remote_compact_task_inner(
         &sess,
         &step_context,
+        /*fallback_step_context*/ None,
         /*turn_state*/ None,
         InitialContextInjection::DoNotInject,
-        CompactionTrigger::Manual,
-        CompactionReason::UserRequested,
-        CompactionPhase::StandaloneTurn,
+        compaction_metadata,
     )
     .await?;
     Ok(())
@@ -100,19 +107,16 @@ pub(crate) async fn run_remote_compact_task(
 async fn run_remote_compact_task_inner(
     sess: &Arc<Session>,
     step_context: &Arc<StepContext>,
+    fallback_step_context: Option<&Arc<StepContext>>,
     turn_state: Option<Arc<OnceLock<String>>>,
     initial_context_injection: InitialContextInjection,
-    trigger: CompactionTrigger,
-    reason: CompactionReason,
-    phase: CompactionPhase,
+    compaction_metadata: CompactionTurnMetadata,
 ) -> CodexResult<()> {
     let turn_context = &step_context.turn;
-    let compaction_metadata = CompactionTurnMetadata::new(
-        trigger,
-        reason,
-        CompactionImplementation::ResponsesCompact,
-        phase,
-    );
+    let trigger = compaction_metadata.trigger();
+    let reason = compaction_metadata.reason();
+    let implementation = compaction_metadata.implementation();
+    let phase = compaction_metadata.phase();
     let mut analytics_details = CompactionAnalyticsDetails {
         active_context_tokens_before: Some(sess.get_total_token_usage().await),
         ..Default::default()
@@ -122,7 +126,7 @@ async fn run_remote_compact_task_inner(
         turn_context.as_ref(),
         trigger,
         reason,
-        CompactionImplementation::ResponsesCompact,
+        implementation,
         phase,
     )
     .await;
@@ -145,6 +149,7 @@ async fn run_remote_compact_task_inner(
     let result = run_remote_compact_task_inner_impl(
         sess,
         step_context,
+        fallback_step_context,
         turn_state,
         initial_context_injection,
         compaction_metadata,
@@ -179,6 +184,7 @@ async fn run_remote_compact_task_inner(
 async fn run_remote_compact_task_inner_impl(
     sess: &Arc<Session>,
     step_context: &Arc<StepContext>,
+    fallback_step_context: Option<&Arc<StepContext>>,
     turn_state: Option<Arc<OnceLock<String>>>,
     initial_context_injection: InitialContextInjection,
     compaction_metadata: CompactionTurnMetadata,
@@ -190,11 +196,12 @@ async fn run_remote_compact_task_inner_impl(
 ) -> CodexResult<()> {
     let turn_context = &step_context.turn;
     let context_compaction_item = ContextCompactionItem::new();
+    let compaction_id = context_compaction_item.id.clone();
     // Use the UI compaction item ID as the trace compaction ID so protocol lifecycle events,
     // endpoint attempts, and the installed history checkpoint all have one join key.
     let compaction_trace = sess.services.rollout_thread_trace.compaction_trace_context(
         turn_context.sub_id.as_str(),
-        context_compaction_item.id.as_str(),
+        compaction_id.as_str(),
         turn_context.model_info.slug.as_str(),
         turn_context.provider.info().name.as_str(),
     );

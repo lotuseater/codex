@@ -1,6 +1,7 @@
 use super::*;
 use crate::error_code::internal_error;
 use crate::error_code::invalid_request;
+use codex_analytics::PluginInstallSource;
 use codex_app_server_protocol::AppSummary;
 use codex_app_server_protocol::PluginAuthPolicy;
 use codex_app_server_protocol::PluginAvailability;
@@ -141,6 +142,15 @@ fn marketplace_plugin_source_to_info(source: MarketplacePluginSource) -> PluginS
             ref_name,
             sha,
         },
+        MarketplacePluginSource::Npm {
+            package,
+            version,
+            registry,
+        } => PluginSource::Npm {
+            package,
+            version,
+            registry,
+        },
     }
 }
 
@@ -174,7 +184,7 @@ fn share_context_for_source(
                 creator_name: None,
                 share_principals: None,
             }),
-        MarketplacePluginSource::Git { .. } => None,
+        MarketplacePluginSource::Git { .. } | MarketplacePluginSource::Npm { .. } => None,
     }
 }
 
@@ -186,6 +196,7 @@ fn convert_configured_marketplace_plugin_to_plugin_summary(
     PluginSummary {
         id: plugin.id,
         remote_plugin_id: None,
+        version: None,
         local_version: plugin.local_version,
         installed: plugin.installed,
         enabled: plugin.enabled,
@@ -199,6 +210,7 @@ fn convert_configured_marketplace_plugin_to_plugin_summary(
                 PluginInstallPolicy::InstalledByDefault
             }
         },
+        install_policy_source: None,
         auth_policy: match plugin.policy.authentication {
             MarketplacePluginAuthPolicy::OnInstall => PluginAuthPolicy::OnInstall,
             MarketplacePluginAuthPolicy::OnUse => PluginAuthPolicy::OnUse,
@@ -1135,6 +1147,7 @@ impl PluginRequestProcessor {
                     summary: PluginSummary {
                         id: outcome.plugin.id,
                         remote_plugin_id: None,
+                        version: None,
                         local_version: outcome.plugin.local_version,
                         name: outcome.plugin.name,
                         share_context,
@@ -1152,6 +1165,7 @@ impl PluginRequestProcessor {
                                 PluginInstallPolicy::InstalledByDefault
                             }
                         },
+                        install_policy_source: None,
                         auth_policy: match outcome.plugin.policy.authentication {
                             MarketplacePluginAuthPolicy::OnInstall => PluginAuthPolicy::OnInstall,
                             MarketplacePluginAuthPolicy::OnUse => PluginAuthPolicy::OnUse,
@@ -1601,6 +1615,7 @@ impl PluginRequestProcessor {
                     &remote_marketplace_name,
                     /*plugin_id*/ None,
                     error_type,
+                    /*sub_error_type*/ None,
                     err.to_string(),
                 );
                 remote_plugin_catalog_error_to_jsonrpc(
@@ -1644,11 +1659,13 @@ impl PluginRequestProcessor {
         )
         .map_err(|err| {
             let error_type = remote_plugin_bundle_install_error_type(&err);
+            let sub_error_type = err.sub_error_type();
             self.track_plugin_install_failed_for_remote_plugin(
                 &remote_plugin_id,
                 &actual_remote_marketplace_name,
                 Some(&resolved_plugin_id),
                 error_type,
+                sub_error_type,
                 err.to_string(),
             );
             remote_plugin_bundle_install_error_to_jsonrpc(err)
@@ -1661,11 +1678,13 @@ impl PluginRequestProcessor {
         .await
         .map_err(|err| {
             let error_type = remote_plugin_bundle_install_error_type(&err);
+            let sub_error_type = err.sub_error_type();
             self.track_plugin_install_failed_for_remote_plugin(
                 &remote_plugin_id,
                 &actual_remote_marketplace_name,
                 Some(&resolved_plugin_id),
                 error_type,
+                sub_error_type,
                 err.to_string(),
             );
             remote_plugin_bundle_install_error_to_jsonrpc(err)
@@ -1688,6 +1707,7 @@ impl PluginRequestProcessor {
                 &actual_remote_marketplace_name,
                 Some(&result.plugin_id),
                 error_type,
+                /*sub_error_type*/ None,
                 err.to_string(),
             );
             remote_plugin_catalog_error_to_jsonrpc(err, "install remote plugin")
@@ -1785,12 +1805,14 @@ impl PluginRequestProcessor {
         marketplace_name: &str,
         plugin_id: Option<&PluginId>,
         error_type: &'static str,
+        sub_error_type: Option<String>,
         error_message: String,
     ) {
         tracing::warn!(
             remote_plugin_id = %remote_plugin_id,
             marketplace_name = %marketplace_name,
             error_type = %error_type,
+            sub_error_type = sub_error_type.as_deref(),
             error = %error_message,
             "remote plugin install failed"
         );
@@ -1805,8 +1827,11 @@ impl PluginRequestProcessor {
                 capability_summary: None,
             }
         };
-        self.analytics_events_client
-            .track_plugin_install_failed(plugin, error_type.to_string());
+        self.analytics_events_client.track_plugin_install_failed(
+            plugin,
+            PluginInstallSource::Manual,
+            error_type.to_string(),
+        );
     }
 
     async fn plugin_apps_needing_auth_for_install(
@@ -1949,6 +1974,7 @@ impl PluginRequestProcessor {
                 let notification = ServerNotification::McpServerOauthLoginCompleted(
                     McpServerOauthLoginCompletedNotification {
                         name: notification_name,
+                        thread_id: None,
                         success,
                         error,
                     },
@@ -2224,7 +2250,8 @@ fn remote_plugin_summary_to_info(summary: RemoteCatalogPluginSummary) -> PluginS
     PluginSummary {
         id: summary.id,
         remote_plugin_id: Some(summary.remote_plugin_id),
-        local_version: None,
+        version: summary.version,
+        local_version: summary.local_version,
         name: summary.name,
         share_context: summary
             .share_context
@@ -2233,6 +2260,7 @@ fn remote_plugin_summary_to_info(summary: RemoteCatalogPluginSummary) -> PluginS
         installed: summary.installed,
         enabled: summary.enabled,
         install_policy: summary.install_policy,
+        install_policy_source: summary.install_policy_source,
         auth_policy: summary.auth_policy,
         availability: summary.availability,
         interface: summary.interface,
