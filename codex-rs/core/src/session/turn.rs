@@ -220,10 +220,9 @@ pub(crate) async fn run_turn(
     // Keep the exact model-visible state used by this turn and its inline compactions.
     // fork-local: the fork's `TurnDiffTracker::with_display_root` (see below) uses a single
     // git-root display root, so upstream's per-environment `display_roots` is unused here.
-    let (mut world_state, _display_roots) = tokio::join!(
-        sess.record_context_updates_and_set_reference_context_item(first_step_context.as_ref()),
-        turn_diff_display_roots(turn_context.as_ref()),
-    );
+    let mut world_state = sess
+        .record_context_updates_and_set_reference_context_item(first_step_context.as_ref())
+        .await;
 
     let Some((injection_items, explicitly_enabled_connectors)) = build_skills_and_plugins(
         &sess,
@@ -2157,7 +2156,6 @@ async fn try_run_sampling_request(
                 }
                 if let Some(turn_item) = handle_non_tool_response_item(
                     sess.as_ref(),
-                    turn_context.as_ref(),
                     TurnItemContributorPolicy::Run(turn_store.as_ref()),
                     &item,
                     plan_mode,
@@ -2263,7 +2261,10 @@ async fn try_run_sampling_request(
             }
             ResponseEvent::ModelsEtag(etag) => {
                 // Update internal state with latest models etag
-                sess.services.models_manager.refresh_if_new_etag(etag).await;
+                sess.services
+                    .models_manager
+                    .refresh_if_new_etag(etag, turn_context.config.http_client_factory())
+                    .await;
             }
             ResponseEvent::Completed {
                 token_usage,
@@ -2381,6 +2382,10 @@ async fn try_run_sampling_request(
                     error_or_panic("ReasoningSummaryDelta without active item".to_string());
                 }
             }
+            // Terminal reasoning-summary event: the summary text is already delivered via
+            // the ReasoningSummaryDelta arm above (turn_timing/telemetry classify this as
+            // streaming content); no additional event to emit here.
+            ResponseEvent::ReasoningSummaryDone { .. } => {}
             ResponseEvent::ReasoningSummaryPartAdded { summary_index } => {
                 if let Some(active) = active_item.as_ref() {
                     let event =

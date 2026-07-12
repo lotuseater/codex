@@ -80,6 +80,11 @@ pub enum ReasoningEffort {
     Medium,
     High,
     XHigh,
+    // Upstream reasoning-effort tiers above XHigh. Re-added after a union-merge
+    // dropped them from the fork's relocated enum; unit variants keep `Copy`
+    // (the fork maps Ultra -> Max for Bedrock rather than adopting Custom(String)).
+    Max,
+    Ultra,
 }
 
 impl FromStr for ReasoningEffort {
@@ -101,6 +106,8 @@ impl ReasoningEffort {
             Self::Medium => "medium",
             Self::High => "high",
             Self::XHigh => "xhigh",
+            Self::Max => "max",
+            Self::Ultra => "ultra",
         }
     }
 }

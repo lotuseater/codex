@@ -1,5 +1,6 @@
 use super::residency::is_v2_resident_session_source;
 use super::*;
+use crate::context::ContextualUserFragment;
 use crate::context::InternalModelContextFragment;
 use codex_extension_api::ExtensionDataInit;
 

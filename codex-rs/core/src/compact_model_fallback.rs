@@ -16,6 +16,9 @@ pub(crate) fn record_model_fallback(
         CompactionReason::UserRequested => "user_requested",
         CompactionReason::ContextLimit => "context_limit",
         CompactionReason::ModelDownshift => "model_downshift",
+        CompactionReason::SemanticCheckpoint => "semantic_checkpoint",
+        CompactionReason::EarlyContextPressure => "early_context_pressure",
+        CompactionReason::RestoredSession => "restored_session",
         CompactionReason::CompHashChanged => "comp_hash_changed",
     };
     let implementation_tag = match implementation {

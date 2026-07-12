@@ -578,8 +578,8 @@ impl NetworkToml {
             config.allow_local_binding = allow_local_binding;
         }
         if let Some(mitm) = self.mitm.as_ref() {
-            config.network.mitm = true;
-            config.network.mitm_hooks = mitm.to_mitm_hooks();
+            config.mitm = true;
+            config.mitm_hooks = mitm.to_mitm_hooks();
         }
     }
 

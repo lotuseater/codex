@@ -42,6 +42,7 @@ use crate::TurnPage;
 use crate::UpdateThreadMetadataParams;
 use crate::live_thread::ThreadStoreFuture as LiveThreadFuture;
 use crate::store::ThreadStoreFuture;
+use crate::types::canonical_history_mode_from_rollout_items;
 
 /// Operation counters captured by [`RecordingThreadStore`].
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -203,6 +204,7 @@ impl RecordingThread {
                 .source
                 .clone()
                 .unwrap_or_else(|| self.source.clone()),
+            history_mode: canonical_history_mode_from_rollout_items(&self.history),
             thread_source: self.patch.thread_source.clone().flatten(),
             agent_nickname: self.patch.agent_nickname.clone().flatten(),
             agent_role: self.patch.agent_role.clone().flatten(),

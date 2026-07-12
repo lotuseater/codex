@@ -158,6 +158,7 @@ async fn settings_update_from_thread_settings(
         active_permission_profile,
         windows_sandbox_level,
         collaboration_mode,
+        // fork-local: propagate the multi-agent-mode override into the settings update
         multi_agent_mode,
         reasoning_summary: summary,
         service_tier,
@@ -189,8 +190,10 @@ async fn thread_settings_applied_event(sess: &Session) -> EventMsg {
             reasoning_summary: snapshot.reasoning_summary,
             personality: snapshot.personality,
             collaboration_mode: snapshot.collaboration_mode,
-            // fork-local: multi-agent mode (upstream lacks it)
-            multi_agent_mode: snapshot.multi_agent_mode,
+            // fork-local: multi-agent mode (upstream lacks it); ThreadConfigSnapshot no longer
+            // carries it after the upstream merge, so report the default here. Deriving the real
+            // effective mode needs a TurnContext (see cross_file_needed / multi_agents.rs rewire).
+            multi_agent_mode: codex_protocol::config_types::MultiAgentMode::default(),
         },
     })
 }
@@ -248,7 +251,7 @@ pub(super) async fn user_input_or_turn_inner(
         return;
     };
     if emit_thread_settings_applied {
-        sess.send_event_raw_without_materializing_rollout(Event {
+        sess.deliver_event_raw(Event {
             id: sub_id.clone(),
             msg: thread_settings_applied_event(sess).await,
         })

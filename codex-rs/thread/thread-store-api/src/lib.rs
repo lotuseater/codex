@@ -14,6 +14,7 @@ mod types;
 
 pub use error::ThreadStoreError;
 pub use error::ThreadStoreResult;
+pub use error::reject_paginated_history_mode;
 pub use live_thread::LiveThreadFactory;
 pub use live_thread::LiveThreadHandle;
 pub use live_thread::ThreadPersistenceServices;
@@ -60,3 +61,4 @@ pub use types::ThreadSortKey;
 pub use types::ThreadStoreSelection;
 pub use types::TurnPage;
 pub use types::UpdateThreadMetadataParams;
+pub use types::canonical_history_mode_from_rollout_items;

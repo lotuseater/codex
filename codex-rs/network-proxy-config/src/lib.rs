@@ -94,12 +94,6 @@ impl NetworkDecisionSource {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
-pub struct NetworkProxyConfig {
-    #[serde(default)]
-    pub network: NetworkProxySettings,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(default)]
 pub struct MitmHookConfig {
     pub host: String,
@@ -236,7 +230,7 @@ pub struct NetworkUnixSocketPermissions {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
-pub struct NetworkProxySettings {
+pub struct NetworkProxyConfig {
     #[serde(default)]
     pub enabled: bool,
     #[serde(default = "default_proxy_url")]
@@ -251,6 +245,8 @@ pub struct NetworkProxySettings {
     #[serde(default)]
     pub dangerously_allow_all_unix_sockets: bool,
     #[serde(default)]
+    pub dangerously_allow_plaintext_credential_injection: bool,
+    #[serde(default)]
     pub mode: NetworkMode,
     #[serde(default)]
     pub domains: Option<NetworkDomainPermissions>,
@@ -260,10 +256,12 @@ pub struct NetworkProxySettings {
     #[serde(default)]
     pub mitm: bool,
     #[serde(default)]
+    pub credential_broker: bool,
+    #[serde(default)]
     pub mitm_hooks: Vec<MitmHookConfig>,
 }
 
-impl Default for NetworkProxySettings {
+impl Default for NetworkProxyConfig {
     fn default() -> Self {
         Self {
             enabled: false,
@@ -274,17 +272,19 @@ impl Default for NetworkProxySettings {
             allow_upstream_proxy: true,
             dangerously_allow_non_loopback_proxy: false,
             dangerously_allow_all_unix_sockets: false,
+            dangerously_allow_plaintext_credential_injection: false,
             mode: NetworkMode::default(),
             domains: None,
             unix_sockets: None,
             allow_local_binding: false,
             mitm: false,
+            credential_broker: false,
             mitm_hooks: Vec::new(),
         }
     }
 }
 
-impl NetworkProxySettings {
+impl NetworkProxyConfig {
     pub fn allowed_domains(&self) -> Option<Vec<String>> {
         self.domain_entries(NetworkDomainPermission::Allow)
     }
@@ -445,7 +445,7 @@ fn clamp_non_loopback(
 pub fn clamp_bind_addrs(
     http_addr: SocketAddr,
     socks_addr: SocketAddr,
-    cfg: &NetworkProxySettings,
+    cfg: &NetworkProxyConfig,
 ) -> (SocketAddr, SocketAddr) {
     let http_addr = clamp_non_loopback(
         http_addr,
@@ -521,7 +521,7 @@ impl ValidatedUnixSocketPath {
 }
 
 pub fn validate_unix_socket_allowlist_paths(cfg: &NetworkProxyConfig) -> Result<()> {
-    for (index, socket_path) in cfg.network.allow_unix_sockets().iter().enumerate() {
+    for (index, socket_path) in cfg.allow_unix_sockets().iter().enumerate() {
         ValidatedUnixSocketPath::parse(socket_path)
             .with_context(|| format!("invalid network.allow_unix_sockets[{index}]"))?;
     }
@@ -540,11 +540,11 @@ pub fn parse_native_unix_socket_allowlist_path(
 pub fn resolve_runtime(cfg: &NetworkProxyConfig) -> Result<RuntimeConfig> {
     validate_unix_socket_allowlist_paths(cfg)?;
 
-    let http_addr = resolve_addr(&cfg.network.proxy_url, /*default_port*/ 3128)
-        .with_context(|| format!("invalid network.proxy_url: {}", cfg.network.proxy_url))?;
-    let socks_addr = resolve_addr(&cfg.network.socks_url, /*default_port*/ 8081)
-        .with_context(|| format!("invalid network.socks_url: {}", cfg.network.socks_url))?;
-    let (http_addr, socks_addr) = clamp_bind_addrs(http_addr, socks_addr, &cfg.network);
+    let http_addr = resolve_addr(&cfg.proxy_url, /*default_port*/ 3128)
+        .with_context(|| format!("invalid network.proxy_url: {}", cfg.proxy_url))?;
+    let socks_addr = resolve_addr(&cfg.socks_url, /*default_port*/ 8081)
+        .with_context(|| format!("invalid network.socks_url: {}", cfg.socks_url))?;
+    let (http_addr, socks_addr) = clamp_bind_addrs(http_addr, socks_addr, cfg);
 
     Ok(RuntimeConfig {
         http_addr,
@@ -689,8 +689,8 @@ mod tests {
 
     use pretty_assertions::assert_eq;
 
-    fn settings_with_unix_sockets(unix_sockets: &[&str]) -> NetworkProxySettings {
-        let mut settings = NetworkProxySettings::default();
+    fn settings_with_unix_sockets(unix_sockets: &[&str]) -> NetworkProxyConfig {
+        let mut settings = NetworkProxyConfig::default();
         if !unix_sockets.is_empty() {
             settings.set_allow_unix_sockets(
                 unix_sockets
@@ -705,8 +705,8 @@ mod tests {
     #[test]
     fn network_proxy_settings_default_matches_local_use_baseline() {
         assert_eq!(
-            NetworkProxySettings::default(),
-            NetworkProxySettings {
+            NetworkProxyConfig::default(),
+            NetworkProxyConfig {
                 enabled: false,
                 proxy_url: "http://127.0.0.1:3128".to_string(),
                 enable_socks5: true,
@@ -715,11 +715,13 @@ mod tests {
                 allow_upstream_proxy: true,
                 dangerously_allow_non_loopback_proxy: false,
                 dangerously_allow_all_unix_sockets: false,
+                dangerously_allow_plaintext_credential_injection: false,
                 mode: NetworkMode::Full,
                 domains: None,
                 unix_sockets: None,
                 allow_local_binding: false,
                 mitm: false,
+                credential_broker: false,
                 mitm_hooks: Vec::new(),
             }
         );
@@ -729,23 +731,21 @@ mod tests {
     fn partial_network_config_uses_struct_defaults_for_missing_fields() {
         let config: NetworkProxyConfig = serde_json::from_str(
             r#"{
-                "network": {
-                    "enabled": true
-                }
+                "enabled": true
             }"#,
         )
         .unwrap();
-        let expected = NetworkProxySettings {
+        let expected = NetworkProxyConfig {
             enabled: true,
-            ..NetworkProxySettings::default()
+            ..NetworkProxyConfig::default()
         };
 
-        assert_eq!(config.network, expected);
+        assert_eq!(config, expected);
     }
 
     #[test]
     fn set_allowed_domains_preserves_existing_deny_for_same_pattern() {
-        let mut settings = NetworkProxySettings::default();
+        let mut settings = NetworkProxyConfig::default();
         settings.set_denied_domains(vec!["example.com".to_string()]);
 
         settings.set_allowed_domains(vec!["example.com".to_string()]);
@@ -759,34 +759,34 @@ mod tests {
 
     #[test]
     fn network_domain_permissions_serialize_to_effective_map_shape() {
-        let mut settings = NetworkProxySettings::default();
+        let mut settings = NetworkProxyConfig::default();
         settings.set_denied_domains(vec!["example.com".to_string()]);
         settings.set_allowed_domains(vec!["example.com".to_string()]);
-        let config = NetworkProxyConfig { network: settings };
+        let config = settings;
 
         let value = serde_json::to_value(&config).unwrap();
 
         assert_eq!(
             value,
             serde_json::json!({
-                "network": {
-                    "enabled": false,
-                    "proxy_url": "http://127.0.0.1:3128",
-                    "enable_socks5": true,
-                    "socks_url": "http://127.0.0.1:8081",
-                    "enable_socks5_udp": true,
-                    "allow_upstream_proxy": true,
-                    "dangerously_allow_non_loopback_proxy": false,
-                    "dangerously_allow_all_unix_sockets": false,
-                    "mode": "full",
-                    "domains": {
-                        "example.com": "deny",
-                    },
-                    "unix_sockets": null,
-                    "allow_local_binding": false,
-                    "mitm": false,
-                    "mitm_hooks": [],
-                }
+                "enabled": false,
+                "proxy_url": "http://127.0.0.1:3128",
+                "enable_socks5": true,
+                "socks_url": "http://127.0.0.1:8081",
+                "enable_socks5_udp": true,
+                "allow_upstream_proxy": true,
+                "dangerously_allow_non_loopback_proxy": false,
+                "dangerously_allow_all_unix_sockets": false,
+                "dangerously_allow_plaintext_credential_injection": false,
+                "mode": "full",
+                "domains": {
+                    "example.com": "deny",
+                },
+                "unix_sockets": null,
+                "allow_local_binding": false,
+                "mitm": false,
+                "credential_broker": false,
+                "mitm_hooks": [],
             })
         );
     }
@@ -925,7 +925,7 @@ mod tests {
 
     #[test]
     fn clamp_bind_addrs_allows_non_loopback_when_enabled() {
-        let cfg = NetworkProxySettings {
+        let cfg = NetworkProxyConfig {
             dangerously_allow_non_loopback_proxy: true,
             ..Default::default()
         };
@@ -956,7 +956,7 @@ mod tests {
 
     #[test]
     fn clamp_bind_addrs_forces_loopback_when_all_unix_sockets_enabled() {
-        let cfg = NetworkProxySettings {
+        let cfg = NetworkProxyConfig {
             dangerously_allow_non_loopback_proxy: true,
             dangerously_allow_all_unix_sockets: true,
             ..Default::default()
@@ -972,9 +972,7 @@ mod tests {
 
     #[test]
     fn resolve_runtime_rejects_relative_allow_unix_sockets_entries() {
-        let cfg = NetworkProxyConfig {
-            network: settings_with_unix_sockets(&["relative.sock"]),
-        };
+        let cfg = settings_with_unix_sockets(&["relative.sock"]);
 
         let err = match resolve_runtime(&cfg) {
             Ok(runtime) => panic!(
@@ -991,9 +989,7 @@ mod tests {
 
     #[test]
     fn resolve_runtime_accepts_unix_style_absolute_allow_unix_sockets_entries() {
-        let cfg = NetworkProxyConfig {
-            network: settings_with_unix_sockets(&["/private/tmp/example.sock"]),
-        };
+        let cfg = settings_with_unix_sockets(&["/private/tmp/example.sock"]);
 
         assert!(
             resolve_runtime(&cfg).is_ok(),

@@ -7,8 +7,6 @@ use codex_protocol::items::TurnItem;
 use codex_utils_stream_parser::strip_citations;
 use tokio_util::sync::CancellationToken;
 
-use crate::context::ContextualUserFragment;
-use crate::context::ImageGenerationInstructions;
 use crate::parse_turn_item;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;

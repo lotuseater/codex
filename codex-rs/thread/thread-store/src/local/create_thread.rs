@@ -1,5 +1,4 @@
 use super::LocalThreadStore;
-use crate::error::reject_paginated_history_mode;
 use codex_protocol::protocol::ThreadMemoryMode;
 use codex_rollout::RolloutConfig;
 use codex_rollout::RolloutRecorder;
@@ -7,6 +6,7 @@ use codex_rollout::RolloutRecorderParams;
 use codex_thread_store_api::CreateThreadParams;
 use codex_thread_store_api::ThreadStoreError;
 use codex_thread_store_api::ThreadStoreResult;
+use codex_thread_store_api::reject_paginated_history_mode;
 
 pub(super) async fn create_thread(
     store: &LocalThreadStore,

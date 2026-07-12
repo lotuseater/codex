@@ -745,6 +745,7 @@ impl TurnRequestProcessor {
                     service_tier: service_tier.clone(),
                     context_budget_mode: None,
                     collaboration_mode: collaboration_mode.clone(),
+                    multi_agent_mode: None,
                     personality,
                 })
                 .await
@@ -771,6 +772,7 @@ impl TurnRequestProcessor {
             summary,
             service_tier,
             collaboration_mode,
+            multi_agent_mode: None,
             personality,
         })
     }

@@ -211,7 +211,6 @@ use super::slash_commands::BuiltinCommandFlags;
 use super::slash_commands::ServiceTierCommand;
 use super::slash_commands::SlashCommandItem;
 use crate::bottom_pane::paste_burst::FlushResult;
-use crate::history_cell::sanitize_user_text;
 use crate::key_hint::KeyBindingListExt;
 use crate::keymap::EditorKeymap;
 use crate::keymap::RuntimeKeymap;
@@ -285,6 +284,25 @@ fn user_input_too_large_message(actual_chars: usize) -> String {
     format!(
         "Message exceeds the maximum length of {MAX_USER_INPUT_TEXT_CHARS} characters ({actual_chars} provided)."
     )
+}
+
+/// Remove CSI sequences and control characters, preserving tabs and newlines.
+///
+/// Inlined from `codex_tui_render::history_cell::messages::sanitize_user_text`:
+/// the upstream tui reorg moved that helper into the `codex-tui-render` crate and
+/// scoped it `pub(crate)`, so it can no longer be imported from this crate. This
+/// keeps the fork's paste-sanitization behavior (see `handle_paste`) intact.
+fn sanitize_user_text(text: &str) -> String {
+    let mut sanitized = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' && chars.next_if_eq(&'[').is_some() {
+            let _ = chars.find(|ch| ('@'..='~').contains(ch));
+        } else if matches!(ch, '\n' | '\t') || !ch.is_control() {
+            sanitized.push(ch);
+        }
+    }
+    sanitized
 }
 
 /// Result returned when the user interacts with the text area.

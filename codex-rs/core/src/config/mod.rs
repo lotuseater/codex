@@ -3296,7 +3296,10 @@ impl Config {
                 ElicitationCapability::default()
             },
             mcp_server_catalog: catalog.build(),
-            plugin_capability_summaries: loaded_plugins.capability_summaries().to_vec(),
+            connector_snapshot:
+                codex_connectors::ConnectorSnapshot::from_plugin_capability_summaries(
+                    loaded_plugins.capability_summaries(),
+                ),
         }
     }
 
@@ -4537,6 +4540,12 @@ pub(crate) fn resolve_current_time_reminder_config(
         clock_source: base
             .and_then(|config| config.clock_source)
             .unwrap_or(default.clock_source),
+        delivery_mode: base
+            .and_then(|config| config.delivery_mode)
+            .unwrap_or(default.delivery_mode),
+        sleep_tool: base
+            .and_then(|config| config.sleep_tool)
+            .unwrap_or(default.sleep_tool),
     }))
 }
 

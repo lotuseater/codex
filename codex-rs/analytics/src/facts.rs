@@ -527,7 +527,7 @@ pub struct PluginInstallRequestedPlugin {
     pub connector_ids: Vec<String>,
 }
 
-pub(crate) struct PluginInstallRequestedInput {
+pub struct PluginInstallRequestedInput {
     pub tracking: TrackEventsContext,
     pub request: PluginInstallRequested,
 }

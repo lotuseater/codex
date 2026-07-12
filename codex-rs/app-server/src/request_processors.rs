@@ -462,7 +462,6 @@ use codex_state::log_db::LogDbLayer;
 use codex_thread_store::LocalThreadStore;
 use codex_thread_store::SearchThreadsParams as StoreSearchThreadsParams;
 use codex_thread_store::SortDirection as StoreSortDirection;
-use codex_thread_store::ThreadRelationFilter as StoreThreadRelationFilter;
 use codex_thread_store::ThreadSortKey as StoreThreadSortKey;
 use codex_thread_store::ThreadStoreError;
 use codex_thread_store_api::ArchiveThreadParams as StoreArchiveThreadParams;
@@ -474,6 +473,7 @@ use codex_thread_store_api::ReadThreadByRolloutPathParams as StoreReadThreadByRo
 use codex_thread_store_api::ReadThreadParams as StoreReadThreadParams;
 use codex_thread_store_api::StoredThread;
 use codex_thread_store_api::ThreadMetadataPatch as StoreThreadMetadataPatch;
+use codex_thread_store_api::ThreadRelationFilter as StoreThreadRelationFilter;
 use codex_thread_store_api::ThreadStore;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_pty::DEFAULT_OUTPUT_BYTES_CAP;

@@ -12,6 +12,8 @@ pub(crate) fn app_info_to_v2(value: catalog::AppInfo) -> protocol::AppInfo {
         description: value.description,
         logo_url: value.logo_url,
         logo_url_dark: value.logo_url_dark,
+        icon_assets: None,
+        icon_dark_assets: None,
         distribution_channel: value.distribution_channel,
         branding: value.branding.map(app_branding_to_v2),
         app_metadata: value.app_metadata.map(app_metadata_to_v2),

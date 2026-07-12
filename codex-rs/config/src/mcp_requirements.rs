@@ -2,8 +2,9 @@ use crate::mcp_types::McpServerConfig;
 use crate::mcp_types::McpServerTransportConfig;
 use regex_lite::Regex;
 use serde::Deserialize;
+use serde::Serialize;
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum McpServerIdentity {
     Command { command: String },
@@ -11,7 +12,7 @@ pub enum McpServerIdentity {
 }
 
 /// String matching operations available to managed MCP server matchers.
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(tag = "match", rename_all = "snake_case", deny_unknown_fields)]
 pub enum McpServerValueMatcher {
     Exact { value: String },
@@ -46,20 +47,20 @@ impl McpServerValueMatcher {
     }
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct McpServerCommandMatcher {
     pub executable: String,
     pub args: Vec<McpServerValueMatcher>,
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 struct RawMcpServerCommandIdentity {
     command: McpServerCommandMatcher,
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 struct RawMcpServerUrlIdentity {
     url: McpServerValueMatcher,
@@ -77,17 +78,47 @@ pub enum McpServerRequirement {
     Url(McpServerValueMatcher),
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 struct RawMcpServerRequirement {
     identity: RawMcpServerIdentity,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(untagged)]
 enum RawMcpServerIdentity {
     Exact(McpServerIdentity),
     Command(RawMcpServerCommandIdentity),
     Url(RawMcpServerUrlIdentity),
+}
+
+// fork-local: hand-written to mirror the custom `Deserialize` impl below exactly (both
+// go through the same `Raw*` staging types), so the wire shape stays symmetric:
+// `Identity` <-> `{"identity": <exact match>}`, `Command`/`Url` <-> `{"identity":
+// {"command"|"url": <matcher>}}`. Needed so `McpServerRequirement` (and therefore
+// `ConfigRequirementsToml`/`PluginRequirementsToml`, which embed it via `mcp_servers`)
+// can round-trip through the cloud requirements TOML bridge in `cloud_config_bundle.rs`.
+impl Serialize for McpServerRequirement {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let raw = match self {
+            Self::Identity { identity } => RawMcpServerRequirement {
+                identity: RawMcpServerIdentity::Exact(identity.clone()),
+            },
+            Self::Command(matcher) => RawMcpServerRequirement {
+                identity: RawMcpServerIdentity::Command(RawMcpServerCommandIdentity {
+                    command: matcher.clone(),
+                }),
+            },
+            Self::Url(matcher) => RawMcpServerRequirement {
+                identity: RawMcpServerIdentity::Url(RawMcpServerUrlIdentity {
+                    url: matcher.clone(),
+                }),
+            },
+        };
+        raw.serialize(serializer)
+    }
 }
 
 impl<'de> Deserialize<'de> for McpServerRequirement {

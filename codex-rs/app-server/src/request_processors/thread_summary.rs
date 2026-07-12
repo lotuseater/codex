@@ -224,6 +224,7 @@ pub(crate) fn thread_settings_from_core_snapshot(
         reasoning_summary,
         personality,
         collaboration_mode,
+        multi_agent_mode: _,
     } = snapshot;
     let sandbox_policy = thread_response_sandbox_policy(&permission_profile, cwd.as_path());
     ThreadSettings {

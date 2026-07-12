@@ -77,6 +77,7 @@ pub struct ThreadConfigSnapshot {
     pub reasoning_summary: Option<ReasoningSummary>,
     pub personality: Option<Personality>,
     pub collaboration_mode: CollaborationMode,
+    pub multi_agent_mode: MultiAgentMode,
     pub session_source: SessionSource,
     pub history_mode: ThreadHistoryMode,
     pub forked_from_thread_id: Option<ThreadId>,
@@ -388,6 +389,7 @@ impl CodexThread {
             service_tier,
             context_budget_mode,
             collaboration_mode,
+            multi_agent_mode,
             personality,
         } = overrides;
         let collaboration_mode = if let Some(collaboration_mode) = collaboration_mode {
@@ -421,6 +423,7 @@ impl CodexThread {
             active_permission_profile,
             windows_sandbox_level,
             collaboration_mode: Some(collaboration_mode),
+            multi_agent_mode,
             reasoning_summary: summary,
             service_tier,
             context_budget_mode,

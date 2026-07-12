@@ -20,12 +20,12 @@ use super::helpers::rollout_path_is_archived;
 use super::helpers::set_thread_name_from_title;
 use super::helpers::stored_thread_from_rollout_item;
 use super::live_writer;
-use crate::error::reject_paginated_history_mode;
 use codex_thread_store_api::ReadThreadParams;
 use codex_thread_store_api::StoredThread;
 use codex_thread_store_api::StoredThreadHistory;
 use codex_thread_store_api::ThreadStoreError;
 use codex_thread_store_api::ThreadStoreResult;
+use codex_thread_store_api::reject_paginated_history_mode;
 
 pub(super) async fn read_thread(
     store: &LocalThreadStore,

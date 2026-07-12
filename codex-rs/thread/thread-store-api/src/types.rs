@@ -135,9 +135,7 @@ pub struct ResumeThreadParams {
     pub metadata: ThreadPersistenceMetadata,
 }
 
-pub(crate) fn canonical_history_mode_from_rollout_items(
-    items: &[RolloutItem],
-) -> ThreadHistoryMode {
+pub fn canonical_history_mode_from_rollout_items(items: &[RolloutItem]) -> ThreadHistoryMode {
     // Forked rollouts keep copied source SessionMeta items after the new thread's
     // canonical SessionMeta, so the thread contract comes from the first one.
     items

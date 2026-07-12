@@ -173,7 +173,9 @@ impl Approvable<ApplyPatchRequest> for ApplyPatchRuntime {
                         Some(reason),
                         /*grant_root*/ None,
                     )
-                    .await;
+                    .await
+                    .await
+                    .unwrap_or(ReviewDecision::Abort);
             }
 
             with_cached_approval(
@@ -186,6 +188,8 @@ impl Approvable<ApplyPatchRequest> for ApplyPatchRuntime {
                             turn, call_id, changes, /*reason*/ None, /*grant_root*/ None,
                         )
                         .await
+                        .await
+                        .unwrap_or(ReviewDecision::Abort)
                 },
             )
             .await

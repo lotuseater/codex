@@ -63,6 +63,7 @@ use crate::tools::handlers::multi_agents_v2::SpawnAgentHandler as SpawnAgentHand
 use crate::tools::handlers::multi_agents_v2::WaitAgentHandler as WaitAgentHandlerV2;
 use crate::tools::handlers::view_image_spec::ViewImageToolOptions;
 use crate::tools::hosted_spec::WebSearchToolOptions;
+use crate::tools::hosted_spec::create_image_generation_tool;
 use crate::tools::hosted_spec::create_web_search_tool;
 use crate::tools::namespace_alias_policy::HostedNamespaceAliasPolicy;
 use crate::tools::registry::CoreToolRuntime;
@@ -492,29 +493,48 @@ fn build_code_mode_executors_from_config(
         return vec![];
     }
 
-    let code_mode_nested_tool_specs = executors
-        .iter()
-        .filter_map(|executor| {
-            if executor.exposure() == ToolExposure::DirectModelOnly {
-                return None;
-            }
+    // fork-local: upstream's `create_code_mode_tool` now takes enabled and deferred
+    // tool definitions as two DISJOINT lists (mirroring the runtime path in
+    // `build_code_mode_executors`), so split deferred-exposure specs into their own
+    // bucket. Deferred guidance stays gated on the fork's `deferred_tools_available`.
+    let mut code_mode_nested_tool_specs = Vec::new();
+    let mut exec_prompt_tool_specs = Vec::new();
+    let mut deferred_exec_prompt_tool_specs = Vec::new();
+    for executor in executors {
+        let exposure = executor.exposure();
+        if exposure == ToolExposure::DirectModelOnly {
+            continue;
+        }
 
-            executor.spec()
-        })
-        .collect::<Vec<_>>();
-    let namespace_descriptions = code_mode_namespace_descriptions(&code_mode_nested_tool_specs);
+        let Some(spec) = executor.spec() else {
+            continue;
+        };
+
+        if exposure == ToolExposure::Deferred {
+            if deferred_tools_available {
+                deferred_exec_prompt_tool_specs.push(spec.clone());
+            }
+        } else {
+            exec_prompt_tool_specs.push(spec.clone());
+        }
+        code_mode_nested_tool_specs.push(spec);
+    }
+
+    let namespace_descriptions = code_mode_namespace_descriptions(&exec_prompt_tool_specs);
     let mut enabled_tools =
-        collect_code_mode_exec_prompt_tool_definitions(code_mode_nested_tool_specs.iter());
+        collect_code_mode_exec_prompt_tool_definitions(exec_prompt_tool_specs.iter());
     enabled_tools
         .sort_by(|left, right| compare_code_mode_tools(left, right, &namespace_descriptions));
+    let deferred_tools =
+        collect_code_mode_exec_prompt_tool_definitions(deferred_exec_prompt_tool_specs.iter());
 
     vec![
         Arc::new(CodeModeExecuteHandler::new(
             create_code_mode_tool(
                 &enabled_tools,
+                &deferred_tools,
                 &namespace_descriptions,
                 config.code_mode_only_enabled,
-                deferred_tools_available,
             ),
             code_mode_nested_tool_specs,
         )),

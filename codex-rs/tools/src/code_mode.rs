@@ -163,13 +163,35 @@ NEWLINE: /\r?\n/
 SOURCE: /[\s\S]+/
 "#;
 
+    // fork-local: upstream's `build_exec_tool_description` now takes the concrete
+    // slice of deferred nested tools instead of a bool, using only whether that
+    // slice is empty to decide if the deferred-tools guidance section is emitted.
+    // The fork tool-registry plan only knows whether deferred nested tools are
+    // AVAILABLE (a bool), not the concrete slice, so synthesize a single-element
+    // marker slice when they are available to preserve the fork's original
+    // `deferred_tools_available` behavior. The marker carries no output schema, so
+    // it cannot affect MCP type detection and is never rendered in the output.
+    let deferred_tools_marker = [CodeModeToolDefinition {
+        name: String::new(),
+        tool_name: ToolName::plain(String::new()),
+        description: String::new(),
+        kind: CodeModeToolKind::Function,
+        input_schema: None,
+        output_schema: None,
+    }];
+    let deferred_tools: &[CodeModeToolDefinition] = if deferred_tools_available {
+        &deferred_tools_marker
+    } else {
+        &[]
+    };
+
     ToolSpec::Freeform(FreeformTool {
         name: codex_code_mode::PUBLIC_TOOL_NAME.to_string(),
         description: codex_code_mode::build_exec_tool_description(
             enabled_tools,
+            deferred_tools,
             namespace_descriptions,
             code_mode_only,
-            deferred_tools_available,
         ),
         format: FreeformToolFormat {
             r#type: "grammar".to_string(),

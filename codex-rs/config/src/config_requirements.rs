@@ -218,7 +218,7 @@ impl ConfigRequirements {
     }
 }
 
-#[derive(Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
 pub struct PluginRequirementsToml {
     pub mcp_servers: Option<BTreeMap<String, McpServerRequirement>>,
 }
@@ -806,11 +806,12 @@ pub(crate) fn merge_app_requirements_descending(
 }
 
 /// Base config deserialized from system `requirements.toml` or MDM.
-// fork-local: upstream moved `McpServerRequirement` into `mcp_requirements` as a
-// non-`Serialize` enum, so this container (which holds `mcp_servers`) can no longer
-// derive `Serialize`; matches upstream's derive. The fork's serializable-requirements
-// intent survives only on leaf toml types that don't embed `McpServerRequirement`.
-#[derive(Deserialize, Debug, Clone, Default, PartialEq)]
+// fork-local: `McpServerRequirement` (mcp_requirements.rs) now has a hand-written
+// `Serialize` impl mirroring its custom `Deserialize`'s `Raw*` staging types, so this
+// container (and the `plugins`/`mcp_servers` fields that embed it) can derive
+// `Serialize` again for the cloud-requirements TOML round-trip in
+// `cloud_config_bundle.rs`.
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
 pub struct ConfigRequirementsToml {
     pub allowed_approval_policies: Option<Vec<AskForApproval>>,
     pub allowed_approvals_reviewers: Option<Vec<ApprovalsReviewer>>,
@@ -840,7 +841,7 @@ pub struct ConfigRequirementsToml {
     pub guardian_policy_config: Option<String>,
 }
 
-#[derive(Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
 pub struct ModelsRequirementsToml {
     pub new_thread: Option<NewThreadModelDefaultsToml>,
 }
@@ -853,7 +854,7 @@ impl ModelsRequirementsToml {
     }
 }
 
-#[derive(Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
 pub struct NewThreadModelDefaultsToml {
     pub model: Option<String>,
     pub model_reasoning_effort: Option<ReasoningEffort>,

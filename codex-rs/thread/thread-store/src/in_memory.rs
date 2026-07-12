@@ -19,8 +19,6 @@ use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::ThreadMemoryMode;
 use codex_rollout::persisted_rollout_items;
 
-use crate::error::reject_paginated_history_mode;
-use crate::types::canonical_history_mode_from_rollout_items;
 use codex_thread_store_api::AppendThreadItemsParams;
 use codex_thread_store_api::ArchiveThreadParams;
 use codex_thread_store_api::CreateThreadParams;
@@ -41,6 +39,8 @@ use codex_thread_store_api::ThreadStoreError;
 use codex_thread_store_api::ThreadStoreFuture;
 use codex_thread_store_api::ThreadStoreResult;
 use codex_thread_store_api::UpdateThreadMetadataParams;
+use codex_thread_store_api::canonical_history_mode_from_rollout_items;
+use codex_thread_store_api::reject_paginated_history_mode;
 
 static IN_MEMORY_THREAD_STORES: OnceLock<Mutex<HashMap<String, Arc<InMemoryThreadStore>>>> =
     OnceLock::new();

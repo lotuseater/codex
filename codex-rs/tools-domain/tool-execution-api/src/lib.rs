@@ -48,10 +48,7 @@ pub struct ZshForkConfig {
 }
 
 impl ZshForkConfig {
-    pub fn new(
-        shell_zsh_path: AbsolutePathBuf,
-        main_execve_wrapper_exe: AbsolutePathBuf,
-    ) -> Self {
+    pub fn new(shell_zsh_path: AbsolutePathBuf, main_execve_wrapper_exe: AbsolutePathBuf) -> Self {
         Self {
             shell_zsh_path,
             main_execve_wrapper_exe,
@@ -84,7 +81,7 @@ pub enum ToolCallSource {
 }
 
 /// Canonical payload shapes accepted by model-visible tool runtimes.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ToolPayload {
     Function { arguments: String },
     ToolSearch { arguments: ToolSearchArguments },

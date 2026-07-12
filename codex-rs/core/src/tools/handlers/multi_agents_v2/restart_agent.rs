@@ -2,6 +2,8 @@ use super::resume_agent::persisted_agent_metadata;
 use super::resume_agent::resolve_resume_target;
 use super::resume_agent::try_resume_closed_agent;
 use super::*;
+use crate::agent_communication::AgentCommunicationContext;
+use crate::agent_communication::AgentCommunicationKind;
 use crate::tools::handlers::multi_agents_spec::create_resume_agent_tool;
 use crate::turn_timing::now_unix_timestamp_ms;
 use codex_protocol::error::CodexErr;
@@ -266,10 +268,12 @@ async fn send_restarted_followup(
         prompt,
         /*trigger_turn*/ true,
     );
+    let context =
+        AgentCommunicationContext::new(AgentCommunicationKind::Followup, session.thread_id);
     session
         .services
         .agent_control
-        .send_inter_agent_communication(receiver_thread_id, communication)
+        .send_inter_agent_communication(receiver_thread_id, communication, context)
         .await
         .map(|_| ())
         .map_err(|err| collab_agent_error(receiver_thread_id, err))

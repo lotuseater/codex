@@ -381,6 +381,11 @@ impl LoadedAgentsMd {
         }
     }
 
+    /// Host-provided user instructions, if any.
+    pub fn user_instructions(&self) -> Option<&UserInstructions> {
+        self.user_instructions.as_ref()
+    }
+
     /// Creates source-less user instructions for tests.
     ///
     /// This cannot be gated with `#[cfg(test)]` because integration tests

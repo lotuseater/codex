@@ -98,11 +98,27 @@ pub(crate) fn effective_multi_agent_mode(turn_context: &TurnContext) -> Option<M
     let multi_agent_mode = match &turn_context
         .config
         .multi_agent_v2
-        .multi_agent_mode_hint_text
+        .root_agent_usage_hint_text
     {
         Some(hint_text) => MultiAgentMode::Custom(hint_text.clone()),
         None => match turn_context.effective_reasoning_effort() {
             Some(ReasoningEffort::Ultra) => MultiAgentMode::Proactive,
+            // Fork (auto-coordinator default): a fresh ROOT session with
+            // auto-coordination enabled (`auto_coordinator != Off`) starts in
+            // `Proactive` instead of the upstream `ExplicitRequestOnly` suppressor,
+            // so the model may delegate without an explicit request — matching the
+            // `AUTO_COORDINATOR_FRAMING_TEXT` injected alongside this instruction
+            // (see `MultiAgentV2Config::auto_coordinator_active`). Gated to root
+            // sources via `!is_non_root_agent()` so thread-spawn subagents keep the
+            // effort-derived default. Because the mode is re-derived every turn (no
+            // persisted carrier survives the upstream merge), this also promotes a
+            // *resumed* root with auto-coordination enabled to `Proactive`, restoring
+            // the fork's resume-root `ExplicitRequestOnly` -> `Proactive` behavior.
+            _ if !turn_context.session_source.is_non_root_agent()
+                && turn_context.config.multi_agent_v2.auto_coordinator_active() =>
+            {
+                MultiAgentMode::Proactive
+            }
             _ => MultiAgentMode::ExplicitRequestOnly,
         },
     };

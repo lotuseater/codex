@@ -27,6 +27,38 @@ fn record(client: &AnalyticsEventsClient, fact: AppServerFact) {
     client.record_fact(AnalyticsFact::AppServer(value));
 }
 
+/// Shared implementation for [`AppServerAnalyticsExt::track_response`] and
+/// [`AppServerAnalyticsExt::track_response_with_thread_originator`]. Only lifecycle
+/// client responses are recorded; the optional `thread_originator` carries the
+/// per-thread attribution that the reducer uses to override `product_client_id`.
+fn track_response_inner(
+    client: &AnalyticsEventsClient,
+    connection_id: u64,
+    request_id: RequestId,
+    response: ClientResponsePayload,
+    thread_originator: Option<String>,
+) {
+    if !matches!(
+        response,
+        ClientResponsePayload::ThreadStart(_)
+            | ClientResponsePayload::ThreadResume(_)
+            | ClientResponsePayload::ThreadFork(_)
+            | ClientResponsePayload::TurnStart(_)
+            | ClientResponsePayload::TurnSteer(_)
+    ) {
+        return;
+    }
+    record(
+        client,
+        AppServerFact::ClientResponse {
+            connection_id,
+            request_id,
+            response: Box::new(response),
+            thread_originator,
+        },
+    );
+}
+
 /// App-server RPC analytics tracking for [`AnalyticsEventsClient`].
 pub trait AppServerAnalyticsExt {
     fn track_initialize(
@@ -42,6 +74,13 @@ pub trait AppServerAnalyticsExt {
         connection_id: u64,
         request_id: RequestId,
         response: ClientResponsePayload,
+    );
+    fn track_response_with_thread_originator(
+        &self,
+        connection_id: u64,
+        request_id: RequestId,
+        response: ClientResponsePayload,
+        thread_originator: String,
     );
     fn track_error_response(
         &self,
@@ -104,23 +143,22 @@ impl AppServerAnalyticsExt for AnalyticsEventsClient {
         request_id: RequestId,
         response: ClientResponsePayload,
     ) {
-        if !matches!(
-            response,
-            ClientResponsePayload::ThreadStart(_)
-                | ClientResponsePayload::ThreadResume(_)
-                | ClientResponsePayload::ThreadFork(_)
-                | ClientResponsePayload::TurnStart(_)
-                | ClientResponsePayload::TurnSteer(_)
-        ) {
-            return;
-        }
-        record(
+        track_response_inner(self, connection_id, request_id, response, None);
+    }
+
+    fn track_response_with_thread_originator(
+        &self,
+        connection_id: u64,
+        request_id: RequestId,
+        response: ClientResponsePayload,
+        thread_originator: String,
+    ) {
+        track_response_inner(
             self,
-            AppServerFact::ClientResponse {
-                connection_id,
-                request_id,
-                response: Box::new(response),
-            },
+            connection_id,
+            request_id,
+            response,
+            Some(thread_originator),
         );
     }
 

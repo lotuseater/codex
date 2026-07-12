@@ -37,6 +37,7 @@ pub(crate) enum AppServerFact {
         request_id: RequestId,
         #[serde(with = "client_response_payload_serde")]
         response: Box<ClientResponsePayload>,
+        thread_originator: Option<String>,
     },
     ErrorResponse {
         connection_id: u64,

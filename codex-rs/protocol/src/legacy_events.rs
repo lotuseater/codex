@@ -258,6 +258,8 @@ impl CollabAgentToolCallItem {
                     sender_thread_id: self.sender_thread_id,
                     receiver_thread_id,
                     prompt: self.prompt.clone().unwrap_or_default(),
+                    model: None,
+                    reasoning_effort: None,
                 })
             }),
             CollabAgentTool::ResumeAgent => receiver_thread_id.map(|receiver_thread_id| {
@@ -327,6 +329,8 @@ impl CollabAgentToolCallItem {
                     receiver_agent_role,
                     prompt: self.prompt.clone().unwrap_or_default(),
                     status: self.agent_status(receiver_thread_id),
+                    model: None,
+                    reasoning_effort: None,
                 })
             }),
             CollabAgentTool::ResumeAgent => receiver_thread_id.map(|receiver_thread_id| {

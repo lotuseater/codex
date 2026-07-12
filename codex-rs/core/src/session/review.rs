@@ -1,5 +1,6 @@
 use super::turn_context::image_generation_tool_auth_allowed;
 use super::*;
+use codex_protocol::items::EnteredReviewModeItem;
 use codex_protocol::openai_models::ToolMode;
 use codex_protocol::protocol::MultiAgentVersion;
 use codex_tool_execution_api::ToolsConfig;

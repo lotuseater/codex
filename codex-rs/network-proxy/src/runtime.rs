@@ -603,7 +603,7 @@ impl NetworkProxyState {
             Err(_) => return Ok(false),
         };
         let requested_canonical = std::fs::canonicalize(requested_abs.as_path()).ok();
-        for allowed in &guard.config.network.allow_unix_sockets() {
+        for allowed in &guard.config.allow_unix_sockets() {
             let allowed_path = match parse_native_unix_socket_allowlist_path(allowed) {
                 Ok(Some(path)) => path,
                 Ok(None) => continue,

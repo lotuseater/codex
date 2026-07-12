@@ -12,11 +12,13 @@ use crate::events::CodexAppMentionedEventRequest;
 use crate::events::CodexAppUsedEventRequest;
 use crate::events::CodexHookRunEventRequest;
 use crate::events::CodexPluginEventRequest;
+use crate::events::CodexPluginInstallRequestedEventRequest;
 use crate::events::CodexPluginUsedEventRequest;
 use crate::events::SkillInvocationEventParams;
 use crate::events::SkillInvocationEventRequest;
 use crate::events::codex_app_metadata;
 use crate::events::codex_hook_run_metadata;
+use crate::events::codex_plugin_install_requested_metadata;
 use crate::events::codex_plugin_metadata;
 use crate::events::codex_plugin_used_metadata;
 use crate::events::plugin_state_event_type;
@@ -27,6 +29,7 @@ use crate::facts::AppMentionedInput;
 use crate::facts::AppUsedInput;
 use crate::facts::CustomAnalyticsFact;
 use crate::facts::HookRunInput;
+use crate::facts::PluginInstallRequestedInput;
 use crate::facts::PluginState;
 use crate::facts::PluginStateChangedInput;
 use crate::facts::PluginUsedInput;
@@ -118,6 +121,9 @@ impl AnalyticsReducer for CustomFactReducer {
             CustomAnalyticsFact::PluginUsed(input) => ingest_plugin_used(input, out),
             CustomAnalyticsFact::PluginStateChanged(input) => {
                 ingest_plugin_state_changed(input, out);
+            }
+            CustomAnalyticsFact::PluginInstallRequested(input) => {
+                ingest_plugin_install_requested(input, out);
             }
             // Connection-gated facts: dropped without app-server analytics
             // context (unchanged behavior for core).
@@ -238,6 +244,17 @@ fn ingest_plugin_used(input: PluginUsedInput, out: &mut Vec<TrackEvent>) {
         &CodexPluginUsedEventRequest {
             event_type: "codex_plugin_used",
             event_params: codex_plugin_used_metadata(&tracking, plugin),
+        },
+        false,
+    ));
+}
+
+fn ingest_plugin_install_requested(input: PluginInstallRequestedInput, out: &mut Vec<TrackEvent>) {
+    let PluginInstallRequestedInput { tracking, request } = input;
+    out.push(TrackEvent::from_serializable(
+        &CodexPluginInstallRequestedEventRequest {
+            event_type: "codex_plugin_install_requested",
+            event_params: codex_plugin_install_requested_metadata(&tracking, request),
         },
         false,
     ));

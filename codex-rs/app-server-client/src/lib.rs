@@ -50,10 +50,6 @@ pub mod legacy_core {
         pub use codex_core::personality_migration::*;
     }
 
-    pub mod review_format {
-        pub use codex_core::review_format::*;
-    }
-
     pub mod review_prompts {
         pub use codex_core::review_prompts::*;
     }

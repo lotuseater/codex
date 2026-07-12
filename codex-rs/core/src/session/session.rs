@@ -227,6 +227,10 @@ impl SessionConfiguration {
             reasoning_summary: self.model_reasoning_summary,
             personality: self.personality,
             collaboration_mode: self.collaboration_mode.clone(),
+            // No live multi_agent_mode carrier survives on SessionConfiguration post-merge;
+            // default to compile. Stage-F restores the real value via
+            // effective_multi_agent_mode / resume-state (mirrors handlers.rs default()).
+            multi_agent_mode: codex_protocol::config_types::MultiAgentMode::default(),
             session_source: self.session_source.clone(),
             history_mode: self.history_mode,
             forked_from_thread_id: self.forked_from_thread_id,
@@ -454,6 +458,7 @@ pub(crate) struct SessionSettingsUpdate {
     pub(crate) active_permission_profile: Option<ActivePermissionProfile>,
     pub(crate) windows_sandbox_level: Option<WindowsSandboxLevel>,
     pub(crate) collaboration_mode: Option<CollaborationMode>,
+    pub(crate) multi_agent_mode: Option<codex_protocol::config_types::MultiAgentMode>,
     pub(crate) reasoning_summary: Option<ReasoningSummaryConfig>,
     pub(crate) service_tier: Option<Option<String>>,
     pub(crate) context_budget_mode: Option<ContextBudgetMode>,

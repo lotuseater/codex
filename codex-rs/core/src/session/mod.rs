@@ -247,7 +247,6 @@ pub(crate) mod context_window;
 mod mcp_runtime;
 pub(crate) mod step_context;
 mod world_state;
-pub use self::mcp_runtime::McpRuntimeSnapshot;
 use self::config_lock::export_config_lock_if_configured;
 use self::config_lock::validate_config_lock_if_configured;
 #[cfg(test)]
@@ -257,6 +256,7 @@ pub(crate) use self::input_queue::InputQueue;
 pub(crate) use self::input_queue::InputQueueActivity;
 pub(crate) use self::input_queue::TurnInput;
 pub(crate) use self::input_queue::TurnInputQueue;
+pub use self::mcp_runtime::McpRuntimeSnapshot;
 use self::review::spawn_review_thread;
 use self::session::AppServerClientMetadata;
 use self::session::Session;
@@ -272,13 +272,12 @@ use self::turn::realtime_text_for_event;
 use self::turn_context::TurnContext;
 use self::turn_context::TurnSkillsContext;
 // imports for upstream methods relocated onto Session in this slim mod.rs
-use self::world_state::build_world_state_from_environment_snapshot;
+use crate::context::UserInstructions;
 use crate::context::world_state::WorldState;
 use crate::session::step_context::StepContext;
+use crate::session_prefix::format_subagent_notification_message;
 use codex_protocol::models::ContentItem;
 use codex_utils_path_uri::PathUri;
-use crate::context::UserInstructions;
-use crate::session_prefix::format_subagent_notification_message;
 #[cfg(test)]
 mod rollout_reconstruction_tests;
 
@@ -401,7 +400,7 @@ impl Session {
             .lock()
             .await
             .history
-            .set_world_state_baseline(Arc::clone(&world_state));
+            .set_world_state_baseline(world_state.snapshot());
         self.replace_compacted_history(
             context_items,
             Some(turn_context_item),
@@ -458,7 +457,14 @@ impl Session {
                 PermissionsInstructions::from_permission_profile(
                     &turn_context.permission_profile,
                     turn_context.approval_policy.value(),
-                    turn_context.config.approvals_reviewer,
+                    crate::context::ApprovalPromptContext::new(
+                        turn_context.config.approvals_reviewer,
+                        turn_context
+                            .model_info
+                            .model_messages
+                            .as_ref()
+                            .and_then(|messages| messages.approvals.as_ref()),
+                    ),
                     self.services.exec_policy.current().as_ref(),
                     #[allow(deprecated)]
                     &turn_context.cwd,
@@ -517,16 +523,15 @@ impl Session {
         }
         if turn_context.config.include_apps_instructions && turn_context.apps_enabled() {
             let mcp_connection_manager = self.services.mcp_connection_manager.load_full();
-            let accessible_and_enabled_connectors =
-                connectors::list_accessible_and_enabled_connectors_from_manager(
-                    &mcp_connection_manager,
-                    &turn_context.config,
-                )
-                .await;
-            if let Some(apps_instructions) =
-                AppsInstructions::from_connectors(&accessible_and_enabled_connectors)
-            {
-                developer_sections.push(apps_instructions.render());
+            let mcp_tools = mcp_connection_manager.list_all_tools().await;
+            let apps_available = connectors::with_app_enabled_state(
+                connectors::accessible_connectors_from_mcp_tools(&mcp_tools),
+                &turn_context.config,
+            )
+            .into_iter()
+            .any(|connector| connector.is_accessible && connector.is_enabled);
+            if apps_available {
+                developer_sections.push(AppsInstructions.render());
             }
         }
         if turn_context.config.include_skill_instructions {
@@ -539,7 +544,8 @@ impl Session {
             );
             if let Some(available_skills) = available_skills {
                 let warning_message = available_skills.warning_message.clone();
-                let skills_instructions = AvailableSkillsInstructions::from(available_skills);
+                let skills_instructions =
+                    AvailableSkillsInstructions::from_available_skills(&available_skills, false);
                 if let Some(warning_message) = warning_message {
                     self.send_event_raw(Event {
                         id: String::new(),
@@ -580,10 +586,8 @@ impl Session {
         {
             contextual_user_sections.push(recommended_plugins.render());
         }
-        if let Some(plugin_instructions) =
-            AvailablePluginsInstructions::from_plugins(loaded_plugins.capability_summaries())
-        {
-            developer_sections.push(plugin_instructions.render());
+        if !loaded_plugins.capability_summaries().is_empty() {
+            developer_sections.push(AvailablePluginsInstructions.render());
         }
         let context_contributors = self.services.extensions.context_contributors().to_vec();
         for contributor in &context_contributors {
@@ -630,6 +634,9 @@ impl Session {
             && turn_context.model_context_window().is_some()
         {
             let mcp_result = self
+                .services
+                .mcp_connection_manager
+                .load_full()
                 .call_tool(
                     "notes",
                     "thread_hint",
@@ -704,20 +711,10 @@ impl Session {
                 items.push(usage_hint_message);
             }
         }
-        match multi_agents::effective_multi_agent_mode(
-            turn_context.multi_agent_version,
-            &session_source,
-            turn_context.multi_agent_mode,
-        ) {
-            Some(
-                multi_agent_mode
-                @ (MultiAgentMode::ExplicitRequestOnly | MultiAgentMode::Proactive),
-            ) => {
-                items.push(ContextualUserFragment::into(
-                    MultiAgentModeInstructions::new(multi_agent_mode),
-                ));
-            }
-            Some(MultiAgentMode::None) | None => {}
+        if let Some(multi_agent_mode) = multi_agents::effective_multi_agent_mode(turn_context) {
+            items.push(ContextualUserFragment::into(
+                MultiAgentModeInstructions::new(multi_agent_mode),
+            ));
         }
         if let Some(contextual_user_message) =
             crate::context_manager::updates::build_contextual_user_message(contextual_user_sections)
@@ -756,11 +753,17 @@ impl Session {
         } else {
             String::new()
         };
-        build_world_state_from_environment_snapshot(
-            turn_context,
-            environments,
-            &environment_subagents,
-        )
+        let mut world_state = WorldState::default();
+        if turn_context.config.include_environment_context {
+            world_state.add_section(
+                crate::context::world_state::EnvironmentsState::from_turn_context_with_environments(
+                    turn_context,
+                    environments,
+                )
+                .with_subagents(environment_subagents),
+            );
+        }
+        world_state
     }
 
     /// Captures one request-scoped view of dynamic state.
@@ -858,7 +861,7 @@ impl Session {
                 .await,
         );
         let items = crate::context_manager::updates::merge_contextual_fragments(
-            world_state.render_diff(previous_world_state.as_ref()),
+            world_state.render_diff(&previous_world_state.snapshot()),
         );
         if !items.is_empty() {
             self.record_conversation_items(turn_context, &items).await;
@@ -869,7 +872,7 @@ impl Session {
             .lock()
             .await
             .history
-            .set_world_state_baseline(Arc::clone(&world_state));
+            .set_world_state_baseline(world_state.snapshot());
         world_state
     }
 
@@ -2120,6 +2123,9 @@ impl Codex {
             state_db,
             attestation_provider,
             external_time_provider,
+            code_mode_session_provider,
+            allow_provider_model_fallback,
+            requested_history_mode,
         } = args;
         let (tx_sub, rx_sub) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);
         let (tx_event, rx_event) = async_channel::unbounded();
@@ -2176,10 +2182,17 @@ impl Codex {
                 codex_models_manager::manager::RefreshStrategy::Offline
             )
         {
-            let _ = models_manager.list_models(refresh_strategy).await;
+            let _ = models_manager
+                .list_models(refresh_strategy, config.http_client_factory())
+                .await;
         }
         let model = models_manager
-            .get_default_model(&config.model, refresh_strategy)
+            .get_default_model(
+                &config.model,
+                allow_provider_model_fallback,
+                refresh_strategy,
+                config.http_client_factory(),
+            )
             .await;
 
         // Resolve base instructions for the session. Priority order:
@@ -2260,7 +2273,7 @@ impl Codex {
             conversation_history,
             InitialHistory::Resumed(_) | InitialHistory::Forked(_)
         );
-        let multi_agent_mode = match initial_multi_agent_mode {
+        let _multi_agent_mode = match initial_multi_agent_mode {
             Some(MultiAgentMode::ExplicitRequestOnly)
                 if is_resume
                     && !session_source.is_non_root_agent()
@@ -2280,11 +2293,7 @@ impl Codex {
         let session_configuration = SessionConfiguration {
             provider: config.model_provider.clone(),
             collaboration_mode: collaboration_mode.clone(),
-            // `multi_agent_mode` is resolved above: a caller-provided mode is honored
-            // (with the resumed-root `ExplicitRequestOnly` -> `Proactive` flip), and a
-            // fresh root with auto-coordination enabled starts `Proactive`; every
-            // other case keeps the upstream default (`ExplicitRequestOnly`).
-            multi_agent_mode,
+            history_mode: requested_history_mode.unwrap_or_default(),
             model_reasoning_summary: config.model_reasoning_summary,
             service_tier,
             context_budget_mode: config.context_budget_mode,
@@ -2341,6 +2350,7 @@ impl Codex {
             skills_service,
             plugins_manager,
             mcp_manager.clone(),
+            code_mode_session_provider,
             extensions,
             thread_extension_init,
             supports_openai_form_elicitation,
@@ -2541,7 +2551,14 @@ impl Session {
                 PermissionsInstructions::from_permission_profile(
                     &turn_context.permission_profile,
                     turn_context.approval_policy.value(),
-                    turn_context.config.approvals_reviewer,
+                    crate::context::ApprovalPromptContext::new(
+                        turn_context.config.approvals_reviewer,
+                        turn_context
+                            .model_info
+                            .model_messages
+                            .as_ref()
+                            .and_then(|messages| messages.approvals.as_ref()),
+                    ),
                     self.services.exec_policy.current().as_ref(),
                     #[allow(deprecated)]
                     &turn_context.cwd,
@@ -2637,16 +2654,15 @@ impl Session {
         }
         if turn_context.config.include_apps_instructions && turn_context.apps_enabled() {
             let mcp_connection_manager = self.services.mcp_connection_manager.load_full();
-            let accessible_and_enabled_connectors =
-                connectors::list_accessible_and_enabled_connectors_from_manager(
-                    &mcp_connection_manager,
-                    &turn_context.config,
-                )
-                .await;
-            if let Some(apps_instructions) =
-                AppsInstructions::from_connectors(&accessible_and_enabled_connectors)
-            {
-                developer_sections.push(apps_instructions.render());
+            let mcp_tools = mcp_connection_manager.list_all_tools().await;
+            let apps_available = connectors::with_app_enabled_state(
+                connectors::accessible_connectors_from_mcp_tools(&mcp_tools),
+                &turn_context.config,
+            )
+            .into_iter()
+            .any(|connector| connector.is_accessible && connector.is_enabled);
+            if apps_available {
+                developer_sections.push(AppsInstructions.render());
             }
         }
         if turn_context.config.include_skill_instructions {
@@ -2659,7 +2675,8 @@ impl Session {
             );
             if let Some(available_skills) = available_skills {
                 let warning_message = available_skills.warning_message.clone();
-                let skills_instructions = AvailableSkillsInstructions::from(available_skills);
+                let skills_instructions =
+                    AvailableSkillsInstructions::from_available_skills(&available_skills, false);
                 if let Some(warning_message) = warning_message {
                     self.send_event_raw(Event {
                         id: String::new(),
@@ -2677,10 +2694,8 @@ impl Session {
             .plugins_manager
             .plugins_for_config(&turn_context.config.plugins_config_input())
             .await;
-        if let Some(plugin_instructions) =
-            AvailablePluginsInstructions::from_plugins(loaded_plugins.capability_summaries())
-        {
-            developer_sections.push(plugin_instructions.render());
+        if !loaded_plugins.capability_summaries().is_empty() {
+            developer_sections.push(AvailablePluginsInstructions.render());
         }
         let context_contributors = self.services.extensions.context_contributors().to_vec();
         for contributor in context_contributors {
@@ -2892,7 +2907,14 @@ impl Session {
         if let Err(err) = self
             .services
             .agent_control
-            .send_inter_agent_communication(parent_thread_id, communication)
+            .send_inter_agent_communication(
+                parent_thread_id,
+                communication,
+                crate::agent_communication::AgentCommunicationContext::new(
+                    crate::agent_communication::AgentCommunicationKind::Result,
+                    self.thread_id,
+                ),
+            )
             .await
         {
             debug!("failed to notify parent thread {parent_thread_id}: {err}");
@@ -3299,8 +3321,9 @@ impl Session {
     /// intentionally do not update the baseline.
     pub(crate) async fn record_context_updates_and_set_reference_context_item(
         &self,
-        turn_context: &TurnContext,
+        step_context: &step_context::StepContext,
     ) -> Arc<WorldState> {
+        let turn_context = step_context.turn.as_ref();
         let reference_context_item = {
             let state = self.state.lock().await;
             state.reference_context_item()
@@ -3310,7 +3333,7 @@ impl Session {
         // inline compactions) can reuse it; mirror upstream's threading while keeping the fork's
         // rollout persistence below.
         let world_state = Arc::new(
-            self.build_world_state_for_environments(turn_context, &turn_context.environments)
+            self.build_world_state_for_environments(turn_context, &step_context.environments)
                 .await,
         );
         let context_items = if should_inject_full_context {
@@ -3321,7 +3344,7 @@ impl Session {
                 .lock()
                 .await
                 .history
-                .set_world_state_baseline(Arc::clone(&world_state));
+                .set_world_state_baseline(world_state.snapshot());
             context_items
         } else {
             // Steady-state path: append only context diffs to minimize token overhead, then fold
@@ -3332,7 +3355,7 @@ impl Session {
             let world_state_items = {
                 let mut state = self.state.lock().await;
                 crate::context_manager::updates::merge_contextual_fragments(
-                    state.history.update_world_state(Arc::clone(&world_state)),
+                    state.history.update_world_state(world_state.as_ref()).0,
                 )
             };
             context_items.extend(world_state_items);

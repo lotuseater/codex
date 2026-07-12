@@ -2071,6 +2071,7 @@ where
                             Some(usage.cached_input_tokens),
                             Some(usage.reasoning_output_tokens),
                             usage.total_tokens,
+                            ttft_ms,
                         );
                     }
                     if reason == "max_output_tokens" {

@@ -404,6 +404,8 @@ pub struct RolloutBudgetConfig {
 pub struct CurrentTimeReminderConfig {
     pub reminder_interval_seconds: u64,
     pub clock_source: CurrentTimeSource,
+    pub delivery_mode: CurrentTimeReminderDeliveryMode,
+    pub sleep_tool: bool,
 }
 
 impl Default for CurrentTimeReminderConfig {
@@ -411,6 +413,8 @@ impl Default for CurrentTimeReminderConfig {
         Self {
             reminder_interval_seconds: 1,
             clock_source: CurrentTimeSource::System,
+            delivery_mode: CurrentTimeReminderDeliveryMode::AnyInference,
+            sleep_tool: false,
         }
     }
 }

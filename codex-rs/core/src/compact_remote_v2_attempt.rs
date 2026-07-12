@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use super::RemoteCompactionV2Output;
@@ -68,6 +69,12 @@ pub(super) async fn run_remote_compact_v2_attempt(
     let tool_router = built_tools(
         sess.as_ref(),
         step_context.as_ref(),
+        // Compaction builds the full tool router; it has no user-mention input to drive
+        // per-input connector enablement, no explicit per-turn connectors, and loads no
+        // skills (session-level connector selection is still applied inside `built_tools`).
+        &[],
+        &HashSet::new(),
+        None,
         &CancellationToken::new(),
     )
     .await?;
@@ -78,6 +85,7 @@ pub(super) async fn run_remote_compact_v2_attempt(
         tools: tool_router.model_visible_specs(),
         parallel_tool_calls: turn_context.model_info.supports_parallel_tool_calls,
         base_instructions,
+        personality: turn_context.personality,
         output_schema: None,
         output_schema_strict: true,
     };

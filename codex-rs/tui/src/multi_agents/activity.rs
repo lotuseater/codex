@@ -244,9 +244,9 @@ fn subagent_activity_summary(item: &ThreadItem) -> Option<SubagentActivitySummar
             },
             details: preview_lines([agent_path.as_str()]),
         }),
-        ThreadItem::WebSearch { query, action, .. } => {
-            let mut details = preview_lines([query.as_str()]);
-            if let Some(action) = action {
+        ThreadItem::WebSearch(search) => {
+            let mut details = preview_lines([search.query.as_str()]);
+            if let Some(action) = &search.action {
                 details.push(format!("{action:?}").into());
             }
             Some(SubagentActivitySummary {
@@ -258,17 +258,12 @@ fn subagent_activity_summary(item: &ThreadItem) -> Option<SubagentActivitySummar
             title: "Viewed image",
             details: vec![compact_path_core(path.as_str()).into()],
         }),
-        ThreadItem::ImageGeneration {
-            status,
-            revised_prompt,
-            saved_path,
-            ..
-        } => {
-            let mut details = vec![format!("Status: {status}").into()];
-            if let Some(prompt) = revised_prompt.as_deref().and_then(preview_text) {
+        ThreadItem::ImageGeneration(image) => {
+            let mut details = vec![format!("Status: {}", image.status).into()];
+            if let Some(prompt) = image.revised_prompt.as_deref().and_then(preview_text) {
                 details.push(Line::from(vec!["Prompt: ".dim(), prompt.into()]));
             }
-            if let Some(path) = saved_path {
+            if let Some(path) = &image.saved_path {
                 details.push(compact_path_core(&path.display().to_string()).into());
             }
             Some(SubagentActivitySummary {

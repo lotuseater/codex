@@ -22,7 +22,6 @@ use super::LocalThreadStore;
 use super::helpers::git_info_from_parts;
 use super::helpers::permission_profile_to_metadata_value;
 use super::live_writer;
-use crate::error::reject_paginated_history_mode;
 use crate::local::read_thread;
 use codex_thread_store_api::ReadThreadParams;
 use codex_thread_store_api::StoredThread;
@@ -30,6 +29,7 @@ use codex_thread_store_api::ThreadMetadataPatch;
 use codex_thread_store_api::ThreadStoreError;
 use codex_thread_store_api::ThreadStoreResult;
 use codex_thread_store_api::UpdateThreadMetadataParams;
+use codex_thread_store_api::reject_paginated_history_mode;
 
 struct ResolvedRolloutPath {
     path: PathBuf,

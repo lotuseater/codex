@@ -765,7 +765,7 @@ impl Session {
             user_instructions: session_configuration
                 .loaded_agents_md
                 .as_ref()
-                .map(LoadedAgentsMd::render),
+                .map(LoadedAgentsMd::text),
             compact_prompt: session_configuration.compact_prompt.clone(),
             collaboration_mode: session_configuration.collaboration_mode.clone(),
             multi_agent_version,

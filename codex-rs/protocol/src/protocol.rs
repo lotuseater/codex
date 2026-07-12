@@ -40,8 +40,8 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
 use schemars::JsonSchema;
 use serde::Deserialize;
-use serde::de::Error as _;
 use serde::Serialize;
+use serde::de::Error as _;
 use strum_macros::Display;
 use ts_rs::TS;
 
@@ -616,7 +616,6 @@ pub struct StreamInfoEvent {
     pub message: String,
 }
 
-use crate::approvals::ElicitationRequestEvent;
 use crate::dynamic_tools::DynamicToolCallRequest;
 use crate::plan_tool::UpdatePlanArgs;
 use crate::request_permissions::RequestPermissionsEvent;
@@ -2182,7 +2181,7 @@ impl InitialHistory {
             InitialHistory::Forked(items) => items,
         };
         items.iter().rev().find_map(|item| match item {
-            RolloutItem::TurnContext(turn_context) => Some(turn_context.multi_agent_mode),
+            RolloutItem::TurnContext(turn_context) => Some(turn_context.multi_agent_mode.clone()),
             _ => None,
         })?
     }
@@ -2355,7 +2354,7 @@ pub struct SessionMetaLine {
 impl<'de> Deserialize<'de> for SessionMetaLine {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: Deserializer<'de>,
+        D: serde::Deserializer<'de>,
     {
         #[derive(Deserialize)]
         struct SessionMetaLineFields {
@@ -4395,8 +4394,8 @@ pub struct EnteredReviewModeEvent {
     pub item_id: Option<String>,
 }
 
-pub use codex_git_types::GitSha;
 pub use crate::legacy_events::HasLegacyEvent;
+pub use codex_git_types::GitSha;
 
 pub use codex_config_types::RealtimeVoice;
 pub use codex_config_types::RealtimeVoicesList;

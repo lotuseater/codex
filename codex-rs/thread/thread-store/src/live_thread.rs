@@ -22,6 +22,7 @@ use codex_thread_store_api::ThreadStore;
 use codex_thread_store_api::ThreadStoreFuture;
 use codex_thread_store_api::ThreadStoreResult;
 use codex_thread_store_api::UpdateThreadMetadataParams;
+use codex_thread_store_api::canonical_history_mode_from_rollout_items;
 use tokio::sync::Mutex;
 use tracing::warn;
 
@@ -367,7 +368,13 @@ impl LiveThreadFactory for StoreLiveThreadFactory {
         params: ResumeThreadParams,
     ) -> ThreadStoreFuture<'a, Arc<dyn LiveThreadHandle>> {
         Box::pin(async move {
-            LiveThread::resume(thread_store, params)
+            let history_mode = params
+                .history
+                .as_deref()
+                .map(Vec::as_slice)
+                .map(canonical_history_mode_from_rollout_items)
+                .unwrap_or_default();
+            LiveThread::resume(thread_store, history_mode, params)
                 .await
                 .map(|live_thread| Arc::new(live_thread) as Arc<dyn LiveThreadHandle>)
         })

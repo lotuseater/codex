@@ -4,6 +4,7 @@ use codex_exec_server::ResolvedSelectedCapabilityRoot;
 use codex_mcp::ElicitationReviewRequest;
 use codex_mcp::ElicitationReviewer;
 use codex_mcp::ElicitationReviewerHandle;
+use codex_protocol::approvals::ElicitationRequest;
 use codex_protocol::capabilities::CapabilityRootLocation;
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::mcp_approval_meta::APPROVAL_KIND_KEY as MCP_ELICITATION_APPROVAL_KIND_KEY;
@@ -334,7 +335,7 @@ impl Session {
         } = mcp_projection;
         let mcp_config = Arc::new(mcp_config);
         let tool_plugin_provenance = codex_mcp::tool_plugin_provenance(&mcp_config);
-        let mcp_servers = effective_mcp_servers(&mcp_config, auth.as_ref());
+        let mcp_servers = codex_mcp::effective_mcp_servers(&mcp_config, auth.as_ref());
         let environment_manager = self.services.turn_environments.environment_manager();
         // TODO(anp): Migrate MCP runtime cwd plumbing to PathUri so foreign environment cwd
         // values can be used without falling back to the legacy host cwd.

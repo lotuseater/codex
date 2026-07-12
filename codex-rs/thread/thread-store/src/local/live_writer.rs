@@ -12,13 +12,13 @@ use tracing::warn;
 
 use super::LocalThreadStore;
 use super::create_thread;
-use crate::error::reject_paginated_history_mode;
-use crate::types::canonical_history_mode_from_rollout_items;
 use codex_thread_store_api::AppendThreadItemsParams;
 use codex_thread_store_api::CreateThreadParams;
 use codex_thread_store_api::ReadThreadParams;
 use codex_thread_store_api::ThreadStoreError;
 use codex_thread_store_api::ThreadStoreResult;
+use codex_thread_store_api::canonical_history_mode_from_rollout_items;
+use codex_thread_store_api::reject_paginated_history_mode;
 
 const ROLLOUT_SIZE_BYTES_METRIC: &str = "codex.rollout.size_bytes";
 
