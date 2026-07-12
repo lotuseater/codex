@@ -162,8 +162,10 @@ in core injects the task-memory block when context pressure crosses a threshold.
   `SELF_REVIEW_CHECKPOINT_MESSAGE`, `review_instructions()`, `plan_tool_response()`,
   `is_plan_review_candidate()`, `plan_self_review_prompt()`
 - `codex-rs/core/src/session/context_budget.rs` -- `maybe_inject_task_memory_for_sampling()`
-- `codex-rs/core/src/compact.rs`, `compact_remote.rs`, `compact_remote_v2.rs` -- inject
-  task-memory preservation in all three compaction paths
+- `codex-rs/core/src/task_memory.rs` -- `CompactionTaskMemory`, the compaction-preservation
+  logic (in core, NOT only the `codex-task-memory` crate); wired into the remote compaction
+  paths at `codex-rs/core/src/compact_remote.rs` (`CompactionTaskMemory::from_history` /
+  `remove_from_history`, lines ~239/356/366) and `codex-rs/core/src/compact_remote_v2.rs:276`
 - `codex-rs/tui/src/chatwidget/review.rs` -- TUI-side review loop orchestration
 - `codex-rs/core/src/tools/handlers/plan.rs:107,112` -- WIRED: calls
   `codex_self_review::is_plan_review_candidate()` then
@@ -193,8 +195,8 @@ Run: `cargo test -p codex-self-review`
 
 **Runtime behavior.** All four are parsed in `chatwidget/slash_dispatch.rs` under their
 `SlashCommand::*` enum arms. Each writes to the on-disk config via the `config/src/edit.rs`
-helpers (`/delegate-prompt` at line 141; `/compact-config` at line 205) so changes survive
-session restart.
+helpers (`/delegate-prompt` via `multi_agent_v2_delegation_k_edit()`; `/compact-config` via
+`auto_compact_enabled_edit()`) so changes survive session restart.
 
 **Implementation.**
 - `codex-rs/tui/src/chatwidget/slash_dispatch.rs:288,291,294,297` -- dispatch to
@@ -207,11 +209,15 @@ session restart.
   `batch_variant_from_token()`, `ACTION_VARIANTS`, `BATCH_VARIANTS` constants
 - `codex-rs/tui/src/chatwidget/delegate_prompt.rs` -- `/delegate-prompt` handler
 - `codex-rs/tui/src/chatwidget/compact_config.rs` -- `/compact-config` handler
-- `codex-rs/config/src/edit.rs:141,205` -- config-edit helpers for delegate and compact
-- `codex-rs/tui/src/app/event_dispatch.rs:2277-2385` -- persist action/batch prompt state
+- `codex-rs/config/src/edit.rs` -- config-edit helpers `multi_agent_v2_delegation_k_edit()`
+  (delegate) and `auto_compact_enabled_edit()` / `compact_prompt_edit()` /
+  `model_compact_percentage_edit()` (compact)
+- `codex-rs/tui/src/app/event_dispatch_local.rs` -- `on_persist_*` methods persist the
+  action/batch/delegate/compact prompt state (e.g. `on_persist_action_prompt_mode()`,
+  `on_persist_auto_compact_enabled()`)
 
 **Tests.** YES -- snapshot tests for slash-command status output exist in
-`codex-rs/tui/src/chatwidget/tests/`. The `app/event_dispatch.rs` error paths are
+`codex-rs/tui/src/chatwidget/tests/`. The `app/event_dispatch_local.rs` persist paths are
 partially covered via chatwidget integration tests.
 Run: `cargo test -p codex-tui action_prompt` / `cargo test -p codex-tui compact_config`
 
@@ -397,11 +403,11 @@ On success, `store()` persists the result. The bridge is a Python subprocess res
 - `codex-rs/operation-cache/src/lib.rs` -- `OperationCacheHit`, `lookup()`, `store()`,
   `tool_is_cacheable()` (owner crate)
 - `codex-rs/core/src/tools/operation_cache.rs` -- thin core adapter (`cwd()`, `lookup()`,
-  `store()`, `result_from_hit()`)
+  `store()`, `result_from_hit()`, `try_serve_from_cache()`, `should_store()`)
 - `codex-rs/core/src/tools/mod.rs:10` -- WIRED: `pub(crate) mod operation_cache;`
-- `codex-rs/core/src/tools/registry.rs` -- WIRED: `operation_cache::cwd()` at line 883,
-  `operation_cache::lookup()` at line 890 (sets `served_from_operation_cache`),
-  `operation_cache::result_from_hit()` at line 899, `operation_cache::store()` at line 1014
+- `codex-rs/core/src/tools/registry.rs` -- WIRED: `operation_cache::cwd()`, then
+  `operation_cache::try_serve_from_cache()` (sets `served_from_operation_cache`),
+  gated on `operation_cache::should_store()` before `operation_cache::store()`
 - `codex-rs/cognos-ops/src/lib.rs` -- `operation_cache_stats()` cognos op
 - `codex-rs/app-server-protocol/src/protocol/common/client_requests.rs:910` -- `mcp/cache/status`
   experimental API endpoint
@@ -439,12 +445,12 @@ MCP tools are deferred (see Defer-MCP-tools).
   injects bundle into fresh-turn prompt (runs sync -- known blocking I/O issue)
 - `codex-rs/core/src/mcp_tool_exposure.rs:17` -- `BOOTSTRAP_MCP_TOOL_NAMES`;
   `filter_bootstrap_mcp_tools()` at line 85 keeps the first-moves tools direct
-- `codex-rs/core/src/tools/handlers/first_moves.rs:148` -- WIRED: `spawn_record_tool_use_hit()`
-  (re-exported at `handlers/mod.rs:73`), called from `codex-rs/core/src/tools/registry.rs:1112`
-  after each tool use
+- `codex-rs/core/src/tools/handlers/first_moves.rs` -- WIRED: `maybe_spawn_first_moves_hit()`
+  (re-exported at `handlers/mod.rs`), called from `codex-rs/core/src/tools/registry.rs`
+  after each tool use (it in turn calls `spawn_record_tool_use_hit()` to write the sqlite DB)
 
-**Tests.** NONE confirmed in `lib.rs`. The sqlite storage and predict modules have no
-verified `#[cfg(test)]` blocks.
+**Tests.** YES -- `#[cfg(test)]` unit tests in `codex-rs/first-moves/src/predict.rs`,
+`logic.rs`, `shadow.rs`, and `storage.rs` (tests live in the sibling modules, not `lib.rs`).
 Run: `cargo test -p codex-first-moves`
 
 ---
@@ -514,7 +520,7 @@ in `spec_plan.rs`.
 
 **Implementation.**
 - `codex-rs/core/src/tools/handlers/multi_agents_v2/wait.rs` -- v2 wait handler
-- `codex-rs/core/src/tools/spec_plan_types.rs` -- `WaitAgentTimeoutOptions`
+- `codex-rs/core/src/tools/handlers/multi_agents_spec.rs` -- `WaitAgentTimeoutOptions`
 - `codex-rs/core/src/tools/spec.rs:50,53,56` -- applies timeout options to tool spec
 - `codex-rs/core/src/tools/spec_tests.rs:476+` -- tool spec shape tests for `wait_agent`
 - `codex-rs/core/src/tools/handlers/multi_agents_tests/wait_v2.rs` -- behavioral tests
@@ -542,7 +548,7 @@ file-recency scoring. The shadow path uses `spawn_blocking` for the async execut
   `ShadowRecord`
 - `codex-rs/repo-context-scout/src/shadow.rs` -- shadow-mode injection (uses spawn_blocking)
 
-**Tests.** NONE confirmed by grep. Scout rank/index/git modules have no verified test blocks.
+**Tests.** YES -- `#[cfg(test)]` unit tests in `codex-rs/repo-context-scout/src/lib.rs`.
 Run: `cargo test -p codex-repo-context-scout`
 
 ---
@@ -565,9 +571,9 @@ have no callers in production code as of this writing.
   `should_replace_model_output()`
 
 **Tests.**
-- `context-ops-impl`: NONE confirmed.
+- `context-ops-impl`: YES -- `#[cfg(test)]` unit tests in `codex-rs/context-ops-impl/src/file_outline.rs` and `search_text.rs`.
 - `replacement-shadow`: YES -- 6 tests (token estimates, replacement policy, intent/metadata).
-Run: `cargo test -p codex-replacement-shadow`
+Run: `cargo test -p codex-context-ops-impl` / `cargo test -p codex-replacement-shadow`
 
 ---
 
@@ -619,7 +625,7 @@ delegation routing. `MultiAgentV2SpawnLineage` tracks depth/ancestry for policy 
   `is_continuation_message()`
 - `codex-rs/agent-policy/src/plan_prompt.rs` -- plan-first system prompt
 
-**Tests.** NONE confirmed via grep of `codex-rs/agent-policy/src/lib.rs`.
+**Tests.** YES -- extensive `#[cfg(test)]` unit tests in `codex-rs/agent-policy/src/lib.rs`.
 Run: `cargo test -p codex-agent-policy`
 
 ---
@@ -703,5 +709,5 @@ injection.
 **Implementation.**
 - `codex-rs/memories/context/src/lib.rs` -- `ProjectProblemMemoryContextRequest` (pub struct)
 
-**Tests.** NONE confirmed by grep of `memories/context/src/lib.rs`.
+**Tests.** YES -- `#[cfg(test)]` unit tests in `codex-rs/memories/context/src/lib.rs`.
 Run: `cargo test -p codex-memories-context`

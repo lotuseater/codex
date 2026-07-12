@@ -57,7 +57,7 @@ These extractions are part of the active merge-pressure reduction pass and shoul
 The compaction/task-memory preservation feature is still present as of this audit:
 
 - `codex-rs/task-memory/src/lib.rs` builds a `<task_memory>` item from substantive user prompts and the latest plan.
-- `codex-rs/core/src/task_memory.rs` converts model history into task-memory input items and renders the task-memory response item.
+- `codex-rs/core/src/task_memory.rs` defines `CompactionTaskMemory`, which converts model history into task-memory input items and renders the task-memory response item; it is wired into the remote compaction paths at `codex-rs/core/src/compact_remote.rs` (`CompactionTaskMemory::from_history` / `remove_from_history`, lines ~239/356/366) and `codex-rs/core/src/compact_remote_v2.rs:276` -- not only the `codex-task-memory` crate.
 - `codex-rs/core/src/session/mod.rs` injects task memory before sampling under token pressure and resets the throttle after compaction.
 
 Merge-time risk: conflicts in compaction, sampling, or history mapping can silently weaken this feature. When those files are touched, verify `codex-task-memory` tests and a focused core sampling/compaction canary.
