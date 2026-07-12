@@ -6,7 +6,7 @@ fn multi_agent_v2_default_hints_include_plan_token_economy_defaults() {
     let sub_hint = codex_agent_policy::default_multi_agent_v2_subagent_usage_hint_text();
 
     // Both generated hints embed the Plan-token-economy block and the K marker
-    // ("K = 26000"). Assert against the stable marker const rather than brittle
+    // ("K = 8000"). Assert against the stable marker const rather than brittle
     // prose so wording tweaks in the prompt text do not break the test.
     assert!(root_hint.contains("Plan-token-economy default"));
     assert!(
@@ -20,7 +20,7 @@ fn multi_agent_v2_default_hints_include_plan_token_economy_defaults() {
 
     assert_eq!(
         codex_agent_policy::DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K,
-        26_000
+        8_000
     );
 }
 
@@ -149,14 +149,14 @@ enabled = true
         .build()
         .await?;
 
-    assert_eq!(config.multi_agent_v2.max_concurrent_threads_per_session, 4);
+    assert_eq!(config.multi_agent_v2.max_concurrent_threads_per_session, 8);
     assert_eq!(config.multi_agent_v2.min_wait_timeout_ms, 10_000);
     assert_eq!(config.multi_agent_v2.max_wait_timeout_ms, 3_600_000);
-    assert_eq!(config.multi_agent_v2.default_wait_timeout_ms, 30_000);
+    assert_eq!(config.multi_agent_v2.default_wait_timeout_ms, 300_000);
     assert_eq!(config.agent_max_threads, None);
     assert_eq!(
         config.effective_agent_max_threads(codex_protocol::protocol::MultiAgentVersion::V2)?,
-        Some(3)
+        Some(7)
     );
     assert!(!config.multi_agent_v2.non_code_mode_only);
 

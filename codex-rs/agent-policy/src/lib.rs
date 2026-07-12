@@ -907,7 +907,7 @@ mod tests {
         assert!(root_hint.contains(DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K_PROMPT_TEXT));
         assert!(sub_hint.contains(expected_delegation.as_str()));
         assert!(sub_hint.contains(DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K_PROMPT_TEXT));
-        assert_eq!(DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K, 26_000);
+        assert_eq!(DEFAULT_PLAN_TOKEN_ECONOMY_DELEGATION_K, 8_000);
         assert!(root_hint.contains("Every main-agent task plan prompt"));
         assert!(root_hint.contains(
             "root should coordinate instead of doing implementation/testing/verification itself"
@@ -927,8 +927,7 @@ mod tests {
         assert!(sub_hint.contains("A short summary or short result is optional"));
         assert!(sub_hint.contains("Plan-token-economy default (recursive_roi_gate)"));
         assert!(
-            sub_hint
-                .contains("Delegate a subtask only when expected cost is at least 26000 tokens")
+            sub_hint.contains("Delegate a subtask only when expected cost is at least 8000 tokens")
         );
     }
 
