@@ -1,6 +1,6 @@
+use super::common::*;
 use super::*;
 use pretty_assertions::assert_eq;
-use super::common::*;
 
 #[tokio::test]
 async fn guardian_review_event_ingests_custom_fact_with_optional_target_item() {

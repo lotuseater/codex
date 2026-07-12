@@ -155,6 +155,10 @@ pub struct TurnContext {
     pub(crate) compact_prompt: Option<String>,
     pub(crate) collaboration_mode: CollaborationMode,
     pub(crate) multi_agent_version: MultiAgentVersion,
+    /// fork-local: per-thread multi-agent-mode override, propagated from
+    /// `SessionConfiguration::multi_agent_mode_override`; consulted first by
+    /// `effective_multi_agent_mode` (`None` = re-derive as upstream does).
+    pub(crate) multi_agent_mode_override: Option<codex_protocol::config_types::MultiAgentMode>,
     pub(crate) personality: Option<Personality>,
     pub(crate) approval_policy: Constrained<AskForApproval>,
     pub(crate) permission_profile: PermissionProfile,
@@ -400,6 +404,7 @@ impl TurnContext {
             compact_prompt: self.compact_prompt.clone(),
             collaboration_mode,
             multi_agent_version: self.multi_agent_version,
+            multi_agent_mode_override: self.multi_agent_mode_override.clone(),
             personality: self.personality,
             approval_policy: self.approval_policy.clone(),
             permission_profile: self.permission_profile.clone(),
@@ -769,6 +774,7 @@ impl Session {
             compact_prompt: session_configuration.compact_prompt.clone(),
             collaboration_mode: session_configuration.collaboration_mode.clone(),
             multi_agent_version,
+            multi_agent_mode_override: session_configuration.multi_agent_mode_override.clone(),
             personality: session_configuration.personality,
             approval_policy: session_configuration.approval_policy.clone(),
             permission_profile: session_configuration.permission_profile(),

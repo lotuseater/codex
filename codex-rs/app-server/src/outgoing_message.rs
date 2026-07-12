@@ -6,7 +6,7 @@ use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
 use codex_analytics::AnalyticsEventsClient;
-use codex_analytics_appserver::AppServerAnalyticsExt;
+use codex_analytics::AppServerAnalyticsExt;
 use codex_app_server_protocol::ClientResponsePayload;
 use codex_app_server_protocol::JSONRPCErrorError;
 use codex_app_server_protocol::RequestId;

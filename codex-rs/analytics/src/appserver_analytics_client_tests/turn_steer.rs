@@ -1,6 +1,6 @@
+use super::common::*;
 use super::*;
 use pretty_assertions::assert_eq;
-use super::common::*;
 
 #[tokio::test]
 async fn accepted_turn_steer_emits_expected_event() {

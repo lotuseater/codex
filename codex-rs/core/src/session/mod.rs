@@ -2293,6 +2293,7 @@ impl Codex {
         let session_configuration = SessionConfiguration {
             provider: config.model_provider.clone(),
             collaboration_mode: collaboration_mode.clone(),
+            multi_agent_mode_override: None,
             history_mode: requested_history_mode.unwrap_or_default(),
             model_reasoning_summary: config.model_reasoning_summary,
             service_tier,

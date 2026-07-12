@@ -7,25 +7,25 @@
 //! payload) are re-used from `codex_analytics`. Everything that consumes
 //! `codex_app_server_protocol` lives here.
 
+use crate::AcceptedLineFingerprint;
+use crate::AppServerRpcTransport;
+use crate::CodexCompactionEvent;
+use crate::CodexErrKind;
+use crate::CodexGoalEvent;
+use crate::CompactionImplementation;
+use crate::CompactionPhase;
+use crate::CompactionReason;
+use crate::CompactionStatus;
+use crate::CompactionStrategy;
+use crate::CompactionTrigger;
+use crate::GoalEventKind;
+use crate::GuardianReviewEventParams;
+use crate::ThreadInitializationMode;
+use crate::TurnStatus;
+use crate::TurnSteerRejectionReason;
+use crate::TurnSteerResult;
+use crate::TurnSubmissionType;
 use crate::accepted_lines::AcceptedLineFingerprintEventInput;
-use codex_analytics::AcceptedLineFingerprint;
-use codex_analytics::AppServerRpcTransport;
-use codex_analytics::CodexCompactionEvent;
-use codex_analytics::CodexErrKind;
-use codex_analytics::CodexGoalEvent;
-use codex_analytics::CompactionImplementation;
-use codex_analytics::CompactionPhase;
-use codex_analytics::CompactionReason;
-use codex_analytics::CompactionStatus;
-use codex_analytics::CompactionStrategy;
-use codex_analytics::CompactionTrigger;
-use codex_analytics::GoalEventKind;
-use codex_analytics::GuardianReviewEventParams;
-use codex_analytics::ThreadInitializationMode;
-use codex_analytics::TurnStatus;
-use codex_analytics::TurnSteerRejectionReason;
-use codex_analytics::TurnSteerResult;
-use codex_analytics::TurnSubmissionType;
 use codex_app_server_protocol::CodexErrorInfo;
 use codex_app_server_protocol::CommandExecutionSource;
 use codex_protocol::protocol::ThreadSource;
@@ -697,8 +697,8 @@ pub(crate) fn current_runtime_metadata() -> CodexRuntimeMetadata {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-pub(crate) fn plugin_state_event_type(state: codex_analytics::PluginState) -> &'static str {
-    use codex_analytics::PluginState;
+pub(crate) fn plugin_state_event_type(state: crate::PluginState) -> &'static str {
+    use crate::PluginState;
     match state {
         PluginState::Installed => "codex_plugin_installed",
         PluginState::Uninstalled => "codex_plugin_uninstalled",
@@ -709,8 +709,8 @@ pub(crate) fn plugin_state_event_type(state: codex_analytics::PluginState) -> &'
 
 #[cfg(test)]
 pub(crate) fn codex_app_metadata(
-    tracking: &codex_analytics::TrackEventsContext,
-    app: codex_analytics::AppInvocation,
+    tracking: &crate::TrackEventsContext,
+    app: crate::AppInvocation,
 ) -> CodexAppMetadata {
     CodexAppMetadata {
         connector_id: app.connector_id,
@@ -719,11 +719,11 @@ pub(crate) fn codex_app_metadata(
         app_name: app.app_name,
         product_client_id: Some(codex_login::default_client::originator().value),
         invoke_type: match app.invocation_type {
-            Some(codex_analytics::InvocationType::Explicit) => {
-                Some(crate::events::InvocationType::Explicit)
+            Some(crate::InvocationType::Explicit) => {
+                Some(crate::appserver_events::InvocationType::Explicit)
             }
-            Some(codex_analytics::InvocationType::Implicit) => {
-                Some(crate::events::InvocationType::Implicit)
+            Some(crate::InvocationType::Implicit) => {
+                Some(crate::appserver_events::InvocationType::Implicit)
             }
             None => None,
         },
@@ -764,7 +764,7 @@ pub(crate) fn codex_plugin_metadata(
 
 #[cfg(test)]
 pub(crate) fn codex_plugin_used_metadata(
-    tracking: &codex_analytics::TrackEventsContext,
+    tracking: &crate::TrackEventsContext,
     plugin: codex_plugin::PluginTelemetryMetadata,
 ) -> CodexPluginUsedMetadata {
     CodexPluginUsedMetadata {
@@ -777,8 +777,8 @@ pub(crate) fn codex_plugin_used_metadata(
 
 #[cfg(test)]
 pub(crate) fn codex_hook_run_metadata(
-    tracking: &codex_analytics::TrackEventsContext,
-    hook: codex_analytics::HookRunFact,
+    tracking: &crate::TrackEventsContext,
+    hook: crate::HookRunFact,
 ) -> CodexHookRunMetadata {
     use codex_protocol::protocol::HookEventName;
     use codex_protocol::protocol::HookRunStatus;
@@ -835,7 +835,7 @@ pub(crate) fn codex_hook_run_metadata(
 
 #[cfg(test)]
 pub(crate) fn subagent_thread_started_event_request(
-    input: codex_analytics::SubAgentThreadStartedInput,
+    input: crate::SubAgentThreadStartedInput,
 ) -> ThreadInitializedEvent {
     use codex_protocol::protocol::SubAgentSource;
     use codex_protocol::protocol::ThreadSource;

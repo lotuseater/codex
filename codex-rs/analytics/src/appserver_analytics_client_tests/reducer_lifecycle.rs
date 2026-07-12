@@ -1,6 +1,6 @@
+use super::common::*;
 use super::*;
 use pretty_assertions::assert_eq;
-use super::common::*;
 
 #[tokio::test]
 async fn initialize_caches_client_and_thread_lifecycle_publishes_once_initialized() {
@@ -203,13 +203,15 @@ async fn compaction_event_ingests_custom_fact() {
                     "thread-1",
                     /*ephemeral*/ false,
                     "gpt-5",
-                    AppServerSessionSource::SubAgent(codex_app_server_protocol::SubAgentSource::ThreadSpawn {
-                        parent_thread_id: parent_thread_id.to_string(),
-                        depth: 1,
-                        agent_path: None,
-                        agent_nickname: None,
-                        agent_role: None,
-                    }),
+                    AppServerSessionSource::SubAgent(
+                        codex_app_server_protocol::SubAgentSource::ThreadSpawn {
+                            parent_thread_id: parent_thread_id.to_string(),
+                            depth: 1,
+                            agent_path: None,
+                            agent_nickname: None,
+                            agent_role: None,
+                        },
+                    ),
                     Some(AppServerThreadSource::Subagent),
                 )),
             },

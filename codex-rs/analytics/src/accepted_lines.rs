@@ -1,4 +1,4 @@
-use codex_analytics::AcceptedLineFingerprint;
+use crate::AcceptedLineFingerprint;
 use codex_git_utils::canonicalize_git_remote_url;
 use codex_git_utils::get_git_remote_urls_assume_git_repo;
 use sha1::Digest;

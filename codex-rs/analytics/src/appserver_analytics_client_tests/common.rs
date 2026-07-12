@@ -147,7 +147,10 @@ pub(super) fn sample_turn_start_response(turn_id: &str) -> ClientResponsePayload
     })
 }
 
-pub(super) fn sample_turn_started_notification(thread_id: &str, turn_id: &str) -> ServerNotification {
+pub(super) fn sample_turn_started_notification(
+    thread_id: &str,
+    turn_id: &str,
+) -> ServerNotification {
     ServerNotification::TurnStarted(TurnStartedNotification {
         thread_id: thread_id.to_string(),
         turn: Turn {
@@ -202,7 +205,10 @@ pub(super) fn sample_turn_completed_notification(
     })
 }
 
-pub(super) fn sample_turn_resolved_config(thread_id: &str, turn_id: &str) -> TurnResolvedConfigFact {
+pub(super) fn sample_turn_resolved_config(
+    thread_id: &str,
+    turn_id: &str,
+) -> TurnResolvedConfigFact {
     TurnResolvedConfigFact {
         turn_id: turn_id.to_string(),
         thread_id: thread_id.to_string(),
@@ -377,7 +383,10 @@ pub(super) async fn ingest_rejected_turn_steer(
     serde_json::to_value(&out[0]).expect("serialize turn steer event")
 }
 
-pub(super) async fn ingest_initialize(reducer: &mut AnalyticsReducer, out: &mut Vec<TrackEventRequest>) {
+pub(super) async fn ingest_initialize(
+    reducer: &mut AnalyticsReducer,
+    out: &mut Vec<TrackEventRequest>,
+) {
     reducer
         .ingest(
             AnalyticsFact::Initialize {
@@ -625,7 +634,10 @@ pub(super) fn sample_command_execution_item_with_actions(
     item
 }
 
-pub(super) fn sample_command_approval_request(request_id: i64, approval_id: Option<&str>) -> ServerRequest {
+pub(super) fn sample_command_approval_request(
+    request_id: i64,
+    approval_id: Option<&str>,
+) -> ServerRequest {
     ServerRequest::CommandExecutionRequestApproval {
         request_id: RequestId::Integer(request_id),
         params: CommandExecutionRequestApprovalParams {

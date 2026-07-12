@@ -568,6 +568,58 @@ async fn multi_agent_mode_applies_without_usage_hint_text() -> Result<()> {
     Ok(())
 }
 
+// fork-local: an explicit per-thread multi-agent-mode override (set via
+// `SessionSettingsUpdate::multi_agent_mode`) must win over the effort/
+// auto-coordinator-derived default that `effective_multi_agent_mode` would
+// otherwise produce.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn explicit_multi_agent_mode_override_is_honored() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let _response = mount_sse_once(
+        &server,
+        sse(vec![ev_response_created("resp-1"), ev_completed("resp-1")]),
+    )
+    .await;
+    // Fresh root under multi-agent V2 with auto-coordination ON and no usage-hint
+    // text or Ultra effort: `effective_multi_agent_mode` derives `Proactive`
+    // (the root + `auto_coordinator_active()` branch).
+    let test = test_codex()
+        .with_config(|config| {
+            configure_multi_agent_v2(config);
+            config.multi_agent_v2.root_agent_usage_hint_text = None;
+            config.multi_agent_v2.auto_coordinator = AutoCoordinatorMode::Always;
+        })
+        .build(&server)
+        .await?;
+
+    // Baseline (no override): the derivation drives the effective mode to
+    // `Proactive`, so the override target below genuinely differs from it.
+    assert_eq!(
+        test.codex.config_snapshot().await.multi_agent_mode,
+        MultiAgentMode::Proactive,
+        "a fresh auto-coordinator root derives Proactive when no override is set"
+    );
+
+    // Explicitly pin the thread to `ExplicitRequestOnly`; the override must be
+    // honored verbatim instead of the `Proactive` derivation.
+    submit_turn_mode(
+        &test.codex,
+        "pin explicit",
+        Some(MultiAgentMode::ExplicitRequestOnly),
+    )
+    .await?;
+
+    assert_eq!(
+        test.codex.config_snapshot().await.multi_agent_mode,
+        MultiAgentMode::ExplicitRequestOnly,
+        "an explicit multi_agent_mode override is honored over the derived default"
+    );
+
+    Ok(())
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn resume_compares_against_previous_effective_multi_agent_mode() -> Result<()> {
     skip_if_no_network!(Ok(()));

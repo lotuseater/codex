@@ -1,6 +1,6 @@
+use super::common::*;
 use super::*;
 use pretty_assertions::assert_eq;
-use super::common::*;
 
 #[test]
 fn plugin_used_event_serializes_expected_shape() {

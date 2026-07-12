@@ -1,8 +1,8 @@
 use super::*;
+use codex_app_server_protocol::PluginAuthPolicy;
+use codex_app_server_protocol::PluginInstallPolicy;
+use codex_app_server_protocol::PluginInterface;
 use codex_login::CodexAuth;
-use codex_protocol::plugin::PluginAuthPolicy;
-use codex_protocol::plugin::PluginInstallPolicy;
-use codex_protocol::plugin::PluginInterface;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 use serde_json::json;

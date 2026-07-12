@@ -1,12 +1,12 @@
+use super::common::*;
 use super::*;
 use pretty_assertions::assert_eq;
-use super::common::*;
 
 #[test]
 fn turn_event_serializes_expected_shape() {
     let event = TrackEventRequest::TurnEvent(Box::new(CodexTurnEventRequest {
         event_type: "codex_turn_event",
-        event_params: crate::events::CodexTurnEventParams {
+        event_params: crate::appserver_events::CodexTurnEventParams {
             thread_id: "thread-2".to_string(),
             turn_id: "turn-2".to_string(),
             app_server_client: sample_app_server_client_metadata(),

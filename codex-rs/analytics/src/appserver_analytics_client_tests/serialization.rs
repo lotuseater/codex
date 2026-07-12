@@ -1,6 +1,6 @@
+use super::common::*;
 use super::*;
 use pretty_assertions::assert_eq;
-use super::common::*;
 
 #[test]
 fn app_mentioned_event_serializes_expected_shape() {
@@ -123,7 +123,7 @@ fn accepted_line_fingerprints_event_serializes_expected_shape() {
 fn compaction_event_serializes_expected_shape() {
     let event = TrackEventRequest::Compaction(Box::new(CodexCompactionEventRequest {
         event_type: "codex_compaction_event",
-        event_params: crate::events::codex_compaction_event_params(
+        event_params: crate::appserver_events::codex_compaction_event_params(
             CodexCompactionEvent {
                 thread_id: "thread-1".to_string(),
                 turn_id: "turn-1".to_string(),

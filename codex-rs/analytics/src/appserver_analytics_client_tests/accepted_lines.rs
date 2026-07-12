@@ -1,6 +1,6 @@
+use super::common::*;
 use super::*;
 use pretty_assertions::assert_eq;
-use super::common::*;
 
 #[tokio::test]
 async fn reducer_emits_large_accepted_line_aggregates_without_fingerprints() {

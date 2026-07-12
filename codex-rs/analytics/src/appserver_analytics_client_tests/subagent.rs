@@ -1,6 +1,6 @@
+use super::common::*;
 use super::*;
 use pretty_assertions::assert_eq;
-use super::common::*;
 
 #[test]
 fn subagent_thread_started_review_serializes_expected_shape() {

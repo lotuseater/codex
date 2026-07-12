@@ -1,5 +1,5 @@
 use super::*;
-use codex_analytics_appserver::AppServerAnalyticsExt;
+use codex_analytics::AppServerAnalyticsExt;
 use codex_app_server_protocol::AdditionalContextEntry;
 use codex_app_server_protocol::AdditionalContextKind;
 use codex_core::CodexThreadSettingsOverrides;

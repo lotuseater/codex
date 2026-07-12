@@ -102,6 +102,11 @@ pub(crate) struct SessionConfiguration {
     pub(super) provider: ModelProviderInfo,
 
     pub(super) collaboration_mode: CollaborationMode,
+    /// fork-local: per-thread multi-agent-mode override. `None` re-derives the
+    /// mode every turn via `effective_multi_agent_mode` (upstream behavior);
+    /// `Some` is honored verbatim when a thread explicitly selects a mode via
+    /// `SessionSettingsUpdate::multi_agent_mode`.
+    pub(super) multi_agent_mode_override: Option<codex_protocol::config_types::MultiAgentMode>,
     pub(super) model_reasoning_summary: Option<ReasoningSummaryConfig>,
     pub(super) service_tier: Option<String>,
     pub(super) context_budget_mode: ContextBudgetMode,
@@ -227,10 +232,11 @@ impl SessionConfiguration {
             reasoning_summary: self.model_reasoning_summary,
             personality: self.personality,
             collaboration_mode: self.collaboration_mode.clone(),
-            // No live multi_agent_mode carrier survives on SessionConfiguration post-merge;
-            // default to compile. Stage-F restores the real value via
-            // effective_multi_agent_mode / resume-state (mirrors handlers.rs default()).
-            multi_agent_mode: codex_protocol::config_types::MultiAgentMode::default(),
+            // fork-local: reflect an explicit per-thread override when one was
+            // selected via `SessionSettingsUpdate::multi_agent_mode`; otherwise
+            // default (the live mode is re-derived by effective_multi_agent_mode
+            // every turn, mirroring handlers.rs default()).
+            multi_agent_mode: self.multi_agent_mode_override.clone().unwrap_or_default(),
             session_source: self.session_source.clone(),
             history_mode: self.history_mode,
             forked_from_thread_id: self.forked_from_thread_id,
@@ -290,6 +296,12 @@ impl SessionConfiguration {
         }
         if let Some(personality) = updates.personality {
             next_configuration.personality = Some(personality);
+        }
+        if let Some(multi_agent_mode) = updates.multi_agent_mode.clone() {
+            // fork-local: persist an explicit per-thread multi-agent-mode
+            // selection so effective_multi_agent_mode honors it instead of
+            // re-deriving the effort/auto-coordinator default.
+            next_configuration.multi_agent_mode_override = Some(multi_agent_mode);
         }
         if let Some(approval_policy) = updates.approval_policy {
             next_configuration.approval_policy.set(approval_policy)?;

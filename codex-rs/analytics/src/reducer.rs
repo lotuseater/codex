@@ -1,77 +1,77 @@
 use crate::accepted_lines::AcceptedLineFingerprintEventInput;
 use crate::accepted_lines::accepted_line_fingerprints_from_unified_diff;
 use crate::accepted_lines::accepted_line_repo_hash_for_cwd;
-use crate::events::CodexAppServerClientMetadata;
-use crate::events::CodexCollabAgentToolCallEventParams;
-use crate::events::CodexCollabAgentToolCallEventRequest;
-use crate::events::CodexCommandExecutionEventParams;
-use crate::events::CodexCommandExecutionEventRequest;
-use crate::events::CodexCompactionEventRequest;
-use crate::events::CodexDynamicToolCallEventParams;
-use crate::events::CodexDynamicToolCallEventRequest;
-use crate::events::CodexFileChangeEventParams;
-use crate::events::CodexFileChangeEventRequest;
+use crate::appserver_events::CodexAppServerClientMetadata;
+use crate::appserver_events::CodexCollabAgentToolCallEventParams;
+use crate::appserver_events::CodexCollabAgentToolCallEventRequest;
+use crate::appserver_events::CodexCommandExecutionEventParams;
+use crate::appserver_events::CodexCommandExecutionEventRequest;
+use crate::appserver_events::CodexCompactionEventRequest;
+use crate::appserver_events::CodexDynamicToolCallEventParams;
+use crate::appserver_events::CodexDynamicToolCallEventRequest;
+use crate::appserver_events::CodexFileChangeEventParams;
+use crate::appserver_events::CodexFileChangeEventRequest;
 // fork-local: the connection-gated `ingest_goal` (Goal is an upstream-new
 // custom fact) is handled by this app-server reducer; its request/params types
 // must be provided by this crate's `events` module.
-use crate::events::CodexGoalEventRequest;
-use crate::events::CodexImageGenerationEventParams;
-use crate::events::CodexImageGenerationEventRequest;
-use crate::events::CodexMcpToolCallEventParams;
-use crate::events::CodexMcpToolCallEventRequest;
-use crate::events::CodexReviewEventParams;
-use crate::events::CodexReviewEventRequest;
-use crate::events::CodexRuntimeMetadata;
-use crate::events::CodexToolItemEventBase;
-use crate::events::CodexTurnEventParams;
-use crate::events::CodexTurnEventRequest;
-use crate::events::CodexTurnSteerEventParams;
-use crate::events::CodexTurnSteerEventRequest;
-use crate::events::CodexWebSearchEventParams;
-use crate::events::CodexWebSearchEventRequest;
-use crate::events::FinalApprovalOutcome;
-use crate::events::GuardianReviewEventPayload;
-use crate::events::GuardianReviewEventRequest;
-use crate::events::ReviewResolution;
-use crate::events::ReviewStatus;
-use crate::events::ReviewSubjectKind;
-use crate::events::ReviewTrigger;
-use crate::events::Reviewer;
-use crate::events::ThreadInitializedEvent;
-use crate::events::ThreadInitializedEventParams;
-use crate::events::ToolItemFailureKind;
-use crate::events::ToolItemTerminalStatus;
-use crate::events::TrackEventRequest;
-use crate::events::WebSearchActionKind;
-use crate::events::accepted_line_fingerprint_event_requests;
-use crate::events::codex_compaction_event_params;
+use crate::appserver_events::CodexGoalEventRequest;
+use crate::appserver_events::CodexImageGenerationEventParams;
+use crate::appserver_events::CodexImageGenerationEventRequest;
+use crate::appserver_events::CodexMcpToolCallEventParams;
+use crate::appserver_events::CodexMcpToolCallEventRequest;
+use crate::appserver_events::CodexReviewEventParams;
+use crate::appserver_events::CodexReviewEventRequest;
+use crate::appserver_events::CodexRuntimeMetadata;
+use crate::appserver_events::CodexToolItemEventBase;
+use crate::appserver_events::CodexTurnEventParams;
+use crate::appserver_events::CodexTurnEventRequest;
+use crate::appserver_events::CodexTurnSteerEventParams;
+use crate::appserver_events::CodexTurnSteerEventRequest;
+use crate::appserver_events::CodexWebSearchEventParams;
+use crate::appserver_events::CodexWebSearchEventRequest;
+use crate::appserver_events::FinalApprovalOutcome;
+use crate::appserver_events::GuardianReviewEventPayload;
+use crate::appserver_events::GuardianReviewEventRequest;
+use crate::appserver_events::ReviewResolution;
+use crate::appserver_events::ReviewStatus;
+use crate::appserver_events::ReviewSubjectKind;
+use crate::appserver_events::ReviewTrigger;
+use crate::appserver_events::Reviewer;
+use crate::appserver_events::ThreadInitializedEvent;
+use crate::appserver_events::ThreadInitializedEventParams;
+use crate::appserver_events::ToolItemFailureKind;
+use crate::appserver_events::ToolItemTerminalStatus;
+use crate::appserver_events::TrackEventRequest;
+use crate::appserver_events::WebSearchActionKind;
+use crate::appserver_events::accepted_line_fingerprint_event_requests;
+use crate::appserver_events::codex_compaction_event_params;
 // fork-local: `codex_goal_event_params` builds the app-server-shaped goal event
 // params for the connection-gated `ingest_goal`; provided by this crate's
 // `events` module (port from upstream `codex-analytics`'s events).
-use crate::events::codex_goal_event_params;
-use crate::events::current_runtime_metadata;
+use crate::AnalyticsFact;
+use crate::AnalyticsJsonRpcError;
+use crate::CodexCompactionEvent;
+use crate::CodexGoalEvent;
+use crate::CustomAnalyticsFact;
+use crate::GuardianReviewEventParams;
+use crate::ThreadInitializationMode;
+use crate::TrackEvent;
+use crate::TurnCodexError;
+use crate::TurnCodexErrorFact;
+use crate::TurnProfile;
+use crate::TurnProfileFact;
+use crate::TurnResolvedConfigFact;
+use crate::TurnStatus;
+use crate::TurnSteerRejectionReason;
+use crate::TurnSteerResult;
+use crate::TurnTokenUsageFact;
+use crate::appserver_events::codex_goal_event_params;
+use crate::appserver_events::current_runtime_metadata;
 use crate::now_unix_seconds;
 use crate::option_i64_to_u64;
 use crate::rpc_fact::AppServerFact;
 use crate::serialize_enum_as_string;
 use crate::usize_to_u64;
-use codex_analytics::AnalyticsFact;
-use codex_analytics::AnalyticsJsonRpcError;
-use codex_analytics::CodexCompactionEvent;
-use codex_analytics::CodexGoalEvent;
-use codex_analytics::CustomAnalyticsFact;
-use codex_analytics::GuardianReviewEventParams;
-use codex_analytics::ThreadInitializationMode;
-use codex_analytics::TrackEvent;
-use codex_analytics::TurnCodexError;
-use codex_analytics::TurnCodexErrorFact;
-use codex_analytics::TurnProfile;
-use codex_analytics::TurnProfileFact;
-use codex_analytics::TurnResolvedConfigFact;
-use codex_analytics::TurnStatus;
-use codex_analytics::TurnSteerRejectionReason;
-use codex_analytics::TurnSteerResult;
-use codex_analytics::TurnTokenUsageFact;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::ClientResponse;
 use codex_app_server_protocol::CodexErrorInfo;
@@ -119,11 +119,11 @@ use std::path::PathBuf;
 ///
 /// It owns the full RPC-shaped analytics state (connection/thread/turn
 /// bookkeeping) and turns app-server-protocol facts into wire events. It is
-/// injected into `codex_analytics::AnalyticsEventsClient` by `codex-app-server`.
+/// injected into `crate::AnalyticsEventsClient` by `codex-app-server`.
 ///
 /// Custom facts that do not depend on app-server connection state (skill / app /
 /// hook / plugin / subagent) are delegated to the protocol-free
-/// [`codex_analytics::CustomFactReducer`] so behavior is identical to the lower
+/// [`crate::CustomFactReducer`] so behavior is identical to the lower
 /// crate; the connection-gated custom facts (compaction / guardian review /
 /// turn) are handled here because they need this reducer's state.
 #[derive(Default)]
@@ -135,11 +135,11 @@ pub struct AppServerReducer {
     tool_items_started_at_ms: HashMap<ToolItemKey, u64>,
     pending_reviews: HashMap<RequestId, PendingReviewState>,
     item_review_summaries: HashMap<ToolItemKey, ItemReviewSummary>,
-    custom: codex_analytics::CustomFactReducer,
+    custom: crate::CustomFactReducer,
 }
 
 #[async_trait::async_trait]
-impl codex_analytics::AnalyticsReducer for AppServerReducer {
+impl crate::AnalyticsReducer for AppServerReducer {
     async fn ingest(&mut self, input: AnalyticsFact, out: &mut Vec<TrackEvent>) {
         // Custom facts with no app-server connection dependency are produced
         // identically by the lower crate's reducer; delegate them so core and
@@ -198,7 +198,7 @@ impl codex_analytics::AnalyticsReducer for AppServerReducer {
 }
 
 /// Whether this custom fact has no app-server connection dependency and is
-/// therefore delegated verbatim to [`codex_analytics::CustomFactReducer`]
+/// therefore delegated verbatim to [`crate::CustomFactReducer`]
 /// (so core and app-server emit byte-identical events). The remaining,
 /// connection-gated facts are reduced by this crate's `ingest` using its own
 /// state.
@@ -220,7 +220,7 @@ fn is_unconditional_custom(custom: &CustomAnalyticsFact) -> bool {
         | CustomAnalyticsFact::PluginUsed(_)
         | CustomAnalyticsFact::PluginStateChanged(_)
         // fork-local: upstream-new stateless custom facts; delegated verbatim to
-        // `codex_analytics::CustomFactReducer` like the other unconditional ones.
+        // `crate::CustomFactReducer` like the other unconditional ones.
         | CustomAnalyticsFact::PluginInstallRequested(_)
         | CustomAnalyticsFact::PluginInstallFailed(_)
         | CustomAnalyticsFact::ExternalAgentConfigImportCompleted(_)
@@ -584,7 +584,7 @@ impl AppServerReducer {
         connection_id: u64,
         params: InitializeParams,
         product_client_id: String,
-        rpc_transport: codex_analytics::AppServerRpcTransport,
+        rpc_transport: crate::AppServerRpcTransport,
     ) {
         let runtime = current_runtime_metadata();
         self.connections.insert(
@@ -688,7 +688,7 @@ impl AppServerReducer {
     // fork-local: the app-server reducer keeps the turn-state-dependent
     // custom-fact reductions (profile / codex error) here; the unconditional
     // custom facts (skill / app / hook / plugin / subagent) are delegated to
-    // `codex_analytics::CustomFactReducer` via `self.custom`.
+    // `crate::CustomFactReducer` via `self.custom`.
     async fn ingest_turn_profile(
         &mut self,
         input: TurnProfileFact,

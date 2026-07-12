@@ -2,11 +2,11 @@
 //!
 //! Facts are produced by [`crate::client_ext::AppServerAnalyticsExt`], serialized
 //! to a `serde_json::Value`, and crossed over the protocol-free seam as
-//! [`codex_analytics::AnalyticsFact::AppServer`]. The reducer in
+//! [`crate::AnalyticsFact::AppServer`]. The reducer in
 //! [`crate::reducer`] deserializes them back into this enum.
 
-use codex_analytics::AnalyticsJsonRpcError;
-use codex_analytics::AppServerRpcTransport;
+use crate::AnalyticsJsonRpcError;
+use crate::AppServerRpcTransport;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::ClientResponsePayload;
 use codex_app_server_protocol::InitializeParams;

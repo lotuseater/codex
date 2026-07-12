@@ -6,7 +6,7 @@
 //! crate split:
 //!   * `track_request`/`track_response` live on the
 //!     [`crate::client_ext::AppServerAnalyticsExt`] trait and emit the opaque
-//!     `codex_analytics::AnalyticsFact::AppServer` payload, and
+//!     `crate::AnalyticsFact::AppServer` payload, and
 //!   * `AnalyticsEventsClient`/`AnalyticsEventsQueue` are owned by
 //!     `codex-analytics` with private fields, so they can no longer be built by
 //!     field from this crate.
@@ -15,14 +15,14 @@
 //! reducer layer (see `analytics_client_tests::reducer_lifecycle`'s
 //! "unrelated_client_requests/responses_are_ignored_by_reducer"). What remains
 //! crate-local here is the request-isolation batching rule, which is a property
-//! of [`crate::events::TrackEventRequest`].
+//! of [`crate::appserver_events::TrackEventRequest`].
 
-use crate::events::CodexAcceptedLineFingerprintsEventParams;
-use crate::events::CodexAcceptedLineFingerprintsEventRequest;
-use crate::events::InvocationType;
-use crate::events::SkillInvocationEventParams;
-use crate::events::SkillInvocationEventRequest;
-use crate::events::TrackEventRequest;
+use crate::appserver_events::CodexAcceptedLineFingerprintsEventParams;
+use crate::appserver_events::CodexAcceptedLineFingerprintsEventRequest;
+use crate::appserver_events::InvocationType;
+use crate::appserver_events::SkillInvocationEventParams;
+use crate::appserver_events::SkillInvocationEventRequest;
+use crate::appserver_events::TrackEventRequest;
 
 fn sample_accepted_line_fingerprint_event(thread_id: &str) -> TrackEventRequest {
     TrackEventRequest::AcceptedLineFingerprints(Box::new(

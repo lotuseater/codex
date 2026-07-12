@@ -1,17 +1,17 @@
 //! App-server-facing analytics tracking, layered on top of the protocol-free
-//! [`codex_analytics::AnalyticsEventsClient`].
+//! [`crate::AnalyticsEventsClient`].
 //!
 //! These methods used to live as inherent methods on `AnalyticsEventsClient` in
 //! `codex-analytics`, but they consume `codex_app_server_protocol` types, so
 //! they moved here. `codex-app-server` brings them into scope with
-//! `use codex_analytics_appserver::AppServerAnalyticsExt;` and the existing call
+//! `use codex_analytics::AppServerAnalyticsExt;` and the existing call
 //! sites compile unchanged.
 
+use crate::AnalyticsEventsClient;
+use crate::AnalyticsFact;
+use crate::AnalyticsJsonRpcError;
+use crate::AppServerRpcTransport;
 use crate::rpc_fact::AppServerFact;
-use codex_analytics::AnalyticsEventsClient;
-use codex_analytics::AnalyticsFact;
-use codex_analytics::AnalyticsJsonRpcError;
-use codex_analytics::AppServerRpcTransport;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::ClientResponsePayload;
 use codex_app_server_protocol::InitializeParams;

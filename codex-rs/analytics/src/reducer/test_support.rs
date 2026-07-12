@@ -3,9 +3,9 @@
 //! against.
 //!
 //! Background: the analytics crate split moved the app-server RPC fact variants
-//! out of `codex_analytics::AnalyticsFact` (now just `AppServer(Value)` +
+//! out of `crate::AnalyticsFact` (now just `AppServer(Value)` +
 //! `Custom(..)`) into [`crate::rpc_fact::AppServerFact`], turned the reducer
-//! into the `codex_analytics::AnalyticsReducer` trait implemented by
+//! into the `crate::AnalyticsReducer` trait implemented by
 //! [`AppServerReducer`], and routed the unconditional custom facts through the
 //! lower crate's `CustomFactReducer` (which emits the opaque `TrackEvent`). The
 //! test suite, however, exercises the reducer at the structured
@@ -22,26 +22,26 @@
 //! It is `#[cfg(test)]`, so it adds no production surface.
 
 use super::AppServerReducer;
-use crate::events::CodexAppMentionedEventRequest;
-use crate::events::CodexAppUsedEventRequest;
-use crate::events::CodexHookRunEventRequest;
-use crate::events::CodexPluginEventRequest;
-use crate::events::CodexPluginUsedEventRequest;
-use crate::events::SkillInvocationEventParams;
-use crate::events::SkillInvocationEventRequest;
-use crate::events::TrackEventRequest;
-use crate::events::codex_app_metadata;
-use crate::events::codex_hook_run_metadata;
-use crate::events::codex_plugin_metadata;
-use crate::events::codex_plugin_used_metadata;
-use crate::events::plugin_state_event_type;
-use crate::events::subagent_thread_started_event_request;
+use crate::AnalyticsJsonRpcError;
+use crate::AppServerRpcTransport;
+use crate::CustomAnalyticsFact;
+use crate::PluginState;
+use crate::appserver_events::CodexAppMentionedEventRequest;
+use crate::appserver_events::CodexAppUsedEventRequest;
+use crate::appserver_events::CodexHookRunEventRequest;
+use crate::appserver_events::CodexPluginEventRequest;
+use crate::appserver_events::CodexPluginUsedEventRequest;
+use crate::appserver_events::SkillInvocationEventParams;
+use crate::appserver_events::SkillInvocationEventRequest;
+use crate::appserver_events::TrackEventRequest;
+use crate::appserver_events::codex_app_metadata;
+use crate::appserver_events::codex_hook_run_metadata;
+use crate::appserver_events::codex_plugin_metadata;
+use crate::appserver_events::codex_plugin_used_metadata;
+use crate::appserver_events::plugin_state_event_type;
+use crate::appserver_events::subagent_thread_started_event_request;
 use crate::rpc_fact::AppServerFact;
-use codex_analytics::AnalyticsJsonRpcError;
-use codex_analytics::AppServerRpcTransport;
-use codex_analytics::CustomAnalyticsFact;
-use codex_analytics::PluginState;
-use codex_analytics::skill_id_for_local_skill;
+use crate::skill_id_for_local_skill;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::ClientResponsePayload;
 use codex_app_server_protocol::InitializeParams;
@@ -58,7 +58,7 @@ pub(crate) type AnalyticsReducer = AppServerReducer;
 
 /// The pre-split analytics fact shape the test suite still constructs.
 ///
-/// Mirrors the historical `codex_analytics::AnalyticsFact` (rich RPC variants +
+/// Mirrors the historical `crate::AnalyticsFact` (rich RPC variants +
 /// `Custom`). Note that `Initialize` carries the `runtime` that production now
 /// derives at reduce time; the test adapter injects it into connection state so
 /// the suite's runtime assertions keep their meaning.
@@ -67,7 +67,7 @@ pub(crate) enum AnalyticsFact {
         connection_id: u64,
         params: InitializeParams,
         product_client_id: String,
-        runtime: crate::events::CodexRuntimeMetadata,
+        runtime: crate::appserver_events::CodexRuntimeMetadata,
         rpc_transport: AppServerRpcTransport,
     },
     ClientRequest {
@@ -159,6 +159,7 @@ impl AppServerReducer {
                         connection_id,
                         request_id,
                         response,
+                        thread_originator: None,
                     },
                     out,
                 )
@@ -248,7 +249,7 @@ impl AppServerReducer {
     fn set_connection_runtime_for_test(
         &mut self,
         connection_id: u64,
-        runtime: crate::events::CodexRuntimeMetadata,
+        runtime: crate::appserver_events::CodexRuntimeMetadata,
     ) {
         if let Some(connection) = self.connections.get_mut(&connection_id) {
             connection.runtime = runtime;
@@ -283,7 +284,7 @@ impl AppServerReducer {
                 ingest_skill_invoked_for_test(input, out).await;
             }
             CustomAnalyticsFact::AppMentioned(input) => {
-                let codex_analytics::AppMentionedInput { tracking, mentions } = input;
+                let crate::AppMentionedInput { tracking, mentions } = input;
                 for mention in mentions {
                     out.push(TrackEventRequest::AppMentioned(
                         CodexAppMentionedEventRequest {
@@ -294,28 +295,28 @@ impl AppServerReducer {
                 }
             }
             CustomAnalyticsFact::AppUsed(input) => {
-                let codex_analytics::AppUsedInput { tracking, app } = input;
+                let crate::AppUsedInput { tracking, app } = input;
                 out.push(TrackEventRequest::AppUsed(CodexAppUsedEventRequest {
                     event_type: "codex_app_used",
                     event_params: codex_app_metadata(&tracking, app),
                 }));
             }
             CustomAnalyticsFact::HookRun(input) => {
-                let codex_analytics::HookRunInput { tracking, hook } = input;
+                let crate::HookRunInput { tracking, hook } = input;
                 out.push(TrackEventRequest::HookRun(CodexHookRunEventRequest {
                     event_type: "codex_hook_run",
                     event_params: codex_hook_run_metadata(&tracking, hook),
                 }));
             }
             CustomAnalyticsFact::PluginUsed(input) => {
-                let codex_analytics::PluginUsedInput { tracking, plugin } = input;
+                let crate::PluginUsedInput { tracking, plugin } = input;
                 out.push(TrackEventRequest::PluginUsed(CodexPluginUsedEventRequest {
                     event_type: "codex_plugin_used",
                     event_params: codex_plugin_used_metadata(&tracking, plugin),
                 }));
             }
             CustomAnalyticsFact::PluginStateChanged(input) => {
-                let codex_analytics::PluginStateChangedInput { plugin, state } = input;
+                let crate::PluginStateChangedInput { plugin, state } = input;
                 let event = CodexPluginEventRequest {
                     event_type: plugin_state_event_type(state),
                     event_params: codex_plugin_metadata(plugin),
@@ -333,26 +334,26 @@ impl AppServerReducer {
 }
 
 async fn ingest_skill_invoked_for_test(
-    input: codex_analytics::SkillInvokedInput,
+    input: crate::SkillInvokedInput,
     out: &mut Vec<TrackEventRequest>,
 ) {
     use codex_git_utils::collect_git_info;
     use codex_git_utils::get_git_repo_root;
     use codex_login::default_client::originator;
 
-    // `codex_analytics::InvocationType` and the wire-shaped
-    // `crate::events::InvocationType` are distinct (identical) enums after the
+    // `crate::InvocationType` and the wire-shaped
+    // `crate::appserver_events::InvocationType` are distinct (identical) enums after the
     // split; map between them.
     fn map_invocation_type(
-        invocation_type: codex_analytics::InvocationType,
-    ) -> crate::events::InvocationType {
+        invocation_type: crate::InvocationType,
+    ) -> crate::appserver_events::InvocationType {
         match invocation_type {
-            codex_analytics::InvocationType::Explicit => crate::events::InvocationType::Explicit,
-            codex_analytics::InvocationType::Implicit => crate::events::InvocationType::Implicit,
+            crate::InvocationType::Explicit => crate::appserver_events::InvocationType::Explicit,
+            crate::InvocationType::Implicit => crate::appserver_events::InvocationType::Implicit,
         }
     }
 
-    let codex_analytics::SkillInvokedInput {
+    let crate::SkillInvokedInput {
         tracking,
         invocations,
     } = input;

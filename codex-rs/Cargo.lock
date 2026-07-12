@@ -1937,34 +1937,13 @@ name = "codex-analytics"
 version = "0.0.0"
 dependencies = [
  "async-trait",
+ "codex-app-server-protocol",
  "codex-git-utils",
  "codex-login",
  "codex-model-provider",
  "codex-plugin",
  "codex-protocol",
  "codex-state",
- "codex-utils-absolute-path",
- "hex",
- "os_info",
- "pretty_assertions",
- "serde",
- "serde_json",
- "sha1 0.11.0",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "codex-analytics-appserver"
-version = "0.0.0"
-dependencies = [
- "async-trait",
- "codex-analytics",
- "codex-app-server-protocol",
- "codex-git-utils",
- "codex-login",
- "codex-plugin",
- "codex-protocol",
  "codex-utils-absolute-path",
  "hex",
  "os_info",
@@ -2046,7 +2025,6 @@ dependencies = [
  "chrono",
  "clap",
  "codex-analytics",
- "codex-analytics-appserver",
  "codex-app-catalog-types",
  "codex-app-server-protocol",
  "codex-app-server-transport",
@@ -2295,13 +2273,6 @@ dependencies = [
  "tokio",
  "tree-sitter",
  "tree-sitter-bash",
-]
-
-[[package]]
-name = "codex-architecture-check"
-version = "0.0.0"
-dependencies = [
- "serde_json",
 ]
 
 [[package]]

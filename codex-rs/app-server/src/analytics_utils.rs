@@ -12,6 +12,6 @@ pub(crate) fn analytics_events_client_from_config(
         auth_manager,
         config.chatgpt_base_url.trim_end_matches('/').to_string(),
         config.analytics_enabled,
-        Box::new(codex_analytics_appserver::AppServerReducer::default()),
+        Box::new(codex_analytics::AppServerReducer::default()),
     )
 }

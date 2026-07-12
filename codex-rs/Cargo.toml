@@ -2,7 +2,6 @@
 members = [
     "aws-auth",
     "analytics",
-    "analytics-appserver",
     "agent-graph-store",
     "agent-identity",
     "agent-policy",
@@ -159,7 +158,6 @@ members = [
     "test-support/core-runtime",
     "test-support/lightweight",
     "test-support/responses",
-    "tests/architecture-check",
     "thread-config-remote",
     "thread-manager-sample",
     "thread/thread-api",
@@ -194,7 +192,6 @@ license = "Apache-2.0"
 # Internal
 app_test_support = { path = "app-server/tests/common" }
 codex-analytics = { path = "analytics" }
-codex-analytics-appserver = { path = "analytics-appserver" }
 codex-auth-api = { path = "runtime-domain/auth-api" }
 codex-agent-graph-store = { path = "agent-graph-store" }
 codex-agent-identity = { path = "agent-identity" }

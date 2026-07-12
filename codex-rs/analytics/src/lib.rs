@@ -1,14 +1,22 @@
+mod accepted_lines;
 #[cfg(debug_assertions)]
 mod analytics_capture;
+mod appserver_events;
 mod client;
+mod client_ext;
 mod events;
 mod facts;
+mod reducer;
 mod reducer_api;
+mod rpc_fact;
 
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
+pub use accepted_lines::accepted_line_fingerprints_from_unified_diff;
+pub use accepted_lines::fingerprint_hash;
 pub use client::AnalyticsEventsClient;
+pub use client_ext::AppServerAnalyticsExt;
 pub use events::AppServerRpcTransport;
 pub use events::GuardianApprovalRequestSource;
 pub use events::GuardianReviewAnalyticsResult;
@@ -70,6 +78,7 @@ pub use facts::TurnSteerResult;
 pub use facts::TurnSubmissionType;
 pub use facts::TurnTokenUsageFact;
 pub use facts::build_track_events_context;
+pub use reducer::AppServerReducer;
 pub use reducer_api::AnalyticsReducer;
 pub use reducer_api::CustomFactReducer;
 pub use reducer_api::TrackEvent;
@@ -90,3 +99,22 @@ pub fn now_unix_millis() -> u64 {
     )
     .unwrap_or(u64::MAX)
 }
+
+pub(crate) fn serialize_enum_as_string<T: serde::Serialize>(value: &T) -> Option<String> {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|value| value.as_str().map(str::to_string))
+}
+
+pub(crate) fn usize_to_u64(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
+}
+
+pub(crate) fn option_i64_to_u64(value: Option<i64>) -> Option<u64> {
+    value.and_then(|value| u64::try_from(value).ok())
+}
+
+#[cfg(test)]
+mod appserver_analytics_client_tests;
+#[cfg(test)]
+mod appserver_client_tests;
