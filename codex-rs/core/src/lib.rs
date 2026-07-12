@@ -45,6 +45,10 @@ mod codex_delegate;
 mod command_canonicalization;
 pub mod config;
 pub mod connectors;
+/// Built-in external-session overflow seam (port + process-global registry).
+/// The concrete dispatcher lives in the fork-owned `codex-agent-overflow` crate
+/// and is registered at the composition root; core depends only on this port.
+pub mod overflow;
 pub mod context;
 mod context_manager;
 mod current_time;

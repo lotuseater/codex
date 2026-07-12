@@ -220,13 +220,58 @@ async fn run_agent_job_loop(
                 {
                     Ok(spawned_agent) => spawned_agent.thread_id,
                     Err(CodexErr::AgentLimitReached { .. }) => {
-                        db.mark_agent_job_item_pending(
-                            job_id.as_str(),
-                            item.item_id.as_str(),
-                            /*error_message*/ None,
-                        )
-                        .await?;
-                        break;
+                        // Built-in external-session overflow: the in-process agent
+                        // pool is saturated, so hand this leftover item to an
+                        // external `codex exec` process — a separate OS process that
+                        // does NOT pass through the in-process limiter, so it adds
+                        // real capacity instead of dropping the work. Fire-and-forget:
+                        // the external worker writes its handoff and the coordinator
+                        // lands the result later. Falls back to the previous
+                        // requeue-and-break when no dispatcher is registered (config
+                        // gate Off / not wired), the per-process bound is exhausted,
+                        // or the dispatch declines/fails.
+                        let overflow = crate::overflow::try_dispatch_overflow(
+                            crate::overflow::AgentOverflowRequest {
+                                repo_root: turn.config.cwd.to_path_buf(),
+                                label: format!("agent_job_{job_id}_{}", item.item_id.as_str()),
+                                prompt: build_worker_prompt(&job, &item)?,
+                            },
+                        );
+                        match overflow {
+                            Some(crate::overflow::AgentOverflowOutcome::Spawned {
+                                handoff_path,
+                            }) => {
+                                let handoff_display = handoff_path.display().to_string();
+                                tracing::info!(
+                                    job_id = %job_id,
+                                    item_id = item.item_id.as_str(),
+                                    handoff = handoff_display.as_str(),
+                                    "agent pool saturated; dispatched item to external codex exec session (overflow)"
+                                );
+                                // Mark terminal so the item is not also re-spawned
+                                // in-process (which would double-execute it). The
+                                // message records the external dispatch; collecting
+                                // the external worker's result back into the job is a
+                                // documented follow-up (see `crate::overflow`).
+                                db.mark_agent_job_item_failed(
+                                    job_id.as_str(),
+                                    item.item_id.as_str(),
+                                    "dispatched to external codex exec session (agent pool saturated); collect the result from the worker handoff",
+                                )
+                                .await?;
+                                progressed = true;
+                                continue;
+                            }
+                            _ => {
+                                db.mark_agent_job_item_pending(
+                                    job_id.as_str(),
+                                    item.item_id.as_str(),
+                                    /*error_message*/ None,
+                                )
+                                .await?;
+                                break;
+                            }
+                        }
                     }
                     Err(err) => {
                         let error_message = format!("failed to spawn worker: {err}");

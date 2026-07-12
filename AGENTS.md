@@ -360,3 +360,14 @@ Codex supports running connected app-server and exec-server on different operati
 `$remote-tests` skill for details about integration testing these configurations.
 
 See FEATURES.md for the catalog of fork-specific features and their tests.
+
+## External-session overflow (fallback note)
+
+When the in-session agent pool hits its thread limit (`agent thread limit reached` /
+`CodexErr::AgentLimitReached`), overflow the remaining file-disjoint subtasks to external `codex exec`
+workers — each runs in its own process and does not consume the in-session pool. The runtime aims to do
+this automatically via the built-in `overflow` seam (`codex-rs/core/src/overflow.rs`); until a concrete
+external-`codex exec` dispatcher is registered there, launch them via the canonical script: write `.codex/workflow/agents/<name>.prompt.md`, run
+`pwsh -File .codex/workflow/agents/start-codex-workers.ps1 -WorkerNames <a>,<b>`, then land results from
+`.codex/workflow/agents/<name>.handoff.md`. Do not stall, queue, or serialize the leftover work into the
+current session.
